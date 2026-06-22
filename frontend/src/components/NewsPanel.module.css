@@ -1,0 +1,137 @@
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.head {
+  padding: var(--s-5);
+  border-bottom: 1px solid var(--border);
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.subtitle {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.item {
+  display: flex;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-5);
+  border-top: 1px solid var(--border);
+}
+.item:first-child {
+  border-top: none;
+}
+.item:hover {
+  background: var(--surface-hover);
+}
+
+.thumb {
+  width: 84px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  flex: none;
+  background: var(--surface-2);
+}
+
+.thumbFallback {
+  width: 84px;
+  height: 60px;
+  border-radius: var(--r-sm);
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--text-faint);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  justify-content: center;
+}
+
+.headline {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14.5px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.headline:hover {
+  color: var(--accent);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.domain {
+  font-weight: 600;
+  color: var(--text-faint);
+}
+.sep {
+  color: var(--text-faint);
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--s-2);
+  padding: 56px var(--s-5);
+}
+.emptyIcon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--r-md);
+  background: var(--accent-weak);
+  color: var(--accent);
+}
+.emptyTitle {
+  font-weight: 600;
+  color: var(--text);
+}
+.emptyBtn {
+  margin-top: var(--s-2);
+  padding: 8px 16px;
+  border-radius: var(--r-sm);
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+.emptyBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

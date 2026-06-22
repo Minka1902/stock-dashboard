@@ -1,98 +1,85 @@
-import { useEffect, useState, useCallback } from "react";
-import { getContracts, getSources, refreshSource } from "./api";
-import "./App.css";
+import { useState } from "react";
+import { useDashboardData } from "./hooks/useDashboardData";
+import { useTheme } from "./hooks/useTheme";
+import Sidebar from "./components/Sidebar";
+import TopBar from "./components/TopBar";
+import StatGrid from "./components/StatGrid";
+import SourceStatus from "./components/SourceStatus";
+import ContractsPanel from "./components/ContractsPanel";
+import TradesPanel from "./components/TradesPanel";
+import NewsPanel from "./components/NewsPanel";
+import WatchlistPanel from "./components/WatchlistPanel";
+import styles from "./App.module.css";
 
-const REFRESH_MS = 180000; // 3 minutes, matches backend default
-
-function formatAmount(n) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-}
-
-function formatWhen(iso) {
-  if (!iso) return "never";
-  return new Date(iso).toLocaleString();
-}
+const TITLES = {
+  overview: "Overview",
+  contracts: "Contracts",
+  trades: "Trades",
+  news: "News",
+  watchlist: "Watchlist",
+};
 
 export default function App() {
-  const [contracts, setContracts] = useState([]);
-  const [sources, setSources] = useState([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
+  const data = useDashboardData();
+  const { theme, toggle } = useTheme();
+  const [view, setView] = useState("overview");
 
-  const load = useCallback(async () => {
-    try {
-      const [c, s] = await Promise.all([getContracts(), getSources()]);
-      setContracts(c);
-      setSources(s);
-      setError(null);
-    } catch (e) {
-      setError(e.message);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-    const id = setInterval(load, REFRESH_MS);
-    return () => clearInterval(id);
-  }, [load]);
-
-  async function handleRefresh() {
-    setBusy(true);
-    try {
-      await refreshSource("usaspending");
-      await load();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
+  const {
+    contracts, sources, news, trades, watchlist,
+    loading, busy, error, refresh, addWatch, removeWatch,
+  } = data;
 
   return (
-    <div className="app">
-      <header>
-        <h1>Stock Signal Dashboard</h1>
-        <button onClick={handleRefresh} disabled={busy}>
-          {busy ? "Refreshing…" : "Refresh now"}
-        </button>
-      </header>
+    <div className={styles.app}>
+      <Sidebar view={view} onNavigate={setView} />
 
-      {error && <p className="error">{error}</p>}
+      <main className={styles.main}>
+        <div className={styles.inner}>
+          <TopBar
+            title={TITLES[view]}
+            sources={sources}
+            busy={busy}
+            onRefresh={refresh}
+            theme={theme}
+            onToggleTheme={toggle}
+          />
 
-      <section className="sources">
-        <h2>Data sources</h2>
-        <ul>
-          {sources.length === 0 && <li>No data yet — click "Refresh now".</li>}
-          {sources.map((s) => (
-            <li key={s.source}>
-              <strong>{s.source}</strong> — {s.status} · {s.record_count} records ·
-              last refreshed {formatWhen(s.last_refreshed_at)}
-            </li>
-          ))}
-        </ul>
-      </section>
+          {error && (
+            <div className={styles.error} role="alert">
+              Couldn’t reach the backend: {error}
+            </div>
+          )}
 
-      <section className="contracts">
-        <h2>Biggest recent federal contracts</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Recipient</th><th>Agency</th><th>Amount</th><th>Start</th><th>Award ID</th>
-            </tr>
-          </thead>
-          <tbody>
-            {contracts.map((c) => (
-              <tr key={c.external_id}>
-                <td>{c.recipient_name}</td>
-                <td>{c.awarding_agency}</td>
-                <td className="amount">{formatAmount(c.amount)}</td>
-                <td>{c.start_date || "—"}</td>
-                <td>{c.award_id}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+          <SourceStatus sources={sources} />
+
+          {view === "overview" && (
+            <>
+              <StatGrid contracts={contracts} sources={sources} loading={loading} />
+              <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} />
+              <div className={styles.twoCol}>
+                <TradesPanel trades={trades} loading={loading} busy={busy} onRefresh={refresh} />
+                <NewsPanel news={news} loading={loading} busy={busy} onRefresh={refresh} />
+              </div>
+            </>
+          )}
+
+          {view === "contracts" && (
+            <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} />
+          )}
+
+          {view === "trades" && (
+            <TradesPanel trades={trades} loading={loading} busy={busy} onRefresh={refresh} />
+          )}
+
+          {view === "news" && (
+            <NewsPanel news={news} loading={loading} busy={busy} onRefresh={refresh} />
+          )}
+
+          {view === "watchlist" && (
+            <WatchlistPanel watchlist={watchlist} onAdd={addWatch} onRemove={removeWatch} />
+          )}
+        </div>
+      </main>
     </div>
   );
 }
