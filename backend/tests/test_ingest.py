@@ -15,7 +15,7 @@ def test_run_source_stores_records_and_stamps_status(conn):
     def fake_fetch():
         return _records()
 
-    ingest.run_source(conn, "usaspending", fake_fetch)
+    ingest.run_source(conn, "usaspending", fake_fetch, db.upsert_contracts)
 
     assert len(db.get_contracts(conn)) == 1
     statuses = db.get_source_statuses(conn)
@@ -29,7 +29,7 @@ def test_run_source_records_error_status(conn):
     def boom():
         raise RuntimeError("network down")
 
-    ingest.run_source(conn, "usaspending", boom)
+    ingest.run_source(conn, "usaspending", boom, db.upsert_contracts)
 
     statuses = db.get_source_statuses(conn)
     assert statuses[0].status.startswith("error:")

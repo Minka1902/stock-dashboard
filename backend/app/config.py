@@ -14,6 +14,22 @@ CONTRACTS_LOOKBACK_DAYS = int(os.environ.get("STOCKS_CONTRACTS_LOOKBACK_DAYS", "
 # Max contracts to pull per refresh.
 CONTRACTS_LIMIT = int(os.environ.get("STOCKS_CONTRACTS_LIMIT", "50"))
 
+# --- News (GDELT) ---
+NEWS_QUERY = os.environ.get(
+    "STOCKS_NEWS_QUERY",
+    # GDELT requires multi-word phrases to be quoted.
+    '("stock market" OR "federal reserve" OR economy OR sanctions OR "defense spending")',
+)
+NEWS_LIMIT = int(os.environ.get("STOCKS_NEWS_LIMIT", "40"))
+
+# --- Insider trades (SEC EDGAR Form 4) ---
+# SEC requires a descriptive User-Agent with contact info for fair-access.
+SEC_USER_AGENT = os.environ.get(
+    "STOCKS_SEC_USER_AGENT", "Signal Dashboard minka.scharff@gmail.com"
+)
+# How many recent Form 4 filings to parse per refresh (each costs ~2 requests).
+EDGAR_LIMIT = int(os.environ.get("STOCKS_EDGAR_LIMIT", "25"))
+
 
 def contracts_date_window() -> tuple[str, str]:
     """Return (start_date, end_date) ISO strings for the lookback window."""
