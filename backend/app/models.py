@@ -89,3 +89,52 @@ class CongressTrade(BaseModel):
     amount_range: str      # e.g. "$1,001 - $15,000"
     filed_at: str
     chamber: str           # "house" | "senate"
+
+
+class ShortInterest(BaseModel):
+    ticker: str                      # PRIMARY KEY
+    fetched_at: str
+    shares_short: int | None
+    short_pct_float: float | None    # 0.15 = 15%
+    days_to_cover: float | None      # short ratio (days to unwind)
+    prior_month_shares: int | None
+    squeeze_flag: bool               # short_pct_float > 0.15
+
+
+class SocialSentiment(BaseModel):
+    ticker: str           # PRIMARY KEY
+    fetched_at: str
+    mentions: int | None
+    upvotes: int | None
+    rank: int | None            # current rank (1 = most mentioned)
+    rank_24h_ago: int | None
+    rank_change: int | None     # rank_24h_ago - rank (positive = rising)
+
+
+class AnalystSignal(BaseModel):
+    ticker: str               # PRIMARY KEY
+    fetched_at: str
+    next_earnings: str | None  # ISO date YYYY-MM-DD
+    rec_strong_buy: int | None
+    rec_buy: int | None
+    rec_hold: int | None
+    rec_sell: int | None
+    recent_upgrades: int       # count of "up" or "init" actions in last 30 days
+    recent_downgrades: int     # count of "down" actions in last 30 days
+    latest_action: str | None  # "up" | "down" | "init"
+    latest_firm: str | None
+    latest_to_grade: str | None  # e.g. "Buy", "Outperform"
+
+
+class BoomScore(BaseModel):
+    ticker: str         # PRIMARY KEY
+    computed_at: str
+    score: int          # 0–100
+    components: str     # JSON dict of fired signals and their points
+    golden_cross: bool
+    rsi_recovery: bool
+    insider_cluster_buy: bool
+    congress_buy: bool
+    short_squeeze: bool
+    wsb_rising: bool
+    analyst_upgrade: bool

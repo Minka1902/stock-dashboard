@@ -15,6 +15,10 @@ export const getYieldCurve = () => getJSON("/api/yield-curve");
 export const getSignals = () => getJSON("/api/signals");
 export const getFearGreed = () => getJSON("/api/fear-greed");
 export const getCongressTrades = () => getJSON("/api/congress-trades");
+export const getShortInterest = () => getJSON("/api/short-interest");
+export const getSocial = () => getJSON("/api/social");
+export const getAnalyst = () => getJSON("/api/analyst");
+export const getBoomScores = () => getJSON("/api/boom-scores");
 
 export async function refreshSource(name) {
   const res = await fetch(`${BASE}/api/refresh/${name}`, { method: "POST" });

@@ -9,6 +9,10 @@ import {
   getSignals,
   getFearGreed,
   getCongressTrades,
+  getShortInterest,
+  getSocial,
+  getAnalyst,
+  getBoomScores,
   refreshSource,
   addWatch as apiAddWatch,
   removeWatch as apiRemoveWatch,
@@ -18,6 +22,7 @@ const REFRESH_MS = 180000; // 3 minutes, matches backend default
 const EXTERNAL_SOURCES = [
   "usaspending", "gdelt", "edgar",
   "yield_curve", "technical", "fear_greed", "congress",
+  "short_interest", "social", "analyst", "boom_score",
 ];
 
 /**
@@ -35,13 +40,17 @@ export function useDashboardData() {
   const [signals, setSignals] = useState([]);
   const [fearGreed, setFearGreed] = useState([]);
   const [congressTrades, setCongressTrades] = useState([]);
+  const [shortInterest, setShortInterest] = useState([]);
+  const [social, setSocial] = useState([]);
+  const [analyst, setAnalyst] = useState([]);
+  const [boomScores, setBoomScores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     try {
-      const [c, s, n, t, w, yc, sig, fg, ct] = await Promise.all([
+      const [c, s, n, t, w, yc, sig, fg, ct, si, soc, ana, bs] = await Promise.all([
         getContracts(),
         getSources(),
         getNews(),
@@ -51,6 +60,10 @@ export function useDashboardData() {
         getSignals(),
         getFearGreed(),
         getCongressTrades(),
+        getShortInterest(),
+        getSocial(),
+        getAnalyst(),
+        getBoomScores(),
       ]);
       setContracts(c);
       setSources(s);
@@ -61,6 +74,10 @@ export function useDashboardData() {
       setSignals(sig);
       setFearGreed(fg);
       setCongressTrades(ct);
+      setShortInterest(si);
+      setSocial(soc);
+      setAnalyst(ana);
+      setBoomScores(bs);
       setError(null);
     } catch (e) {
       setError(e.message);
@@ -107,6 +124,10 @@ export function useDashboardData() {
     signals,
     fearGreed,
     congressTrades,
+    shortInterest,
+    social,
+    analyst,
+    boomScores,
     loading,
     busy,
     error,

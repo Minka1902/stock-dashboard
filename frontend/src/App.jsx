@@ -13,6 +13,10 @@ import YieldCurvePanel from "./components/YieldCurvePanel";
 import TechnicalPanel from "./components/TechnicalPanel";
 import FearGreedPanel from "./components/FearGreedPanel";
 import CongressPanel from "./components/CongressPanel";
+import BoomScorePanel from "./components/BoomScorePanel";
+import ShortPanel from "./components/ShortPanel";
+import SocialPanel from "./components/SocialPanel";
+import AnalystPanel from "./components/AnalystPanel";
 import styles from "./App.module.css";
 
 const TITLES = {
@@ -25,6 +29,10 @@ const TITLES = {
   signals:     "Signals",
   "fear-greed": "Fear & Greed",
   congress:    "Congress",
+  "boom-score": "Boom Score",
+  short:       "Short Interest",
+  social:      "WSB Sentiment",
+  analyst:     "Analyst Ratings",
 };
 
 export default function App() {
@@ -35,6 +43,7 @@ export default function App() {
   const {
     contracts, sources, news, trades, watchlist,
     yieldCurve, signals, fearGreed, congressTrades,
+    shortInterest, social, analyst, boomScores,
     loading, busy, error, refresh, addWatch, removeWatch,
   } = data;
 
@@ -63,6 +72,7 @@ export default function App() {
 
           {view === "overview" && (
             <>
+              <BoomScorePanel data={boomScores} loading={loading} busy={busy} onRefresh={refresh} />
               <StatGrid contracts={contracts} sources={sources} loading={loading} />
               <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} />
               <div className={styles.twoCol}>
@@ -75,6 +85,11 @@ export default function App() {
               </div>
               <TechnicalPanel data={signals} loading={loading} busy={busy} onRefresh={refresh} />
               <CongressPanel data={congressTrades} loading={loading} busy={busy} onRefresh={refresh} />
+              <div className={styles.twoCol}>
+                <ShortPanel data={shortInterest} loading={loading} busy={busy} onRefresh={refresh} />
+                <SocialPanel data={social} loading={loading} busy={busy} onRefresh={refresh} />
+              </div>
+              <AnalystPanel data={analyst} loading={loading} busy={busy} onRefresh={refresh} />
             </>
           )}
 
@@ -108,6 +123,22 @@ export default function App() {
 
           {view === "congress" && (
             <CongressPanel data={congressTrades} loading={loading} busy={busy} onRefresh={refresh} />
+          )}
+
+          {view === "boom-score" && (
+            <BoomScorePanel data={boomScores} loading={loading} busy={busy} onRefresh={refresh} />
+          )}
+
+          {view === "short" && (
+            <ShortPanel data={shortInterest} loading={loading} busy={busy} onRefresh={refresh} />
+          )}
+
+          {view === "social" && (
+            <SocialPanel data={social} loading={loading} busy={busy} onRefresh={refresh} />
+          )}
+
+          {view === "analyst" && (
+            <AnalystPanel data={analyst} loading={loading} busy={busy} onRefresh={refresh} />
           )}
         </div>
       </main>
