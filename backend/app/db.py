@@ -2,11 +2,15 @@
 import sqlite3
 
 from app.models import (
+    CongressTrade,
     ContractRecord,
+    FearGreedSnapshot,
     InsiderTrade,
     NewsArticle,
     SourceStatus,
+    TechnicalSignal,
     WatchItem,
+    YieldPoint,
 )
 
 
@@ -59,6 +63,44 @@ def init_schema(conn: sqlite3.Connection) -> None:
             last_refreshed_at TEXT,
             status            TEXT NOT NULL,
             record_count      INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS yield_curve (
+            date   TEXT PRIMARY KEY,
+            yr2    REAL,
+            yr10   REAL,
+            yr30   REAL,
+            spread REAL
+        );
+        CREATE TABLE IF NOT EXISTS technical_signals (
+            ticker       TEXT PRIMARY KEY,
+            fetched_at   TEXT NOT NULL,
+            price        REAL,
+            change_pct   REAL,
+            ma50         REAL,
+            ma200        REAL,
+            golden_cross INTEGER,
+            rsi14        REAL,
+            high_52w     REAL,
+            low_52w      REAL,
+            prices_json  TEXT NOT NULL DEFAULT '[]'
+        );
+        CREATE TABLE IF NOT EXISTS fear_greed (
+            captured_at TEXT PRIMARY KEY,
+            score       REAL NOT NULL,
+            rating      TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS congress_trades (
+            trade_hash        TEXT PRIMARY KEY,
+            representative    TEXT NOT NULL,
+            party             TEXT NOT NULL,
+            state             TEXT NOT NULL,
+            ticker            TEXT NOT NULL,
+            asset_description TEXT NOT NULL,
+            transaction_date  TEXT NOT NULL,
+            transaction_type  TEXT NOT NULL,
+            amount_range      TEXT NOT NULL,
+            filed_at          TEXT NOT NULL,
+            chamber           TEXT NOT NULL
         );
         """
     )
@@ -200,3 +242,110 @@ def update_source_status(
 def get_source_statuses(conn: sqlite3.Connection) -> list[SourceStatus]:
     cur = conn.execute("SELECT * FROM source_status ORDER BY source")
     return [SourceStatus(**dict(row)) for row in cur.fetchall()]
+
+
+# ---------- yield curve ----------
+def upsert_yield_curve(conn: sqlite3.Connection, records: list[YieldPoint]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO yield_curve (date, yr2, yr10, yr30, spread)
+        VALUES (:date, :yr2, :yr10, :yr30, :spread)
+        ON CONFLICT(date) DO UPDATE SET
+            yr2=excluded.yr2, yr10=excluded.yr10,
+            yr30=excluded.yr30, spread=excluded.spread
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+
+
+def get_yield_curve(conn: sqlite3.Connection, days: int = 90) -> list[YieldPoint]:
+    cur = conn.execute(
+        "SELECT * FROM yield_curve WHERE date >= date('now', ?) ORDER BY date ASC",
+        (f"-{days} days",),
+    )
+    return [YieldPoint(**dict(row)) for row in cur.fetchall()]
+
+
+# ---------- technical signals ----------
+def upsert_technical_signals(conn: sqlite3.Connection, records: list[TechnicalSignal]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO technical_signals
+            (ticker, fetched_at, price, change_pct, ma50, ma200,
+             golden_cross, rsi14, high_52w, low_52w, prices_json)
+        VALUES
+            (:ticker, :fetched_at, :price, :change_pct, :ma50, :ma200,
+             :golden_cross, :rsi14, :high_52w, :low_52w, :prices_json)
+        ON CONFLICT(ticker) DO UPDATE SET
+            fetched_at=excluded.fetched_at, price=excluded.price,
+            change_pct=excluded.change_pct, ma50=excluded.ma50,
+            ma200=excluded.ma200, golden_cross=excluded.golden_cross,
+            rsi14=excluded.rsi14, high_52w=excluded.high_52w,
+            low_52w=excluded.low_52w, prices_json=excluded.prices_json
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+
+
+def get_technical_signals(conn: sqlite3.Connection) -> list[TechnicalSignal]:
+    cur = conn.execute("SELECT * FROM technical_signals ORDER BY ticker ASC")
+    rows = []
+    for row in cur.fetchall():
+        d = dict(row)
+        # SQLite stores bool as 0/1; convert back to bool | None
+        gc = d.get("golden_cross")
+        d["golden_cross"] = bool(gc) if gc is not None else None
+        rows.append(TechnicalSignal(**d))
+    return rows
+
+
+# ---------- fear & greed ----------
+def upsert_fear_greed(conn: sqlite3.Connection, records: list[FearGreedSnapshot]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO fear_greed (captured_at, score, rating)
+        VALUES (:captured_at, :score, :rating)
+        ON CONFLICT(captured_at) DO UPDATE SET
+            score=excluded.score, rating=excluded.rating
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+
+
+def get_fear_greed(conn: sqlite3.Connection, days: int = 30) -> list[FearGreedSnapshot]:
+    cur = conn.execute(
+        "SELECT * FROM fear_greed WHERE captured_at >= datetime('now', ?) ORDER BY captured_at ASC",
+        (f"-{days} days",),
+    )
+    return [FearGreedSnapshot(**dict(row)) for row in cur.fetchall()]
+
+
+# ---------- congress trades ----------
+def upsert_congress_trades(conn: sqlite3.Connection, records: list[CongressTrade]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO congress_trades
+            (trade_hash, representative, party, state, ticker,
+             asset_description, transaction_date, transaction_type,
+             amount_range, filed_at, chamber)
+        VALUES
+            (:trade_hash, :representative, :party, :state, :ticker,
+             :asset_description, :transaction_date, :transaction_type,
+             :amount_range, :filed_at, :chamber)
+        ON CONFLICT(trade_hash) DO UPDATE SET
+            filed_at=excluded.filed_at, amount_range=excluded.amount_range
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+
+
+def get_congress_trades(conn: sqlite3.Connection, limit: int = 100) -> list[CongressTrade]:
+    cur = conn.execute(
+        "SELECT * FROM congress_trades ORDER BY transaction_date DESC, filed_at DESC LIMIT ?",
+        (limit,),
+    )
+    return [CongressTrade(**dict(row)) for row in cur.fetchall()]

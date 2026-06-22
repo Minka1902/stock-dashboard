@@ -10,6 +10,10 @@ from pydantic import BaseModel
 from app import config, db, ingest
 from app.models import WatchItem
 from app.sources import edgar, gdelt, usaspending
+import app.sources.yield_curve as yield_curve_source
+import app.sources.technical as technical_source
+import app.sources.fear_greed as fear_greed_source
+import app.sources.congress as congress_source
 
 
 # Module-level fetchers so tests can monkeypatch them with stubs.
@@ -26,23 +30,34 @@ def trades_fetch():
     return edgar.fetch(config.EDGAR_LIMIT, config.SEC_USER_AGENT)
 
 
+def signals_fetch():
+    tickers = [w.ticker for w in db.get_watchlist(conn)]
+    if not tickers:
+        return []
+    return technical_source.fetch(tickers, config.ALPHA_VANTAGE_KEY)
+
+
 # One shared connection (SQLite with check_same_thread=False).
 conn = db.connect(config.DB_PATH)
 db.init_schema(conn)
 
-# Registry of scheduler-driven sources: name -> (fetch, store).
+# Registry: name -> (fetch_callable, store_fn, min_interval_seconds | None).
 SOURCES = {
-    "usaspending": (lambda: contracts_fetch(), db.upsert_contracts),
-    "gdelt": (lambda: news_fetch(), db.upsert_news),
-    "edgar": (lambda: trades_fetch(), db.upsert_trades),
+    "usaspending": (lambda: contracts_fetch(), db.upsert_contracts, None),
+    "gdelt":       (lambda: news_fetch(), db.upsert_news, None),
+    "edgar":       (lambda: trades_fetch(), db.upsert_trades, None),
+    "yield_curve": (lambda: yield_curve_source.fetch(config.YIELD_CURVE_MONTHS), db.upsert_yield_curve, None),
+    "technical":   (lambda: signals_fetch(), db.upsert_technical_signals, None),
+    "fear_greed":  (lambda: fear_greed_source.fetch(), db.upsert_fear_greed, None),
+    "congress":    (lambda: congress_source.fetch(config.CONGRESS_LOOKBACK_DAYS), db.upsert_congress_trades, config.CONGRESS_MIN_INTERVAL_SECONDS),
 }
 
 scheduler = BackgroundScheduler()
 
 
 def _refresh_all():
-    for name, (fetch, store) in SOURCES.items():
-        ingest.run_source(conn, name, fetch, store)
+    for name, (fetch, store, min_interval) in SOURCES.items():
+        ingest.run_source(conn, name, fetch, store, min_interval_seconds=min_interval)
 
 
 @asynccontextmanager
@@ -88,6 +103,26 @@ def trades():
     return [t.model_dump() for t in db.get_trades(conn)]
 
 
+@app.get("/api/yield-curve")
+def yield_curve():
+    return [p.model_dump() for p in db.get_yield_curve(conn)]
+
+
+@app.get("/api/signals")
+def signals():
+    return [s.model_dump() for s in db.get_technical_signals(conn)]
+
+
+@app.get("/api/fear-greed")
+def fear_greed():
+    return [s.model_dump() for s in db.get_fear_greed(conn)]
+
+
+@app.get("/api/congress-trades")
+def congress_trades():
+    return [t.model_dump() for t in db.get_congress_trades(conn)]
+
+
 # ---------- watchlist (user managed, no external source) ----------
 class WatchCreate(BaseModel):
     ticker: str
@@ -124,7 +159,7 @@ def sources():
 def refresh(source_name: str):
     if source_name not in SOURCES:
         raise HTTPException(status_code=404, detail="unknown source")
-    fetch, store = SOURCES[source_name]
-    ingest.run_source(conn, source_name, fetch, store)
+    fetch, store, min_interval = SOURCES[source_name]
+    ingest.run_source(conn, source_name, fetch, store, min_interval_seconds=min_interval)
     statuses = {s.source: s for s in db.get_source_statuses(conn)}
     return statuses[source_name].model_dump()

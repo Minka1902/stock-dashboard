@@ -36,3 +36,52 @@ def test_run_source_records_error_status(conn):
     assert statuses[0].record_count == 0
     # Failure still stamps a timestamp so the UI shows it tried.
     assert statuses[0].last_refreshed_at is not None
+
+
+def test_run_source_skips_if_refreshed_too_recently(conn):
+    call_count = 0
+
+    def counting_fetch():
+        nonlocal call_count
+        call_count += 1
+        return _records()
+
+    # First run stamps the status as "just now".
+    ingest.run_source(conn, "usaspending", counting_fetch, db.upsert_contracts)
+    assert call_count == 1
+
+    # Second run with a 1-hour min_interval should be skipped.
+    ingest.run_source(conn, "usaspending", counting_fetch, db.upsert_contracts, min_interval_seconds=3600)
+    assert call_count == 1  # still 1; the fetch was not called again
+
+
+def test_run_source_runs_when_interval_has_elapsed(conn):
+    from datetime import datetime, timezone, timedelta
+
+    call_count = 0
+
+    def counting_fetch():
+        nonlocal call_count
+        call_count += 1
+        return _records()
+
+    # Stamp a status as if it ran 2 hours ago.
+    old_ts = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(timespec="seconds")
+    db.update_source_status(conn, "usaspending", old_ts, "ok", 1)
+
+    # min_interval is 1 hour; 2 hours have elapsed → should run.
+    ingest.run_source(conn, "usaspending", counting_fetch, db.upsert_contracts, min_interval_seconds=3600)
+    assert call_count == 1
+
+
+def test_run_source_no_min_interval_always_runs(conn):
+    call_count = 0
+
+    def counting_fetch():
+        nonlocal call_count
+        call_count += 1
+        return _records()
+
+    ingest.run_source(conn, "usaspending", counting_fetch, db.upsert_contracts)
+    ingest.run_source(conn, "usaspending", counting_fetch, db.upsert_contracts)
+    assert call_count == 2

@@ -9,14 +9,22 @@ import ContractsPanel from "./components/ContractsPanel";
 import TradesPanel from "./components/TradesPanel";
 import NewsPanel from "./components/NewsPanel";
 import WatchlistPanel from "./components/WatchlistPanel";
+import YieldCurvePanel from "./components/YieldCurvePanel";
+import TechnicalPanel from "./components/TechnicalPanel";
+import FearGreedPanel from "./components/FearGreedPanel";
+import CongressPanel from "./components/CongressPanel";
 import styles from "./App.module.css";
 
 const TITLES = {
-  overview: "Overview",
-  contracts: "Contracts",
-  trades: "Trades",
-  news: "News",
-  watchlist: "Watchlist",
+  overview:    "Overview",
+  contracts:   "Contracts",
+  trades:      "Trades",
+  news:        "News",
+  watchlist:   "Watchlist",
+  "yield-curve": "Yield Curve",
+  signals:     "Signals",
+  "fear-greed": "Fear & Greed",
+  congress:    "Congress",
 };
 
 export default function App() {
@@ -26,6 +34,7 @@ export default function App() {
 
   const {
     contracts, sources, news, trades, watchlist,
+    yieldCurve, signals, fearGreed, congressTrades,
     loading, busy, error, refresh, addWatch, removeWatch,
   } = data;
 
@@ -46,7 +55,7 @@ export default function App() {
 
           {error && (
             <div className={styles.error} role="alert">
-              Couldn’t reach the backend: {error}
+              Couldn't reach the backend: {error}
             </div>
           )}
 
@@ -60,6 +69,12 @@ export default function App() {
                 <TradesPanel trades={trades} loading={loading} busy={busy} onRefresh={refresh} />
                 <NewsPanel news={news} loading={loading} busy={busy} onRefresh={refresh} />
               </div>
+              <div className={styles.twoCol}>
+                <YieldCurvePanel data={yieldCurve} loading={loading} busy={busy} onRefresh={refresh} />
+                <FearGreedPanel data={fearGreed} loading={loading} busy={busy} onRefresh={refresh} />
+              </div>
+              <TechnicalPanel data={signals} loading={loading} busy={busy} onRefresh={refresh} />
+              <CongressPanel data={congressTrades} loading={loading} busy={busy} onRefresh={refresh} />
             </>
           )}
 
@@ -77,6 +92,22 @@ export default function App() {
 
           {view === "watchlist" && (
             <WatchlistPanel watchlist={watchlist} onAdd={addWatch} onRemove={removeWatch} />
+          )}
+
+          {view === "yield-curve" && (
+            <YieldCurvePanel data={yieldCurve} loading={loading} busy={busy} onRefresh={refresh} />
+          )}
+
+          {view === "signals" && (
+            <TechnicalPanel data={signals} loading={loading} busy={busy} onRefresh={refresh} />
+          )}
+
+          {view === "fear-greed" && (
+            <FearGreedPanel data={fearGreed} loading={loading} busy={busy} onRefresh={refresh} />
+          )}
+
+          {view === "congress" && (
+            <CongressPanel data={congressTrades} loading={loading} busy={busy} onRefresh={refresh} />
           )}
         </div>
       </main>
