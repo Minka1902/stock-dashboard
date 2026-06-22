@@ -69,6 +69,11 @@ class TechnicalSignal(BaseModel):
     high_52w: float | None
     low_52w: float | None
     prices_json: str              # JSON array of last 100 closes for sparkline
+    macd: float | None = None
+    macd_signal: float | None = None
+    macd_crossover: bool | None = None
+    rel_volume: float | None = None
+    volume_json: str = "[]"       # JSON array of last 20 daily volumes
 
 
 class FearGreedSnapshot(BaseModel):
@@ -129,8 +134,9 @@ class AnalystSignal(BaseModel):
 class BoomScore(BaseModel):
     ticker: str         # PRIMARY KEY
     computed_at: str
-    score: int          # 0–100
+    score: int          # can be negative (−90 … +100)
     components: str     # JSON dict of fired signals and their points
+    # bullish signals
     golden_cross: bool
     rsi_recovery: bool
     insider_cluster_buy: bool
@@ -138,3 +144,33 @@ class BoomScore(BaseModel):
     short_squeeze: bool
     wsb_rising: bool
     analyst_upgrade: bool
+    near_52w_high: bool = False
+    macd_crossover: bool = False
+    volume_confirmed: bool = False
+    fear_greed_contrarian: bool = False
+    yield_uninversion: bool = False
+    contracts_catalyst: bool = False
+    # bearish signals (fire when score is negative contribution)
+    death_cross: bool = False
+    insider_cluster_sell: bool = False
+    overbought_rsi: bool = False
+    congress_sale: bool = False
+    analyst_downgrade_cluster: bool = False
+    extreme_greed: bool = False
+    # risk / meta flags
+    earnings_soon: bool = False
+    mixed_signals: bool = False
+
+
+class Fundamentals(BaseModel):
+    ticker: str           # PRIMARY KEY
+    fetched_at: str
+    sector: str | None
+    industry: str | None
+    pe_ratio: float | None
+    forward_pe: float | None
+    peg_ratio: float | None
+    pb_ratio: float | None
+    revenue_growth: float | None
+    profit_margin: float | None
+    market_cap: float | None

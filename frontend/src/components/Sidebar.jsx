@@ -15,6 +15,7 @@ const NAV = [
   { key: "short",       label: "Short Interest", icon: "trending" },
   { key: "social",      label: "WSB Sentiment", icon: "news"     },
   { key: "analyst",     label: "Analyst",      icon: "star"      },
+  { key: "fundamentals", label: "Fundamentals", icon: "star"     },
 ];
 
 export default function Sidebar({ view, onNavigate }) {

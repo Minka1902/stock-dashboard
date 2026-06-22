@@ -25,12 +25,20 @@ def _add_ticker(conn, ticker="GME"):
     db.add_watch(conn, WatchItem(ticker=ticker, note="", added_at="2026-06-22T10:00:00+00:00"))
 
 
-def _add_technical(conn, ticker="GME", golden_cross=False, rsi14=55.0):
+def _add_technical(conn, ticker="GME", golden_cross=None, rsi14=55.0,
+                   price=100.0, high_52w=150.0, rel_volume=None, change_pct=1.0):
+    if golden_cross is True:
+        ma50, ma200 = 101.0, 100.0
+    elif golden_cross is False:
+        ma50, ma200 = 99.0, 100.0
+    else:
+        ma50, ma200 = None, None
     db.upsert_technical_signals(conn, [TechnicalSignal(
         ticker=ticker, fetched_at="2026-06-22T10:00:00+00:00",
-        price=100.0, change_pct=1.0, ma50=101.0 if golden_cross else 99.0,
-        ma200=100.0, golden_cross=golden_cross, rsi14=rsi14,
-        high_52w=150.0, low_52w=80.0, prices_json="[100.0]",
+        price=price, change_pct=change_pct, ma50=ma50,
+        ma200=ma200, golden_cross=golden_cross, rsi14=rsi14,
+        high_52w=high_52w, low_52w=80.0, prices_json="[100.0]",
+        rel_volume=rel_volume,
     )])
 
 
@@ -43,12 +51,12 @@ def _add_insider_buy(conn, ticker="GME", accession="A1", date="2026-06-10"):
     )])
 
 
-def _add_congress_purchase(conn, ticker="GME"):
+def _add_congress_purchase(conn, ticker="GME", date="2026-06-22", amount_range="$15,001 - $50,000"):
     db.upsert_congress_trades(conn, [CongressTrade(
         trade_hash="hash001", representative="Rep Smith", party="D",
         state="CA", ticker=ticker, asset_description="Stock",
-        transaction_date="2026-06-10", transaction_type="Purchase",
-        amount_range="$15,001 - $50,000", filed_at="2026-06-15", chamber="house",
+        transaction_date=date, transaction_type="Purchase",
+        amount_range=amount_range, filed_at="2026-06-22", chamber="house",
     )])
 
 
@@ -97,7 +105,8 @@ def test_golden_cross_adds_20(score_conn):
 
 def test_rsi_recovery_zone_adds_10(score_conn):
     _add_ticker(score_conn)
-    _add_technical(score_conn, golden_cross=False, rsi14=40.0)
+    # golden_cross=None avoids triggering death_cross so score reflects rsi_recovery only.
+    _add_technical(score_conn, golden_cross=None, rsi14=40.0)
     scores = boom_score_source.compute_all(["GME"], score_conn)
     assert scores[0].rsi_recovery is True
     assert scores[0].score >= 10
@@ -105,7 +114,7 @@ def test_rsi_recovery_zone_adds_10(score_conn):
 
 def test_rsi_outside_zone_does_not_fire(score_conn):
     _add_ticker(score_conn)
-    _add_technical(score_conn, golden_cross=False, rsi14=55.0)
+    _add_technical(score_conn, golden_cross=None, rsi14=55.0)
     scores = boom_score_source.compute_all(["GME"], score_conn)
     assert scores[0].rsi_recovery is False
 
@@ -191,3 +200,179 @@ def test_compute_all_multiple_tickers(score_conn):
     gme_score = next(s for s in scores if s.ticker == "GME")
     aapl_score = next(s for s in scores if s.ticker == "AAPL")
     assert gme_score.score > aapl_score.score
+
+
+# ---- Phase 3: bearish signals ----
+
+def test_death_cross_subtracts_20(score_conn):
+    _add_ticker(score_conn)
+    _add_technical(score_conn, golden_cross=False, rsi14=55.0)  # neutral RSI
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].death_cross is True
+    assert scores[0].score == -20
+
+
+def test_overbought_rsi_subtracts_10(score_conn):
+    _add_ticker(score_conn)
+    _add_technical(score_conn, golden_cross=None, rsi14=75.0)
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].overbought_rsi is True
+    assert scores[0].score == -10
+
+
+def test_insider_cluster_sell_subtracts_20(score_conn):
+    _add_ticker(score_conn)
+    # Add two sell transactions.
+    db.upsert_trades(score_conn, [InsiderTrade(
+        accession="S1", ticker="GME", company="Co", owner="Owner",
+        role="CEO", transaction_date="2026-06-20", transaction_type="Sell",
+        shares=500.0, value=50000.0, filing_url="https://sec.gov/s1",
+        filed_at="2026-06-20T10:00:00+00:00",
+    )])
+    db.upsert_trades(score_conn, [InsiderTrade(
+        accession="S2", ticker="GME", company="Co", owner="Owner2",
+        role="CFO", transaction_date="2026-06-21", transaction_type="Sell",
+        shares=300.0, value=30000.0, filing_url="https://sec.gov/s2",
+        filed_at="2026-06-21T10:00:00+00:00",
+    )])
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].insider_cluster_sell is True
+    assert scores[0].score <= -20
+
+
+def test_congress_sale_subtracts_15(score_conn):
+    _add_ticker(score_conn)
+    db.upsert_congress_trades(score_conn, [CongressTrade(
+        trade_hash="sale001", representative="Rep Jones", party="R",
+        state="TX", ticker="GME", asset_description="Stock",
+        transaction_date="2026-06-20", transaction_type="Sale",
+        amount_range="$50,001 - $100,000", filed_at="2026-06-22", chamber="senate",
+    )])
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].congress_sale is True
+    assert scores[0].score == -15
+
+
+def test_analyst_downgrade_cluster_subtracts_15(score_conn):
+    _add_ticker(score_conn)
+    db.upsert_analyst_signals(score_conn, [AnalystSignal(
+        ticker="GME", fetched_at="2026-06-22T10:00:00+00:00",
+        next_earnings="2026-09-30", rec_strong_buy=2, rec_buy=5,
+        rec_hold=4, rec_sell=3, recent_upgrades=0, recent_downgrades=2,
+        latest_action="down", latest_firm="MS", latest_to_grade="Hold",
+    )])
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].analyst_downgrade_cluster is True
+    assert scores[0].score <= -15
+
+
+# ---- Phase 3: new bullish signals ----
+
+def test_near_52w_high_adds_10(score_conn):
+    _add_ticker(score_conn)
+    # Price 98, high_52w = 100; 98 >= 100 * 0.97 = 97 → fires
+    _add_technical(score_conn, golden_cross=None, rsi14=55.0, price=98.0, high_52w=100.0)
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].near_52w_high is True
+    assert scores[0].score >= 10
+
+
+def test_near_52w_high_does_not_fire_when_far(score_conn):
+    _add_ticker(score_conn)
+    # Price 85, high_52w=100; 85 < 97 → does not fire
+    _add_technical(score_conn, golden_cross=None, rsi14=55.0, price=85.0, high_52w=100.0)
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].near_52w_high is False
+
+
+def test_volume_confirmed_adds_10(score_conn):
+    _add_ticker(score_conn)
+    # rel_volume > 1.5 AND change_pct > 0
+    _add_technical(score_conn, golden_cross=None, rsi14=55.0, rel_volume=2.0, change_pct=1.5)
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].volume_confirmed is True
+    assert scores[0].score >= 10
+
+
+def test_volume_confirmed_does_not_fire_on_down_day(score_conn):
+    _add_ticker(score_conn)
+    _add_technical(score_conn, golden_cross=None, rsi14=55.0, rel_volume=2.0, change_pct=-0.5)
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].volume_confirmed is False
+
+
+# ---- Phase 3: macro signals ----
+
+def test_fear_greed_contrarian_fires_on_extreme_fear(score_conn):
+    _add_ticker(score_conn)
+    db.upsert_fear_greed(score_conn, [__import__("app.models", fromlist=["FearGreedSnapshot"]).FearGreedSnapshot(
+        captured_at="2026-06-22T10:00:00+00:00", score=20.0, rating="Extreme Fear"
+    )])
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].fear_greed_contrarian is True
+    assert scores[0].score >= 10
+
+
+def test_extreme_greed_subtracts_on_high_fg(score_conn):
+    _add_ticker(score_conn)
+    db.upsert_fear_greed(score_conn, [__import__("app.models", fromlist=["FearGreedSnapshot"]).FearGreedSnapshot(
+        captured_at="2026-06-22T10:00:00+00:00", score=85.0, rating="Extreme Greed"
+    )])
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].extreme_greed is True
+    assert scores[0].score <= -10
+
+
+# ---- Phase 3: mixed signals + earnings soon ----
+
+def test_mixed_signals_flag_set_when_both_bullish_and_bearish(score_conn):
+    _add_ticker(score_conn)
+    # golden_cross=True (bullish) + overbought RSI (bearish)
+    _add_technical(score_conn, golden_cross=True, rsi14=80.0)
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].mixed_signals is True
+    assert scores[0].golden_cross is True
+    assert scores[0].overbought_rsi is True
+
+
+def test_earnings_soon_flag_set_within_7_days(score_conn):
+    _add_ticker(score_conn)
+    db.upsert_analyst_signals(score_conn, [AnalystSignal(
+        ticker="GME", fetched_at="2026-06-22T10:00:00+00:00",
+        next_earnings="2026-06-25",  # 3 days out
+        rec_strong_buy=3, rec_buy=5, rec_hold=2, rec_sell=1,
+        recent_upgrades=0, recent_downgrades=0,
+        latest_action=None, latest_firm=None, latest_to_grade=None,
+    )])
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].earnings_soon is True
+
+
+def test_earnings_soon_not_set_when_far(score_conn):
+    _add_ticker(score_conn)
+    _add_analyst(score_conn, upgrades=0)  # next_earnings = 2026-07-30, which is > 7 days
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].earnings_soon is False
+
+
+# ---- Phase 3: history written ----
+
+def test_compute_all_writes_to_history(score_conn):
+    _add_ticker(score_conn)
+    _add_technical(score_conn, golden_cross=True, rsi14=40.0)
+    boom_score_source.compute_all(["GME"], score_conn)
+    history = db.get_boom_score_history(score_conn, "GME")
+    assert len(history) >= 1
+    assert "score" in history[0]
+    assert "computed_at" in history[0]
+
+
+# ---- Phase 3: congress amount weighting ----
+
+def test_congress_buy_larger_amount_scores_higher(score_conn):
+    _add_ticker(score_conn)
+    _add_congress_purchase(score_conn, amount_range="> $500,000")  # weight 2.0
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].congress_buy is True
+    # Base weight 15 × 2.0 = 30
+    assert scores[0].score >= 25

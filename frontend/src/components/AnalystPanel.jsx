@@ -1,6 +1,6 @@
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
-import { formatDate } from "../lib/format";
+import { formatDate, formatRelativeTime } from "../lib/format";
 import styles from "./AnalystPanel.module.css";
 
 function SkeletonRows({ rows = 6 }) {
@@ -14,8 +14,16 @@ function SkeletonRows({ rows = 6 }) {
       <td><Skeleton w="32px" /></td>
       <td><Skeleton w="56px" /></td>
       <td><Skeleton w="80px" /></td>
+      <td><Skeleton w="60px" /></td>
     </tr>
   ));
+}
+
+function FreshnessCell({ fetched_at }) {
+  const text = formatRelativeTime(fetched_at);
+  const hrAgo = (Date.now() - new Date(fetched_at).getTime()) / 3600000;
+  const tone = hrAgo < 1 ? "fresh" : hrAgo < 6 ? "mid" : "stale";
+  return <span className={styles.freshness} data-tone={tone}>{text}</span>;
 }
 
 function actionTone(action) {
@@ -65,6 +73,7 @@ export default function AnalystPanel({ data, loading, busy, onRefresh }) {
                 <th>Sell</th>
                 <th>Latest</th>
                 <th>Firm</th>
+                <th>Updated</th>
               </tr>
             </thead>
             <tbody>
@@ -85,6 +94,7 @@ export default function AnalystPanel({ data, loading, busy, onRefresh }) {
                       </span>
                     </td>
                     <td className={styles.firm}>{s.latest_firm || "—"}</td>
+                    <td><FreshnessCell fetched_at={s.fetched_at} /></td>
                   </tr>
                 ))
               )}

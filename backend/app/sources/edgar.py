@@ -92,15 +92,27 @@ def parse_form4_xml(
     else:
         role = "Insider"
 
+    # Skip entire filing if it's a pre-arranged 10b5-1 automatic plan.
+    footnotes = " ".join(re.findall(r"<footnote[^>]*>(.*?)</footnote>", xml_text, re.S))
+    if "10b5-1" in footnotes.lower():
+        return None
+
     blocks = re.findall(
         r"<nonDerivativeTransaction>(.*?)</nonDerivativeTransaction>", xml_text, re.S
     )
+    # Only open-market purchases (P) and sales (S) carry informational content.
+    open_market_blocks = [b for b in blocks
+                          if (_tag(b, "transactionCode") or "").strip().upper() in ("P", "S")]
+
+    if not open_market_blocks:
+        return None
+
     total_shares = 0.0
     total_value = 0.0
     latest_date = ""
     best_value = -1.0
     best_code = ""
-    for b in blocks:
+    for b in open_market_blocks:
         try:
             shares = float(_value(b, "transactionShares") or 0)
         except ValueError:
@@ -119,9 +131,6 @@ def parse_form4_xml(
         if line_value >= best_value:
             best_value = line_value
             best_code = code
-
-    if not blocks:
-        return None
 
     return InsiderTrade(
         accession=accession,

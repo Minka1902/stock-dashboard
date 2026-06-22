@@ -28,6 +28,59 @@ def compute_ma(closes: list[float], period: int) -> float | None:
     return sum(closes[-period:]) / period
 
 
+def compute_ema(closes: list[float], period: int) -> list[float | None]:
+    """Exponential moving average — returns same-length list; first period-1 values are None."""
+    if not closes:
+        return []
+    out: list[float | None] = [None] * len(closes)
+    k = 2.0 / (period + 1)
+    # Seed with the first valid SMA.
+    seed_start = period - 1
+    if len(closes) < period:
+        return out
+    sma = sum(closes[:period]) / period
+    out[seed_start] = sma
+    for i in range(seed_start + 1, len(closes)):
+        prev = out[i - 1]
+        out[i] = closes[i] * k + prev * (1 - k)  # type: ignore[operator]
+    return out
+
+
+def compute_macd(
+    closes: list[float],
+) -> tuple[float | None, float | None, bool | None]:
+    """Returns (macd_value, signal_value, crossover_in_last_3_bars).
+
+    Crossover = MACD line was below signal 3 bars ago and is now above it.
+    Returns (None, None, None) when insufficient data.
+    """
+    if len(closes) < 35:
+        return None, None, None
+    ema12 = compute_ema(closes, 12)
+    ema26 = compute_ema(closes, 26)
+    macd_line: list[float | None] = [
+        (a - b) if a is not None and b is not None else None
+        for a, b in zip(ema12, ema26)
+    ]
+    macd_valid = [v for v in macd_line if v is not None]
+    if len(macd_valid) < 9:
+        return None, None, None
+    signal_ema = compute_ema(macd_valid, 9)
+    signal_valid = [v for v in signal_ema if v is not None]
+    if len(signal_valid) < 4:
+        return None, None, None
+    macd_val = macd_valid[-1]
+    signal_val = signal_valid[-1]
+    # Crossover: MACD crossed above signal within last 3 bars.
+    crossover = (
+        macd_valid[-1] > signal_valid[-1]
+        and len(macd_valid) >= 4
+        and len(signal_valid) >= 4
+        and macd_valid[-4] < signal_valid[-4]
+    )
+    return round(macd_val, 4), round(signal_val, 4), crossover
+
+
 def compute_rsi(closes: list[float], period: int = 14) -> float | None:
     """Wilder's smoothed RSI. Returns None if fewer than period+1 closes."""
     if len(closes) < period + 1:
@@ -47,25 +100,41 @@ def compute_rsi(closes: list[float], period: int = 14) -> float | None:
 
 # ---------- parsers ----------
 
-def _parse_alphavantage(payload: dict) -> list[float]:
+def _parse_alphavantage(payload: dict) -> tuple[list[float], list[float]]:
+    """Returns (closes, volumes) oldest-first."""
     ts = payload.get("Time Series (Daily)", {})
-    return [float(ts[d]["4. close"]) for d in sorted(ts.keys()) if ts[d].get("4. close")]
+    dates = sorted(ts.keys())
+    closes = [float(ts[d]["4. close"]) for d in dates if ts[d].get("4. close")]
+    volumes = []
+    for d in dates:
+        try:
+            volumes.append(float(ts[d].get("5. volume", 0) or 0))
+        except (ValueError, TypeError):
+            volumes.append(0.0)
+    return closes, volumes
 
 
-def _parse_yahoo(payload: dict) -> list[float]:
+def _parse_yahoo(payload: dict) -> tuple[list[float], list[float]]:
+    """Returns (closes, volumes) oldest-first."""
     result = (payload.get("chart") or {}).get("result") or []
     if not result:
-        return []
-    closes = (result[0].get("indicators") or {}).get("quote", [{}])[0].get("close", [])
-    return [c for c in closes if c is not None]
+        return [], []
+    quote = (result[0].get("indicators") or {}).get("quote", [{}])[0]
+    closes_raw = quote.get("close", [])
+    volumes_raw = quote.get("volume", [])
+    closes = [c for c in closes_raw if c is not None]
+    volumes = [float(v) if v is not None else 0.0 for v in volumes_raw if v is not None]
+    return closes, volumes
 
 
 def parse_response(payload: dict, ticker: str, fetched_at: str) -> TechnicalSignal | None:
     closes: list[float] = []
+    volumes: list[float] = []
+
     if "Time Series (Daily)" in payload:
-        closes = _parse_alphavantage(payload)
+        closes, volumes = _parse_alphavantage(payload)
     elif "chart" in payload:
-        closes = _parse_yahoo(payload)
+        closes, volumes = _parse_yahoo(payload)
 
     if len(closes) < 15:
         return None
@@ -81,6 +150,16 @@ def parse_response(payload: dict, ticker: str, fetched_at: str) -> TechnicalSign
     high_52w = max(closes[-252:]) if len(closes) >= 252 else max(closes)
     low_52w = min(closes[-252:]) if len(closes) >= 252 else min(closes)
 
+    macd_val, macd_signal_val, macd_crossover = compute_macd(closes)
+
+    # Relative volume: today's volume vs 20-day average.
+    rel_volume: float | None = None
+    recent_vols = [v for v in volumes[-21:-1] if v > 0]  # last 20 bars (excluding today)
+    if recent_vols and volumes:
+        avg_vol = sum(recent_vols) / len(recent_vols)
+        if avg_vol > 0:
+            rel_volume = round(volumes[-1] / avg_vol, 2)
+
     return TechnicalSignal(
         ticker=ticker.upper(),
         fetched_at=fetched_at,
@@ -93,6 +172,11 @@ def parse_response(payload: dict, ticker: str, fetched_at: str) -> TechnicalSign
         high_52w=round(high_52w, 4),
         low_52w=round(low_52w, 4),
         prices_json=json.dumps([round(c, 4) for c in closes[-100:]]),
+        macd=macd_val,
+        macd_signal=macd_signal_val,
+        macd_crossover=macd_crossover,
+        rel_volume=rel_volume,
+        volume_json=json.dumps([round(v, 0) for v in volumes[-20:]]),
     )
 
 

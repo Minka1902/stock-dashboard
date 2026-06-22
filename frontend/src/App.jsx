@@ -17,6 +17,7 @@ import BoomScorePanel from "./components/BoomScorePanel";
 import ShortPanel from "./components/ShortPanel";
 import SocialPanel from "./components/SocialPanel";
 import AnalystPanel from "./components/AnalystPanel";
+import FundamentalsPanel from "./components/FundamentalsPanel";
 import styles from "./App.module.css";
 
 const TITLES = {
@@ -33,6 +34,7 @@ const TITLES = {
   short:       "Short Interest",
   social:      "WSB Sentiment",
   analyst:     "Analyst Ratings",
+  fundamentals: "Fundamentals",
 };
 
 export default function App() {
@@ -43,7 +45,7 @@ export default function App() {
   const {
     contracts, sources, news, trades, watchlist,
     yieldCurve, signals, fearGreed, congressTrades,
-    shortInterest, social, analyst, boomScores,
+    shortInterest, social, analyst, boomScores, fundamentals,
     loading, busy, error, refresh, addWatch, removeWatch,
   } = data;
 
@@ -90,6 +92,7 @@ export default function App() {
                 <SocialPanel data={social} loading={loading} busy={busy} onRefresh={refresh} />
               </div>
               <AnalystPanel data={analyst} loading={loading} busy={busy} onRefresh={refresh} />
+              <FundamentalsPanel data={fundamentals} loading={loading} busy={busy} onRefresh={refresh} />
             </>
           )}
 
@@ -139,6 +142,10 @@ export default function App() {
 
           {view === "analyst" && (
             <AnalystPanel data={analyst} loading={loading} busy={busy} onRefresh={refresh} />
+          )}
+
+          {view === "fundamentals" && (
+            <FundamentalsPanel data={fundamentals} loading={loading} busy={busy} onRefresh={refresh} />
           )}
         </div>
       </main>

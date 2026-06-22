@@ -1,5 +1,6 @@
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
+import { formatRelativeTime } from "../lib/format";
 import styles from "./ShortPanel.module.css";
 
 function SkeletonRows({ rows = 6 }) {
@@ -9,8 +10,16 @@ function SkeletonRows({ rows = 6 }) {
       <td><Skeleton w="64px" /></td>
       <td><Skeleton w="56px" /></td>
       <td><Skeleton w="70px" /></td>
+      <td><Skeleton w="60px" /></td>
     </tr>
   ));
+}
+
+function FreshnessCell({ fetched_at }) {
+  const text = formatRelativeTime(fetched_at);
+  const hrAgo = (Date.now() - new Date(fetched_at).getTime()) / 3600000;
+  const tone = hrAgo < 1 ? "fresh" : hrAgo < 6 ? "mid" : "stale";
+  return <span className={styles.freshness} data-tone={tone}>{text}</span>;
 }
 
 function fmtPct(v) {
@@ -57,6 +66,7 @@ export default function ShortPanel({ data, loading, busy, onRefresh }) {
                 <th>Short % Float</th>
                 <th>Days to Cover</th>
                 <th>Squeeze</th>
+                <th>Updated</th>
               </tr>
             </thead>
             <tbody>
@@ -75,6 +85,7 @@ export default function ShortPanel({ data, loading, busy, onRefresh }) {
                         <span className={styles.badge}>Normal</span>
                       )}
                     </td>
+                    <td><FreshnessCell fetched_at={s.fetched_at} /></td>
                   </tr>
                 ))
               )}

@@ -55,6 +55,15 @@
   font-size: 14px;
   color: var(--accent);
   min-width: 56px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.earningsWarn {
+  font-size: 11px;
+  color: oklch(0.72 0.15 60);
+  cursor: help;
 }
 
 .barWrap {
@@ -73,19 +82,48 @@
   transition: width 0.4s ease;
   background: var(--text-faint);
 }
-.bar[data-tone="high"] { background: var(--positive); }
-.bar[data-tone="mid"]  { background: oklch(0.72 0.15 60); }
-.bar[data-tone="low"]  { background: var(--text-faint); }
+.bar[data-tone="high"]  { background: var(--positive); }
+.bar[data-tone="mid"]   { background: oklch(0.72 0.15 60); }
+.bar[data-tone="low"]   { background: var(--accent); }
+.bar[data-tone="faint"] { background: var(--text-faint); }
+.bar[data-tone="neg"]   { background: var(--negative); }
 
 .scoreBadge {
   font-weight: 700;
   font-size: 14px;
-  min-width: 32px;
+  min-width: 36px;
   text-align: right;
   color: var(--text-muted);
 }
-.scoreBadge[data-tone="high"] { color: var(--positive); }
-.scoreBadge[data-tone="mid"]  { color: oklch(0.72 0.15 60); }
+.scoreBadge[data-tone="high"]  { color: var(--positive); }
+.scoreBadge[data-tone="mid"]   { color: oklch(0.72 0.15 60); }
+.scoreBadge[data-tone="low"]   { color: var(--accent); }
+.scoreBadge[data-tone="neg"]   { color: var(--negative); }
+
+.tier {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.tier[data-tone="high"]  { background: var(--positive-weak); color: var(--positive); }
+.tier[data-tone="mid"]   { background: oklch(0.95 0.05 60); color: oklch(0.55 0.15 60); }
+.tier[data-tone="low"]   { background: var(--accent-weak); color: var(--accent); }
+.tier[data-tone="neg"]   { background: var(--negative-weak); color: var(--negative); }
+
+.sparkWrap {
+  display: inline-flex;
+  align-items: center;
+}
+
+.mixedWarn {
+  font-size: 13px;
+  cursor: help;
+  color: oklch(0.72 0.15 60);
+}
 
 .chips {
   display: flex;
@@ -94,13 +132,27 @@
 }
 
 .chip {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   padding: 2px 8px;
   border-radius: var(--r-pill);
   font-size: 11px;
   font-weight: 600;
   background: var(--accent-weak);
   color: var(--accent);
+  cursor: help;
+}
+.chip[data-tone="bear"] {
+  background: var(--negative-weak);
+  color: var(--negative);
+}
+
+.horizon {
+  font-size: 9px;
+  font-weight: 700;
+  opacity: 0.7;
+  letter-spacing: 0.02em;
 }
 
 .empty {

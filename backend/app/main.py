@@ -17,6 +17,7 @@ import app.sources.congress as congress_source
 import app.sources.short_interest as short_interest_source
 import app.sources.social as social_source
 import app.sources.analyst as analyst_source
+import app.sources.fundamentals as fundamentals_source
 import app.sources.boom_score as boom_score_source
 
 
@@ -39,6 +40,13 @@ def signals_fetch():
     if not tickers:
         return []
     return technical_source.fetch(tickers, config.ALPHA_VANTAGE_KEY)
+
+
+def fundamentals_fetch():
+    tickers = [w.ticker for w in db.get_watchlist(conn)]
+    if not tickers:
+        return []
+    return fundamentals_source.fetch(tickers)
 
 
 def score_fetch():
@@ -64,6 +72,7 @@ SOURCES = {
     "short_interest": (lambda: short_interest_source.fetch([w.ticker for w in db.get_watchlist(conn)]), db.upsert_short_interest, None),
     "social":         (lambda: social_source.fetch([w.ticker for w in db.get_watchlist(conn)]), db.upsert_social_sentiment, None),
     "analyst":        (lambda: analyst_source.fetch([w.ticker for w in db.get_watchlist(conn)]), db.upsert_analyst_signals, None),
+    "fundamentals":   (lambda: fundamentals_fetch(), db.upsert_fundamentals, None),
     "boom_score":     (lambda: score_fetch(), db.upsert_boom_scores, None),  # must be last
 }
 
@@ -156,6 +165,16 @@ def analyst():
 @app.get("/api/boom-scores")
 def boom_scores():
     return [s.model_dump() for s in db.get_boom_scores(conn)]
+
+
+@app.get("/api/fundamentals")
+def fundamentals():
+    return [f.model_dump() for f in db.get_fundamentals(conn)]
+
+
+@app.get("/api/boom-scores/history/{ticker}")
+def boom_score_history(ticker: str):
+    return db.get_boom_score_history(conn, ticker.upper())
 
 
 # ---------- watchlist (user managed, no external source) ----------

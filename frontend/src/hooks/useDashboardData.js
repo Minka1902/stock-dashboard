@@ -13,6 +13,7 @@ import {
   getSocial,
   getAnalyst,
   getBoomScores,
+  getFundamentals,
   refreshSource,
   addWatch as apiAddWatch,
   removeWatch as apiRemoveWatch,
@@ -22,7 +23,7 @@ const REFRESH_MS = 180000; // 3 minutes, matches backend default
 const EXTERNAL_SOURCES = [
   "usaspending", "gdelt", "edgar",
   "yield_curve", "technical", "fear_greed", "congress",
-  "short_interest", "social", "analyst", "boom_score",
+  "short_interest", "social", "analyst", "fundamentals", "boom_score",
 ];
 
 /**
@@ -44,13 +45,14 @@ export function useDashboardData() {
   const [social, setSocial] = useState([]);
   const [analyst, setAnalyst] = useState([]);
   const [boomScores, setBoomScores] = useState([]);
+  const [fundamentals, setFundamentals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     try {
-      const [c, s, n, t, w, yc, sig, fg, ct, si, soc, ana, bs] = await Promise.all([
+      const [c, s, n, t, w, yc, sig, fg, ct, si, soc, ana, bs, fund] = await Promise.all([
         getContracts(),
         getSources(),
         getNews(),
@@ -64,6 +66,7 @@ export function useDashboardData() {
         getSocial(),
         getAnalyst(),
         getBoomScores(),
+        getFundamentals(),
       ]);
       setContracts(c);
       setSources(s);
@@ -78,6 +81,7 @@ export function useDashboardData() {
       setSocial(soc);
       setAnalyst(ana);
       setBoomScores(bs);
+      setFundamentals(fund);
       setError(null);
     } catch (e) {
       setError(e.message);
@@ -128,6 +132,7 @@ export function useDashboardData() {
     social,
     analyst,
     boomScores,
+    fundamentals,
     loading,
     busy,
     error,

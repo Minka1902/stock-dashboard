@@ -141,3 +141,12 @@
   opacity: 0.6;
   cursor: default;
 }
+
+.freshness {
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--text-faint);
+}
+.freshness[data-tone="fresh"] { color: var(--positive); }
+.freshness[data-tone="mid"]   { color: oklch(0.72 0.15 60); }
+.freshness[data-tone="stale"] { color: var(--negative); }
