@@ -5,13 +5,20 @@ import {
   getNews,
   getTrades,
   getWatchlist,
+  getYieldCurve,
+  getSignals,
+  getFearGreed,
+  getCongressTrades,
   refreshSource,
   addWatch as apiAddWatch,
   removeWatch as apiRemoveWatch,
 } from "../api";
 
 const REFRESH_MS = 180000; // 3 minutes, matches backend default
-const EXTERNAL_SOURCES = ["usaspending", "gdelt", "edgar"];
+const EXTERNAL_SOURCES = [
+  "usaspending", "gdelt", "edgar",
+  "yield_curve", "technical", "fear_greed", "congress",
+];
 
 /**
  * Owns all dashboard data: contracts, sources, news, insider trades, watchlist.
@@ -24,24 +31,36 @@ export function useDashboardData() {
   const [news, setNews] = useState([]);
   const [trades, setTrades] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
+  const [yieldCurve, setYieldCurve] = useState([]);
+  const [signals, setSignals] = useState([]);
+  const [fearGreed, setFearGreed] = useState([]);
+  const [congressTrades, setCongressTrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     try {
-      const [c, s, n, t, w] = await Promise.all([
+      const [c, s, n, t, w, yc, sig, fg, ct] = await Promise.all([
         getContracts(),
         getSources(),
         getNews(),
         getTrades(),
         getWatchlist(),
+        getYieldCurve(),
+        getSignals(),
+        getFearGreed(),
+        getCongressTrades(),
       ]);
       setContracts(c);
       setSources(s);
       setNews(n);
       setTrades(t);
       setWatchlist(w);
+      setYieldCurve(yc);
+      setSignals(sig);
+      setFearGreed(fg);
+      setCongressTrades(ct);
       setError(null);
     } catch (e) {
       setError(e.message);
@@ -84,6 +103,10 @@ export function useDashboardData() {
     news,
     trades,
     watchlist,
+    yieldCurve,
+    signals,
+    fearGreed,
+    congressTrades,
     loading,
     busy,
     error,

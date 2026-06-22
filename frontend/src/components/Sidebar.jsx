@@ -2,11 +2,15 @@ import Icon from "./Icon";
 import styles from "./Sidebar.module.css";
 
 const NAV = [
-  { key: "overview", label: "Overview", icon: "overview" },
-  { key: "contracts", label: "Contracts", icon: "contract" },
-  { key: "trades", label: "Trades", icon: "trending" },
-  { key: "news", label: "News", icon: "news" },
-  { key: "watchlist", label: "Watchlist", icon: "star" },
+  { key: "overview",    label: "Overview",     icon: "overview"  },
+  { key: "contracts",   label: "Contracts",    icon: "contract"  },
+  { key: "trades",      label: "Trades",       icon: "trending"  },
+  { key: "news",        label: "News",         icon: "news"      },
+  { key: "watchlist",   label: "Watchlist",    icon: "star"      },
+  { key: "yield-curve", label: "Yield Curve",  icon: "trending"  },
+  { key: "signals",     label: "Signals",      icon: "spark"     },
+  { key: "fear-greed",  label: "Fear & Greed", icon: "sun"       },
+  { key: "congress",    label: "Congress",     icon: "layers"    },
 ];
 
 export default function Sidebar({ view, onNavigate }) {

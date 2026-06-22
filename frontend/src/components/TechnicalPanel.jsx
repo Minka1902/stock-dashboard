@@ -1,0 +1,125 @@
+import { LineChart, Line, ResponsiveContainer } from "recharts";
+import Icon from "./Icon";
+import Skeleton from "./Skeleton";
+import { formatCurrencyCompact } from "../lib/format";
+import styles from "./TechnicalPanel.module.css";
+
+function RsiCell({ rsi }) {
+  if (rsi == null) return <span className={styles.muted}>—</span>;
+  const tone = rsi < 30 ? "oversold" : rsi > 70 ? "overbought" : "neutral";
+  return <span className={styles.rsi} data-tone={tone}>{rsi.toFixed(1)}</span>;
+}
+
+function CrossCell({ golden_cross }) {
+  if (golden_cross == null) return <span className={styles.muted}>—</span>;
+  return (
+    <span className={styles.badge} data-tone={golden_cross ? "buy" : "sell"}>
+      {golden_cross ? "Golden" : "Death"}
+    </span>
+  );
+}
+
+function MiniSparkline({ pricesJson }) {
+  let prices = [];
+  try { prices = JSON.parse(pricesJson); } catch { /* empty */ }
+  if (prices.length < 2) return <span className={styles.muted}>—</span>;
+  const data = prices.map((v, i) => ({ i, v }));
+  const last = prices[prices.length - 1];
+  const first = prices[0];
+  const color = last >= first ? "var(--positive)" : "var(--negative)";
+  return (
+    <ResponsiveContainer width={60} height={28}>
+      <LineChart data={data}>
+        <Line type="monotone" dataKey="v" dot={false} strokeWidth={1.5} stroke={color} isAnimationActive={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function SkeletonRows({ rows = 5 }) {
+  return Array.from({ length: rows }).map((_, i) => (
+    <tr key={i}>
+      <td><Skeleton w="50px" /></td>
+      <td className={styles.num}><Skeleton w="52px" /></td>
+      <td className={styles.num}><Skeleton w="44px" /></td>
+      <td className={styles.num}><Skeleton w="38px" /></td>
+      <td className={styles.num}><Skeleton w="52px" /></td>
+      <td className={styles.num}><Skeleton w="52px" /></td>
+      <td><Skeleton w="56px" /></td>
+      <td className={styles.num}><Skeleton w="52px" /></td>
+      <td className={styles.num}><Skeleton w="52px" /></td>
+    </tr>
+  ));
+}
+
+export default function TechnicalPanel({ data, loading, busy, onRefresh }) {
+  const showEmpty = !loading && data.length === 0;
+
+  return (
+    <section className={styles.panel} id="signals">
+      <header className={styles.head}>
+        <div>
+          <h2 className={styles.title}>Technical Signals</h2>
+          <p className={styles.subtitle}>
+            RSI · moving averages · 52-week range · per watchlist ticker
+          </p>
+        </div>
+      </header>
+
+      {showEmpty ? (
+        <div className={styles.empty}>
+          <span className={styles.emptyIcon}><Icon name="spark" size={24} /></span>
+          <p className={styles.emptyTitle}>Add tickers to your watchlist to see signals</p>
+          <button className={styles.emptyBtn} onClick={onRefresh} disabled={busy}>
+            {busy ? "Refreshing…" : "Refresh now"}
+          </button>
+        </div>
+      ) : (
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th className={styles.num}>Price</th>
+                <th className={styles.num}>Chg%</th>
+                <th className={styles.num}>RSI14</th>
+                <th className={styles.num}>MA50</th>
+                <th className={styles.num}>MA200</th>
+                <th>Cross</th>
+                <th className={styles.num}>52W Hi</th>
+                <th className={styles.num}>52W Lo</th>
+                <th>Trend</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <SkeletonRows />
+              ) : (
+                data.map((s) => (
+                  <tr key={s.ticker}>
+                    <td className={styles.ticker}>{s.ticker}</td>
+                    <td className={`${styles.num} tabular`}>{s.price != null ? formatCurrencyCompact(s.price) : "—"}</td>
+                    <td className={`${styles.num} tabular`}>
+                      {s.change_pct != null ? (
+                        <span data-tone={s.change_pct >= 0 ? "pos" : "neg"} className={styles.chg}>
+                          {s.change_pct >= 0 ? "+" : ""}{s.change_pct.toFixed(2)}%
+                        </span>
+                      ) : "—"}
+                    </td>
+                    <td className={styles.num}><RsiCell rsi={s.rsi14} /></td>
+                    <td className={`${styles.num} tabular`}>{s.ma50 != null ? formatCurrencyCompact(s.ma50) : "—"}</td>
+                    <td className={`${styles.num} tabular`}>{s.ma200 != null ? formatCurrencyCompact(s.ma200) : "—"}</td>
+                    <td><CrossCell golden_cross={s.golden_cross} /></td>
+                    <td className={`${styles.num} tabular`}>{s.high_52w != null ? formatCurrencyCompact(s.high_52w) : "—"}</td>
+                    <td className={`${styles.num} tabular`}>{s.low_52w != null ? formatCurrencyCompact(s.low_52w) : "—"}</td>
+                    <td><MiniSparkline pricesJson={s.prices_json} /></td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}

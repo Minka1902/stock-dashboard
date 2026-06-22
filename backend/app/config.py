@@ -31,6 +31,18 @@ SEC_USER_AGENT = os.environ.get(
 EDGAR_LIMIT = int(os.environ.get("STOCKS_EDGAR_LIMIT", "25"))
 
 
+# --- Technical signals (Alpha Vantage) ---
+# Set to a free AV key to use as primary; falls back to Yahoo Finance if unset.
+ALPHA_VANTAGE_KEY: str | None = os.environ.get("STOCKS_ALPHA_VANTAGE_KEY") or None
+
+# --- Congressional trades ---
+CONGRESS_LOOKBACK_DAYS = int(os.environ.get("STOCKS_CONGRESS_LOOKBACK_DAYS", "90"))
+CONGRESS_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_CONGRESS_MIN_INTERVAL_SECONDS", "21600"))
+
+# --- Yield curve ---
+YIELD_CURVE_MONTHS = int(os.environ.get("STOCKS_YIELD_CURVE_MONTHS", "3"))
+
+
 def contracts_date_window() -> tuple[str, str]:
     """Return (start_date, end_date) ISO strings for the lookback window."""
     end = date.today()
