@@ -77,3 +77,79 @@ def test_parse_form4_xml_aggregates_transaction():
 def test_parse_form4_xml_returns_none_without_transactions():
     xml = "<ownershipDocument><issuer><issuerTradingSymbol>X</issuerTradingSymbol></issuer></ownershipDocument>"
     assert edgar.parse_form4_xml(xml, "A", "u", "t") is None
+
+
+# ---- 10b5-1 filtering ----
+
+FORM4_10B51 = """<ownershipDocument>
+  <issuer>
+    <issuerName>ACME CORP</issuerName>
+    <issuerTradingSymbol>ACME</issuerTradingSymbol>
+  </issuer>
+  <reportingOwner>
+    <reportingOwnerId><rptOwnerName>John Doe</rptOwnerName></reportingOwnerId>
+    <reportingOwnerRelationship><isDirector>1</isDirector></reportingOwnerRelationship>
+  </reportingOwner>
+  <footnotes>
+    <footnote id="F1">Transaction made pursuant to a Rule 10b5-1 trading plan.</footnote>
+  </footnotes>
+  <nonDerivativeTable>
+    <nonDerivativeTransaction>
+      <transactionDate><value>2026-06-18</value></transactionDate>
+      <transactionCoding><transactionCode>P</transactionCode></transactionCoding>
+      <transactionAmounts>
+        <transactionShares><value>1000</value></transactionShares>
+        <transactionPricePerShare><value>50.0</value></transactionPricePerShare>
+      </transactionAmounts>
+    </nonDerivativeTransaction>
+  </nonDerivativeTable>
+</ownershipDocument>"""
+
+
+def test_parse_form4_xml_skips_10b51_filings():
+    result = edgar.parse_form4_xml(FORM4_10B51, "ACC-2", "https://sec.gov/y", "2026-06-22T00:00:00")
+    assert result is None, "10b5-1 filings should be filtered out"
+
+
+# ---- open-market-only filtering ----
+
+FORM4_NON_OPEN_MARKET = """<ownershipDocument>
+  <issuer>
+    <issuerName>ACME CORP</issuerName>
+    <issuerTradingSymbol>ACME</issuerTradingSymbol>
+  </issuer>
+  <reportingOwner>
+    <reportingOwnerId><rptOwnerName>Jane Smith</rptOwnerName></reportingOwnerId>
+    <reportingOwnerRelationship><isOfficer>1</isOfficer><officerTitle>CFO</officerTitle></reportingOwnerRelationship>
+  </reportingOwner>
+  <nonDerivativeTable>
+    <nonDerivativeTransaction>
+      <transactionDate><value>2026-06-18</value></transactionDate>
+      <transactionCoding><transactionCode>A</transactionCode></transactionCoding>
+      <transactionAmounts>
+        <transactionShares><value>500</value></transactionShares>
+        <transactionPricePerShare><value>0.0</value></transactionPricePerShare>
+      </transactionAmounts>
+    </nonDerivativeTransaction>
+    <nonDerivativeTransaction>
+      <transactionDate><value>2026-06-19</value></transactionDate>
+      <transactionCoding><transactionCode>F</transactionCode></transactionCoding>
+      <transactionAmounts>
+        <transactionShares><value>100</value></transactionShares>
+        <transactionPricePerShare><value>50.0</value></transactionPricePerShare>
+      </transactionAmounts>
+    </nonDerivativeTransaction>
+  </nonDerivativeTable>
+</ownershipDocument>"""
+
+
+def test_parse_form4_xml_skips_non_open_market_codes():
+    result = edgar.parse_form4_xml(FORM4_NON_OPEN_MARKET, "ACC-3", "https://sec.gov/z", "2026-06-22T00:00:00")
+    assert result is None, "Award (A) and tax-withholding (F) transactions should be filtered out"
+
+
+def test_parse_form4_xml_keeps_open_market_purchase():
+    xml = FORM4_XML  # contains transactionCode S (sell) which is open-market
+    result = edgar.parse_form4_xml(xml, "ACC-1", "https://sec.gov/x", "2026-06-22T09:11:58-04:00")
+    assert result is not None
+    assert result.transaction_type == "Sell"

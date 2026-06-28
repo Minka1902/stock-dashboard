@@ -43,8 +43,7 @@
   text-align: left;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
   color: var(--text-faint);
   background: var(--surface-2);
   padding: 10px var(--s-5);
@@ -61,6 +60,9 @@
   transition: background 0.12s ease;
 }
 
+.table tbody tr:nth-child(even) {
+  background: color-mix(in oklch, var(--surface-2) 45%, transparent);
+}
 .table tbody tr:hover {
   background: var(--surface-hover);
 }

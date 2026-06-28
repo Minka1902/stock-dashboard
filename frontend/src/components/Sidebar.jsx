@@ -11,6 +11,13 @@ const NAV = [
   { key: "signals",     label: "Signals",      icon: "spark"     },
   { key: "fear-greed",  label: "Fear & Greed", icon: "sun"       },
   { key: "congress",    label: "Congress",     icon: "layers"    },
+  { key: "boom-score",  label: "Boom Score",   icon: "spark"     },
+  { key: "short",       label: "Short Interest", icon: "trending" },
+  { key: "social",      label: "WSB Sentiment", icon: "news"     },
+  { key: "analyst",     label: "Analyst",      icon: "star"      },
+  { key: "fundamentals", label: "Fundamentals", icon: "star"     },
+  { key: "seasonality", label: "Seasonality",  icon: "calendar"  },
+  { key: "settings",    label: "Settings",     icon: "settings"  },
 ];
 
 export default function Sidebar({ view, onNavigate }) {

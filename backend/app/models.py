@@ -69,6 +69,11 @@ class TechnicalSignal(BaseModel):
     high_52w: float | None
     low_52w: float | None
     prices_json: str              # JSON array of last 100 closes for sparkline
+    macd: float | None = None
+    macd_signal: float | None = None
+    macd_crossover: bool | None = None
+    rel_volume: float | None = None
+    volume_json: str = "[]"       # JSON array of last 20 daily volumes
 
 
 class FearGreedSnapshot(BaseModel):
@@ -89,3 +94,91 @@ class CongressTrade(BaseModel):
     amount_range: str      # e.g. "$1,001 - $15,000"
     filed_at: str
     chamber: str           # "house" | "senate"
+
+
+class ShortInterest(BaseModel):
+    ticker: str                      # PRIMARY KEY
+    fetched_at: str
+    shares_short: int | None
+    short_pct_float: float | None    # 0.15 = 15%
+    days_to_cover: float | None      # short ratio (days to unwind)
+    prior_month_shares: int | None
+    squeeze_flag: bool               # short_pct_float > 0.15
+
+
+class SocialSentiment(BaseModel):
+    ticker: str           # PRIMARY KEY
+    fetched_at: str
+    mentions: int | None
+    upvotes: int | None
+    rank: int | None            # current rank (1 = most mentioned)
+    rank_24h_ago: int | None
+    rank_change: int | None     # rank_24h_ago - rank (positive = rising)
+
+
+class AnalystSignal(BaseModel):
+    ticker: str               # PRIMARY KEY
+    fetched_at: str
+    next_earnings: str | None  # ISO date YYYY-MM-DD
+    rec_strong_buy: int | None
+    rec_buy: int | None
+    rec_hold: int | None
+    rec_sell: int | None
+    recent_upgrades: int       # count of "up" or "init" actions in last 30 days
+    recent_downgrades: int     # count of "down" actions in last 30 days
+    latest_action: str | None  # "up" | "down" | "init"
+    latest_firm: str | None
+    latest_to_grade: str | None  # e.g. "Buy", "Outperform"
+
+
+class BoomScore(BaseModel):
+    ticker: str         # PRIMARY KEY
+    computed_at: str
+    score: int          # can be negative (−90 … +100)
+    components: str     # JSON dict of fired signals and their points
+    # bullish signals
+    golden_cross: bool
+    rsi_recovery: bool
+    insider_cluster_buy: bool
+    congress_buy: bool
+    short_squeeze: bool
+    wsb_rising: bool
+    analyst_upgrade: bool
+    near_52w_high: bool = False
+    macd_crossover: bool = False
+    volume_confirmed: bool = False
+    fear_greed_contrarian: bool = False
+    yield_uninversion: bool = False
+    contracts_catalyst: bool = False
+    # bearish signals (fire when score is negative contribution)
+    death_cross: bool = False
+    insider_cluster_sell: bool = False
+    overbought_rsi: bool = False
+    congress_sale: bool = False
+    analyst_downgrade_cluster: bool = False
+    extreme_greed: bool = False
+    # risk / meta flags
+    earnings_soon: bool = False
+    mixed_signals: bool = False
+
+
+class Fundamentals(BaseModel):
+    ticker: str           # PRIMARY KEY
+    fetched_at: str
+    sector: str | None
+    industry: str | None
+    pe_ratio: float | None
+    forward_pe: float | None
+    peg_ratio: float | None
+    pb_ratio: float | None
+    revenue_growth: float | None
+    profit_margin: float | None
+    market_cap: float | None
+
+
+class Seasonality(BaseModel):
+    ticker: str            # PRIMARY KEY
+    computed_at: str
+    as_of: str             # "MM-DD" anchor (server compute date)
+    history_years: int     # distinct years with >=1 usable window value
+    windows_json: str      # JSON list of window objects (key/label/kind/per_year)
