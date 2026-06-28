@@ -1,0 +1,74 @@
+"""Tests for delivery resilience + portfolio/profile DB round-trips."""
+import sqlite3
+
+import pytest
+
+from app import db, notify
+from app.models import Holding, NotifyProfile
+
+
+@pytest.fixture
+def conn():
+    c = sqlite3.connect(":memory:")
+    c.row_factory = sqlite3.Row
+    db.init_schema(c)
+    yield c
+    c.close()
+
+
+# ---- DB round-trips ----
+
+def test_portfolio_roundtrip(conn):
+    db.upsert_holding(conn, Holding(ticker="AAPL", shares=10, avg_cost=100.0, added_at="t"))
+    db.upsert_holding(conn, Holding(ticker="AAPL", shares=15, avg_cost=110.0, added_at="t"))  # upsert
+    rows = db.get_portfolio(conn)
+    assert len(rows) == 1
+    assert rows[0].shares == 15 and rows[0].avg_cost == 110.0
+    db.remove_holding(conn, "AAPL")
+    assert db.get_portfolio(conn) == []
+
+
+def test_profile_roundtrip_and_default(conn):
+    # Default before anything is saved.
+    p = db.get_notify_profile(conn)
+    assert p.email is None and p.email_enabled is False
+    db.upsert_notify_profile(conn, NotifyProfile(
+        email="a@b.com", phone="+14155551234", email_enabled=True, sms_enabled=False, updated_at="t",
+    ))
+    p2 = db.get_notify_profile(conn)
+    assert p2.email == "a@b.com"
+    assert p2.email_enabled is True
+    assert p2.sms_enabled is False
+
+
+# ---- delivery is gated + resilient ----
+
+def test_send_email_skipped_when_disabled(conn):
+    p = NotifyProfile(email="a@b.com", email_enabled=False)
+    assert notify.send_email(p, "s", "t", "<b>h</b>") == "skipped: email not enabled"
+
+
+def test_send_email_skipped_when_smtp_unconfigured(conn, monkeypatch):
+    monkeypatch.setattr(notify.config, "SMTP_HOST", None)
+    p = NotifyProfile(email="a@b.com", email_enabled=True)
+    assert notify.send_email(p, "s", "t", "<b>h</b>") == "skipped: smtp not configured"
+
+
+def test_send_sms_skipped_when_unconfigured(conn, monkeypatch):
+    monkeypatch.setattr(notify.config, "TWILIO_ACCOUNT_SID", None)
+    p = NotifyProfile(phone="+14155551234", sms_enabled=True)
+    assert notify.send_sms(p, "hi") == "skipped: twilio not configured"
+
+
+def test_send_digest_logs_each_channel(conn, monkeypatch):
+    monkeypatch.setattr(notify.config, "SMTP_HOST", None)
+    monkeypatch.setattr(notify.config, "TWILIO_ACCOUNT_SID", None)
+    db.upsert_notify_profile(conn, NotifyProfile(
+        email="a@b.com", email_enabled=True, updated_at="t",
+    ))
+    results = notify.send_digest(conn, "2026-06-29")
+    channels = {r["channel"] for r in results}
+    assert channels == {"email", "sms"}
+    log = db.get_recent_suggestions(conn)
+    assert len(log) == 2
+    assert all(e.for_date == "2026-06-29" for e in log)

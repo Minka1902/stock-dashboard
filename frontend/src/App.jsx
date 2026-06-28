@@ -21,6 +21,8 @@ import AnalystPanel from "./components/AnalystPanel";
 import FundamentalsPanel from "./components/FundamentalsPanel";
 import SeasonalityPanel from "./components/SeasonalityPanel";
 import SettingsPanel from "./components/SettingsPanel";
+import SuggestionsPanel from "./components/SuggestionsPanel";
+import PortfolioPanel from "./components/PortfolioPanel";
 import styles from "./App.module.css";
 
 const TITLES = {
@@ -39,6 +41,8 @@ const TITLES = {
   analyst:     "Analyst Ratings",
   fundamentals: "Fundamentals",
   seasonality: "Seasonality",
+  suggestions: "Suggestions",
+  portfolio:   "Portfolio",
   settings:    "Settings",
 };
 
@@ -52,7 +56,8 @@ export default function App() {
     contracts, sources, news, trades, watchlist,
     yieldCurve, signals, fearGreed, congressTrades,
     shortInterest, social, analyst, boomScores, fundamentals, seasonality,
-    loading, busy, error, refresh, addWatch, removeWatch,
+    portfolio, suggestions,
+    loading, busy, error, refresh, addWatch, removeWatch, addHolding, removeHolding,
   } = data;
 
   return (
@@ -83,6 +88,7 @@ export default function App() {
           {view === "overview" && (
             <>
               <BoomScorePanel data={boomScores} loading={loading} busy={busy} onRefresh={refresh} />
+              <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} />
               <StatGrid contracts={contracts} sources={sources} loading={loading} />
               <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} />
               <div className={styles.twoCol}>
@@ -161,8 +167,16 @@ export default function App() {
             <SeasonalityPanel data={seasonality} settings={settings} loading={loading} busy={busy} onRefresh={refresh} />
           )}
 
+          {view === "suggestions" && (
+            <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} />
+          )}
+
+          {view === "portfolio" && (
+            <PortfolioPanel portfolio={portfolio} signals={signals} onAdd={addHolding} onRemove={removeHolding} />
+          )}
+
           {view === "settings" && (
-            <SettingsPanel settings={settings} setSetting={setSetting} />
+            <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={setView} />
           )}
         </div>
       </main>

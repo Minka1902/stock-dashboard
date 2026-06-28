@@ -17,6 +17,8 @@ const NAV = [
   { key: "analyst",     label: "Analyst",      icon: "star"      },
   { key: "fundamentals", label: "Fundamentals", icon: "star"     },
   { key: "seasonality", label: "Seasonality",  icon: "calendar"  },
+  { key: "suggestions", label: "Suggestions",  icon: "spark"     },
+  { key: "portfolio",   label: "Portfolio",    icon: "trending"  },
   { key: "settings",    label: "Settings",     icon: "settings"  },
 ];
 

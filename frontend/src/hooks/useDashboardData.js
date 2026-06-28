@@ -15,9 +15,13 @@ import {
   getBoomScores,
   getFundamentals,
   getSeasonality,
+  getPortfolio,
+  getSuggestions,
   refreshSource,
   addWatch as apiAddWatch,
   removeWatch as apiRemoveWatch,
+  addHolding as apiAddHolding,
+  removeHolding as apiRemoveHolding,
 } from "../api";
 
 const REFRESH_MS = 180000; // 3 minutes, matches backend default
@@ -48,13 +52,15 @@ export function useDashboardData() {
   const [boomScores, setBoomScores] = useState([]);
   const [fundamentals, setFundamentals] = useState([]);
   const [seasonality, setSeasonality] = useState([]);
+  const [portfolio, setPortfolio] = useState([]);
+  const [suggestions, setSuggestions] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     try {
-      const [c, s, n, t, w, yc, sig, fg, ct, si, soc, ana, bs, fund, seas] = await Promise.all([
+      const [c, s, n, t, w, yc, sig, fg, ct, si, soc, ana, bs, fund, seas, port, sugg] = await Promise.all([
         getContracts(),
         getSources(),
         getNews(),
@@ -70,6 +76,8 @@ export function useDashboardData() {
         getBoomScores(),
         getFundamentals(),
         getSeasonality(),
+        getPortfolio(),
+        getSuggestions(),
       ]);
       setContracts(c);
       setSources(s);
@@ -86,6 +94,8 @@ export function useDashboardData() {
       setBoomScores(bs);
       setFundamentals(fund);
       setSeasonality(seas);
+      setPortfolio(port);
+      setSuggestions(sugg);
       setError(null);
     } catch (e) {
       setError(e.message);
@@ -124,6 +134,14 @@ export function useDashboardData() {
     setWatchlist(await apiRemoveWatch(ticker));
   }, []);
 
+  const addHolding = useCallback(async (ticker, shares, avgCost) => {
+    setPortfolio(await apiAddHolding(ticker, shares, avgCost));
+  }, []);
+
+  const removeHolding = useCallback(async (ticker) => {
+    setPortfolio(await apiRemoveHolding(ticker));
+  }, []);
+
   return {
     contracts,
     sources,
@@ -140,11 +158,15 @@ export function useDashboardData() {
     boomScores,
     fundamentals,
     seasonality,
+    portfolio,
+    suggestions,
     loading,
     busy,
     error,
     refresh,
     addWatch,
     removeWatch,
+    addHolding,
+    removeHolding,
   };
 }

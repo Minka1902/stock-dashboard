@@ -182,3 +182,25 @@ class Seasonality(BaseModel):
     as_of: str             # "MM-DD" anchor (server compute date)
     history_years: int     # distinct years with >=1 usable window value
     windows_json: str      # JSON list of window objects (key/label/kind/per_year)
+
+
+class Holding(BaseModel):
+    ticker: str        # PRIMARY KEY (single-user portfolio)
+    shares: float
+    avg_cost: float
+    added_at: str
+
+
+class NotifyProfile(BaseModel):
+    email: str | None = None
+    phone: str | None = None       # E.164, e.g. +14155551234
+    email_enabled: bool = False
+    sms_enabled: bool = False
+    updated_at: str = ""
+
+
+class SuggestionLogEntry(BaseModel):
+    created_at: str
+    for_date: str                  # next trading day (YYYY-MM-DD)
+    channel: str                   # "email" | "sms"
+    status: str                    # "sent" | "skipped: ..." | "error: ..."
