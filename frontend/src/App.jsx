@@ -23,6 +23,7 @@ import SeasonalityPanel from "./components/SeasonalityPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import SuggestionsPanel from "./components/SuggestionsPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
+import AlertsPanel from "./components/AlertsPanel";
 import styles from "./App.module.css";
 
 const TITLES = {
@@ -42,6 +43,7 @@ const TITLES = {
   fundamentals: "Fundamentals",
   seasonality: "Seasonality",
   suggestions: "Suggestions",
+  alerts:      "Alerts",
   portfolio:   "Portfolio",
   settings:    "Settings",
 };
@@ -56,13 +58,14 @@ export default function App() {
     contracts, sources, news, trades, watchlist,
     yieldCurve, signals, fearGreed, congressTrades,
     shortInterest, social, analyst, boomScores, fundamentals, seasonality,
-    portfolio, suggestions,
+    portfolio, suggestions, alerts, unreadAlerts,
     loading, busy, error, refresh, addWatch, removeWatch, addHolding, removeHolding,
+    markAlertsRead,
   } = data;
 
   return (
     <div className={styles.app}>
-      <Sidebar view={view} onNavigate={setView} />
+      <Sidebar view={view} onNavigate={setView} unreadAlerts={unreadAlerts} />
 
       <main className={styles.main}>
         <div className={styles.inner}>
@@ -75,6 +78,8 @@ export default function App() {
             onToggleTheme={toggle}
             dyslexia={settings.dyslexia}
             onToggleDyslexia={() => setSetting("dyslexia", !settings.dyslexia)}
+            unreadAlerts={unreadAlerts}
+            onOpenAlerts={() => setView("alerts")}
           />
 
           {error && (
@@ -169,6 +174,10 @@ export default function App() {
 
           {view === "suggestions" && (
             <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} />
+          )}
+
+          {view === "alerts" && (
+            <AlertsPanel alerts={alerts} onMarkRead={markAlertsRead} />
           )}
 
           {view === "portfolio" && (

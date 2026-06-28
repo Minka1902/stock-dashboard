@@ -26,6 +26,17 @@ export const getPortfolio = () => getJSON("/api/portfolio");
 export const getProfile = () => getJSON("/api/profile");
 export const getSuggestions = () => getJSON("/api/suggestions");
 export const getSuggestionLog = () => getJSON("/api/suggestions/log");
+export const getAlerts = () => getJSON("/api/alerts");
+
+export async function markAlertsRead(payload = { all: true }) {
+  const res = await fetch(`${BASE}/api/alerts/read`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("could not mark alerts read");
+  return res.json();
+}
 
 export async function saveProfile(profile) {
   const res = await fetch(`${BASE}/api/profile`, {

@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app import config, db, ingest, notify, suggestions
+from app import alerts as alerts_source
 from app.market_calendar import is_trading_day, next_trading_day
 from app.models import Holding, NotifyProfile, WatchItem
 from app.sources import edgar, gdelt, usaspending
@@ -85,7 +86,8 @@ SOURCES = {
     "analyst":        (lambda: analyst_source.fetch([w.ticker for w in db.get_watchlist(conn)]), db.upsert_analyst_signals, None),
     "fundamentals":   (lambda: fundamentals_fetch(), db.upsert_fundamentals, None),
     "seasonality":    (lambda: seasonality_fetch(), db.upsert_seasonality, config.SEASONALITY_MIN_INTERVAL_SECONDS),
-    "boom_score":     (lambda: score_fetch(), db.upsert_boom_scores, None),  # must be last
+    "boom_score":     (lambda: score_fetch(), db.upsert_boom_scores, None),
+    "alerts":         (lambda: alerts_source.detect(conn), db.upsert_alerts, None),  # must be last (diffs boom_score)
 }
 
 scheduler = BackgroundScheduler()
@@ -288,6 +290,30 @@ def send_test_suggestions():
 @app.get("/api/suggestions/log")
 def suggestions_log():
     return [e.model_dump() for e in db.get_recent_suggestions(conn)]
+
+
+# ---------- alerts ----------
+class AlertsRead(BaseModel):
+    keys: list[str] | None = None
+    all: bool = False
+
+
+def _alerts_payload():
+    return {
+        "alerts": [a.model_dump() for a in db.get_alerts(conn)],
+        "unread": db.count_unread_alerts(conn),
+    }
+
+
+@app.get("/api/alerts")
+def alerts():
+    return _alerts_payload()
+
+
+@app.post("/api/alerts/read")
+def alerts_read(body: AlertsRead):
+    db.mark_alerts_read(conn, body.keys if not body.all else None)
+    return _alerts_payload()
 
 
 @app.get("/api/boom-scores/history/{ticker}")

@@ -203,5 +203,17 @@ class NotifyProfile(BaseModel):
 class SuggestionLogEntry(BaseModel):
     created_at: str
     for_date: str                  # next trading day (YYYY-MM-DD)
-    channel: str                   # "email" | "sms"
+    channel: str                   # "email" | "sms" | "alert"
     status: str                    # "sent" | "skipped: ..." | "error: ..."
+
+
+class Alert(BaseModel):
+    dedup_key: str          # stable id; UNIQUE → idempotent inserts
+    created_at: str
+    ticker: str
+    type: str               # boom_cross | golden_cross | insider_cluster | earnings_soon | congress_buy
+    severity: str           # "high" | "medium"
+    title: str
+    message: str
+    read: bool = False
+    pushed: bool = False

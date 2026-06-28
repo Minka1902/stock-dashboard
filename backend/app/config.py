@@ -73,6 +73,10 @@ DIGEST_TZ = os.environ.get("STOCKS_DIGEST_TZ", "America/New_York")
 # How many opportunity / holding suggestions to include.
 SUGGESTIONS_COUNT = int(os.environ.get("STOCKS_SUGGESTIONS_COUNT", "5"))
 
+# --- Alerts ---
+# Boom Score level whose upward crossing fires a high-severity alert.
+ALERT_BOOM_THRESHOLD = int(os.environ.get("STOCKS_ALERT_BOOM_THRESHOLD", "60"))
+
 
 def contracts_date_window() -> tuple[str, str]:
     """Return (start_date, end_date) ISO strings for the lookback window."""

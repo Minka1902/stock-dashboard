@@ -17,6 +17,8 @@ import {
   getSeasonality,
   getPortfolio,
   getSuggestions,
+  getAlerts,
+  markAlertsRead as apiMarkAlertsRead,
   refreshSource,
   addWatch as apiAddWatch,
   removeWatch as apiRemoveWatch,
@@ -54,13 +56,15 @@ export function useDashboardData() {
   const [seasonality, setSeasonality] = useState([]);
   const [portfolio, setPortfolio] = useState([]);
   const [suggestions, setSuggestions] = useState(null);
+  const [alerts, setAlerts] = useState([]);
+  const [unreadAlerts, setUnreadAlerts] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     try {
-      const [c, s, n, t, w, yc, sig, fg, ct, si, soc, ana, bs, fund, seas, port, sugg] = await Promise.all([
+      const [c, s, n, t, w, yc, sig, fg, ct, si, soc, ana, bs, fund, seas, port, sugg, al] = await Promise.all([
         getContracts(),
         getSources(),
         getNews(),
@@ -78,6 +82,7 @@ export function useDashboardData() {
         getSeasonality(),
         getPortfolio(),
         getSuggestions(),
+        getAlerts(),
       ]);
       setContracts(c);
       setSources(s);
@@ -96,6 +101,8 @@ export function useDashboardData() {
       setSeasonality(seas);
       setPortfolio(port);
       setSuggestions(sugg);
+      setAlerts(al.alerts);
+      setUnreadAlerts(al.unread);
       setError(null);
     } catch (e) {
       setError(e.message);
@@ -142,6 +149,12 @@ export function useDashboardData() {
     setPortfolio(await apiRemoveHolding(ticker));
   }, []);
 
+  const markAlertsRead = useCallback(async () => {
+    const { alerts: a, unread } = await apiMarkAlertsRead({ all: true });
+    setAlerts(a);
+    setUnreadAlerts(unread);
+  }, []);
+
   return {
     contracts,
     sources,
@@ -160,6 +173,8 @@ export function useDashboardData() {
     seasonality,
     portfolio,
     suggestions,
+    alerts,
+    unreadAlerts,
     loading,
     busy,
     error,
@@ -168,5 +183,6 @@ export function useDashboardData() {
     removeWatch,
     addHolding,
     removeHolding,
+    markAlertsRead,
   };
 }

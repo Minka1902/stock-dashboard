@@ -18,11 +18,12 @@ const NAV = [
   { key: "fundamentals", label: "Fundamentals", icon: "star"     },
   { key: "seasonality", label: "Seasonality",  icon: "calendar"  },
   { key: "suggestions", label: "Suggestions",  icon: "spark"     },
+  { key: "alerts",      label: "Alerts",       icon: "bell"      },
   { key: "portfolio",   label: "Portfolio",    icon: "trending"  },
   { key: "settings",    label: "Settings",     icon: "settings"  },
 ];
 
-export default function Sidebar({ view, onNavigate }) {
+export default function Sidebar({ view, onNavigate, unreadAlerts = 0 }) {
   return (
     <aside className={styles.sidebar}>
       <div className={styles.brand}>
@@ -43,6 +44,9 @@ export default function Sidebar({ view, onNavigate }) {
           >
             <Icon name={item.icon} size={18} />
             <span className={styles.itemLabel}>{item.label}</span>
+            {item.key === "alerts" && unreadAlerts > 0 && (
+              <span className={styles.navBadge}>{unreadAlerts > 9 ? "9+" : unreadAlerts}</span>
+            )}
           </button>
         ))}
       </nav>

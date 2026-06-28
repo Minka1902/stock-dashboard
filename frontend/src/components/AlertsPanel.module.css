@@ -1,0 +1,136 @@
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.head {
+  padding: var(--s-5);
+  border-bottom: 1px solid var(--border);
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.subtitle {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  max-width: 76ch;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: 14px var(--s-5);
+  border-top: 1px solid var(--border);
+}
+.item:first-child { border-top: none; }
+.item:hover { background: var(--surface-hover); }
+.item[data-unread="yes"] {
+  background: var(--accent-weak);
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  flex-shrink: 0;
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+.icon[data-sev="high"] {
+  background: var(--negative-weak);
+  color: var(--negative);
+}
+.icon[data-sev="medium"] {
+  background: var(--accent-weak);
+  color: var(--accent);
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+}
+
+.line1 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+
+.symbol {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.alertTitle {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sev {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.sev[data-sev="high"] { color: var(--negative); background: var(--negative-weak); }
+.sev[data-sev="medium"] { color: var(--text-muted); background: var(--surface-2); }
+
+.message {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.time {
+  color: var(--text-faint);
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 48px var(--s-5);
+}
+.emptyIcon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--r-md);
+  background: var(--accent-weak);
+  color: var(--accent);
+  margin-bottom: var(--s-2);
+}
+.emptyTitle {
+  font-weight: 600;
+  color: var(--text);
+}
+.emptyText {
+  color: var(--text-muted);
+  font-size: 13px;
+}
