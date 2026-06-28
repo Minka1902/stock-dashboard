@@ -19,6 +19,7 @@ const CHIP_META = {
   fear_greed_contrarian:  { label: "Fear Extreme",   tone: "bull", horizon: "M", tip: "Fear & Greed < 25 — extreme fear historically marks entry points" },
   yield_uninversion:      { label: "Curve Norm",     tone: "bull", horizon: "L", tip: "Yield curve un-inverted in last 30 days — historically bullish 6–18 months out" },
   contracts_catalyst:     { label: "Gov Contract",   tone: "bull", horizon: "M", tip: "Major federal contract (>$100M) awarded in last 30 days" },
+  seasonal_tailwind:      { label: "Seasonal ↑",     tone: "bull", horizon: "M", tip: "Strong historical edge for the coming week (avg ≥ +2%, win-rate ≥ 60% over 10y)" },
   // bearish
   death_cross:            { label: "Death ✕",        tone: "bear", horizon: "M", tip: "MA50 dropped below MA200 — medium-term downtrend" },
   insider_cluster_sell:   { label: "Insider Dump",   tone: "bear", horizon: "M", tip: "≥2 open-market insider sales in last 30 days" },

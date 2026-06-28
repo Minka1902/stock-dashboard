@@ -231,6 +231,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         ("fear_greed_contrarian",     "INTEGER NOT NULL DEFAULT 0"),
         ("yield_uninversion",         "INTEGER NOT NULL DEFAULT 0"),
         ("contracts_catalyst",        "INTEGER NOT NULL DEFAULT 0"),
+        ("seasonal_tailwind",         "INTEGER NOT NULL DEFAULT 0"),
         ("death_cross",               "INTEGER NOT NULL DEFAULT 0"),
         ("insider_cluster_sell",      "INTEGER NOT NULL DEFAULT 0"),
         ("overbought_rsi",            "INTEGER NOT NULL DEFAULT 0"),
@@ -630,7 +631,7 @@ _BOOM_BOOL_COLS = (
     "golden_cross", "rsi_recovery", "insider_cluster_buy", "congress_buy",
     "short_squeeze", "wsb_rising", "analyst_upgrade",
     "near_52w_high", "macd_crossover", "volume_confirmed", "fear_greed_contrarian",
-    "yield_uninversion", "contracts_catalyst",
+    "yield_uninversion", "contracts_catalyst", "seasonal_tailwind",
     "death_cross", "insider_cluster_sell", "overbought_rsi", "congress_sale",
     "analyst_downgrade_cluster", "extreme_greed", "earnings_soon", "mixed_signals",
 )
@@ -644,7 +645,7 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              golden_cross, rsi_recovery, insider_cluster_buy, congress_buy,
              short_squeeze, wsb_rising, analyst_upgrade,
              near_52w_high, macd_crossover, volume_confirmed, fear_greed_contrarian,
-             yield_uninversion, contracts_catalyst,
+             yield_uninversion, contracts_catalyst, seasonal_tailwind,
              death_cross, insider_cluster_sell, overbought_rsi, congress_sale,
              analyst_downgrade_cluster, extreme_greed, earnings_soon, mixed_signals)
         VALUES
@@ -652,7 +653,7 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              :golden_cross, :rsi_recovery, :insider_cluster_buy, :congress_buy,
              :short_squeeze, :wsb_rising, :analyst_upgrade,
              :near_52w_high, :macd_crossover, :volume_confirmed, :fear_greed_contrarian,
-             :yield_uninversion, :contracts_catalyst,
+             :yield_uninversion, :contracts_catalyst, :seasonal_tailwind,
              :death_cross, :insider_cluster_sell, :overbought_rsi, :congress_sale,
              :analyst_downgrade_cluster, :extreme_greed, :earnings_soon, :mixed_signals)
         ON CONFLICT(ticker) DO UPDATE SET
@@ -667,6 +668,7 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
             fear_greed_contrarian=excluded.fear_greed_contrarian,
             yield_uninversion=excluded.yield_uninversion,
             contracts_catalyst=excluded.contracts_catalyst,
+            seasonal_tailwind=excluded.seasonal_tailwind,
             death_cross=excluded.death_cross,
             insider_cluster_sell=excluded.insider_cluster_sell,
             overbought_rsi=excluded.overbought_rsi, congress_sale=excluded.congress_sale,

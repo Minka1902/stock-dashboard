@@ -150,6 +150,7 @@ class BoomScore(BaseModel):
     fear_greed_contrarian: bool = False
     yield_uninversion: bool = False
     contracts_catalyst: bool = False
+    seasonal_tailwind: bool = False
     # bearish signals (fire when score is negative contribution)
     death_cross: bool = False
     insider_cluster_sell: bool = False

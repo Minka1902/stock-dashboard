@@ -7,7 +7,7 @@ import pytest
 
 from app import db
 from app.models import (
-    AnalystSignal, BoomScore, CongressTrade, InsiderTrade,
+    AnalystSignal, BoomScore, CongressTrade, InsiderTrade, Seasonality,
     ShortInterest, SocialSentiment, TechnicalSignal, WatchItem,
 )
 from app.sources import boom_score as boom_score_source
@@ -99,6 +99,15 @@ def _add_analyst(conn, ticker="GME", upgrades=0):
         next_earnings=_days_ahead(34), rec_strong_buy=5, rec_buy=10,
         rec_hold=3, rec_sell=1, recent_upgrades=upgrades, recent_downgrades=0,
         latest_action="up" if upgrades > 0 else None, latest_firm="GS", latest_to_grade="Buy",
+    )])
+
+
+def _seed_seasonality(conn, ticker="GME", returns=(0.05,) * 8):
+    windows = [{"key": "fwd_week", "label": "Next Week", "kind": "forward",
+                "per_year": [{"year": 2016 + i, "return": r} for i, r in enumerate(returns)]}]
+    db.upsert_seasonality(conn, [Seasonality(
+        ticker=ticker, computed_at="2026-06-28T00:00:00+00:00",
+        as_of="06-29", history_years=len(returns), windows_json=json.dumps(windows),
     )])
 
 
@@ -393,3 +402,27 @@ def test_congress_buy_larger_amount_scores_higher(score_conn):
     assert scores[0].congress_buy is True
     # Base weight 15 × 2.0 = 30
     assert scores[0].score >= 25
+
+
+# ---- seasonal tailwind ----
+
+def test_seasonal_tailwind_adds_10(score_conn):
+    _add_ticker(score_conn)
+    _seed_seasonality(score_conn, returns=(0.05,) * 8)  # avg 5%, 100% win
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].seasonal_tailwind is True
+    assert scores[0].score == 10
+
+
+def test_seasonal_tailwind_not_fired_when_weak(score_conn):
+    _add_ticker(score_conn)
+    _seed_seasonality(score_conn, returns=(0.001,) * 8)  # ~flat, fails avg threshold
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].seasonal_tailwind is False
+
+
+def test_seasonal_tailwind_not_fired_with_too_few_years(score_conn):
+    _add_ticker(score_conn)
+    _seed_seasonality(score_conn, returns=(0.05, 0.05))  # strong but only 2 samples
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].seasonal_tailwind is False

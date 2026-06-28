@@ -125,6 +125,48 @@
   border-color: transparent;
 }
 
+.log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.logRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  font-size: 12px;
+  padding: 6px var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  flex-wrap: wrap;
+}
+.logTime {
+  color: var(--text);
+  font-weight: 600;
+  min-width: 84px;
+}
+.logFor {
+  color: var(--text-faint);
+}
+.logChannel {
+  font-family: var(--mono);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+}
+.logStatus {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.logStatus[data-tone="pos"] { color: var(--positive); font-weight: 600; }
+.logStatus[data-tone="neg"] { color: var(--negative); }
+.logStatus[data-tone="muted"] { color: var(--text-muted); }
+
 .disclaimer {
   color: var(--text-faint);
   font-size: 11.5px;

@@ -1,5 +1,37 @@
+import { useEffect, useState } from "react";
 import Icon from "./Icon";
+import { getSuggestionLog } from "../api";
+import { formatRelativeTime } from "../lib/format";
 import styles from "./SuggestionsPanel.module.css";
+
+function statusTone(status) {
+  if (status.startsWith("sent")) return "pos";
+  if (status.startsWith("error")) return "neg";
+  return "muted"; // skipped: ...
+}
+
+function DeliveryLog() {
+  const [log, setLog] = useState([]);
+  useEffect(() => {
+    getSuggestionLog().then(setLog).catch(() => {});
+  }, []);
+  if (log.length === 0) return null;
+  return (
+    <div className={styles.section}>
+      <h3 className={styles.sectionTitle}>Recent deliveries</h3>
+      <ul className={styles.log}>
+        {log.map((e, i) => (
+          <li key={i} className={styles.logRow}>
+            <span className={styles.logTime}>{formatRelativeTime(e.created_at)}</span>
+            <span className={styles.logFor}>for {e.for_date}</span>
+            <span className={styles.logChannel}>{e.channel}</span>
+            <span className={styles.logStatus} data-tone={statusTone(e.status)}>{e.status}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function AlertRow({ a }) {
   const tone = a.pl_pct == null ? "flat" : a.pl_pct >= 0 ? "pos" : "neg";
@@ -98,6 +130,8 @@ export default function SuggestionsPanel({ data, loading, busy, onRefresh }) {
               </ul>
             </div>
           )}
+
+          <DeliveryLog />
 
           <p className={styles.disclaimer}>{data.disclaimer}</p>
         </div>
