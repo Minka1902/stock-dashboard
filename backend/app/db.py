@@ -2,6 +2,7 @@
 import sqlite3
 
 from app.models import (
+    Alert,
     AnalystSignal,
     BoomScore,
     CongressTrade,
@@ -209,6 +210,25 @@ def init_schema(conn: sqlite3.Connection) -> None:
             for_date   TEXT NOT NULL,
             channel    TEXT NOT NULL,
             status     TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS alerts (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            dedup_key  TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            ticker     TEXT NOT NULL,
+            type       TEXT NOT NULL,
+            severity   TEXT NOT NULL,
+            title      TEXT NOT NULL,
+            message    TEXT NOT NULL,
+            read       INTEGER NOT NULL DEFAULT 0,
+            pushed     INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS alert_state (
+            ticker              TEXT PRIMARY KEY,
+            score               INTEGER,
+            golden_cross        INTEGER,
+            insider_cluster_buy INTEGER,
+            updated_at          TEXT NOT NULL
         );
         """
     )
@@ -987,3 +1007,73 @@ def get_recent_suggestions(conn: sqlite3.Connection, limit: int = 20) -> list[Su
         (limit,),
     )
     return [SuggestionLogEntry(**dict(row)) for row in cur.fetchall()]
+
+
+# ---------- alerts ----------
+
+def upsert_alerts(conn: sqlite3.Connection, records: list[Alert]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO alerts (dedup_key, created_at, ticker, type, severity, title, message, read, pushed)
+        VALUES (:dedup_key, :created_at, :ticker, :type, :severity, :title, :message, :read, :pushed)
+        ON CONFLICT(dedup_key) DO NOTHING
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+
+
+def _row_to_alert(d: dict) -> Alert:
+    d["read"] = bool(d["read"])
+    d["pushed"] = bool(d["pushed"])
+    return Alert(**d)
+
+
+def get_alerts(conn: sqlite3.Connection, limit: int = 100) -> list[Alert]:
+    cur = conn.execute(
+        "SELECT dedup_key, created_at, ticker, type, severity, title, message, read, pushed "
+        "FROM alerts ORDER BY id DESC LIMIT ?",
+        (limit,),
+    )
+    return [_row_to_alert(dict(row)) for row in cur.fetchall()]
+
+
+def count_unread_alerts(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT COUNT(*) FROM alerts WHERE read = 0").fetchone()[0]
+
+
+def mark_alerts_read(conn: sqlite3.Connection, keys: list[str] | None = None) -> None:
+    if keys:
+        conn.executemany("UPDATE alerts SET read = 1 WHERE dedup_key = ?", [(k,) for k in keys])
+    else:
+        conn.execute("UPDATE alerts SET read = 1 WHERE read = 0")
+    conn.commit()
+
+
+def alert_exists(conn: sqlite3.Connection, dedup_key: str) -> bool:
+    return conn.execute("SELECT 1 FROM alerts WHERE dedup_key = ? LIMIT 1", (dedup_key,)).fetchone() is not None
+
+
+# ---------- alert_state (transition memory) ----------
+
+def get_alert_state(conn: sqlite3.Connection, ticker: str) -> dict | None:
+    row = conn.execute("SELECT * FROM alert_state WHERE ticker = ?", (ticker,)).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_alert_state(
+    conn: sqlite3.Connection, ticker: str, score: int | None,
+    golden_cross: bool | None, insider_cluster_buy: bool | None, updated_at: str,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO alert_state (ticker, score, golden_cross, insider_cluster_buy, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(ticker) DO UPDATE SET
+            score=excluded.score, golden_cross=excluded.golden_cross,
+            insider_cluster_buy=excluded.insider_cluster_buy, updated_at=excluded.updated_at
+        """,
+        (ticker, score, int(golden_cross) if golden_cross is not None else None,
+         int(insider_cluster_buy) if insider_cluster_buy is not None else None, updated_at),
+    )
+    conn.commit()

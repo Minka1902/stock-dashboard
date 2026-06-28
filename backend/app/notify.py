@@ -14,7 +14,7 @@ from email.message import EmailMessage
 import httpx
 
 from app import config, db
-from app.models import NotifyProfile, SuggestionLogEntry
+from app.models import Alert, NotifyProfile, SuggestionLogEntry
 from app.suggestions import build_digest, render_email, render_sms
 
 
@@ -84,3 +84,26 @@ def send_digest(conn, for_date: str | None = None) -> list[dict]:
         for r in results
     ])
     return results
+
+
+def push_alert(conn, alert: Alert) -> None:
+    """Push a single alert via any enabled+configured channel. Resilient; sets
+    alert.pushed when at least one channel delivered. Logged to suggestion_log."""
+    profile = db.get_notify_profile(conn)
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    subject = f"[{alert.severity.upper()}] {alert.ticker}: {alert.title}"
+    body = f"{alert.title} — {alert.message}"
+    html = f"<b>{alert.ticker}</b> · {alert.title}<br>{alert.message}"
+
+    statuses = [
+        ("email", send_email(profile, subject, body, html)),
+        ("sms", send_sms(profile, f"{alert.ticker}: {body}")),
+    ]
+    if any(s == "sent" for _, s in statuses):
+        alert.pushed = True
+
+    db.insert_suggestion_log(conn, [
+        SuggestionLogEntry(created_at=now, for_date=alert.created_at[:10],
+                           channel="alert", status=f"{ch}: {st}")
+        for ch, st in statuses
+    ])

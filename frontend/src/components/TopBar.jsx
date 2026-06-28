@@ -2,7 +2,7 @@ import Icon from "./Icon";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./TopBar.module.css";
 
-export default function TopBar({ title, sources, busy, onRefresh, theme, onToggleTheme, dyslexia, onToggleDyslexia }) {
+export default function TopBar({ title, sources, busy, onRefresh, theme, onToggleTheme, dyslexia, onToggleDyslexia, unreadAlerts = 0, onOpenAlerts }) {
   // "Live" reflects whether the most recently refreshed source succeeded.
   const refreshed = sources
     .filter((s) => s.last_refreshed_at)
@@ -22,6 +22,17 @@ export default function TopBar({ title, sources, busy, onRefresh, theme, onToggl
       </div>
 
       <div className={styles.actions}>
+        <button
+          className={styles.iconBtn}
+          onClick={onOpenAlerts}
+          title="Alerts"
+          aria-label={unreadAlerts > 0 ? `Alerts (${unreadAlerts} unread)` : "Alerts"}
+        >
+          <Icon name="bell" size={18} />
+          {unreadAlerts > 0 && (
+            <span className={styles.badge}>{unreadAlerts > 9 ? "9+" : unreadAlerts}</span>
+          )}
+        </button>
         <button
           className={styles.iconBtn}
           onClick={onToggleDyslexia}
