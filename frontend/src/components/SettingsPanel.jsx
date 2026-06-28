@@ -1,4 +1,7 @@
+import { useState } from "react";
 import Icon from "./Icon";
+import { useProfile } from "../hooks/useProfile";
+import { sendTestSuggestions } from "../api";
 import styles from "./SettingsPanel.module.css";
 
 const WINDOW_OPTIONS = [
@@ -15,9 +18,13 @@ const LOOKBACK_OPTIONS = [
   { value: "all", label: "All years" },
 ];
 
-export default function SettingsPanel({ settings, setSetting }) {
+export default function SettingsPanel({ settings, setSetting, onNavigate }) {
   const activeWindows = settings.seasonalityWindows;
   const lookback = settings.seasonalityLookback;
+
+  const { profile, update, save } = useProfile();
+  const [saveState, setSaveState] = useState(null); // null | "saving" | "saved" | error string
+  const [testState, setTestState] = useState(null); // null | "sending" | results[]
 
   const toggleWindow = (key) => {
     const next = activeWindows.includes(key)
@@ -25,6 +32,26 @@ export default function SettingsPanel({ settings, setSetting }) {
       : [...activeWindows, key];
     setSetting("seasonalityWindows", next);
   };
+
+  async function saveProfile() {
+    setSaveState("saving");
+    try {
+      await save(profile);
+      setSaveState("saved");
+    } catch (err) {
+      setSaveState(err.message || "could not save");
+    }
+  }
+
+  async function sendTest() {
+    setTestState("sending");
+    try {
+      const { results } = await sendTestSuggestions();
+      setTestState(results);
+    } catch (err) {
+      setTestState([{ channel: "error", status: err.message || "failed" }]);
+    }
+  }
 
   return (
     <section className={styles.panel} id="settings">
@@ -39,6 +66,97 @@ export default function SettingsPanel({ settings, setSetting }) {
       </header>
 
       <div className={styles.body}>
+        {/* Notifications: email + phone for the daily suggestion digest */}
+        <fieldset className={styles.group}>
+          <legend className={styles.legend}>Daily suggestions — email &amp; phone</legend>
+          <p className={styles.groupHint}>
+            Get a few tailored ideas for the next trading day, based on your portfolio and watchlist.
+            Sent pre-market on trading days. Delivery is off until you add SMTP/Twilio keys on the
+            server, but you can save your contact info and preview the digest now.
+          </p>
+
+          <div className={styles.contact}>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="notify-email">Email address</label>
+              <input
+                id="notify-email"
+                className={styles.input}
+                type="email"
+                placeholder="you@example.com"
+                value={profile.email}
+                onChange={(e) => update({ email: e.target.value })}
+              />
+            </div>
+            <label className={styles.miniSwitch}>
+              <input
+                type="checkbox"
+                checked={profile.email_enabled}
+                onChange={(e) => update({ email_enabled: e.target.checked })}
+              />
+              Email me
+            </label>
+          </div>
+
+          <div className={styles.contact}>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="notify-phone">Phone (E.164)</label>
+              <input
+                id="notify-phone"
+                className={styles.input}
+                type="tel"
+                placeholder="+14155551234"
+                value={profile.phone}
+                onChange={(e) => update({ phone: e.target.value })}
+              />
+            </div>
+            <label className={styles.miniSwitch}>
+              <input
+                type="checkbox"
+                checked={profile.sms_enabled}
+                onChange={(e) => update({ sms_enabled: e.target.checked })}
+              />
+              Text me
+            </label>
+          </div>
+
+          <div className={styles.actions}>
+            <button type="button" className={styles.primaryBtn} onClick={saveProfile} disabled={saveState === "saving"}>
+              {saveState === "saving" ? "Saving…" : "Save contact info"}
+            </button>
+            <button type="button" className={styles.ghostBtn} onClick={sendTest} disabled={testState === "sending"}>
+              {testState === "sending" ? "Sending…" : "Send test now"}
+            </button>
+            {saveState === "saved" && <span className={styles.ok}>Saved ✓</span>}
+            {saveState && saveState !== "saving" && saveState !== "saved" && (
+              <span className={styles.err}>{saveState}</span>
+            )}
+          </div>
+
+          {Array.isArray(testState) && (
+            <ul className={styles.testResults}>
+              {testState.map((r) => (
+                <li key={r.channel}>
+                  <strong>{r.channel}:</strong>{" "}
+                  <span data-ok={r.status === "sent" ? "yes" : "no"}>{r.status}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <p className={styles.note}>
+            <Icon name="spark" size={14} />
+            Add the holdings the suggestions should account for in the{" "}
+            <button type="button" className={styles.link} onClick={() => onNavigate?.("portfolio")}>
+              Portfolio
+            </button>{" "}
+            tab, and preview the exact digest in the{" "}
+            <button type="button" className={styles.link} onClick={() => onNavigate?.("suggestions")}>
+              Suggestions
+            </button>{" "}
+            tab.
+          </p>
+        </fieldset>
+
         {/* Seasonality windows */}
         <fieldset className={styles.group}>
           <legend className={styles.legend}>Seasonality windows</legend>

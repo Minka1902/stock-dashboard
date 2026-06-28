@@ -8,12 +8,15 @@ from app.models import (
     ContractRecord,
     FearGreedSnapshot,
     Fundamentals,
+    Holding,
     InsiderTrade,
     NewsArticle,
+    NotifyProfile,
     Seasonality,
     ShortInterest,
     SocialSentiment,
     SourceStatus,
+    SuggestionLogEntry,
     TechnicalSignal,
     WatchItem,
     YieldPoint,
@@ -186,6 +189,27 @@ def init_schema(conn: sqlite3.Connection) -> None:
             history_years INTEGER NOT NULL DEFAULT 0,
             windows_json  TEXT NOT NULL DEFAULT '[]'
         );
+        CREATE TABLE IF NOT EXISTS portfolio (
+            ticker   TEXT PRIMARY KEY,
+            shares   REAL NOT NULL,
+            avg_cost REAL NOT NULL,
+            added_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS notify_profile (
+            id            INTEGER PRIMARY KEY CHECK (id = 1),
+            email         TEXT,
+            phone         TEXT,
+            email_enabled INTEGER NOT NULL DEFAULT 0,
+            sms_enabled   INTEGER NOT NULL DEFAULT 0,
+            updated_at    TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS suggestion_log (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            for_date   TEXT NOT NULL,
+            channel    TEXT NOT NULL,
+            status     TEXT NOT NULL
+        );
         """
     )
     conn.commit()
@@ -207,6 +231,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         ("fear_greed_contrarian",     "INTEGER NOT NULL DEFAULT 0"),
         ("yield_uninversion",         "INTEGER NOT NULL DEFAULT 0"),
         ("contracts_catalyst",        "INTEGER NOT NULL DEFAULT 0"),
+        ("seasonal_tailwind",         "INTEGER NOT NULL DEFAULT 0"),
         ("death_cross",               "INTEGER NOT NULL DEFAULT 0"),
         ("insider_cluster_sell",      "INTEGER NOT NULL DEFAULT 0"),
         ("overbought_rsi",            "INTEGER NOT NULL DEFAULT 0"),
@@ -606,7 +631,7 @@ _BOOM_BOOL_COLS = (
     "golden_cross", "rsi_recovery", "insider_cluster_buy", "congress_buy",
     "short_squeeze", "wsb_rising", "analyst_upgrade",
     "near_52w_high", "macd_crossover", "volume_confirmed", "fear_greed_contrarian",
-    "yield_uninversion", "contracts_catalyst",
+    "yield_uninversion", "contracts_catalyst", "seasonal_tailwind",
     "death_cross", "insider_cluster_sell", "overbought_rsi", "congress_sale",
     "analyst_downgrade_cluster", "extreme_greed", "earnings_soon", "mixed_signals",
 )
@@ -620,7 +645,7 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              golden_cross, rsi_recovery, insider_cluster_buy, congress_buy,
              short_squeeze, wsb_rising, analyst_upgrade,
              near_52w_high, macd_crossover, volume_confirmed, fear_greed_contrarian,
-             yield_uninversion, contracts_catalyst,
+             yield_uninversion, contracts_catalyst, seasonal_tailwind,
              death_cross, insider_cluster_sell, overbought_rsi, congress_sale,
              analyst_downgrade_cluster, extreme_greed, earnings_soon, mixed_signals)
         VALUES
@@ -628,7 +653,7 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              :golden_cross, :rsi_recovery, :insider_cluster_buy, :congress_buy,
              :short_squeeze, :wsb_rising, :analyst_upgrade,
              :near_52w_high, :macd_crossover, :volume_confirmed, :fear_greed_contrarian,
-             :yield_uninversion, :contracts_catalyst,
+             :yield_uninversion, :contracts_catalyst, :seasonal_tailwind,
              :death_cross, :insider_cluster_sell, :overbought_rsi, :congress_sale,
              :analyst_downgrade_cluster, :extreme_greed, :earnings_soon, :mixed_signals)
         ON CONFLICT(ticker) DO UPDATE SET
@@ -643,6 +668,7 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
             fear_greed_contrarian=excluded.fear_greed_contrarian,
             yield_uninversion=excluded.yield_uninversion,
             contracts_catalyst=excluded.contracts_catalyst,
+            seasonal_tailwind=excluded.seasonal_tailwind,
             death_cross=excluded.death_cross,
             insider_cluster_sell=excluded.insider_cluster_sell,
             overbought_rsi=excluded.overbought_rsi, congress_sale=excluded.congress_sale,
@@ -871,3 +897,93 @@ def upsert_seasonality(conn: sqlite3.Connection, records: list[Seasonality]) -> 
 def get_seasonality(conn: sqlite3.Connection) -> list[Seasonality]:
     cur = conn.execute("SELECT * FROM seasonality ORDER BY ticker ASC")
     return [Seasonality(**dict(row)) for row in cur.fetchall()]
+
+
+def get_seasonality_for(conn: sqlite3.Connection, ticker: str) -> Seasonality | None:
+    cur = conn.execute("SELECT * FROM seasonality WHERE ticker = ?", (ticker,))
+    row = cur.fetchone()
+    return Seasonality(**dict(row)) if row else None
+
+
+# ---------- portfolio (user managed) ----------
+
+def upsert_holding(conn: sqlite3.Connection, item: Holding) -> None:
+    conn.execute(
+        """
+        INSERT INTO portfolio (ticker, shares, avg_cost, added_at)
+        VALUES (:ticker, :shares, :avg_cost, :added_at)
+        ON CONFLICT(ticker) DO UPDATE SET
+            shares=excluded.shares, avg_cost=excluded.avg_cost
+        """,
+        item.model_dump(),
+    )
+    conn.commit()
+
+
+def remove_holding(conn: sqlite3.Connection, ticker: str) -> None:
+    conn.execute("DELETE FROM portfolio WHERE ticker = ?", (ticker,))
+    conn.commit()
+
+
+def get_portfolio(conn: sqlite3.Connection) -> list[Holding]:
+    cur = conn.execute("SELECT * FROM portfolio ORDER BY ticker ASC")
+    return [Holding(**dict(row)) for row in cur.fetchall()]
+
+
+# ---------- notify profile (single row) ----------
+
+def get_notify_profile(conn: sqlite3.Connection) -> NotifyProfile:
+    cur = conn.execute("SELECT * FROM notify_profile WHERE id = 1")
+    row = cur.fetchone()
+    if row is None:
+        return NotifyProfile()
+    d = dict(row)
+    return NotifyProfile(
+        email=d.get("email"),
+        phone=d.get("phone"),
+        email_enabled=bool(d.get("email_enabled")),
+        sms_enabled=bool(d.get("sms_enabled")),
+        updated_at=d.get("updated_at") or "",
+    )
+
+
+def upsert_notify_profile(conn: sqlite3.Connection, profile: NotifyProfile) -> None:
+    conn.execute(
+        """
+        INSERT INTO notify_profile (id, email, phone, email_enabled, sms_enabled, updated_at)
+        VALUES (1, :email, :phone, :email_enabled, :sms_enabled, :updated_at)
+        ON CONFLICT(id) DO UPDATE SET
+            email=excluded.email, phone=excluded.phone,
+            email_enabled=excluded.email_enabled, sms_enabled=excluded.sms_enabled,
+            updated_at=excluded.updated_at
+        """,
+        {
+            "email": profile.email,
+            "phone": profile.phone,
+            "email_enabled": int(profile.email_enabled),
+            "sms_enabled": int(profile.sms_enabled),
+            "updated_at": profile.updated_at,
+        },
+    )
+    conn.commit()
+
+
+# ---------- suggestion log (append-only) ----------
+
+def insert_suggestion_log(conn: sqlite3.Connection, entries: list[SuggestionLogEntry]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO suggestion_log (created_at, for_date, channel, status)
+        VALUES (:created_at, :for_date, :channel, :status)
+        """,
+        [e.model_dump() for e in entries],
+    )
+    conn.commit()
+
+
+def get_recent_suggestions(conn: sqlite3.Connection, limit: int = 20) -> list[SuggestionLogEntry]:
+    cur = conn.execute(
+        "SELECT created_at, for_date, channel, status FROM suggestion_log ORDER BY id DESC LIMIT ?",
+        (limit,),
+    )
+    return [SuggestionLogEntry(**dict(row)) for row in cur.fetchall()]

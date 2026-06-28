@@ -1,14 +1,17 @@
 """FastAPI surface + scheduler wiring."""
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app import config, db, ingest
-from app.models import WatchItem
+from app import config, db, ingest, notify, suggestions
+from app.market_calendar import is_trading_day, next_trading_day
+from app.models import Holding, NotifyProfile, WatchItem
 from app.sources import edgar, gdelt, usaspending
 import app.sources.yield_curve as yield_curve_source
 import app.sources.technical as technical_source
@@ -93,6 +96,17 @@ def _refresh_all():
         ingest.run_source(conn, name, fetch, store, min_interval_seconds=min_interval)
 
 
+def _send_daily_digest():
+    """Scheduled pre-market: deliver the next trading day's suggestions."""
+    target = next_trading_day()
+    if not is_trading_day(target):
+        return
+    try:
+        notify.send_digest(conn, target.isoformat())
+    except Exception:
+        pass  # delivery is already resilient; never let the job crash the scheduler
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     scheduler.add_job(
@@ -100,6 +114,17 @@ async def lifespan(app: FastAPI):
         "interval",
         seconds=config.REFRESH_INTERVAL_SECONDS,
         id="refresh_all",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _send_daily_digest,
+        CronTrigger(
+            day_of_week="mon-fri",
+            hour=config.DIGEST_HOUR,
+            minute=config.DIGEST_MINUTE,
+            timezone=ZoneInfo(config.DIGEST_TZ),
+        ),
+        id="daily_digest",
         replace_existing=True,
     )
     scheduler.start()
@@ -184,6 +209,85 @@ def fundamentals():
 @app.get("/api/seasonality")
 def seasonality():
     return [s.model_dump() for s in db.get_seasonality(conn)]
+
+
+# ---------- portfolio (user managed) ----------
+class HoldingCreate(BaseModel):
+    ticker: str
+    shares: float
+    avg_cost: float
+
+
+@app.get("/api/portfolio")
+def portfolio():
+    return [h.model_dump() for h in db.get_portfolio(conn)]
+
+
+@app.post("/api/portfolio")
+def add_holding(item: HoldingCreate):
+    ticker = item.ticker.strip().upper()
+    if not ticker:
+        raise HTTPException(status_code=400, detail="ticker required")
+    if item.shares <= 0 or item.avg_cost < 0:
+        raise HTTPException(status_code=400, detail="shares must be > 0 and avg_cost >= 0")
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    db.upsert_holding(conn, Holding(
+        ticker=ticker, shares=item.shares, avg_cost=item.avg_cost, added_at=now,
+    ))
+    return [h.model_dump() for h in db.get_portfolio(conn)]
+
+
+@app.delete("/api/portfolio/{ticker}")
+def delete_holding(ticker: str):
+    db.remove_holding(conn, ticker.strip().upper())
+    return [h.model_dump() for h in db.get_portfolio(conn)]
+
+
+# ---------- notification profile (email/phone; secrets stay in env) ----------
+class ProfileUpdate(BaseModel):
+    email: str | None = None
+    phone: str | None = None
+    email_enabled: bool = False
+    sms_enabled: bool = False
+
+
+@app.get("/api/profile")
+def get_profile():
+    return db.get_notify_profile(conn).model_dump()
+
+
+@app.put("/api/profile")
+def put_profile(item: ProfileUpdate):
+    email = (item.email or "").strip() or None
+    phone = (item.phone or "").strip() or None
+    if email and "@" not in email:
+        raise HTTPException(status_code=400, detail="invalid email")
+    if phone and not phone.startswith("+"):
+        raise HTTPException(status_code=400, detail="phone must be E.164 (start with +)")
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    db.upsert_notify_profile(conn, NotifyProfile(
+        email=email, phone=phone,
+        email_enabled=bool(item.email_enabled and email),
+        sms_enabled=bool(item.sms_enabled and phone),
+        updated_at=now,
+    ))
+    return db.get_notify_profile(conn).model_dump()
+
+
+# ---------- suggestions (digest preview + delivery) ----------
+@app.get("/api/suggestions")
+def get_suggestions():
+    return suggestions.build_digest(conn, next_trading_day().isoformat())
+
+
+@app.post("/api/suggestions/send-test")
+def send_test_suggestions():
+    return {"results": notify.send_digest(conn)}
+
+
+@app.get("/api/suggestions/log")
+def suggestions_log():
+    return [e.model_dump() for e in db.get_recent_suggestions(conn)]
 
 
 @app.get("/api/boom-scores/history/{ticker}")

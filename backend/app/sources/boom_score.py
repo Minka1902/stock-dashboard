@@ -26,6 +26,7 @@ WEIGHTS: dict[str, int] = {
     "fear_greed_contrarian":  10,
     "yield_uninversion":      15,
     "contracts_catalyst":     10,
+    "seasonal_tailwind":      10,
     # Bearish (negative values)
     "death_cross":                -20,
     "insider_cluster_sell":       -20,
@@ -61,6 +62,32 @@ def _decay(date_str: str, window_days: int = 30) -> float:
 
 def _parse_amount_weight(amount_range: str) -> float:
     return _AMOUNT_WEIGHTS.get(amount_range.strip(), 1.0)
+
+
+def _seasonal_tailwind(conn, ticker: str, primary: str = "fwd_week", lookback: int = 10) -> bool:
+    """True when the ticker has a strong historical edge for the coming week.
+
+    Mirrors the suggestions engine threshold: avg >= +2% and win-rate >= 60% over
+    the last `lookback` years of the primary forward window, with a >=3-sample
+    guard so a short fluke can't fire it.
+    """
+    season = db.get_seasonality_for(conn, ticker)
+    if season is None:
+        return False
+    try:
+        windows = json.loads(season.windows_json)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    win = next((w for w in windows if w.get("key") == primary), None)
+    if not win:
+        return False
+    per_year = win.get("per_year", [])[-lookback:]
+    if len(per_year) < 3:
+        return False
+    returns = [e["return"] for e in per_year]
+    avg = sum(returns) / len(returns)
+    win_rate = sum(1 for r in returns if r > 0) / len(returns)
+    return avg >= 0.02 and win_rate >= 0.6
 
 
 def _is_earnings_soon(next_earnings: str | None, days: int = 7) -> bool:
@@ -167,6 +194,10 @@ def _score_ticker(
     if db.has_major_contract_for(conn, ticker):
         components["contracts_catalyst"] = WEIGHTS["contracts_catalyst"]
 
+    # --- Seasonal tailwind (historical edge for the coming week) ---
+    if _seasonal_tailwind(conn, ticker):
+        components["seasonal_tailwind"] = WEIGHTS["seasonal_tailwind"]
+
     # --- Mixed signal detection ---
     bullish_keys = {k for k, v in components.items() if v > 0}
     bearish_keys = {k for k, v in components.items() if v < 0}
@@ -193,6 +224,7 @@ def _score_ticker(
         fear_greed_contrarian="fear_greed_contrarian" in components,
         yield_uninversion="yield_uninversion" in components,
         contracts_catalyst="contracts_catalyst" in components,
+        seasonal_tailwind="seasonal_tailwind" in components,
         # bearish
         death_cross="death_cross" in components,
         insider_cluster_sell="insider_cluster_sell" in components,
