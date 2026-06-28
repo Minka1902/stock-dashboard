@@ -1,5 +1,7 @@
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
+import ViewAll from "./ViewAll";
+import CollapseToggle from "./CollapseToggle";
 import {
   formatCurrencyCompact,
   formatCurrencyFull,
@@ -7,6 +9,8 @@ import {
   formatDate,
 } from "../lib/format";
 import styles from "./TradesPanel.module.css";
+
+const COMPACT_LIMIT = 5;
 
 function typeTone(type) {
   if (type === "Buy") return "buy";
@@ -27,21 +31,24 @@ function SkeletonRows({ rows = 8 }) {
   ));
 }
 
-export default function TradesPanel({ trades, loading, busy, onRefresh }) {
+export default function TradesPanel({ trades, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && trades.length === 0;
+  const rows = compact ? trades.slice(0, COMPACT_LIMIT) : trades;
 
   return (
     <section className={styles.panel} id="trades">
       <header className={styles.head}>
+        {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Trades" />}
         <div>
           <h2 className={styles.title}>Insider trades</h2>
           <p className={styles.subtitle}>
             Corporate insiders (SEC Form 4) buying and selling their own stock
           </p>
         </div>
+        {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
 
-      {showEmpty ? (
+      {!collapsed && (showEmpty ? (
         <div className={styles.empty}>
           <span className={styles.emptyIcon}><Icon name="trending" size={24} /></span>
           <p className={styles.emptyTitle}>No insider filings loaded yet</p>
@@ -66,7 +73,7 @@ export default function TradesPanel({ trades, loading, busy, onRefresh }) {
               {loading ? (
                 <SkeletonRows />
               ) : (
-                trades.map((t) => (
+                rows.map((t) => (
                   <tr key={t.accession}>
                     <td>
                       <a
@@ -99,7 +106,7 @@ export default function TradesPanel({ trades, loading, busy, onRefresh }) {
             </tbody>
           </table>
         </div>
-      )}
+      ))}
     </section>
   );
 }

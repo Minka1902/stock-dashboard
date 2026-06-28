@@ -1,8 +1,12 @@
 import { LineChart, Line, ResponsiveContainer } from "recharts";
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
+import ViewAll from "./ViewAll";
+import CollapseToggle from "./CollapseToggle";
 import { formatCurrencyCompact, formatRelativeTime, freshnessTone } from "../lib/format";
 import styles from "./TechnicalPanel.module.css";
+
+const COMPACT_LIMIT = 5;
 
 function RsiCell({ rsi }) {
   if (rsi == null) return <span className={styles.muted}>—</span>;
@@ -77,21 +81,24 @@ function SkeletonRows({ rows = 5 }) {
   ));
 }
 
-export default function TechnicalPanel({ data, loading, busy, onRefresh }) {
+export default function TechnicalPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
+  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data;
 
   return (
     <section className={styles.panel} id="signals">
       <header className={styles.head}>
+        {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Technical signals" />}
         <div>
           <h2 className={styles.title}>Technical Signals</h2>
           <p className={styles.subtitle}>
             RSI · MACD · moving averages · volume · 52-week range · per watchlist ticker
           </p>
         </div>
+        {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
 
-      {showEmpty ? (
+      {!collapsed && (showEmpty ? (
         <div className={styles.empty}>
           <span className={styles.emptyIcon}><Icon name="spark" size={24} /></span>
           <p className={styles.emptyTitle}>Add tickers to your watchlist to see signals</p>
@@ -123,7 +130,7 @@ export default function TechnicalPanel({ data, loading, busy, onRefresh }) {
               {loading ? (
                 <SkeletonRows />
               ) : (
-                data.map((s) => (
+                rows.map((s) => (
                   <tr key={s.ticker}>
                     <td className={styles.ticker}>{s.ticker}</td>
                     <td className={`${styles.num} tabular`}>{s.price != null ? formatCurrencyCompact(s.price) : "—"}</td>
@@ -150,7 +157,7 @@ export default function TechnicalPanel({ data, loading, busy, onRefresh }) {
             </tbody>
           </table>
         </div>
-      )}
+      ))}
     </section>
   );
 }

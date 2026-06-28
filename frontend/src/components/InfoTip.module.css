@@ -1,0 +1,66 @@
+.wrap {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.btn {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  font-style: italic;
+  line-height: 1;
+  cursor: help;
+  padding: 0;
+}
+.btn:hover {
+  border-color: var(--accent);
+}
+
+.pop {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--s-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.popTitle {
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.wrap:hover .pop,
+.wrap:focus-within .pop {
+  opacity: 1;
+  visibility: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pop {
+    transition: none;
+  }
+}

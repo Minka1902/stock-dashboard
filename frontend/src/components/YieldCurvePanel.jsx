@@ -8,6 +8,8 @@ import {
 } from "recharts";
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
+import ViewAll from "./ViewAll";
+import CollapseToggle from "./CollapseToggle";
 import styles from "./YieldCurvePanel.module.css";
 
 const TOOLTIP_STYLE = {
@@ -19,7 +21,7 @@ const TOOLTIP_STYLE = {
   padding: "6px 10px",
 };
 
-export default function YieldCurvePanel({ data, loading, busy, onRefresh }) {
+export default function YieldCurvePanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
   const latest = data.length > 0 ? data[data.length - 1] : null;
   const spread = latest?.spread ?? null;
@@ -31,6 +33,7 @@ export default function YieldCurvePanel({ data, loading, busy, onRefresh }) {
   return (
     <section className={styles.panel} id="yield-curve">
       <header className={styles.head}>
+        {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Yield Curve" />}
         <div>
           <h2 className={styles.title}>US Treasury Yield Curve</h2>
           <p className={styles.subtitle}>
@@ -42,9 +45,10 @@ export default function YieldCurvePanel({ data, loading, busy, onRefresh }) {
             {spreadBps !== null ? `${spread >= 0 ? "+" : ""}${spreadBps} bps` : "—"}
           </span>
         )}
+        {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
 
-      {loading ? (
+      {!collapsed && (loading ? (
         <div className={styles.loadWrap}>
           <Skeleton w="100%" h="80px" />
           <div className={styles.chips}>
@@ -117,7 +121,7 @@ export default function YieldCurvePanel({ data, loading, busy, onRefresh }) {
             </div>
           )}
         </>
-      )}
+      ))}
     </section>
   );
 }

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "./Icon";
+import ViewAll from "./ViewAll";
+import CollapseToggle from "./CollapseToggle";
 import { getSuggestionLog } from "../api";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./SuggestionsPanel.module.css";
@@ -54,7 +56,7 @@ function AlertRow({ a }) {
   );
 }
 
-export default function SuggestionsPanel({ data, loading, busy, onRefresh }) {
+export default function SuggestionsPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const empty = !loading && data
     && data.holdings_alerts.length === 0
     && data.opportunities.length === 0
@@ -63,15 +65,17 @@ export default function SuggestionsPanel({ data, loading, busy, onRefresh }) {
   return (
     <section className={styles.panel} id="suggestions">
       <header className={styles.head}>
+        {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Suggestions" />}
         <div>
           <h2 className={styles.title}>Suggestions for {data ? data.for_date : "the next trading day"}</h2>
           <p className={styles.subtitle}>
             {data ? data.market_context.summary : "Tailored to your portfolio and watchlist — the same digest that gets emailed/texted."}
           </p>
         </div>
+        {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
 
-      {loading || !data ? (
+      {!collapsed && (loading || !data ? (
         <div className={styles.placeholder}>Loading suggestions…</div>
       ) : empty ? (
         <div className={styles.emptyState}>
@@ -131,11 +135,11 @@ export default function SuggestionsPanel({ data, loading, busy, onRefresh }) {
             </div>
           )}
 
-          <DeliveryLog />
+          {!compact && <DeliveryLog />}
 
           <p className={styles.disclaimer}>{data.disclaimer}</p>
         </div>
-      )}
+      ))}
     </section>
   );
 }

@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
 import Icon from "./Icon";
+import ViewAll from "./ViewAll";
+import CollapseToggle from "./CollapseToggle";
 import { getBoomScoreHistory } from "../api";
 import styles from "./BoomScorePanel.module.css";
+
+const COMPACT_LIMIT = 5;
 
 const CHIP_META = {
   // bullish
@@ -58,21 +62,24 @@ function ScoreSparkline({ ticker }) {
   );
 }
 
-export default function BoomScorePanel({ data, loading, busy, onRefresh }) {
+export default function BoomScorePanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
+  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data;
 
   return (
     <section className={styles.panel} id="boom-score">
       <header className={styles.head}>
+        {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Boom Score" />}
         <div>
           <h2 className={styles.title}>Boom Score</h2>
           <p className={styles.subtitle}>
             Composite signal strength · bullish &amp; bearish · ranked by conviction
           </p>
         </div>
+        {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
 
-      {showEmpty ? (
+      {!collapsed && (showEmpty ? (
         <div className={styles.empty}>
           <span className={styles.emptyIcon}><Icon name="spark" size={24} /></span>
           <p className={styles.emptyTitle}>Add tickers to your watchlist</p>
@@ -83,7 +90,7 @@ export default function BoomScorePanel({ data, loading, busy, onRefresh }) {
         </div>
       ) : (
         <ul className={styles.list}>
-          {data.map((s, idx) => {
+          {rows.map((s, idx) => {
             const components = (() => {
               try { return JSON.parse(s.components); } catch { return {}; }
             })();
@@ -135,7 +142,7 @@ export default function BoomScorePanel({ data, loading, busy, onRefresh }) {
             );
           })}
         </ul>
-      )}
+      ))}
     </section>
   );
 }

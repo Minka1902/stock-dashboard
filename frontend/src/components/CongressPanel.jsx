@@ -1,7 +1,11 @@
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
+import ViewAll from "./ViewAll";
+import CollapseToggle from "./CollapseToggle";
 import { formatDate } from "../lib/format";
 import styles from "./CongressPanel.module.css";
+
+const COMPACT_LIMIT = 5;
 
 function partyTone(party) {
   if (party === "D") return "dem";
@@ -28,21 +32,24 @@ function SkeletonRows({ rows = 8 }) {
   ));
 }
 
-export default function CongressPanel({ data, loading, busy, onRefresh }) {
+export default function CongressPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
+  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data;
 
   return (
     <section className={styles.panel} id="congress">
       <header className={styles.head}>
+        {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Congress" />}
         <div>
           <h2 className={styles.title}>Congressional Trades</h2>
           <p className={styles.subtitle}>
             STOCK Act disclosures · House &amp; Senate · legislators trading ahead of policy booms
           </p>
         </div>
+        {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
 
-      {showEmpty ? (
+      {!collapsed && (showEmpty ? (
         <div className={styles.empty}>
           <span className={styles.emptyIcon}><Icon name="layers" size={24} /></span>
           <p className={styles.emptyTitle}>No congressional trades loaded yet</p>
@@ -67,7 +74,7 @@ export default function CongressPanel({ data, loading, busy, onRefresh }) {
               {loading ? (
                 <SkeletonRows />
               ) : (
-                data.map((t) => (
+                rows.map((t) => (
                   <tr key={t.trade_hash}>
                     <td className={styles.rep} title={`${t.representative} (${t.state})`}>
                       <span className={styles.repName}>{t.representative}</span>
@@ -96,7 +103,7 @@ export default function CongressPanel({ data, loading, busy, onRefresh }) {
             </tbody>
           </table>
         </div>
-      )}
+      ))}
     </section>
   );
 }

@@ -66,6 +66,17 @@ export default function SettingsPanel({ settings, setSetting, onNavigate }) {
       </header>
 
       <div className={styles.body}>
+        {/* Onboarding: the in-app module guide */}
+        <fieldset className={styles.group}>
+          <legend className={styles.legend}>Learn the dashboard</legend>
+          <p className={styles.groupHint}>
+            New here? The module guide explains what every panel shows and how it feeds the Boom Score.
+          </p>
+          <button type="button" className={styles.primaryBtn} onClick={() => onNavigate?.("guide")}>
+            Open the module guide
+          </button>
+        </fieldset>
+
         {/* Notifications: email + phone for the daily suggestion digest */}
         <fieldset className={styles.group}>
           <legend className={styles.legend}>Daily suggestions — email &amp; phone</legend>
@@ -220,6 +231,45 @@ export default function SettingsPanel({ settings, setSetting, onNavigate }) {
               <span className={styles.knob} />
             </button>
           </label>
+
+          <label className={styles.switchRow}>
+            <span className={styles.switchText}>
+              <span className={styles.checkLabel}>Reduce motion</span>
+              <span className={styles.checkDesc}>
+                Turns off chart and panel animations for a calmer, steadier screen.
+              </span>
+            </span>
+            <button
+              type="button"
+              className={styles.switch}
+              role="switch"
+              aria-checked={settings.reducedMotion}
+              data-on={settings.reducedMotion ? "yes" : "no"}
+              onClick={() => setSetting("reducedMotion", !settings.reducedMotion)}
+            >
+              <span className={styles.knob} />
+            </button>
+          </label>
+
+          <label className={styles.switchRow}>
+            <span className={styles.switchText}>
+              <span className={styles.checkLabel}>Focus mode (one thing at a time)</span>
+              <span className={styles.checkDesc}>
+                On the Overview, keep a single section open at once. Opening one closes the rest.
+              </span>
+            </span>
+            <button
+              type="button"
+              className={styles.switch}
+              role="switch"
+              aria-checked={settings.focusMode}
+              data-on={settings.focusMode ? "yes" : "no"}
+              onClick={() => setSetting("focusMode", !settings.focusMode)}
+            >
+              <span className={styles.knob} />
+            </button>
+          </label>
+
           <p className={styles.note}>
             <Icon name="spark" size={14} />
             ADHD-friendly defaults — calm motion, clear focus outlines, generous spacing, and

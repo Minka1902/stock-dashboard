@@ -190,3 +190,17 @@ button {
 :root[data-dyslexia="on"] p {
   max-width: 72ch;
 }
+
+/* ============================================================
+   Reduce-motion mode (opt-in via Settings). Applied to
+   <html data-reduced-motion="on">. Collapses animation and
+   transition durations so movement doesn't distract.
+   ============================================================ */
+:root[data-reduced-motion="on"] *,
+:root[data-reduced-motion="on"] *::before,
+:root[data-reduced-motion="on"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}

@@ -1,11 +1,15 @@
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
+import ViewAll from "./ViewAll";
+import CollapseToggle from "./CollapseToggle";
 import {
   formatCurrencyCompact,
   formatCurrencyFull,
   formatDate,
 } from "../lib/format";
 import styles from "./ContractsPanel.module.css";
+
+const COMPACT_LIMIT = 5;
 
 function SkeletonRows({ rows = 8 }) {
   return Array.from({ length: rows }).map((_, i) => (
@@ -19,21 +23,24 @@ function SkeletonRows({ rows = 8 }) {
   ));
 }
 
-export default function ContractsPanel({ contracts, loading, busy, onRefresh }) {
+export default function ContractsPanel({ contracts, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && contracts.length === 0;
+  const rows = compact ? contracts.slice(0, COMPACT_LIMIT) : contracts;
 
   return (
     <section className={styles.panel} id="contracts">
       <header className={styles.head}>
+        {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Contracts" />}
         <div>
           <h2 className={styles.title}>Biggest recent federal contracts</h2>
           <p className={styles.subtitle}>
             Sourced live from USASpending.gov · sorted by award amount
           </p>
         </div>
+        {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
 
-      {showEmpty ? (
+      {!collapsed && (showEmpty ? (
         <div className={styles.empty}>
           <span className={styles.emptyIcon}>
             <Icon name="contract" size={26} />
@@ -62,7 +69,7 @@ export default function ContractsPanel({ contracts, loading, busy, onRefresh }) 
               {loading ? (
                 <SkeletonRows />
               ) : (
-                contracts.map((c) => (
+                rows.map((c) => (
                   <tr key={c.external_id}>
                     <td className={styles.recipient} title={c.recipient_name}>
                       {c.recipient_name}
@@ -88,7 +95,7 @@ export default function ContractsPanel({ contracts, loading, busy, onRefresh }) 
             </tbody>
           </table>
         </div>
-      )}
+      ))}
     </section>
   );
 }
