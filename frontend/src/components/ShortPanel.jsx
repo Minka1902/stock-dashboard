@@ -1,6 +1,6 @@
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
-import { formatRelativeTime } from "../lib/format";
+import { formatRelativeTime, freshnessTone } from "../lib/format";
 import styles from "./ShortPanel.module.css";
 
 function SkeletonRows({ rows = 6 }) {
@@ -17,19 +17,13 @@ function SkeletonRows({ rows = 6 }) {
 
 function FreshnessCell({ fetched_at }) {
   const text = formatRelativeTime(fetched_at);
-  const hrAgo = (Date.now() - new Date(fetched_at).getTime()) / 3600000;
-  const tone = hrAgo < 1 ? "fresh" : hrAgo < 6 ? "mid" : "stale";
+  const tone = freshnessTone(fetched_at);
   return <span className={styles.freshness} data-tone={tone}>{text}</span>;
 }
 
 function fmtPct(v) {
   if (v == null) return "—";
   return (v * 100).toFixed(1) + "%";
-}
-
-function fmtNum(v) {
-  if (v == null) return "—";
-  return v.toLocaleString();
 }
 
 function fmtCover(v) {

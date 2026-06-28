@@ -20,6 +20,7 @@ export const getSocial = () => getJSON("/api/social");
 export const getAnalyst = () => getJSON("/api/analyst");
 export const getBoomScores = () => getJSON("/api/boom-scores");
 export const getFundamentals = () => getJSON("/api/fundamentals");
+export const getSeasonality = () => getJSON("/api/seasonality");
 export const getBoomScoreHistory = (ticker) => getJSON(`/api/boom-scores/history/${ticker}`);
 
 export async function refreshSource(name) {

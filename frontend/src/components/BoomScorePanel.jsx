@@ -89,7 +89,6 @@ export default function BoomScorePanel({ data, loading, busy, onRefresh }) {
             const firedKeys = Object.keys(components);
             const tier = convictionTier(s.score);
             const barWidth = Math.max(0, Math.min(100, s.score));
-            const scoreNeg = s.score < 0;
 
             return (
               <li key={s.ticker} className={styles.row}>

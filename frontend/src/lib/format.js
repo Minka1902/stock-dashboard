@@ -51,6 +51,23 @@ export function formatRelativeTime(iso) {
   });
 }
 
+// Signed percent from a fraction: 0.032 → "+3.2%", -0.011 → "−1.1%"
+export function formatPercentSigned(v, digits = 1) {
+  if (v == null || Number.isNaN(v)) return "—";
+  const pct = v * 100;
+  const sign = pct > 0 ? "+" : pct < 0 ? "−" : "";
+  return `${sign}${Math.abs(pct).toFixed(digits)}%`;
+}
+
+// Freshness bucket from an ISO timestamp: "fresh" (<1h), "mid" (1–6h), "stale" (>6h).
+// Lives here (not in components) so the clock read stays out of render purity checks.
+export function freshnessTone(iso) {
+  if (!iso) return "stale";
+  const hrAgo = (Date.now() - new Date(iso).getTime()) / 3600000;
+  if (Number.isNaN(hrAgo)) return "stale";
+  return hrAgo < 1 ? "fresh" : hrAgo < 6 ? "mid" : "stale";
+}
+
 // short date or em dash
 export function formatDate(iso) {
   if (!iso) return "—";

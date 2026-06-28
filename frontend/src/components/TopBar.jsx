@@ -2,7 +2,7 @@ import Icon from "./Icon";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./TopBar.module.css";
 
-export default function TopBar({ title, sources, busy, onRefresh, theme, onToggleTheme }) {
+export default function TopBar({ title, sources, busy, onRefresh, theme, onToggleTheme, dyslexia, onToggleDyslexia }) {
   // "Live" reflects whether the most recently refreshed source succeeded.
   const refreshed = sources
     .filter((s) => s.last_refreshed_at)
@@ -22,6 +22,16 @@ export default function TopBar({ title, sources, busy, onRefresh, theme, onToggl
       </div>
 
       <div className={styles.actions}>
+        <button
+          className={styles.iconBtn}
+          onClick={onToggleDyslexia}
+          title={dyslexia ? "Turn off dyslexia-friendly mode" : "Turn on dyslexia-friendly mode"}
+          aria-label="Toggle dyslexia-friendly mode"
+          aria-pressed={dyslexia}
+          data-active={dyslexia ? "yes" : "no"}
+        >
+          <Icon name="book" size={18} />
+        </button>
         <button
           className={styles.iconBtn}
           onClick={onToggleTheme}

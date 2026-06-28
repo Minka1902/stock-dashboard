@@ -10,6 +10,7 @@ from app.models import (
     Fundamentals,
     InsiderTrade,
     NewsArticle,
+    Seasonality,
     ShortInterest,
     SocialSentiment,
     SourceStatus,
@@ -177,6 +178,13 @@ def init_schema(conn: sqlite3.Connection) -> None:
             ticker      TEXT NOT NULL,
             score       INTEGER NOT NULL,
             computed_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS seasonality (
+            ticker        TEXT PRIMARY KEY,
+            computed_at   TEXT NOT NULL,
+            as_of         TEXT NOT NULL,
+            history_years INTEGER NOT NULL DEFAULT 0,
+            windows_json  TEXT NOT NULL DEFAULT '[]'
         );
         """
     )
@@ -840,3 +848,26 @@ def get_boom_score_history(conn: sqlite3.Connection, ticker: str, days: int = 30
         (ticker, f"-{days} days"),
     )
     return [{"computed_at": row[0], "score": row[1]} for row in cur.fetchall()]
+
+
+# ---------- seasonality ----------
+
+def upsert_seasonality(conn: sqlite3.Connection, records: list[Seasonality]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO seasonality
+            (ticker, computed_at, as_of, history_years, windows_json)
+        VALUES
+            (:ticker, :computed_at, :as_of, :history_years, :windows_json)
+        ON CONFLICT(ticker) DO UPDATE SET
+            computed_at=excluded.computed_at, as_of=excluded.as_of,
+            history_years=excluded.history_years, windows_json=excluded.windows_json
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+
+
+def get_seasonality(conn: sqlite3.Connection) -> list[Seasonality]:
+    cur = conn.execute("SELECT * FROM seasonality ORDER BY ticker ASC")
+    return [Seasonality(**dict(row)) for row in cur.fetchall()]

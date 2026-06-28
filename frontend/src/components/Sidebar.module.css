@@ -43,6 +43,7 @@
 }
 
 .item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--s-3);
@@ -73,6 +74,18 @@
 .active:hover {
   background: var(--accent-weak);
   color: var(--accent);
+}
+/* Solid left bar makes the current view unmistakable at a glance. */
+.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  border-radius: var(--r-pill);
+  background: var(--accent);
 }
 
 .itemLabel {

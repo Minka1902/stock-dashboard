@@ -174,3 +174,11 @@ class Fundamentals(BaseModel):
     revenue_growth: float | None
     profit_margin: float | None
     market_cap: float | None
+
+
+class Seasonality(BaseModel):
+    ticker: str            # PRIMARY KEY
+    computed_at: str
+    as_of: str             # "MM-DD" anchor (server compute date)
+    history_years: int     # distinct years with >=1 usable window value
+    windows_json: str      # JSON list of window objects (key/label/kind/per_year)

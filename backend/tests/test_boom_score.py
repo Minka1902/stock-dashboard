@@ -1,6 +1,7 @@
 """Unit tests for the boom_score source module."""
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -10,6 +11,20 @@ from app.models import (
     ShortInterest, SocialSentiment, TechnicalSignal, WatchItem,
 )
 from app.sources import boom_score as boom_score_source
+
+
+# Dates anchored to "now" so time-decay / earnings-window tests stay valid as the
+# wall clock advances (the boom score decays congress/insider signals over 30 days
+# and flags earnings within 7 days, both relative to the current date).
+_TODAY = datetime.now(timezone.utc).date()
+
+
+def _days_ago(n: int) -> str:
+    return (_TODAY - timedelta(days=n)).isoformat()
+
+
+def _days_ahead(n: int) -> str:
+    return (_TODAY + timedelta(days=n)).isoformat()
 
 
 @pytest.fixture
@@ -42,7 +57,8 @@ def _add_technical(conn, ticker="GME", golden_cross=None, rsi14=55.0,
     )])
 
 
-def _add_insider_buy(conn, ticker="GME", accession="A1", date="2026-06-10"):
+def _add_insider_buy(conn, ticker="GME", accession="A1", date=None):
+    date = date or _days_ago(7)
     db.upsert_trades(conn, [InsiderTrade(
         accession=accession, ticker=ticker, company="Co", owner="Owner",
         role="Director", transaction_date=date, transaction_type="Buy",
@@ -51,7 +67,8 @@ def _add_insider_buy(conn, ticker="GME", accession="A1", date="2026-06-10"):
     )])
 
 
-def _add_congress_purchase(conn, ticker="GME", date="2026-06-22", amount_range="$15,001 - $50,000"):
+def _add_congress_purchase(conn, ticker="GME", date=None, amount_range="$15,001 - $50,000"):
+    date = date or _TODAY.isoformat()  # today → time-decay multiplier = 1.0
     db.upsert_congress_trades(conn, [CongressTrade(
         trade_hash="hash001", representative="Rep Smith", party="D",
         state="CA", ticker=ticker, asset_description="Stock",
@@ -79,7 +96,7 @@ def _add_social(conn, ticker="GME", rank_change=0):
 def _add_analyst(conn, ticker="GME", upgrades=0):
     db.upsert_analyst_signals(conn, [AnalystSignal(
         ticker=ticker, fetched_at="2026-06-22T10:00:00+00:00",
-        next_earnings="2026-07-30", rec_strong_buy=5, rec_buy=10,
+        next_earnings=_days_ahead(34), rec_strong_buy=5, rec_buy=10,
         rec_hold=3, rec_sell=1, recent_upgrades=upgrades, recent_downgrades=0,
         latest_action="up" if upgrades > 0 else None, latest_firm="GS", latest_to_grade="Buy",
     )])
@@ -339,7 +356,7 @@ def test_earnings_soon_flag_set_within_7_days(score_conn):
     _add_ticker(score_conn)
     db.upsert_analyst_signals(score_conn, [AnalystSignal(
         ticker="GME", fetched_at="2026-06-22T10:00:00+00:00",
-        next_earnings="2026-06-25",  # 3 days out
+        next_earnings=_days_ahead(3),  # 3 days out
         rec_strong_buy=3, rec_buy=5, rec_hold=2, rec_sell=1,
         recent_upgrades=0, recent_downgrades=0,
         latest_action=None, latest_firm=None, latest_to_grade=None,

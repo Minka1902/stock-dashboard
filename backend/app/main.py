@@ -18,6 +18,7 @@ import app.sources.short_interest as short_interest_source
 import app.sources.social as social_source
 import app.sources.analyst as analyst_source
 import app.sources.fundamentals as fundamentals_source
+import app.sources.seasonality as seasonality_source
 import app.sources.boom_score as boom_score_source
 
 
@@ -49,6 +50,13 @@ def fundamentals_fetch():
     return fundamentals_source.fetch(tickers)
 
 
+def seasonality_fetch():
+    tickers = [w.ticker for w in db.get_watchlist(conn)]
+    if not tickers:
+        return []
+    return seasonality_source.fetch(tickers, config.SEASONALITY_RANGE)
+
+
 def score_fetch():
     tickers = [w.ticker for w in db.get_watchlist(conn)]
     if not tickers:
@@ -73,6 +81,7 @@ SOURCES = {
     "social":         (lambda: social_source.fetch([w.ticker for w in db.get_watchlist(conn)]), db.upsert_social_sentiment, None),
     "analyst":        (lambda: analyst_source.fetch([w.ticker for w in db.get_watchlist(conn)]), db.upsert_analyst_signals, None),
     "fundamentals":   (lambda: fundamentals_fetch(), db.upsert_fundamentals, None),
+    "seasonality":    (lambda: seasonality_fetch(), db.upsert_seasonality, config.SEASONALITY_MIN_INTERVAL_SECONDS),
     "boom_score":     (lambda: score_fetch(), db.upsert_boom_scores, None),  # must be last
 }
 
@@ -170,6 +179,11 @@ def boom_scores():
 @app.get("/api/fundamentals")
 def fundamentals():
     return [f.model_dump() for f in db.get_fundamentals(conn)]
+
+
+@app.get("/api/seasonality")
+def seasonality():
+    return [s.model_dump() for s in db.get_seasonality(conn)]
 
 
 @app.get("/api/boom-scores/history/{ticker}")

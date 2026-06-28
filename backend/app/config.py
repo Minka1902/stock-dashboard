@@ -42,6 +42,14 @@ CONGRESS_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_CONGRESS_MIN_INTERVAL
 # --- Yield curve ---
 YIELD_CURVE_MONTHS = int(os.environ.get("STOCKS_YIELD_CURVE_MONTHS", "3"))
 
+# --- Seasonality ---
+# Yahoo chart range for deep history ("max" so the "all years" lookback is meaningful).
+SEASONALITY_RANGE = os.environ.get("STOCKS_SEASONALITY_RANGE", "max")
+# Deep history barely changes intraday — refresh at most every 12 hours.
+SEASONALITY_MIN_INTERVAL_SECONDS = int(
+    os.environ.get("STOCKS_SEASONALITY_MIN_INTERVAL_SECONDS", "43200")
+)
+
 
 def contracts_date_window() -> tuple[str, str]:
     """Return (start_date, end_date) ISO strings for the lookback window."""

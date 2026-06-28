@@ -67,6 +67,11 @@
   background: var(--surface-hover);
   color: var(--text);
 }
+.iconBtn[data-active="yes"] {
+  background: var(--accent-weak);
+  border-color: transparent;
+  color: var(--accent);
+}
 
 .refresh {
   display: inline-flex;

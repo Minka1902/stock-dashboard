@@ -1,7 +1,7 @@
 import { LineChart, Line, ResponsiveContainer } from "recharts";
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
-import { formatCurrencyCompact, formatRelativeTime } from "../lib/format";
+import { formatCurrencyCompact, formatRelativeTime, freshnessTone } from "../lib/format";
 import styles from "./TechnicalPanel.module.css";
 
 function RsiCell({ rsi }) {
@@ -36,10 +36,7 @@ function VolCell({ rel_volume }) {
 
 function FreshnessCell({ fetched_at }) {
   const text = formatRelativeTime(fetched_at);
-  const now = Date.now();
-  const then = new Date(fetched_at).getTime();
-  const hrAgo = (now - then) / 3600000;
-  const tone = hrAgo < 1 ? "fresh" : hrAgo < 6 ? "mid" : "stale";
+  const tone = freshnessTone(fetched_at);
   return <span className={styles.freshness} data-tone={tone}>{text}</span>;
 }
 

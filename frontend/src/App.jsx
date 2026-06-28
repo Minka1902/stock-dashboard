@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useDashboardData } from "./hooks/useDashboardData";
 import { useTheme } from "./hooks/useTheme";
+import { useSettings } from "./hooks/useSettings";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
 import StatGrid from "./components/StatGrid";
@@ -18,6 +19,8 @@ import ShortPanel from "./components/ShortPanel";
 import SocialPanel from "./components/SocialPanel";
 import AnalystPanel from "./components/AnalystPanel";
 import FundamentalsPanel from "./components/FundamentalsPanel";
+import SeasonalityPanel from "./components/SeasonalityPanel";
+import SettingsPanel from "./components/SettingsPanel";
 import styles from "./App.module.css";
 
 const TITLES = {
@@ -35,17 +38,20 @@ const TITLES = {
   social:      "WSB Sentiment",
   analyst:     "Analyst Ratings",
   fundamentals: "Fundamentals",
+  seasonality: "Seasonality",
+  settings:    "Settings",
 };
 
 export default function App() {
   const data = useDashboardData();
   const { theme, toggle } = useTheme();
+  const { settings, setSetting } = useSettings();
   const [view, setView] = useState("overview");
 
   const {
     contracts, sources, news, trades, watchlist,
     yieldCurve, signals, fearGreed, congressTrades,
-    shortInterest, social, analyst, boomScores, fundamentals,
+    shortInterest, social, analyst, boomScores, fundamentals, seasonality,
     loading, busy, error, refresh, addWatch, removeWatch,
   } = data;
 
@@ -62,6 +68,8 @@ export default function App() {
             onRefresh={refresh}
             theme={theme}
             onToggleTheme={toggle}
+            dyslexia={settings.dyslexia}
+            onToggleDyslexia={() => setSetting("dyslexia", !settings.dyslexia)}
           />
 
           {error && (
@@ -86,6 +94,7 @@ export default function App() {
                 <FearGreedPanel data={fearGreed} loading={loading} busy={busy} onRefresh={refresh} />
               </div>
               <TechnicalPanel data={signals} loading={loading} busy={busy} onRefresh={refresh} />
+              <SeasonalityPanel data={seasonality} settings={settings} loading={loading} busy={busy} onRefresh={refresh} />
               <CongressPanel data={congressTrades} loading={loading} busy={busy} onRefresh={refresh} />
               <div className={styles.twoCol}>
                 <ShortPanel data={shortInterest} loading={loading} busy={busy} onRefresh={refresh} />
@@ -146,6 +155,14 @@ export default function App() {
 
           {view === "fundamentals" && (
             <FundamentalsPanel data={fundamentals} loading={loading} busy={busy} onRefresh={refresh} />
+          )}
+
+          {view === "seasonality" && (
+            <SeasonalityPanel data={seasonality} settings={settings} loading={loading} busy={busy} onRefresh={refresh} />
+          )}
+
+          {view === "settings" && (
+            <SettingsPanel settings={settings} setSetting={setSetting} />
           )}
         </div>
       </main>
