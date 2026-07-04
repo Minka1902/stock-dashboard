@@ -50,3 +50,17 @@ def test_sources_reports_freshness(client):
 
 def test_refresh_unknown_source_returns_404(client):
     assert client.post("/api/refresh/bogus").status_code == 404
+
+
+def test_sentiment_endpoint_ok_on_empty_db(client):
+    resp = client.get("/api/sentiment")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(body["indicators"]) == {"fear_greed", "vix", "aaii", "put_call"}
+    assert body["overall"]["lean"] == "NEUTRAL"
+
+
+def test_vix_aaii_put_call_endpoints_empty(client):
+    assert client.get("/api/vix").json() == []
+    assert client.get("/api/aaii").json() == []
+    assert client.get("/api/put-call").json() == []

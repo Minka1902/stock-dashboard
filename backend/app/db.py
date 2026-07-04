@@ -2,6 +2,7 @@
 import sqlite3
 
 from app.models import (
+    AaiiSentiment,
     Alert,
     AnalystSignal,
     BoomScore,
@@ -13,12 +14,14 @@ from app.models import (
     InsiderTrade,
     NewsArticle,
     NotifyProfile,
+    PutCallPoint,
     Seasonality,
     ShortInterest,
     SocialSentiment,
     SourceStatus,
     SuggestionLogEntry,
     TechnicalSignal,
+    VixPoint,
     WatchItem,
     YieldPoint,
 )
@@ -105,6 +108,21 @@ def init_schema(conn: sqlite3.Connection) -> None:
             captured_at TEXT PRIMARY KEY,
             score       REAL NOT NULL,
             rating      TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS vix_daily (
+            date  TEXT PRIMARY KEY,
+            close REAL NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS aaii_sentiment (
+            week_ending TEXT PRIMARY KEY,
+            bullish     REAL NOT NULL,
+            neutral     REAL NOT NULL,
+            bearish     REAL NOT NULL,
+            fetched_at  TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS put_call (
+            date  TEXT PRIMARY KEY,
+            ratio REAL NOT NULL
         );
         CREATE TABLE IF NOT EXISTS congress_trades (
             trade_hash        TEXT PRIMARY KEY,
@@ -260,6 +278,10 @@ def init_schema(conn: sqlite3.Connection) -> None:
         ("extreme_greed",             "INTEGER NOT NULL DEFAULT 0"),
         ("earnings_soon",             "INTEGER NOT NULL DEFAULT 0"),
         ("mixed_signals",             "INTEGER NOT NULL DEFAULT 0"),
+        ("vix_spike_contrarian",      "INTEGER NOT NULL DEFAULT 0"),
+        ("aaii_bearish_extreme",      "INTEGER NOT NULL DEFAULT 0"),
+        ("put_call_fear",             "INTEGER NOT NULL DEFAULT 0"),
+        ("aaii_bullish_euphoria",     "INTEGER NOT NULL DEFAULT 0"),
     ]:
         _try_add_column(conn, "boom_scores", col, col_def)
 
@@ -504,6 +526,94 @@ def get_fear_greed(conn: sqlite3.Connection, days: int = 30) -> list[FearGreedSn
     return [FearGreedSnapshot(**dict(row)) for row in cur.fetchall()]
 
 
+# ---------- VIX ----------
+def upsert_vix(conn: sqlite3.Connection, records: list[VixPoint]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO vix_daily (date, close)
+        VALUES (:date, :close)
+        ON CONFLICT(date) DO UPDATE SET close=excluded.close
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+
+
+def get_vix(conn: sqlite3.Connection, days: int = 180) -> list[VixPoint]:
+    cur = conn.execute(
+        "SELECT * FROM vix_daily WHERE date >= date('now', ?) ORDER BY date ASC",
+        (f"-{days} days",),
+    )
+    return [VixPoint(**dict(row)) for row in cur.fetchall()]
+
+
+def get_latest_vix_closes(conn: sqlite3.Connection, n: int = 2) -> list[float]:
+    """Most recent N closes, oldest first (for threshold-crossing checks)."""
+    cur = conn.execute(
+        "SELECT close FROM vix_daily ORDER BY date DESC LIMIT ?", (n,)
+    )
+    closes = [row[0] for row in cur.fetchall()]
+    return list(reversed(closes))
+
+
+# ---------- AAII sentiment survey ----------
+def upsert_aaii(conn: sqlite3.Connection, records: list[AaiiSentiment]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO aaii_sentiment (week_ending, bullish, neutral, bearish, fetched_at)
+        VALUES (:week_ending, :bullish, :neutral, :bearish, :fetched_at)
+        ON CONFLICT(week_ending) DO UPDATE SET
+            bullish=excluded.bullish, neutral=excluded.neutral,
+            bearish=excluded.bearish, fetched_at=excluded.fetched_at
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+
+
+def get_aaii(conn: sqlite3.Connection, weeks: int = 52) -> list[AaiiSentiment]:
+    cur = conn.execute(
+        "SELECT * FROM aaii_sentiment WHERE week_ending >= date('now', ?) ORDER BY week_ending ASC",
+        (f"-{weeks * 7} days",),
+    )
+    return [AaiiSentiment(**dict(row)) for row in cur.fetchall()]
+
+
+def get_latest_aaii(conn: sqlite3.Connection) -> AaiiSentiment | None:
+    cur = conn.execute(
+        "SELECT * FROM aaii_sentiment ORDER BY week_ending DESC LIMIT 1"
+    )
+    row = cur.fetchone()
+    return AaiiSentiment(**dict(row)) if row else None
+
+
+# ---------- put/call ratio ----------
+def upsert_put_call(conn: sqlite3.Connection, records: list[PutCallPoint]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO put_call (date, ratio)
+        VALUES (:date, :ratio)
+        ON CONFLICT(date) DO UPDATE SET ratio=excluded.ratio
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+
+
+def get_put_call(conn: sqlite3.Connection, days: int = 180) -> list[PutCallPoint]:
+    cur = conn.execute(
+        "SELECT * FROM put_call WHERE date >= date('now', ?) ORDER BY date ASC",
+        (f"-{days} days",),
+    )
+    return [PutCallPoint(**dict(row)) for row in cur.fetchall()]
+
+
+def get_latest_put_call(conn: sqlite3.Connection) -> PutCallPoint | None:
+    cur = conn.execute("SELECT * FROM put_call ORDER BY date DESC LIMIT 1")
+    row = cur.fetchone()
+    return PutCallPoint(**dict(row)) if row else None
+
+
 # ---------- congress trades ----------
 def upsert_congress_trades(conn: sqlite3.Connection, records: list[CongressTrade]) -> None:
     conn.executemany(
@@ -654,6 +764,7 @@ _BOOM_BOOL_COLS = (
     "yield_uninversion", "contracts_catalyst", "seasonal_tailwind",
     "death_cross", "insider_cluster_sell", "overbought_rsi", "congress_sale",
     "analyst_downgrade_cluster", "extreme_greed", "earnings_soon", "mixed_signals",
+    "vix_spike_contrarian", "aaii_bearish_extreme", "put_call_fear", "aaii_bullish_euphoria",
 )
 
 
@@ -667,7 +778,8 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              near_52w_high, macd_crossover, volume_confirmed, fear_greed_contrarian,
              yield_uninversion, contracts_catalyst, seasonal_tailwind,
              death_cross, insider_cluster_sell, overbought_rsi, congress_sale,
-             analyst_downgrade_cluster, extreme_greed, earnings_soon, mixed_signals)
+             analyst_downgrade_cluster, extreme_greed, earnings_soon, mixed_signals,
+             vix_spike_contrarian, aaii_bearish_extreme, put_call_fear, aaii_bullish_euphoria)
         VALUES
             (:ticker, :computed_at, :score, :components,
              :golden_cross, :rsi_recovery, :insider_cluster_buy, :congress_buy,
@@ -675,7 +787,8 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              :near_52w_high, :macd_crossover, :volume_confirmed, :fear_greed_contrarian,
              :yield_uninversion, :contracts_catalyst, :seasonal_tailwind,
              :death_cross, :insider_cluster_sell, :overbought_rsi, :congress_sale,
-             :analyst_downgrade_cluster, :extreme_greed, :earnings_soon, :mixed_signals)
+             :analyst_downgrade_cluster, :extreme_greed, :earnings_soon, :mixed_signals,
+             :vix_spike_contrarian, :aaii_bearish_extreme, :put_call_fear, :aaii_bullish_euphoria)
         ON CONFLICT(ticker) DO UPDATE SET
             computed_at=excluded.computed_at, score=excluded.score,
             components=excluded.components,
@@ -694,7 +807,11 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
             overbought_rsi=excluded.overbought_rsi, congress_sale=excluded.congress_sale,
             analyst_downgrade_cluster=excluded.analyst_downgrade_cluster,
             extreme_greed=excluded.extreme_greed,
-            earnings_soon=excluded.earnings_soon, mixed_signals=excluded.mixed_signals
+            earnings_soon=excluded.earnings_soon, mixed_signals=excluded.mixed_signals,
+            vix_spike_contrarian=excluded.vix_spike_contrarian,
+            aaii_bearish_extreme=excluded.aaii_bearish_extreme,
+            put_call_fear=excluded.put_call_fear,
+            aaii_bullish_euphoria=excluded.aaii_bullish_euphoria
         """,
         [r.model_dump() for r in records],
     )

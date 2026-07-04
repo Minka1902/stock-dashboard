@@ -51,6 +51,25 @@ SEASONALITY_MIN_INTERVAL_SECONDS = int(
 )
 
 
+# --- Market sentiment indicators ---
+# Yahoo chart range for VIX daily history.
+VIX_RANGE = os.environ.get("STOCKS_VIX_RANGE", "6mo")
+# AAII survey updates weekly — check at most every 6 hours.
+AAII_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_AAII_MIN_INTERVAL_SECONDS", "21600"))
+# Put/call is a 5-day average — hourly refresh is plenty.
+PUT_CALL_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_PUT_CALL_MIN_INTERVAL_SECONDS", "3600"))
+
+# Contrarian signal thresholds.
+SENT_FG_BUY = float(os.environ.get("STOCKS_SENT_FG_BUY", "25"))           # extreme fear → buy
+SENT_FG_SELL = float(os.environ.get("STOCKS_SENT_FG_SELL", "75"))         # extreme greed → sell
+SENT_VIX_ALERT = float(os.environ.get("STOCKS_SENT_VIX_ALERT", "19"))     # market entering a move
+SENT_VIX_EXTREME = float(os.environ.get("STOCKS_SENT_VIX_EXTREME", "30")) # historical turning point
+SENT_AAII_EXTREME_PCT = float(os.environ.get("STOCKS_SENT_AAII_EXTREME_PCT", "45"))
+SENT_AAII_SPREAD = float(os.environ.get("STOCKS_SENT_AAII_SPREAD", "20"))
+SENT_PC_BUY = float(os.environ.get("STOCKS_SENT_PC_BUY", "1.0"))          # heavy puts = fear → buy
+SENT_PC_SELL = float(os.environ.get("STOCKS_SENT_PC_SELL", "0.8"))        # complacency → sell
+
+
 # --- Daily suggestion digest (email + SMS) ---
 # All delivery is gated on these being set; unset channels safely no-op + log.
 # Email via SMTP (works with a Gmail app password or any SMTP host):

@@ -82,6 +82,24 @@ class FearGreedSnapshot(BaseModel):
     rating: str        # "Extreme Fear" | "Fear" | "Neutral" | "Greed" | "Extreme Greed"
 
 
+class VixPoint(BaseModel):
+    date: str    # YYYY-MM-DD — PRIMARY KEY
+    close: float
+
+
+class AaiiSentiment(BaseModel):
+    week_ending: str   # YYYY-MM-DD — PRIMARY KEY
+    bullish: float     # percentages 0–100
+    neutral: float
+    bearish: float
+    fetched_at: str
+
+
+class PutCallPoint(BaseModel):
+    date: str    # YYYY-MM-DD — PRIMARY KEY
+    ratio: float  # 5-day average total put/call ratio
+
+
 class CongressTrade(BaseModel):
     trade_hash: str        # PRIMARY KEY (content hash)
     representative: str
@@ -151,6 +169,9 @@ class BoomScore(BaseModel):
     yield_uninversion: bool = False
     contracts_catalyst: bool = False
     seasonal_tailwind: bool = False
+    vix_spike_contrarian: bool = False
+    aaii_bearish_extreme: bool = False
+    put_call_fear: bool = False
     # bearish signals (fire when score is negative contribution)
     death_cross: bool = False
     insider_cluster_sell: bool = False
@@ -158,6 +179,7 @@ class BoomScore(BaseModel):
     congress_sale: bool = False
     analyst_downgrade_cluster: bool = False
     extreme_greed: bool = False
+    aaii_bullish_euphoria: bool = False
     # risk / meta flags
     earnings_soon: bool = False
     mixed_signals: bool = False

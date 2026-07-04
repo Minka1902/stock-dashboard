@@ -13,6 +13,7 @@ import WatchlistPanel from "./components/WatchlistPanel";
 import YieldCurvePanel from "./components/YieldCurvePanel";
 import TechnicalPanel from "./components/TechnicalPanel";
 import FearGreedPanel from "./components/FearGreedPanel";
+import MarketSentimentPanel from "./components/MarketSentimentPanel";
 import CongressPanel from "./components/CongressPanel";
 import BoomScorePanel from "./components/BoomScorePanel";
 import ShortPanel from "./components/ShortPanel";
@@ -27,6 +28,7 @@ import AlertsPanel from "./components/AlertsPanel";
 import styles from "./App.module.css";
 
 const TITLES = {
+  sentiment:   "Market Sentiment",
   overview:    "Overview",
   contracts:   "Contracts",
   trades:      "Trades",
@@ -52,11 +54,11 @@ export default function App() {
   const data = useDashboardData();
   const { theme, toggle } = useTheme();
   const { settings, setSetting } = useSettings();
-  const [view, setView] = useState("overview");
+  const [view, setView] = useState("sentiment");
 
   const {
     contracts, sources, news, trades, watchlist,
-    yieldCurve, signals, fearGreed, congressTrades,
+    yieldCurve, signals, fearGreed, vix, aaii, putCall, sentiment, congressTrades,
     shortInterest, social, analyst, boomScores, fundamentals, seasonality,
     portfolio, suggestions, alerts, unreadAlerts,
     loading, busy, error, refresh, addWatch, removeWatch, addHolding, removeHolding,
@@ -90,8 +92,19 @@ export default function App() {
 
           <SourceStatus sources={sources} />
 
+          {view === "sentiment" && (
+            <MarketSentimentPanel
+              sentiment={sentiment} fearGreed={fearGreed} vix={vix} aaii={aaii}
+              putCall={putCall} loading={loading} busy={busy} onRefresh={refresh}
+            />
+          )}
+
           {view === "overview" && (
             <>
+              <MarketSentimentPanel
+                sentiment={sentiment} fearGreed={fearGreed} vix={vix} aaii={aaii}
+                putCall={putCall} loading={loading} busy={busy} onRefresh={refresh}
+              />
               <BoomScorePanel data={boomScores} loading={loading} busy={busy} onRefresh={refresh} />
               <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} />
               <StatGrid contracts={contracts} sources={sources} loading={loading} />

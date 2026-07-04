@@ -8,6 +8,10 @@ import {
   getYieldCurve,
   getSignals,
   getFearGreed,
+  getVix,
+  getAaii,
+  getPutCall,
+  getSentiment,
   getCongressTrades,
   getShortInterest,
   getSocial,
@@ -29,7 +33,7 @@ import {
 const REFRESH_MS = 180000; // 3 minutes, matches backend default
 const EXTERNAL_SOURCES = [
   "usaspending", "gdelt", "edgar",
-  "yield_curve", "technical", "fear_greed", "congress",
+  "yield_curve", "technical", "fear_greed", "vix", "aaii", "put_call", "congress",
   "short_interest", "social", "analyst", "fundamentals", "seasonality", "boom_score",
 ];
 
@@ -47,6 +51,10 @@ export function useDashboardData() {
   const [yieldCurve, setYieldCurve] = useState([]);
   const [signals, setSignals] = useState([]);
   const [fearGreed, setFearGreed] = useState([]);
+  const [vix, setVix] = useState([]);
+  const [aaii, setAaii] = useState([]);
+  const [putCall, setPutCall] = useState([]);
+  const [sentiment, setSentiment] = useState(null);
   const [congressTrades, setCongressTrades] = useState([]);
   const [shortInterest, setShortInterest] = useState([]);
   const [social, setSocial] = useState([]);
@@ -64,7 +72,7 @@ export function useDashboardData() {
 
   const load = useCallback(async () => {
     try {
-      const [c, s, n, t, w, yc, sig, fg, ct, si, soc, ana, bs, fund, seas, port, sugg, al] = await Promise.all([
+      const [c, s, n, t, w, yc, sig, fg, vx, aa, pc, sent, ct, si, soc, ana, bs, fund, seas, port, sugg, al] = await Promise.all([
         getContracts(),
         getSources(),
         getNews(),
@@ -73,6 +81,10 @@ export function useDashboardData() {
         getYieldCurve(),
         getSignals(),
         getFearGreed(),
+        getVix(),
+        getAaii(),
+        getPutCall(),
+        getSentiment(),
         getCongressTrades(),
         getShortInterest(),
         getSocial(),
@@ -92,6 +104,10 @@ export function useDashboardData() {
       setYieldCurve(yc);
       setSignals(sig);
       setFearGreed(fg);
+      setVix(vx);
+      setAaii(aa);
+      setPutCall(pc);
+      setSentiment(sent);
       setCongressTrades(ct);
       setShortInterest(si);
       setSocial(soc);
@@ -164,6 +180,10 @@ export function useDashboardData() {
     yieldCurve,
     signals,
     fearGreed,
+    vix,
+    aaii,
+    putCall,
+    sentiment,
     congressTrades,
     shortInterest,
     social,

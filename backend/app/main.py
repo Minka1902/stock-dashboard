@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app import config, db, ingest, notify, suggestions
+from app import config, db, ingest, notify, sentiment, suggestions
 from app import alerts as alerts_source
 from app.market_calendar import is_trading_day, next_trading_day
 from app.models import Holding, NotifyProfile, WatchItem
@@ -17,6 +17,9 @@ from app.sources import edgar, gdelt, usaspending
 import app.sources.yield_curve as yield_curve_source
 import app.sources.technical as technical_source
 import app.sources.fear_greed as fear_greed_source
+import app.sources.vix as vix_source
+import app.sources.aaii as aaii_source
+import app.sources.put_call as put_call_source
 import app.sources.congress as congress_source
 import app.sources.short_interest as short_interest_source
 import app.sources.social as social_source
@@ -80,6 +83,9 @@ SOURCES = {
     "yield_curve": (lambda: yield_curve_source.fetch(config.YIELD_CURVE_MONTHS), db.upsert_yield_curve, None),
     "technical":   (lambda: signals_fetch(), db.upsert_technical_signals, None),
     "fear_greed":  (lambda: fear_greed_source.fetch(), db.upsert_fear_greed, None),
+    "vix":         (lambda: vix_source.fetch(config.VIX_RANGE), db.upsert_vix, None),
+    "aaii":        (lambda: aaii_source.fetch(), db.upsert_aaii, config.AAII_MIN_INTERVAL_SECONDS),
+    "put_call":    (lambda: put_call_source.fetch(), db.upsert_put_call, config.PUT_CALL_MIN_INTERVAL_SECONDS),
     "congress":       (lambda: congress_source.fetch(config.CONGRESS_LOOKBACK_DAYS), db.upsert_congress_trades, config.CONGRESS_MIN_INTERVAL_SECONDS),
     "short_interest": (lambda: short_interest_source.fetch([w.ticker for w in db.get_watchlist(conn)]), db.upsert_short_interest, None),
     "social":         (lambda: social_source.fetch([w.ticker for w in db.get_watchlist(conn)]), db.upsert_social_sentiment, None),
@@ -176,6 +182,26 @@ def signals():
 @app.get("/api/fear-greed")
 def fear_greed():
     return [s.model_dump() for s in db.get_fear_greed(conn)]
+
+
+@app.get("/api/vix")
+def vix():
+    return [p.model_dump() for p in db.get_vix(conn)]
+
+
+@app.get("/api/aaii")
+def aaii():
+    return [s.model_dump() for s in db.get_aaii(conn)]
+
+
+@app.get("/api/put-call")
+def put_call():
+    return [p.model_dump() for p in db.get_put_call(conn)]
+
+
+@app.get("/api/sentiment")
+def market_sentiment():
+    return sentiment.build_summary(conn)
 
 
 @app.get("/api/congress-trades")
