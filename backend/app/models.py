@@ -76,6 +76,15 @@ class TechnicalSignal(BaseModel):
     volume_json: str = "[]"       # JSON array of last 20 daily volumes
 
 
+class LiveQuote(BaseModel):
+    ticker: str
+    price: float                # last 1m close incl. pre/post; fallback regularMarketPrice
+    change_pct: float | None    # vs previous regular close
+    previous_close: float | None
+    market_state: str           # "PRE" | "LIVE" | "POST" | "CLOSED"
+    fetched_at: str
+
+
 class FearGreedSnapshot(BaseModel):
     captured_at: str   # ISO timestamp — PRIMARY KEY
     score: float       # 0–100

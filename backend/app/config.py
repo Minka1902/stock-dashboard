@@ -51,6 +51,13 @@ SEASONALITY_MIN_INTERVAL_SECONDS = int(
 )
 
 
+# --- Live quotes ---
+# Server-side cache TTL; slightly under the frontend's 30s poll so each poll
+# gets at most one fresh Yahoo fetch and concurrent clients share it.
+QUOTES_TTL_SECONDS = int(os.environ.get("STOCKS_QUOTES_TTL_SECONDS", "25"))
+QUOTES_TIMEOUT_SECONDS = float(os.environ.get("STOCKS_QUOTES_TIMEOUT_SECONDS", "10"))
+
+
 # --- Market sentiment indicators ---
 # Yahoo chart range for VIX daily history.
 VIX_RANGE = os.environ.get("STOCKS_VIX_RANGE", "6mo")

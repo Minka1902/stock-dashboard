@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useDashboardData } from "./hooks/useDashboardData";
+import { useLiveQuotes } from "./hooks/useLiveQuotes";
 import { useTheme } from "./hooks/useTheme";
 import { useSettings } from "./hooks/useSettings";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
+import LiveTicker from "./components/LiveTicker";
 import StatGrid from "./components/StatGrid";
 import SourceStatus from "./components/SourceStatus";
 import ContractsPanel from "./components/ContractsPanel";
@@ -52,6 +54,7 @@ const TITLES = {
 
 export default function App() {
   const data = useDashboardData();
+  const { quotes, quotesByTicker } = useLiveQuotes();
   const { theme, toggle } = useTheme();
   const { settings, setSetting } = useSettings();
   const [view, setView] = useState("sentiment");
@@ -83,6 +86,8 @@ export default function App() {
             unreadAlerts={unreadAlerts}
             onOpenAlerts={() => setView("alerts")}
           />
+
+          <LiveTicker quotes={quotes} />
 
           {error && (
             <div className={styles.error} role="alert">
@@ -142,7 +147,7 @@ export default function App() {
           )}
 
           {view === "watchlist" && (
-            <WatchlistPanel watchlist={watchlist} onAdd={addWatch} onRemove={removeWatch} />
+            <WatchlistPanel watchlist={watchlist} quotes={quotesByTicker} onAdd={addWatch} onRemove={removeWatch} />
           )}
 
           {view === "yield-curve" && (
@@ -194,7 +199,7 @@ export default function App() {
           )}
 
           {view === "portfolio" && (
-            <PortfolioPanel portfolio={portfolio} signals={signals} onAdd={addHolding} onRemove={removeHolding} />
+            <PortfolioPanel portfolio={portfolio} signals={signals} quotes={quotesByTicker} onAdd={addHolding} onRemove={removeHolding} />
           )}
 
           {view === "settings" && (

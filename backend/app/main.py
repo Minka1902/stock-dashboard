@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app import config, db, ingest, notify, sentiment, suggestions
+from app import config, db, ingest, notify, quotes, sentiment, suggestions
 from app import alerts as alerts_source
 from app.market_calendar import is_trading_day, next_trading_day
 from app.models import Holding, NotifyProfile, WatchItem
@@ -202,6 +202,17 @@ def put_call():
 @app.get("/api/sentiment")
 def market_sentiment():
     return sentiment.build_summary(conn)
+
+
+@app.get("/api/quotes")
+def live_quotes():
+    tickers = sorted(
+        {w.ticker for w in db.get_watchlist(conn)} | {h.ticker for h in db.get_portfolio(conn)}
+    )
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    if not tickers:
+        return {"as_of": now, "quotes": []}
+    return {"as_of": now, "quotes": [q.model_dump() for q in quotes.get_quotes(tickers)]}
 
 
 @app.get("/api/congress-trades")

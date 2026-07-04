@@ -2,7 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import db
-from app.models import ContractRecord
+from app import quotes as quotes_module
+from app.models import ContractRecord, LiveQuote
 
 
 @pytest.fixture
@@ -24,8 +25,10 @@ def client(tmp_path, monkeypatch):
         ]
     main_module.contracts_fetch = stub_fetch
 
+    quotes_module._cache.clear()
     with TestClient(main_module.app) as c:
         yield c
+    quotes_module._cache.clear()
 
 
 def test_health(client):
@@ -58,6 +61,36 @@ def test_sentiment_endpoint_ok_on_empty_db(client):
     body = resp.json()
     assert set(body["indicators"]) == {"fear_greed", "vix", "aaii", "put_call"}
     assert body["overall"]["lean"] == "NEUTRAL"
+
+
+def test_quotes_empty_watchlist_and_portfolio(client):
+    resp = client.get("/api/quotes")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["quotes"] == []
+    assert "as_of" in body
+
+
+def test_quotes_union_of_watchlist_and_portfolio(client, monkeypatch):
+    requested = []
+
+    def stub_fetch_quotes(tickers):
+        requested.append(list(tickers))
+        return [
+            LiveQuote(ticker=t, price=100.0, change_pct=1.5, previous_close=98.5,
+                      market_state="PRE", fetched_at="2026-07-04T12:00:00+00:00")
+            for t in tickers
+        ]
+
+    monkeypatch.setattr(quotes_module, "fetch_quotes", stub_fetch_quotes)
+    client.post("/api/watchlist", json={"ticker": "LMT", "note": ""})
+    client.post("/api/portfolio", json={"ticker": "NOC", "shares": 1, "avg_cost": 10})
+
+    body = client.get("/api/quotes").json()
+    assert requested == [["LMT", "NOC"]]
+    tickers = {q["ticker"] for q in body["quotes"]}
+    assert tickers == {"LMT", "NOC"}
+    assert all("price" in q and "market_state" in q for q in body["quotes"])
 
 
 def test_vix_aaii_put_call_endpoints_empty(client):
