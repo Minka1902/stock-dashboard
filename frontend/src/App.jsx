@@ -61,7 +61,7 @@ export default function App() {
 
   const {
     contracts, sources, news, trades, watchlist,
-    yieldCurve, signals, fearGreed, vix, aaii, putCall, sentiment, congressTrades,
+    yieldCurve, signals, fearGreed, vix, aaii, putCall, marginDebt, sentiment, congressTrades,
     shortInterest, social, analyst, boomScores, fundamentals, seasonality,
     portfolio, suggestions, alerts, unreadAlerts,
     loading, busy, error, refresh, addWatch, removeWatch, addHolding, removeHolding,
@@ -100,7 +100,7 @@ export default function App() {
           {view === "sentiment" && (
             <MarketSentimentPanel
               sentiment={sentiment} fearGreed={fearGreed} vix={vix} aaii={aaii}
-              putCall={putCall} loading={loading} busy={busy} onRefresh={refresh}
+              putCall={putCall} marginDebt={marginDebt} loading={loading} busy={busy} onRefresh={refresh}
             />
           )}
 
@@ -108,7 +108,7 @@ export default function App() {
             <>
               <MarketSentimentPanel
                 sentiment={sentiment} fearGreed={fearGreed} vix={vix} aaii={aaii}
-                putCall={putCall} loading={loading} busy={busy} onRefresh={refresh}
+                putCall={putCall} marginDebt={marginDebt} loading={loading} busy={busy} onRefresh={refresh}
               />
               <BoomScorePanel data={boomScores} loading={loading} busy={busy} onRefresh={refresh} />
               <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} />

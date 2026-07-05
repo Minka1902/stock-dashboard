@@ -20,6 +20,7 @@ import app.sources.fear_greed as fear_greed_source
 import app.sources.vix as vix_source
 import app.sources.aaii as aaii_source
 import app.sources.put_call as put_call_source
+import app.sources.margin_debt as margin_debt_source
 import app.sources.congress as congress_source
 import app.sources.short_interest as short_interest_source
 import app.sources.social as social_source
@@ -86,6 +87,7 @@ SOURCES = {
     "vix":         (lambda: vix_source.fetch(config.VIX_RANGE), db.upsert_vix, None),
     "aaii":        (lambda: aaii_source.fetch(), db.upsert_aaii, config.AAII_MIN_INTERVAL_SECONDS),
     "put_call":    (lambda: put_call_source.fetch(), db.upsert_put_call, config.PUT_CALL_MIN_INTERVAL_SECONDS),
+    "margin_debt": (lambda: margin_debt_source.fetch(), db.upsert_margin_debt, config.MARGIN_DEBT_MIN_INTERVAL_SECONDS),
     "congress":       (lambda: congress_source.fetch(config.CONGRESS_LOOKBACK_DAYS), db.upsert_congress_trades, config.CONGRESS_MIN_INTERVAL_SECONDS),
     "short_interest": (lambda: short_interest_source.fetch([w.ticker for w in db.get_watchlist(conn)]), db.upsert_short_interest, None),
     "social":         (lambda: social_source.fetch([w.ticker for w in db.get_watchlist(conn)]), db.upsert_social_sentiment, None),
@@ -197,6 +199,11 @@ def aaii():
 @app.get("/api/put-call")
 def put_call():
     return [p.model_dump() for p in db.get_put_call(conn)]
+
+
+@app.get("/api/margin-debt")
+def margin_debt():
+    return margin_debt_source.compute_yoy(db.get_margin_debt(conn))
 
 
 @app.get("/api/sentiment")

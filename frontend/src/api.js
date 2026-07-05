@@ -17,6 +17,7 @@ export const getFearGreed = () => getJSON("/api/fear-greed");
 export const getVix = () => getJSON("/api/vix");
 export const getAaii = () => getJSON("/api/aaii");
 export const getPutCall = () => getJSON("/api/put-call");
+export const getMarginDebt = () => getJSON("/api/margin-debt");
 export const getSentiment = () => getJSON("/api/sentiment");
 export const getQuotes = () => getJSON("/api/quotes");
 export const getCongressTrades = () => getJSON("/api/congress-trades");

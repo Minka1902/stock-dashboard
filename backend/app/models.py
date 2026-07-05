@@ -109,6 +109,11 @@ class PutCallPoint(BaseModel):
     ratio: float  # 5-day average total put/call ratio
 
 
+class MarginDebtPoint(BaseModel):
+    month: str             # "YYYY-MM" — PRIMARY KEY
+    debit_balances: float  # $ millions (FINRA margin account debit balances)
+
+
 class CongressTrade(BaseModel):
     trade_hash: str        # PRIMARY KEY (content hash)
     representative: str
@@ -181,6 +186,7 @@ class BoomScore(BaseModel):
     vix_spike_contrarian: bool = False
     aaii_bearish_extreme: bool = False
     put_call_fear: bool = False
+    margin_debt_deleveraging: bool = False
     # bearish signals (fire when score is negative contribution)
     death_cross: bool = False
     insider_cluster_sell: bool = False
@@ -189,6 +195,7 @@ class BoomScore(BaseModel):
     analyst_downgrade_cluster: bool = False
     extreme_greed: bool = False
     aaii_bullish_euphoria: bool = False
+    margin_debt_euphoria: bool = False
     # risk / meta flags
     earnings_soon: bool = False
     mixed_signals: bool = False

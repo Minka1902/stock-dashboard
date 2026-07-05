@@ -76,6 +76,14 @@ SENT_AAII_SPREAD = float(os.environ.get("STOCKS_SENT_AAII_SPREAD", "20"))
 SENT_PC_BUY = float(os.environ.get("STOCKS_SENT_PC_BUY", "1.0"))          # heavy puts = fear → buy
 SENT_PC_SELL = float(os.environ.get("STOCKS_SENT_PC_SELL", "0.8"))        # complacency → sell
 
+# FINRA margin debt updates monthly — check at most once a day.
+MARGIN_DEBT_MIN_INTERVAL_SECONDS = int(
+    os.environ.get("STOCKS_MARGIN_DEBT_MIN_INTERVAL_SECONDS", "86400")
+)
+SENT_MARGIN_SELL = float(os.environ.get("STOCKS_SENT_MARGIN_SELL", "45"))     # %YoY: overbought
+SENT_MARGIN_EXTREME = float(os.environ.get("STOCKS_SENT_MARGIN_EXTREME", "60"))  # pre-crash leverage
+SENT_MARGIN_BUY = float(os.environ.get("STOCKS_SENT_MARGIN_BUY", "-20"))      # deleveraging washout
+
 
 # --- Daily suggestion digest (email + SMS) ---
 # All delivery is gated on these being set; unset channels safely no-op + log.

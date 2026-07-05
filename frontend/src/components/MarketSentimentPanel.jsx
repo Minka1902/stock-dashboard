@@ -62,13 +62,21 @@ function NoData() {
   return <p className={styles.noData}>No data yet — refresh to fetch.</p>;
 }
 
+function formatBalance(millions) {
+  if (millions == null) return null;
+  return millions >= 1_000_000
+    ? `$${(millions / 1_000_000).toFixed(2)}T`
+    : `$${Math.round(millions / 1000)}B`;
+}
+
 export default function MarketSentimentPanel({
-  sentiment, fearGreed, vix, aaii, putCall, loading, busy, onRefresh,
+  sentiment, fearGreed, vix, aaii, putCall, marginDebt, loading, busy, onRefresh,
 }) {
   const ind = sentiment?.indicators || {};
   const lean = sentiment?.overall?.lean || "NEUTRAL";
   const hasAny =
-    fearGreed.length > 0 || vix.length > 0 || aaii.length > 0 || putCall.length > 0;
+    fearGreed.length > 0 || vix.length > 0 || aaii.length > 0 || putCall.length > 0 ||
+    marginDebt.length > 0;
 
   const fgData = fearGreed.map((s) => ({
     date: s.captured_at.slice(0, 10), score: s.score, rating: s.rating,
@@ -78,6 +86,9 @@ export default function MarketSentimentPanel({
     date: s.week_ending, bullish: s.bullish, neutral: s.neutral, bearish: s.bearish,
   }));
   const pcData = putCall.map((p) => ({ date: p.date, ratio: p.ratio }));
+  const mdData = marginDebt
+    .filter((p) => p.yoy_pct != null)
+    .map((p) => ({ date: p.month, yoy: p.yoy_pct }));
 
   return (
     <section className={styles.panel} id="market-sentiment">
@@ -85,7 +96,7 @@ export default function MarketSentimentPanel({
         <div>
           <h2 className={styles.title}>Market Sentiment</h2>
           <p className={styles.subtitle}>
-            Four contrarian crash/rally indicators — extremes mark the turning points
+            Five contrarian crash/rally indicators — extremes mark the turning points
           </p>
         </div>
         {sentiment && (
@@ -255,6 +266,47 @@ export default function MarketSentimentPanel({
                   <Tooltip
                     contentStyle={TOOLTIP_STYLE}
                     formatter={(v) => [v.toFixed(2), "Put/Call"]}
+                    labelFormatter={(_l, pts) => pts?.[0]?.payload?.date ?? ""}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </Card>
+
+          <Card
+            title="Margin Debt"
+            threshold="≥45% sell · ≥60% extreme · ≤−20% buy"
+            signal={ind.margin_debt?.signal}
+            value={
+              ind.margin_debt?.value != null
+                ? `${ind.margin_debt.value >= 0 ? "+" : ""}${ind.margin_debt.value.toFixed(0)}%`
+                : null
+            }
+            sub={
+              ind.margin_debt?.value != null
+                ? `YoY · ${ind.margin_debt.as_of} · ${formatBalance(ind.margin_debt.debit_balances)}`
+                : "FINRA margin leverage, %YoY"
+            }
+          >
+            {mdData.length === 0 ? <NoData /> : (
+              <ResponsiveContainer width="100%" height={72}>
+                <AreaChart data={mdData} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
+                  <defs>
+                    <linearGradient id="msMd" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <Area
+                    type="monotone" dataKey="yoy" dot={false} strokeWidth={2}
+                    stroke="var(--accent)" fill="url(#msMd)" isAnimationActive={false}
+                  />
+                  <ReferenceLine y={60} stroke="var(--negative)" strokeDasharray="4 3" />
+                  <ReferenceLine y={45} stroke="var(--text-faint)" strokeDasharray="4 3" />
+                  <ReferenceLine y={-20} stroke="var(--positive)" strokeDasharray="4 3" />
+                  <Tooltip
+                    contentStyle={TOOLTIP_STYLE}
+                    formatter={(v) => [`${v >= 0 ? "+" : ""}${v.toFixed(1)}%`, "YoY"]}
                     labelFormatter={(_l, pts) => pts?.[0]?.payload?.date ?? ""}
                   />
                 </AreaChart>

@@ -8,8 +8,8 @@ import pytest
 from app import db
 from app.models import (
     AaiiSentiment, AnalystSignal, BoomScore, CongressTrade, InsiderTrade,
-    PutCallPoint, Seasonality, ShortInterest, SocialSentiment, TechnicalSignal,
-    VixPoint, WatchItem,
+    MarginDebtPoint, PutCallPoint, Seasonality, ShortInterest, SocialSentiment,
+    TechnicalSignal, VixPoint, WatchItem,
 )
 from app.sources import boom_score as boom_score_source
 
@@ -414,6 +414,46 @@ def test_put_call_below_threshold_does_not_fire(score_conn):
     db.upsert_put_call(score_conn, [PutCallPoint(date=_TODAY.isoformat(), ratio=0.9)])
     scores = boom_score_source.compute_all(["GME"], score_conn)
     assert scores[0].put_call_fear is False
+
+
+def _seed_margin_yoy(conn, yoy_pct):
+    prev = 100_000.0
+    db.upsert_margin_debt(conn, [
+        MarginDebtPoint(month="2025-05", debit_balances=prev),
+        MarginDebtPoint(month="2026-05", debit_balances=prev * (1 + yoy_pct / 100)),
+    ])
+
+
+def test_margin_debt_deleveraging_adds_10(score_conn):
+    _add_ticker(score_conn)
+    _seed_margin_yoy(score_conn, -25.0)
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].margin_debt_deleveraging is True
+    assert scores[0].score == 10
+
+
+def test_margin_debt_euphoria_subtracts_10(score_conn):
+    _add_ticker(score_conn)
+    _seed_margin_yoy(score_conn, 50.0)
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].margin_debt_euphoria is True
+    assert scores[0].score == -10
+
+
+def test_margin_debt_extreme_range_still_euphoria(score_conn):
+    _add_ticker(score_conn)
+    _seed_margin_yoy(score_conn, 65.0)
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].margin_debt_euphoria is True
+    assert scores[0].margin_debt_deleveraging is False
+
+
+def test_margin_debt_moderate_fires_nothing(score_conn):
+    _add_ticker(score_conn)
+    _seed_margin_yoy(score_conn, 20.0)
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].margin_debt_euphoria is False
+    assert scores[0].margin_debt_deleveraging is False
 
 
 # ---- Phase 3: mixed signals + earnings soon ----

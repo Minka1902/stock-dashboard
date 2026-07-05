@@ -1,4 +1,4 @@
-"""Market-wide sentiment summary — contrarian signals from 4 indicators.
+"""Market-wide sentiment summary — contrarian signals from 5 indicators.
 
 Pure DB read + threshold logic; no external calls. Signals:
   BUY / SELL / NEUTRAL          — contrarian read (extremes are entry/exit points)
@@ -9,6 +9,7 @@ Pure DB read + threshold logic; no external calls. Signals:
 from datetime import datetime, timezone
 
 from app import config, db
+from app.sources import margin_debt as margin_debt_source
 
 
 def _fg_signal(score: float) -> str:
@@ -32,6 +33,16 @@ def _aaii_signal(bullish: float, bearish: float) -> str:
         return "BUY"
     if bullish >= config.SENT_AAII_EXTREME_PCT or bullish - bearish >= config.SENT_AAII_SPREAD:
         return "SELL"
+    return "NEUTRAL"
+
+
+def _margin_signal(yoy_pct: float) -> str:
+    if yoy_pct >= config.SENT_MARGIN_EXTREME:
+        return "EXTREME"
+    if yoy_pct >= config.SENT_MARGIN_SELL:
+        return "SELL"
+    if yoy_pct <= config.SENT_MARGIN_BUY:
+        return "BUY"
     return "NEUTRAL"
 
 
@@ -97,6 +108,18 @@ def build_summary(conn) -> dict:
         }
     else:
         indicators["put_call"] = dict(_NO_DATA)
+
+    md_series = margin_debt_source.compute_yoy(db.get_margin_debt(conn))
+    md_latest = next((r for r in reversed(md_series) if r["yoy_pct"] is not None), None)
+    if md_latest:
+        indicators["margin_debt"] = {
+            "value": md_latest["yoy_pct"],
+            "debit_balances": md_latest["debit_balances"],
+            "as_of": md_latest["month"],
+            "signal": _margin_signal(md_latest["yoy_pct"]),
+        }
+    else:
+        indicators["margin_debt"] = {**_NO_DATA, "debit_balances": None}
 
     buy_count = sum(1 for i in indicators.values() if i["signal"] == "BUY")
     sell_count = sum(1 for i in indicators.values() if i["signal"] == "SELL")

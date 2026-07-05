@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta, timezone
 
 from app import db, sentiment
-from app.models import AaiiSentiment, FearGreedSnapshot, PutCallPoint, VixPoint
+from app.models import AaiiSentiment, FearGreedSnapshot, MarginDebtPoint, PutCallPoint, VixPoint
 
 _NOW = datetime.now(timezone.utc)
 _TODAY = _NOW.date()
@@ -40,6 +40,17 @@ def _seed_aaii(conn, bullish: float, bearish: float):
 
 def _seed_pc(conn, ratio: float):
     db.upsert_put_call(conn, [PutCallPoint(date=_day(0), ratio=ratio)])
+
+
+def _seed_margin(conn, yoy_pct: float, month: str = "2026-05"):
+    """Two rows 12 months apart producing exactly the requested %YoY."""
+    prev = 100_000.0
+    cur = round(prev * (1 + yoy_pct / 100), 4)
+    prior_month = f"{int(month[:4]) - 1}{month[4:]}"
+    db.upsert_margin_debt(conn, [
+        MarginDebtPoint(month=prior_month, debit_balances=prev),
+        MarginDebtPoint(month=month, debit_balances=cur),
+    ])
 
 
 # ---- Fear & Greed thresholds ----
@@ -129,11 +140,53 @@ def test_pc_between_is_neutral(conn):
     assert sentiment.build_summary(conn)["indicators"]["put_call"]["signal"] == "NEUTRAL"
 
 
+# ---- Margin debt thresholds ----
+
+def test_margin_at_45_is_sell(conn):
+    _seed_margin(conn, 45.0)
+    assert sentiment.build_summary(conn)["indicators"]["margin_debt"]["signal"] == "SELL"
+
+
+def test_margin_just_below_45_is_neutral(conn):
+    _seed_margin(conn, 44.9)
+    assert sentiment.build_summary(conn)["indicators"]["margin_debt"]["signal"] == "NEUTRAL"
+
+
+def test_margin_at_60_is_extreme(conn):
+    _seed_margin(conn, 60.0)
+    assert sentiment.build_summary(conn)["indicators"]["margin_debt"]["signal"] == "EXTREME"
+
+
+def test_margin_at_minus_20_is_buy(conn):
+    _seed_margin(conn, -20.0)
+    assert sentiment.build_summary(conn)["indicators"]["margin_debt"]["signal"] == "BUY"
+
+
+def test_margin_just_above_minus_20_is_neutral(conn):
+    _seed_margin(conn, -19.9)
+    assert sentiment.build_summary(conn)["indicators"]["margin_debt"]["signal"] == "NEUTRAL"
+
+
+def test_margin_single_month_is_no_data(conn):
+    db.upsert_margin_debt(conn, [MarginDebtPoint(month="2026-05", debit_balances=1_000_000.0)])
+    md = sentiment.build_summary(conn)["indicators"]["margin_debt"]
+    assert md["signal"] == "NO_DATA"
+    assert md["value"] is None
+
+
+def test_margin_extreme_not_counted_in_lean(conn):
+    _seed_margin(conn, 65.0)      # EXTREME
+    _seed_fg(conn, 80.0)          # SELL (only one SELL)
+    summary = sentiment.build_summary(conn)
+    assert summary["overall"]["sell_count"] == 1
+    assert summary["overall"]["lean"] == "NEUTRAL"
+
+
 # ---- empty DB / overall lean ----
 
 def test_empty_db_all_no_data_and_neutral_lean(conn):
     summary = sentiment.build_summary(conn)
-    for key in ("fear_greed", "vix", "aaii", "put_call"):
+    for key in ("fear_greed", "vix", "aaii", "put_call", "margin_debt"):
         assert summary["indicators"][key]["signal"] == "NO_DATA"
         assert summary["indicators"][key]["value"] is None
     assert summary["overall"] == {"buy_count": 0, "sell_count": 0, "lean": "NEUTRAL"}

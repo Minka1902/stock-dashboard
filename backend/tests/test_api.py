@@ -59,7 +59,7 @@ def test_sentiment_endpoint_ok_on_empty_db(client):
     resp = client.get("/api/sentiment")
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body["indicators"]) == {"fear_greed", "vix", "aaii", "put_call"}
+    assert set(body["indicators"]) == {"fear_greed", "vix", "aaii", "put_call", "margin_debt"}
     assert body["overall"]["lean"] == "NEUTRAL"
 
 
@@ -97,3 +97,18 @@ def test_vix_aaii_put_call_endpoints_empty(client):
     assert client.get("/api/vix").json() == []
     assert client.get("/api/aaii").json() == []
     assert client.get("/api/put-call").json() == []
+    assert client.get("/api/margin-debt").json() == []
+
+
+def test_margin_debt_endpoint_returns_yoy(client):
+    from app import main as main_module
+    from app.models import MarginDebtPoint
+
+    db.upsert_margin_debt(main_module.conn, [
+        MarginDebtPoint(month="2025-05", debit_balances=677_499.0),
+        MarginDebtPoint(month="2026-05", debit_balances=1_050_123.0),
+    ])
+    body = client.get("/api/margin-debt").json()
+    assert body[0] == {"month": "2025-05", "debit_balances": 677499.0, "yoy_pct": None}
+    assert body[1]["month"] == "2026-05"
+    assert body[1]["yoy_pct"] == 55.0

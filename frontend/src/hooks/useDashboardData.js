@@ -11,6 +11,7 @@ import {
   getVix,
   getAaii,
   getPutCall,
+  getMarginDebt,
   getSentiment,
   getCongressTrades,
   getShortInterest,
@@ -33,7 +34,7 @@ import {
 const REFRESH_MS = 180000; // 3 minutes, matches backend default
 const EXTERNAL_SOURCES = [
   "usaspending", "gdelt", "edgar",
-  "yield_curve", "technical", "fear_greed", "vix", "aaii", "put_call", "congress",
+  "yield_curve", "technical", "fear_greed", "vix", "aaii", "put_call", "margin_debt", "congress",
   "short_interest", "social", "analyst", "fundamentals", "seasonality", "boom_score",
 ];
 
@@ -54,6 +55,7 @@ export function useDashboardData() {
   const [vix, setVix] = useState([]);
   const [aaii, setAaii] = useState([]);
   const [putCall, setPutCall] = useState([]);
+  const [marginDebt, setMarginDebt] = useState([]);
   const [sentiment, setSentiment] = useState(null);
   const [congressTrades, setCongressTrades] = useState([]);
   const [shortInterest, setShortInterest] = useState([]);
@@ -72,7 +74,7 @@ export function useDashboardData() {
 
   const load = useCallback(async () => {
     try {
-      const [c, s, n, t, w, yc, sig, fg, vx, aa, pc, sent, ct, si, soc, ana, bs, fund, seas, port, sugg, al] = await Promise.all([
+      const [c, s, n, t, w, yc, sig, fg, vx, aa, pc, md, sent, ct, si, soc, ana, bs, fund, seas, port, sugg, al] = await Promise.all([
         getContracts(),
         getSources(),
         getNews(),
@@ -84,6 +86,7 @@ export function useDashboardData() {
         getVix(),
         getAaii(),
         getPutCall(),
+        getMarginDebt(),
         getSentiment(),
         getCongressTrades(),
         getShortInterest(),
@@ -107,6 +110,7 @@ export function useDashboardData() {
       setVix(vx);
       setAaii(aa);
       setPutCall(pc);
+      setMarginDebt(md);
       setSentiment(sent);
       setCongressTrades(ct);
       setShortInterest(si);
@@ -183,6 +187,7 @@ export function useDashboardData() {
     vix,
     aaii,
     putCall,
+    marginDebt,
     sentiment,
     congressTrades,
     shortInterest,

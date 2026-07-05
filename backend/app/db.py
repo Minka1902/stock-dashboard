@@ -12,6 +12,7 @@ from app.models import (
     Fundamentals,
     Holding,
     InsiderTrade,
+    MarginDebtPoint,
     NewsArticle,
     NotifyProfile,
     PutCallPoint,
@@ -123,6 +124,10 @@ def init_schema(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS put_call (
             date  TEXT PRIMARY KEY,
             ratio REAL NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS margin_debt (
+            month          TEXT PRIMARY KEY,
+            debit_balances REAL NOT NULL
         );
         CREATE TABLE IF NOT EXISTS congress_trades (
             trade_hash        TEXT PRIMARY KEY,
@@ -282,6 +287,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
         ("aaii_bearish_extreme",      "INTEGER NOT NULL DEFAULT 0"),
         ("put_call_fear",             "INTEGER NOT NULL DEFAULT 0"),
         ("aaii_bullish_euphoria",     "INTEGER NOT NULL DEFAULT 0"),
+        ("margin_debt_deleveraging",  "INTEGER NOT NULL DEFAULT 0"),
+        ("margin_debt_euphoria",      "INTEGER NOT NULL DEFAULT 0"),
     ]:
         _try_add_column(conn, "boom_scores", col, col_def)
 
@@ -614,6 +621,25 @@ def get_latest_put_call(conn: sqlite3.Connection) -> PutCallPoint | None:
     return PutCallPoint(**dict(row)) if row else None
 
 
+# ---------- margin debt (FINRA, monthly) ----------
+def upsert_margin_debt(conn: sqlite3.Connection, records: list[MarginDebtPoint]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO margin_debt (month, debit_balances)
+        VALUES (:month, :debit_balances)
+        ON CONFLICT(month) DO UPDATE SET debit_balances=excluded.debit_balances
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+
+
+def get_margin_debt(conn: sqlite3.Connection) -> list[MarginDebtPoint]:
+    # No date filter: rows are monthly (tiny) and YoY needs a year+ of history.
+    cur = conn.execute("SELECT * FROM margin_debt ORDER BY month ASC")
+    return [MarginDebtPoint(**dict(row)) for row in cur.fetchall()]
+
+
 # ---------- congress trades ----------
 def upsert_congress_trades(conn: sqlite3.Connection, records: list[CongressTrade]) -> None:
     conn.executemany(
@@ -765,6 +791,7 @@ _BOOM_BOOL_COLS = (
     "death_cross", "insider_cluster_sell", "overbought_rsi", "congress_sale",
     "analyst_downgrade_cluster", "extreme_greed", "earnings_soon", "mixed_signals",
     "vix_spike_contrarian", "aaii_bearish_extreme", "put_call_fear", "aaii_bullish_euphoria",
+    "margin_debt_deleveraging", "margin_debt_euphoria",
 )
 
 
@@ -779,7 +806,8 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              yield_uninversion, contracts_catalyst, seasonal_tailwind,
              death_cross, insider_cluster_sell, overbought_rsi, congress_sale,
              analyst_downgrade_cluster, extreme_greed, earnings_soon, mixed_signals,
-             vix_spike_contrarian, aaii_bearish_extreme, put_call_fear, aaii_bullish_euphoria)
+             vix_spike_contrarian, aaii_bearish_extreme, put_call_fear, aaii_bullish_euphoria,
+             margin_debt_deleveraging, margin_debt_euphoria)
         VALUES
             (:ticker, :computed_at, :score, :components,
              :golden_cross, :rsi_recovery, :insider_cluster_buy, :congress_buy,
@@ -788,7 +816,8 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              :yield_uninversion, :contracts_catalyst, :seasonal_tailwind,
              :death_cross, :insider_cluster_sell, :overbought_rsi, :congress_sale,
              :analyst_downgrade_cluster, :extreme_greed, :earnings_soon, :mixed_signals,
-             :vix_spike_contrarian, :aaii_bearish_extreme, :put_call_fear, :aaii_bullish_euphoria)
+             :vix_spike_contrarian, :aaii_bearish_extreme, :put_call_fear, :aaii_bullish_euphoria,
+             :margin_debt_deleveraging, :margin_debt_euphoria)
         ON CONFLICT(ticker) DO UPDATE SET
             computed_at=excluded.computed_at, score=excluded.score,
             components=excluded.components,
@@ -811,7 +840,9 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
             vix_spike_contrarian=excluded.vix_spike_contrarian,
             aaii_bearish_extreme=excluded.aaii_bearish_extreme,
             put_call_fear=excluded.put_call_fear,
-            aaii_bullish_euphoria=excluded.aaii_bullish_euphoria
+            aaii_bullish_euphoria=excluded.aaii_bullish_euphoria,
+            margin_debt_deleveraging=excluded.margin_debt_deleveraging,
+            margin_debt_euphoria=excluded.margin_debt_euphoria
         """,
         [r.model_dump() for r in records],
     )
