@@ -11,6 +11,12 @@ const DEFAULTS = {
   seasonalityLookback: 10,
   // Opt-in dyslexia-friendly reading mode (Atkinson Hyperlegible + extra spacing).
   dyslexia: false,
+  // Opt-in: disable non-essential animation/transitions for calmer motion.
+  reducedMotion: false,
+  // Focus mode: Overview shows one section at a time (accordion).
+  focusMode: false,
+  // Map of Overview section key -> true when the user has collapsed it.
+  collapsed: {},
 };
 
 function initialSettings() {
@@ -35,6 +41,7 @@ export function useSettings() {
 
   useEffect(() => {
     document.documentElement.dataset.dyslexia = settings.dyslexia ? "on" : "off";
+    document.documentElement.dataset.reducedMotion = settings.reducedMotion ? "on" : "off";
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
     } catch {

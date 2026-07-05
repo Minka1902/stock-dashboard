@@ -6,6 +6,8 @@ import {
 } from "recharts";
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
+import ViewAll from "./ViewAll";
+import CollapseToggle from "./CollapseToggle";
 import styles from "./FearGreedPanel.module.css";
 
 const TOOLTIP_STYLE = {
@@ -23,7 +25,7 @@ function scoreTone(score) {
   return "neutral";
 }
 
-export default function FearGreedPanel({ data, loading, busy, onRefresh }) {
+export default function FearGreedPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
   const latest = data.length > 0 ? data[data.length - 1] : null;
   const tone = latest ? scoreTone(latest.score) : "neutral";
@@ -33,15 +35,17 @@ export default function FearGreedPanel({ data, loading, busy, onRefresh }) {
   return (
     <section className={styles.panel} id="fear-greed">
       <header className={styles.head}>
+        {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Fear & Greed" />}
         <div>
           <h2 className={styles.title}>Fear &amp; Greed Index</h2>
           <p className={styles.subtitle}>
             CNN composite sentiment · extreme fear (&lt;25) marks historical boom entry points
           </p>
         </div>
+        {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
 
-      {loading ? (
+      {!collapsed && (loading ? (
         <div className={styles.loadWrap}>
           <Skeleton w="80px" h="64px" />
           <Skeleton w="100%" h="60px" />
@@ -113,7 +117,7 @@ export default function FearGreedPanel({ data, loading, busy, onRefresh }) {
             </ResponsiveContainer>
           </div>
         </div>
-      )}
+      ))}
     </section>
   );
 }

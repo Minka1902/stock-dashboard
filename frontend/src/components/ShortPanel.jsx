@@ -1,7 +1,11 @@
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
+import ViewAll from "./ViewAll";
+import CollapseToggle from "./CollapseToggle";
 import { formatRelativeTime, freshnessTone } from "../lib/format";
 import styles from "./ShortPanel.module.css";
+
+const COMPACT_LIMIT = 5;
 
 function SkeletonRows({ rows = 6 }) {
   return Array.from({ length: rows }).map((_, i) => (
@@ -31,19 +35,22 @@ function fmtCover(v) {
   return v.toFixed(1) + "d";
 }
 
-export default function ShortPanel({ data, loading, busy, onRefresh }) {
+export default function ShortPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
+  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data;
 
   return (
     <section className={styles.panel} id="short-interest">
       <header className={styles.head}>
+        {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Short Interest" />}
         <div>
           <h2 className={styles.title}>Short Interest</h2>
           <p className={styles.subtitle}>Yahoo Finance · shares short &amp; days to cover per watchlist ticker</p>
         </div>
+        {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
 
-      {showEmpty ? (
+      {!collapsed && (showEmpty ? (
         <div className={styles.empty}>
           <span className={styles.emptyIcon}><Icon name="trending" size={24} /></span>
           <p className={styles.emptyTitle}>No short interest data loaded yet</p>
@@ -67,7 +74,7 @@ export default function ShortPanel({ data, loading, busy, onRefresh }) {
               {loading ? (
                 <SkeletonRows />
               ) : (
-                data.map((s) => (
+                rows.map((s) => (
                   <tr key={s.ticker}>
                     <td><span className={styles.ticker}>{s.ticker}</span></td>
                     <td className={styles.num}>{fmtPct(s.short_pct_float)}</td>
@@ -86,7 +93,7 @@ export default function ShortPanel({ data, loading, busy, onRefresh }) {
             </tbody>
           </table>
         </div>
-      )}
+      ))}
     </section>
   );
 }

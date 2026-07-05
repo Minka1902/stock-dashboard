@@ -27,6 +27,7 @@ import SettingsPanel from "./components/SettingsPanel";
 import SuggestionsPanel from "./components/SuggestionsPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
 import AlertsPanel from "./components/AlertsPanel";
+import GuidePanel from "./components/GuidePanel";
 import styles from "./App.module.css";
 
 const TITLES = {
@@ -49,6 +50,7 @@ const TITLES = {
   suggestions: "Suggestions",
   alerts:      "Alerts",
   portfolio:   "Portfolio",
+  guide:       "Module Guide",
   settings:    "Settings",
 };
 
@@ -106,31 +108,27 @@ export default function App() {
 
           {view === "overview" && (
             <>
-              <MarketSentimentPanel
-                sentiment={sentiment} fearGreed={fearGreed} vix={vix} aaii={aaii}
-                putCall={putCall} marginDebt={marginDebt} loading={loading} busy={busy} onRefresh={refresh}
-              />
-              <BoomScorePanel data={boomScores} loading={loading} busy={busy} onRefresh={refresh} />
-              <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} />
+              <BoomScorePanel data={boomScores} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("boom-score")} collapsible collapsed={isCollapsed("boom-score")} onToggleCollapse={() => toggleCollapsed("boom-score")} />
+              <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("suggestions")} collapsible collapsed={isCollapsed("suggestions")} onToggleCollapse={() => toggleCollapsed("suggestions")} />
               <StatGrid contracts={contracts} sources={sources} loading={loading} />
-              <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} />
+              <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("contracts")} collapsible collapsed={isCollapsed("contracts")} onToggleCollapse={() => toggleCollapsed("contracts")} />
               <div className={styles.twoCol}>
-                <TradesPanel trades={trades} loading={loading} busy={busy} onRefresh={refresh} />
-                <NewsPanel news={news} loading={loading} busy={busy} onRefresh={refresh} />
+                <TradesPanel trades={trades} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("trades")} collapsible collapsed={isCollapsed("trades")} onToggleCollapse={() => toggleCollapsed("trades")} />
+                <NewsPanel news={news} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("news")} collapsible collapsed={isCollapsed("news")} onToggleCollapse={() => toggleCollapsed("news")} />
               </div>
               <div className={styles.twoCol}>
-                <YieldCurvePanel data={yieldCurve} loading={loading} busy={busy} onRefresh={refresh} />
-                <FearGreedPanel data={fearGreed} loading={loading} busy={busy} onRefresh={refresh} />
+                <YieldCurvePanel data={yieldCurve} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("yield-curve")} collapsible collapsed={isCollapsed("yield-curve")} onToggleCollapse={() => toggleCollapsed("yield-curve")} />
+                <FearGreedPanel data={fearGreed} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("fear-greed")} collapsible collapsed={isCollapsed("fear-greed")} onToggleCollapse={() => toggleCollapsed("fear-greed")} />
               </div>
-              <TechnicalPanel data={signals} loading={loading} busy={busy} onRefresh={refresh} />
-              <SeasonalityPanel data={seasonality} settings={settings} loading={loading} busy={busy} onRefresh={refresh} />
-              <CongressPanel data={congressTrades} loading={loading} busy={busy} onRefresh={refresh} />
+              <TechnicalPanel data={signals} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("signals")} collapsible collapsed={isCollapsed("signals")} onToggleCollapse={() => toggleCollapsed("signals")} />
+              <SeasonalityPanel data={seasonality} settings={settings} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("seasonality")} collapsible collapsed={isCollapsed("seasonality")} onToggleCollapse={() => toggleCollapsed("seasonality")} />
+              <CongressPanel data={congressTrades} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("congress")} collapsible collapsed={isCollapsed("congress")} onToggleCollapse={() => toggleCollapsed("congress")} />
               <div className={styles.twoCol}>
-                <ShortPanel data={shortInterest} loading={loading} busy={busy} onRefresh={refresh} />
-                <SocialPanel data={social} loading={loading} busy={busy} onRefresh={refresh} />
+                <ShortPanel data={shortInterest} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("short")} collapsible collapsed={isCollapsed("short")} onToggleCollapse={() => toggleCollapsed("short")} />
+                <SocialPanel data={social} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("social")} collapsible collapsed={isCollapsed("social")} onToggleCollapse={() => toggleCollapsed("social")} />
               </div>
-              <AnalystPanel data={analyst} loading={loading} busy={busy} onRefresh={refresh} />
-              <FundamentalsPanel data={fundamentals} loading={loading} busy={busy} onRefresh={refresh} />
+              <AnalystPanel data={analyst} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("analyst")} collapsible collapsed={isCollapsed("analyst")} onToggleCollapse={() => toggleCollapsed("analyst")} />
+              <FundamentalsPanel data={fundamentals} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("fundamentals")} collapsible collapsed={isCollapsed("fundamentals")} onToggleCollapse={() => toggleCollapsed("fundamentals")} />
             </>
           )}
 
@@ -200,6 +198,10 @@ export default function App() {
 
           {view === "portfolio" && (
             <PortfolioPanel portfolio={portfolio} signals={signals} quotes={quotesByTicker} onAdd={addHolding} onRemove={removeHolding} />
+          )}
+
+          {view === "guide" && (
+            <GuidePanel onNavigate={setView} />
           )}
 
           {view === "settings" && (

@@ -1,8 +1,12 @@
 import { BarChart, Bar, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
+import ViewAll from "./ViewAll";
+import CollapseToggle from "./CollapseToggle";
 import { formatPercentSigned } from "../lib/format";
 import styles from "./SeasonalityPanel.module.css";
+
+const COMPACT_LIMIT = 5;
 
 // Display metadata for each window key the backend emits.
 const WINDOW_META = {
@@ -117,15 +121,17 @@ function SkeletonRows({ rows = 4 }) {
   ));
 }
 
-export default function SeasonalityPanel({ data, settings, loading, busy, onRefresh }) {
+export default function SeasonalityPanel({ data, settings, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
   const lookback = settings?.seasonalityLookback ?? 10;
   const activeKeys = settings?.seasonalityWindows ?? ["fwd_week", "fwd_month", "cal_month"];
   const lookbackLabel = lookback === "all" ? "all years" : `last ${lookback} years`;
+  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data;
 
   return (
     <section className={styles.panel} id="seasonality">
       <header className={styles.head}>
+        {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Seasonality" />}
         <div>
           <h2 className={styles.title}>Seasonality — This Time in Past Years</h2>
           <p className={styles.subtitle}>
@@ -133,9 +139,10 @@ export default function SeasonalityPanel({ data, settings, loading, busy, onRefr
             green/red bars are individual years (configure in Settings)
           </p>
         </div>
+        {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
 
-      {showEmpty ? (
+      {!collapsed && (showEmpty ? (
         <div className={styles.empty}>
           <span className={styles.emptyIcon}><Icon name="calendar" size={24} /></span>
           <p className={styles.emptyTitle}>Add tickers to your watchlist to see seasonal history</p>
@@ -148,7 +155,7 @@ export default function SeasonalityPanel({ data, settings, loading, busy, onRefr
           {loading ? (
             <SkeletonRows />
           ) : (
-            data.map((s) => {
+            rows.map((s) => {
               let windows = [];
               try { windows = JSON.parse(s.windows_json); } catch { /* keep empty */ }
               const byKey = Object.fromEntries(windows.map((w) => [w.key, w]));
@@ -173,7 +180,7 @@ export default function SeasonalityPanel({ data, settings, loading, busy, onRefr
             })
           )}
         </ul>
-      )}
+      ))}
     </section>
   );
 }

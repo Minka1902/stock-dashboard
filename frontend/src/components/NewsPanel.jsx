@@ -1,7 +1,11 @@
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
+import ViewAll from "./ViewAll";
+import CollapseToggle from "./CollapseToggle";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./NewsPanel.module.css";
+
+const COMPACT_LIMIT = 5;
 
 function SkeletonItems({ rows = 6 }) {
   return Array.from({ length: rows }).map((_, i) => (
@@ -14,21 +18,24 @@ function SkeletonItems({ rows = 6 }) {
   ));
 }
 
-export default function NewsPanel({ news, loading, busy, onRefresh }) {
+export default function NewsPanel({ news, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && news.length === 0;
+  const rows = compact ? news.slice(0, COMPACT_LIMIT) : news;
 
   return (
     <section className={styles.panel} id="news">
       <header className={styles.head}>
+        {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="News" />}
         <div>
           <h2 className={styles.title}>World &amp; market news</h2>
           <p className={styles.subtitle}>
             Geopolitics and economy, aggregated from GDELT
           </p>
         </div>
+        {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
 
-      {showEmpty ? (
+      {!collapsed && (showEmpty ? (
         <div className={styles.empty}>
           <span className={styles.emptyIcon}><Icon name="news" size={24} /></span>
           <p className={styles.emptyTitle}>No news loaded yet</p>
@@ -41,7 +48,7 @@ export default function NewsPanel({ news, loading, busy, onRefresh }) {
           {loading ? (
             <SkeletonItems />
           ) : (
-            news.map((a) => (
+            rows.map((a) => (
               <li key={a.url} className={styles.item}>
                 {a.image ? (
                   <img className={styles.thumb} src={a.image} alt="" loading="lazy" />
@@ -64,7 +71,7 @@ export default function NewsPanel({ news, loading, busy, onRefresh }) {
             ))
           )}
         </ul>
-      )}
+      ))}
     </section>
   );
 }

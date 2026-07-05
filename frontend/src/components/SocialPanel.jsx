@@ -1,6 +1,10 @@
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
+import ViewAll from "./ViewAll";
+import CollapseToggle from "./CollapseToggle";
 import styles from "./SocialPanel.module.css";
+
+const COMPACT_LIMIT = 5;
 
 function SkeletonRows({ rows = 6 }) {
   return Array.from({ length: rows }).map((_, i) => (
@@ -20,19 +24,22 @@ function RankChange({ change }) {
   return <span className={styles.muted}>—</span>;
 }
 
-export default function SocialPanel({ data, loading, busy, onRefresh }) {
+export default function SocialPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
+  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data;
 
   return (
     <section className={styles.panel} id="social">
       <header className={styles.head}>
+        {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="WSB Sentiment" />}
         <div>
           <h2 className={styles.title}>WSB Sentiment</h2>
           <p className={styles.subtitle}>ApeWisdom · Reddit mentions &amp; rank movement for watchlist tickers</p>
         </div>
+        {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
 
-      {showEmpty ? (
+      {!collapsed && (showEmpty ? (
         <div className={styles.empty}>
           <span className={styles.emptyIcon}><Icon name="news" size={24} /></span>
           <p className={styles.emptyTitle}>No social sentiment data loaded yet</p>
@@ -55,7 +62,7 @@ export default function SocialPanel({ data, loading, busy, onRefresh }) {
               {loading ? (
                 <SkeletonRows />
               ) : (
-                data.map((s) => (
+                rows.map((s) => (
                   <tr key={s.ticker}>
                     <td><span className={styles.ticker}>{s.ticker}</span></td>
                     <td className={styles.num}>{s.rank ?? "—"}</td>
@@ -67,7 +74,7 @@ export default function SocialPanel({ data, loading, busy, onRefresh }) {
             </tbody>
           </table>
         </div>
-      )}
+      ))}
     </section>
   );
 }

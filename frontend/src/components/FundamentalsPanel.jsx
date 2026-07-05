@@ -1,6 +1,10 @@
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
+import ViewAll from "./ViewAll";
+import CollapseToggle from "./CollapseToggle";
 import styles from "./FundamentalsPanel.module.css";
+
+const COMPACT_LIMIT = 5;
 
 function fmtRatio(v) {
   if (v == null) return "—";
@@ -43,19 +47,22 @@ function SkeletonRows({ rows = 5 }) {
   ));
 }
 
-export default function FundamentalsPanel({ data, loading, busy, onRefresh }) {
+export default function FundamentalsPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
+  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data;
 
   return (
     <section className={styles.panel} id="fundamentals">
       <header className={styles.head}>
+        {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Fundamentals" />}
         <div>
           <h2 className={styles.title}>Fundamentals</h2>
           <p className={styles.subtitle}>Yahoo Finance · valuation &amp; growth per watchlist ticker</p>
         </div>
+        {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
 
-      {showEmpty ? (
+      {!collapsed && (showEmpty ? (
         <div className={styles.empty}>
           <span className={styles.emptyIcon}><Icon name="star" size={24} /></span>
           <p className={styles.emptyTitle}>No fundamental data loaded yet</p>
@@ -83,7 +90,7 @@ export default function FundamentalsPanel({ data, loading, busy, onRefresh }) {
               {loading ? (
                 <SkeletonRows />
               ) : (
-                data.map((f) => (
+                rows.map((f) => (
                   <tr key={f.ticker}>
                     <td><span className={styles.ticker}>{f.ticker}</span></td>
                     <td className={styles.sector}>{f.sector || "—"}</td>
@@ -102,7 +109,7 @@ export default function FundamentalsPanel({ data, loading, busy, onRefresh }) {
             </tbody>
           </table>
         </div>
-      )}
+      ))}
     </section>
   );
 }
