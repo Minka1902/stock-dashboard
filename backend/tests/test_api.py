@@ -2,7 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import db
-from app.models import ContractRecord
+from app import quotes as quotes_module
+from app.models import ContractRecord, LiveQuote
 
 
 @pytest.fixture
@@ -24,8 +25,10 @@ def client(tmp_path, monkeypatch):
         ]
     main_module.contracts_fetch = stub_fetch
 
+    quotes_module._cache.clear()
     with TestClient(main_module.app) as c:
         yield c
+    quotes_module._cache.clear()
 
 
 def test_health(client):
@@ -50,3 +53,62 @@ def test_sources_reports_freshness(client):
 
 def test_refresh_unknown_source_returns_404(client):
     assert client.post("/api/refresh/bogus").status_code == 404
+
+
+def test_sentiment_endpoint_ok_on_empty_db(client):
+    resp = client.get("/api/sentiment")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(body["indicators"]) == {"fear_greed", "vix", "aaii", "put_call", "margin_debt"}
+    assert body["overall"]["lean"] == "NEUTRAL"
+
+
+def test_quotes_empty_watchlist_and_portfolio(client):
+    resp = client.get("/api/quotes")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["quotes"] == []
+    assert "as_of" in body
+
+
+def test_quotes_union_of_watchlist_and_portfolio(client, monkeypatch):
+    requested = []
+
+    def stub_fetch_quotes(tickers):
+        requested.append(list(tickers))
+        return [
+            LiveQuote(ticker=t, price=100.0, change_pct=1.5, previous_close=98.5,
+                      market_state="PRE", fetched_at="2026-07-04T12:00:00+00:00")
+            for t in tickers
+        ]
+
+    monkeypatch.setattr(quotes_module, "fetch_quotes", stub_fetch_quotes)
+    client.post("/api/watchlist", json={"ticker": "LMT", "note": ""})
+    client.post("/api/portfolio", json={"ticker": "NOC", "shares": 1, "avg_cost": 10})
+
+    body = client.get("/api/quotes").json()
+    assert requested == [["LMT", "NOC"]]
+    tickers = {q["ticker"] for q in body["quotes"]}
+    assert tickers == {"LMT", "NOC"}
+    assert all("price" in q and "market_state" in q for q in body["quotes"])
+
+
+def test_vix_aaii_put_call_endpoints_empty(client):
+    assert client.get("/api/vix").json() == []
+    assert client.get("/api/aaii").json() == []
+    assert client.get("/api/put-call").json() == []
+    assert client.get("/api/margin-debt").json() == []
+
+
+def test_margin_debt_endpoint_returns_yoy(client):
+    from app import main as main_module
+    from app.models import MarginDebtPoint
+
+    db.upsert_margin_debt(main_module.conn, [
+        MarginDebtPoint(month="2025-05", debit_balances=677_499.0),
+        MarginDebtPoint(month="2026-05", debit_balances=1_050_123.0),
+    ])
+    body = client.get("/api/margin-debt").json()
+    assert body[0] == {"month": "2025-05", "debit_balances": 677499.0, "yoy_pct": None}
+    assert body[1]["month"] == "2026-05"
+    assert body[1]["yoy_pct"] == 55.0
