@@ -1,5 +1,9 @@
 """All SQLite access lives here."""
+import functools
+import inspect
 import sqlite3
+import sys
+import threading
 
 from app.models import (
     AaiiSentiment,
@@ -28,8 +32,22 @@ from app.models import (
 )
 
 
+class _LockingConnection(sqlite3.Connection):
+    """Connection subclass that carries a re-entrant lock.
+
+    A raw ``sqlite3.Connection`` has no ``__dict__`` so we can't attach the
+    lock to it; a subclass instance can. The lock lives on the connection
+    object itself, so every db access serializes on the *same* lock no matter
+    how this module is imported. See the ``_synchronized`` wrapper below.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._app_lock = threading.RLock()
+
+
 def connect(db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn = sqlite3.connect(db_path, factory=_LockingConnection, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -1225,3 +1243,38 @@ def upsert_alert_state(
          int(insider_cluster_buy) if insider_cluster_buy is not None else None, updated_at),
     )
     conn.commit()
+
+
+# --- Thread safety -------------------------------------------------------
+# One shared SQLite connection (check_same_thread=False) is used by FastAPI's
+# threadpool AND the APScheduler jobs. sqlite3 forbids *concurrent* use of a
+# single connection, which otherwise corrupts cursor results (all-NULL rows,
+# InterfaceError, "tuple index out of range"). Serialize every public db access
+# on a re-entrant lock carried by the connection object (see connect()), so the
+# lock is shared even if this module is imported under two names. Holding the
+# lock for the whole function keeps each execute+fetch atomic; RLock lets db
+# functions call each other on the same thread without deadlock.
+def _conn_lock(args, kwargs):
+    conn = args[0] if args else kwargs.get("conn")
+    return getattr(conn, "_app_lock", None)
+
+
+def _synchronized(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        lock = _conn_lock(args, kwargs)
+        if lock is None:
+            return fn(*args, **kwargs)
+        with lock:
+            return fn(*args, **kwargs)
+    return wrapper
+
+
+_module = sys.modules[__name__]
+for _name, _obj in list(vars(_module).items()):
+    if (
+        inspect.isfunction(_obj)
+        and _obj.__module__ == __name__
+        and not _name.startswith("_")
+    ):
+        setattr(_module, _name, _synchronized(_obj))
