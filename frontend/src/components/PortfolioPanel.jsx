@@ -3,15 +3,17 @@ import Icon from "./Icon";
 import { formatCurrencyCompact } from "../lib/format";
 import styles from "./PortfolioPanel.module.css";
 
-export default function PortfolioPanel({ portfolio, signals, onAdd, onRemove }) {
+export default function PortfolioPanel({ portfolio, signals, quotes = {}, onAdd, onRemove }) {
   const [ticker, setTicker] = useState("");
   const [shares, setShares] = useState("");
   const [avgCost, setAvgCost] = useState("");
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
 
-  // ticker -> current price, for P/L.
+  // ticker -> current price, for P/L: live quote first, signal price fallback.
   const priceOf = (t) => {
+    const q = quotes[t];
+    if (q && q.price != null) return q.price;
     const sig = signals.find((s) => s.ticker === t);
     return sig && sig.price != null ? sig.price : null;
   };
@@ -43,7 +45,8 @@ export default function PortfolioPanel({ portfolio, signals, onAdd, onRemove }) 
         <div>
           <h2 className={styles.title}>Portfolio</h2>
           <p className={styles.subtitle}>
-            Holdings the daily suggestions are tailored to. Live P/L uses the latest signal price.
+            Holdings the daily suggestions are tailored to. P/L uses live quotes
+            (incl. pre/post-market) when available, otherwise the latest signal price.
           </p>
         </div>
       </header>

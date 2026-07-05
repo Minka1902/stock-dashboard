@@ -8,8 +8,9 @@ Score range: −90 … +100 (negative scores mean net bearish evidence).
 import json
 from datetime import datetime, timezone
 
-from app import db
+from app import config, db
 from app.models import BoomScore
+from app.sources import margin_debt
 
 WEIGHTS: dict[str, int] = {
     # Bullish
@@ -27,6 +28,10 @@ WEIGHTS: dict[str, int] = {
     "yield_uninversion":      15,
     "contracts_catalyst":     10,
     "seasonal_tailwind":      10,
+    "vix_spike_contrarian":   10,
+    "aaii_bearish_extreme":   10,
+    "put_call_fear":          10,
+    "margin_debt_deleveraging": 10,
     # Bearish (negative values)
     "death_cross":                -20,
     "insider_cluster_sell":       -20,
@@ -34,6 +39,8 @@ WEIGHTS: dict[str, int] = {
     "congress_sale":              -15,
     "analyst_downgrade_cluster":  -15,
     "extreme_greed":              -10,
+    "aaii_bullish_euphoria":      -10,
+    "margin_debt_euphoria":       -10,
 }
 
 # Weight multipliers for congressional trade amount ranges.
@@ -107,6 +114,10 @@ def _score_ticker(
     now: str,
     fg_score: float | None,
     has_uninversion: bool,
+    vix_close: float | None,
+    aaii: "tuple[float, float] | None",
+    pc_ratio: float | None,
+    md_yoy: float | None,
 ) -> BoomScore:
     components: dict[str, int] = {}
 
@@ -190,6 +201,24 @@ def _score_ticker(
     if has_uninversion:
         components["yield_uninversion"] = WEIGHTS["yield_uninversion"]
 
+    # --- Macro: sentiment extremes (market-wide, same thresholds as sentiment.py) ---
+    if vix_close is not None and vix_close >= config.SENT_VIX_EXTREME:
+        components["vix_spike_contrarian"] = WEIGHTS["vix_spike_contrarian"]
+    if aaii is not None:
+        bullish, bearish = aaii
+        if bearish >= config.SENT_AAII_EXTREME_PCT or bearish - bullish >= config.SENT_AAII_SPREAD:
+            components["aaii_bearish_extreme"] = WEIGHTS["aaii_bearish_extreme"]
+        elif bullish >= config.SENT_AAII_EXTREME_PCT or bullish - bearish >= config.SENT_AAII_SPREAD:
+            components["aaii_bullish_euphoria"] = WEIGHTS["aaii_bullish_euphoria"]
+    if pc_ratio is not None and pc_ratio >= config.SENT_PC_BUY:
+        components["put_call_fear"] = WEIGHTS["put_call_fear"]
+    if md_yoy is not None:
+        if md_yoy <= config.SENT_MARGIN_BUY:
+            components["margin_debt_deleveraging"] = WEIGHTS["margin_debt_deleveraging"]
+        elif md_yoy >= config.SENT_MARGIN_SELL:
+            # Covers the >=60 "extreme" range too — EXTREME is a badge, not a score.
+            components["margin_debt_euphoria"] = WEIGHTS["margin_debt_euphoria"]
+
     # --- Federal contracts catalyst ---
     if db.has_major_contract_for(conn, ticker):
         components["contracts_catalyst"] = WEIGHTS["contracts_catalyst"]
@@ -225,6 +254,10 @@ def _score_ticker(
         yield_uninversion="yield_uninversion" in components,
         contracts_catalyst="contracts_catalyst" in components,
         seasonal_tailwind="seasonal_tailwind" in components,
+        vix_spike_contrarian="vix_spike_contrarian" in components,
+        aaii_bearish_extreme="aaii_bearish_extreme" in components,
+        put_call_fear="put_call_fear" in components,
+        margin_debt_deleveraging="margin_debt_deleveraging" in components,
         # bearish
         death_cross="death_cross" in components,
         insider_cluster_sell="insider_cluster_sell" in components,
@@ -232,6 +265,8 @@ def _score_ticker(
         congress_sale="congress_sale" in components,
         analyst_downgrade_cluster="analyst_downgrade_cluster" in components,
         extreme_greed="extreme_greed" in components,
+        aaii_bullish_euphoria="aaii_bullish_euphoria" in components,
+        margin_debt_euphoria="margin_debt_euphoria" in components,
         # flags
         earnings_soon=earnings_soon,
         mixed_signals=mixed_signals,
@@ -242,6 +277,17 @@ def compute_all(tickers: list[str], conn) -> list[BoomScore]:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     fg_score = db.get_latest_fear_greed_score(conn)
     has_uninversion = db.has_yield_uninversion(conn)
-    scores = [_score_ticker(t, conn, now, fg_score, has_uninversion) for t in tickers]
+    vix_closes = db.get_latest_vix_closes(conn, n=1)
+    vix_close = vix_closes[-1] if vix_closes else None
+    latest_aaii = db.get_latest_aaii(conn)
+    aaii = (latest_aaii.bullish, latest_aaii.bearish) if latest_aaii else None
+    latest_pc = db.get_latest_put_call(conn)
+    pc_ratio = latest_pc.ratio if latest_pc else None
+    md_series = margin_debt.compute_yoy(db.get_margin_debt(conn))
+    md_yoy = next((r["yoy_pct"] for r in reversed(md_series) if r["yoy_pct"] is not None), None)
+    scores = [
+        _score_ticker(t, conn, now, fg_score, has_uninversion, vix_close, aaii, pc_ratio, md_yoy)
+        for t in tickers
+    ]
     db.insert_boom_score_history(conn, scores)
     return scores

@@ -2,6 +2,7 @@ import Icon from "./Icon";
 import styles from "./Sidebar.module.css";
 
 const NAV = [
+  { key: "sentiment",   label: "Market Sentiment", icon: "sun"   },
   { key: "overview",    label: "Overview",     icon: "overview"  },
   { key: "contracts",   label: "Contracts",    icon: "contract"  },
   { key: "trades",      label: "Trades",       icon: "trending"  },
