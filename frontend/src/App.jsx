@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useDashboardData } from "./hooks/useDashboardData";
+import { useLiveQuotes } from "./hooks/useLiveQuotes";
 import { useTheme } from "./hooks/useTheme";
 import { useSettings } from "./hooks/useSettings";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
+import LiveTicker from "./components/LiveTicker";
 import StatGrid from "./components/StatGrid";
 import SourceStatus from "./components/SourceStatus";
 import ContractsPanel from "./components/ContractsPanel";
@@ -13,6 +15,7 @@ import WatchlistPanel from "./components/WatchlistPanel";
 import YieldCurvePanel from "./components/YieldCurvePanel";
 import TechnicalPanel from "./components/TechnicalPanel";
 import FearGreedPanel from "./components/FearGreedPanel";
+import MarketSentimentPanel from "./components/MarketSentimentPanel";
 import CongressPanel from "./components/CongressPanel";
 import BoomScorePanel from "./components/BoomScorePanel";
 import ShortPanel from "./components/ShortPanel";
@@ -28,6 +31,7 @@ import GuidePanel from "./components/GuidePanel";
 import styles from "./App.module.css";
 
 const TITLES = {
+  sentiment:   "Market Sentiment",
   overview:    "Overview",
   contracts:   "Contracts",
   trades:      "Trades",
@@ -52,9 +56,10 @@ const TITLES = {
 
 export default function App() {
   const data = useDashboardData();
+  const { quotes, quotesByTicker } = useLiveQuotes();
   const { theme, toggle } = useTheme();
   const { settings, setSetting } = useSettings();
-  const [view, setView] = useState("overview");
+  const [view, setView] = useState("sentiment");
   // Focus mode keeps one Overview section open at a time (default Boom Score).
   const [focusKey, setFocusKey] = useState("boom-score");
 
@@ -73,7 +78,7 @@ export default function App() {
 
   const {
     contracts, sources, news, trades, watchlist,
-    yieldCurve, signals, fearGreed, congressTrades,
+    yieldCurve, signals, fearGreed, vix, aaii, putCall, marginDebt, sentiment, congressTrades,
     shortInterest, social, analyst, boomScores, fundamentals, seasonality,
     portfolio, suggestions, alerts, unreadAlerts,
     loading, busy, error, refresh, addWatch, removeWatch, addHolding, removeHolding,
@@ -99,6 +104,8 @@ export default function App() {
             onOpenAlerts={() => setView("alerts")}
           />
 
+          <LiveTicker quotes={quotes} />
+
           {error && (
             <div className={styles.error} role="alert">
               Couldn't reach the backend: {error}
@@ -107,8 +114,19 @@ export default function App() {
 
           <SourceStatus sources={sources} />
 
+          {view === "sentiment" && (
+            <MarketSentimentPanel
+              sentiment={sentiment} fearGreed={fearGreed} vix={vix} aaii={aaii}
+              putCall={putCall} marginDebt={marginDebt} loading={loading} busy={busy} onRefresh={refresh}
+            />
+          )}
+
           {view === "overview" && (
             <>
+              <MarketSentimentPanel
+                sentiment={sentiment} fearGreed={fearGreed} vix={vix} aaii={aaii}
+                putCall={putCall} marginDebt={marginDebt} loading={loading} busy={busy} onRefresh={refresh}
+              />
               <BoomScorePanel data={boomScores} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("boom-score")} collapsible collapsed={isCollapsed("boom-score")} onToggleCollapse={() => toggleCollapsed("boom-score")} />
               <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("suggestions")} collapsible collapsed={isCollapsed("suggestions")} onToggleCollapse={() => toggleCollapsed("suggestions")} />
               <StatGrid contracts={contracts} sources={sources} loading={loading} />
@@ -146,7 +164,7 @@ export default function App() {
           )}
 
           {view === "watchlist" && (
-            <WatchlistPanel watchlist={watchlist} onAdd={addWatch} onRemove={removeWatch} />
+            <WatchlistPanel watchlist={watchlist} quotes={quotesByTicker} onAdd={addWatch} onRemove={removeWatch} />
           )}
 
           {view === "yield-curve" && (
@@ -198,7 +216,7 @@ export default function App() {
           )}
 
           {view === "portfolio" && (
-            <PortfolioPanel portfolio={portfolio} signals={signals} onAdd={addHolding} onRemove={removeHolding} />
+            <PortfolioPanel portfolio={portfolio} signals={signals} quotes={quotesByTicker} onAdd={addHolding} onRemove={removeHolding} />
           )}
 
           {view === "guide" && (

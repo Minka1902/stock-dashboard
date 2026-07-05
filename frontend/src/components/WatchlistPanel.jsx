@@ -3,7 +3,12 @@ import Icon from "./Icon";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./WatchlistPanel.module.css";
 
-export default function WatchlistPanel({ watchlist, onAdd, onRemove }) {
+function changeTone(pct) {
+  if (pct == null) return "flat";
+  return pct >= 0 ? "pos" : "neg";
+}
+
+export default function WatchlistPanel({ watchlist, quotes = {}, onAdd, onRemove }) {
   const [ticker, setTicker] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState(null);
@@ -64,9 +69,22 @@ export default function WatchlistPanel({ watchlist, onAdd, onRemove }) {
         </div>
       ) : (
         <ul className={styles.list}>
-          {watchlist.map((w) => (
+          {watchlist.map((w) => {
+            const q = quotes[w.ticker];
+            return (
             <li key={w.ticker} className={styles.item}>
               <span className={styles.symbol}>{w.ticker}</span>
+              <span className={styles.price}>
+                {q && q.price != null ? q.price.toFixed(2) : "—"}
+              </span>
+              <span className={styles.change} data-tone={changeTone(q?.change_pct)}>
+                {q && q.change_pct != null
+                  ? `${q.change_pct >= 0 ? "+" : ""}${q.change_pct.toFixed(2)}%`
+                  : "—"}
+              </span>
+              <span className={styles.state} data-state={q?.market_state ?? "none"}>
+                {q ? q.market_state : ""}
+              </span>
               <span className={styles.itemNote}>{w.note || "—"}</span>
               <span className={styles.added}>added {formatRelativeTime(w.added_at)}</span>
               <button
@@ -78,7 +96,8 @@ export default function WatchlistPanel({ watchlist, onAdd, onRemove }) {
                 ×
               </button>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </section>

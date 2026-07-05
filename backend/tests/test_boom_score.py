@@ -7,8 +7,9 @@ import pytest
 
 from app import db
 from app.models import (
-    AnalystSignal, BoomScore, CongressTrade, InsiderTrade, Seasonality,
-    ShortInterest, SocialSentiment, TechnicalSignal, WatchItem,
+    AaiiSentiment, AnalystSignal, BoomScore, CongressTrade, InsiderTrade,
+    MarginDebtPoint, PutCallPoint, Seasonality, ShortInterest, SocialSentiment,
+    TechnicalSignal, VixPoint, WatchItem,
 )
 from app.sources import boom_score as boom_score_source
 
@@ -347,6 +348,112 @@ def test_extreme_greed_subtracts_on_high_fg(score_conn):
     scores = boom_score_source.compute_all(["GME"], score_conn)
     assert scores[0].extreme_greed is True
     assert scores[0].score <= -10
+
+
+# ---- market sentiment extremes (VIX / AAII / put-call) ----
+
+def test_vix_spike_contrarian_fires_at_30(score_conn):
+    _add_ticker(score_conn)
+    db.upsert_vix(score_conn, [VixPoint(date=_TODAY.isoformat(), close=31.0)])
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].vix_spike_contrarian is True
+    assert scores[0].score == 10
+
+
+def test_vix_below_30_does_not_fire(score_conn):
+    _add_ticker(score_conn)
+    db.upsert_vix(score_conn, [VixPoint(date=_TODAY.isoformat(), close=25.0)])
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].vix_spike_contrarian is False
+    assert scores[0].score == 0
+
+
+def test_aaii_bearish_extreme_adds_10(score_conn):
+    _add_ticker(score_conn)
+    db.upsert_aaii(score_conn, [AaiiSentiment(
+        week_ending=_days_ago(2), bullish=20.0, neutral=25.0,
+        bearish=55.0, fetched_at="2026-07-02T10:00:00+00:00",
+    )])
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].aaii_bearish_extreme is True
+    assert scores[0].score == 10
+
+
+def test_aaii_bullish_euphoria_subtracts_10(score_conn):
+    _add_ticker(score_conn)
+    db.upsert_aaii(score_conn, [AaiiSentiment(
+        week_ending=_days_ago(2), bullish=55.0, neutral=25.0,
+        bearish=20.0, fetched_at="2026-07-02T10:00:00+00:00",
+    )])
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].aaii_bullish_euphoria is True
+    assert scores[0].score == -10
+
+
+def test_aaii_balanced_fires_nothing(score_conn):
+    _add_ticker(score_conn)
+    db.upsert_aaii(score_conn, [AaiiSentiment(
+        week_ending=_days_ago(2), bullish=35.0, neutral=35.0,
+        bearish=30.0, fetched_at="2026-07-02T10:00:00+00:00",
+    )])
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].aaii_bearish_extreme is False
+    assert scores[0].aaii_bullish_euphoria is False
+
+
+def test_put_call_fear_adds_10(score_conn):
+    _add_ticker(score_conn)
+    db.upsert_put_call(score_conn, [PutCallPoint(date=_TODAY.isoformat(), ratio=1.1)])
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].put_call_fear is True
+    assert scores[0].score == 10
+
+
+def test_put_call_below_threshold_does_not_fire(score_conn):
+    _add_ticker(score_conn)
+    db.upsert_put_call(score_conn, [PutCallPoint(date=_TODAY.isoformat(), ratio=0.9)])
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].put_call_fear is False
+
+
+def _seed_margin_yoy(conn, yoy_pct):
+    prev = 100_000.0
+    db.upsert_margin_debt(conn, [
+        MarginDebtPoint(month="2025-05", debit_balances=prev),
+        MarginDebtPoint(month="2026-05", debit_balances=prev * (1 + yoy_pct / 100)),
+    ])
+
+
+def test_margin_debt_deleveraging_adds_10(score_conn):
+    _add_ticker(score_conn)
+    _seed_margin_yoy(score_conn, -25.0)
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].margin_debt_deleveraging is True
+    assert scores[0].score == 10
+
+
+def test_margin_debt_euphoria_subtracts_10(score_conn):
+    _add_ticker(score_conn)
+    _seed_margin_yoy(score_conn, 50.0)
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].margin_debt_euphoria is True
+    assert scores[0].score == -10
+
+
+def test_margin_debt_extreme_range_still_euphoria(score_conn):
+    _add_ticker(score_conn)
+    _seed_margin_yoy(score_conn, 65.0)
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].margin_debt_euphoria is True
+    assert scores[0].margin_debt_deleveraging is False
+
+
+def test_margin_debt_moderate_fires_nothing(score_conn):
+    _add_ticker(score_conn)
+    _seed_margin_yoy(score_conn, 20.0)
+    scores = boom_score_source.compute_all(["GME"], score_conn)
+    assert scores[0].margin_debt_euphoria is False
+    assert scores[0].margin_debt_deleveraging is False
 
 
 # ---- Phase 3: mixed signals + earnings soon ----
