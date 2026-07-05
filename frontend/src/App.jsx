@@ -123,10 +123,6 @@ export default function App() {
 
           {view === "overview" && (
             <>
-              <MarketSentimentPanel
-                sentiment={sentiment} fearGreed={fearGreed} vix={vix} aaii={aaii}
-                putCall={putCall} marginDebt={marginDebt} loading={loading} busy={busy} onRefresh={refresh}
-              />
               <BoomScorePanel data={boomScores} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("boom-score")} collapsible collapsed={isCollapsed("boom-score")} onToggleCollapse={() => toggleCollapsed("boom-score")} />
               <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("suggestions")} collapsible collapsed={isCollapsed("suggestions")} onToggleCollapse={() => toggleCollapsed("suggestions")} />
               <StatGrid contracts={contracts} sources={sources} loading={loading} />
