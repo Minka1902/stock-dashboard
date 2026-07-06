@@ -1,72 +1,139 @@
 import {
-  Area,
-  AreaChart,
-  Line,
-  LineChart,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
+  Area, AreaChart, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip,
 } from "recharts";
-import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import styles from "./MarketSentimentPanel.module.css";
 
 const TOOLTIP_STYLE = {
-  background: "var(--surface-2)",
-  border: "1px solid var(--border)",
+  background: "var(--surface-3)",
+  border: "1px solid var(--border-strong)",
   borderRadius: "var(--r-sm)",
-  fontSize: "12px",
+  fontFamily: "var(--mono)",
+  fontSize: "11px",
   color: "var(--text)",
-  padding: "6px 10px",
+  padding: "5px 9px",
 };
 
-const SIGNAL_LABELS = {
-  BUY: "Buy",
-  SELL: "Sell",
-  ALERT: "Alert",
-  EXTREME: "Extreme",
-  NEUTRAL: "Neutral",
-  NO_DATA: "No data",
+const SIGNAL_LABEL = {
+  BUY: "Buy", SELL: "Sell", ALERT: "Alert", EXTREME: "Extreme",
+  NEUTRAL: "Neutral", NO_DATA: "No data",
+};
+const LEAN_LABEL = {
+  GREEDY: "Greedy", FEARFUL: "Fearful", NEUTRAL: "Neutral",
+  RISK_ON: "Risk on", RISK_OFF: "Risk off",
+};
+// A one-line, plain-language read per composite lean.
+const LEAN_READ = {
+  GREEDY: "Crowd is greedy. Historically a time to trim, not chase.",
+  FEARFUL: "Crowd is fearful. Historically where opportunities hide.",
+  NEUTRAL: "No strong crowd extreme. Nothing forcing a move today.",
+  RISK_ON: "Risk appetite is on. Momentum has the tailwind.",
+  RISK_OFF: "Risk is coming off. Defense over offense.",
 };
 
-function SignalBadge({ signal }) {
-  const sig = signal || "NO_DATA";
-  return (
-    <span className={styles.badge} data-signal={sig}>
-      {SIGNAL_LABELS[sig] || sig}
-    </span>
-  );
-}
-
-function Card({ title, threshold, signal, value, sub, note, children }) {
-  return (
-    <div className={styles.card}>
-      <div className={styles.cardHead}>
-        <div>
-          <h3 className={styles.cardTitle}>{title}</h3>
-          <span className={styles.threshold}>{threshold}</span>
-        </div>
-        <SignalBadge signal={signal} />
-      </div>
-      <div className={styles.valueRow}>
-        <span className={styles.value}>{value ?? "—"}</span>
-        {sub && <span className={styles.valueSub}>{sub}</span>}
-      </div>
-      {note && <p className={styles.note}>{note}</p>}
-      <div className={styles.chartWrap}>{children}</div>
-    </div>
-  );
-}
-
-function NoData() {
-  return <p className={styles.noData}>No data yet — refresh to fetch.</p>;
+function Chip({ signal }) {
+  const s = signal || "NO_DATA";
+  return <span className={styles.chip} data-signal={s}>{SIGNAL_LABEL[s] || s}</span>;
 }
 
 function formatBalance(millions) {
   if (millions == null) return null;
-  return millions >= 1_000_000
-    ? `$${(millions / 1_000_000).toFixed(2)}T`
-    : `$${Math.round(millions / 1000)}B`;
+  return millions >= 1_000_000 ? `$${(millions / 1_000_000).toFixed(2)}T` : `$${Math.round(millions / 1000)}B`;
+}
+
+/* --- Fear & Greed gauge: custom SVG semicircle + animated amber needle --- */
+function Gauge({ score, rating }) {
+  const has = score != null;
+  const v = has ? Math.max(0, Math.min(100, score)) : 50;
+  const deg = (v - 50) * 1.8; // -90 (fear) .. +90 (greed)
+  return (
+    <div className={styles.gauge}>
+      <svg viewBox="0 0 300 168" className={styles.gaugeSvg} role="img"
+           aria-label={has ? `Fear and Greed ${Math.round(v)}, ${rating || ""}` : "Fear and Greed, no data"}>
+        <defs>
+          <linearGradient id="fgArc" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="var(--positive)" />
+            <stop offset="50%" stopColor="var(--accent)" />
+            <stop offset="100%" stopColor="var(--negative)" />
+          </linearGradient>
+        </defs>
+        <path d="M 30 150 A 120 120 0 0 1 270 150" fill="none" stroke="var(--surface-3)" strokeWidth="16" strokeLinecap="round" />
+        <path d="M 30 150 A 120 120 0 0 1 270 150" fill="none" stroke="url(#fgArc)" strokeWidth="14"
+              strokeLinecap="round" opacity={has ? 1 : 0.28} />
+        {/* ticks */}
+        {[0, 25, 50, 75, 100].map((t) => {
+          const a = (Math.PI * (100 - t)) / 100;
+          const x1 = 150 + Math.cos(a) * 132, y1 = 150 - Math.sin(a) * 132;
+          const x2 = 150 + Math.cos(a) * 120, y2 = 150 - Math.sin(a) * 120;
+          return <line key={t} x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--grid)" strokeWidth="2" />;
+        })}
+        {has && (
+          <g className={styles.needle} style={{ transform: `rotate(${deg}deg)` }}>
+            <line x1="150" y1="150" x2="150" y2="42" stroke="var(--accent)" strokeWidth="3.5" strokeLinecap="round" />
+            <circle cx="150" cy="42" r="4" fill="var(--accent)" />
+          </g>
+        )}
+        <circle cx="150" cy="150" r="8" fill="var(--surface-3)" stroke="var(--accent)" strokeWidth="2" />
+      </svg>
+      <div className={styles.gaugeScore}>
+        <span className={styles.gaugeNum}>{has ? Math.round(v) : "--"}</span>
+        <span className={styles.gaugeRating}>{has ? (rating || "") : "no data"}</span>
+      </div>
+      <div className={styles.gaugeEnds}>
+        <span>Extreme fear</span><span>Extreme greed</span>
+      </div>
+    </div>
+  );
+}
+
+function Pane({ caption, right, className, children }) {
+  return (
+    <section className={`${styles.pane} ${className || ""}`}>
+      <div className={styles.paneHead}>
+        <span className="caption">{caption}</span>
+        {right}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Sparkline({ data, dataKey, id, refs = [] }) {
+  if (!data || data.length === 0) return <div className={styles.noData}>No data yet</div>;
+  return (
+    <div className={styles.spark}>
+      <ResponsiveContainer width="100%" height={64}>
+        <AreaChart data={data} margin={{ top: 4, right: 2, bottom: 2, left: 2 }}>
+          <defs>
+            <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.32} />
+              <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          {refs.map((r, i) => (
+            <ReferenceLine key={i} y={r.y} stroke={r.color} strokeDasharray="3 3" strokeWidth={1} />
+          ))}
+          <Area type="monotone" dataKey={dataKey} stroke="var(--accent)" strokeWidth={1.8}
+                fill={`url(#${id})`} dot={false} isAnimationActive={false} />
+          <Tooltip contentStyle={TOOLTIP_STYLE} labelFormatter={(_l, p) => p?.[0]?.payload?.date ?? ""} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function Indicator({ caption, threshold, signal, value, sub, note, children }) {
+  return (
+    <Pane caption={caption} right={<Chip signal={signal} />} className={styles.indicator}>
+      <div className={styles.valRow}>
+        <span className={styles.val}>{value ?? "--"}</span>
+        {sub && <span className={styles.sub}>{sub}</span>}
+      </div>
+      <span className={styles.threshold}>{threshold}</span>
+      {note && <p className={styles.note}>{note}</p>}
+      {children}
+    </Pane>
+  );
 }
 
 export default function MarketSentimentPanel({
@@ -74,247 +141,126 @@ export default function MarketSentimentPanel({
 }) {
   const ind = sentiment?.indicators || {};
   const lean = sentiment?.overall?.lean || "NEUTRAL";
-  const hasAny =
-    fearGreed.length > 0 || vix.length > 0 || aaii.length > 0 || putCall.length > 0 ||
-    marginDebt.length > 0;
+  const hasAny = fearGreed.length + vix.length + aaii.length + putCall.length + marginDebt.length > 0;
 
-  const fgData = fearGreed.map((s) => ({
-    date: s.captured_at.slice(0, 10), score: s.score, rating: s.rating,
-  }));
+  const fgScore = ind.fear_greed?.value != null ? Math.round(ind.fear_greed.value) : null;
+
   const vixData = vix.map((p) => ({ date: p.date, close: p.close }));
-  const aaiiData = aaii.map((s) => ({
-    date: s.week_ending, bullish: s.bullish, neutral: s.neutral, bearish: s.bearish,
-  }));
+  const aaiiData = aaii.map((s) => ({ date: s.week_ending, bullish: s.bullish, neutral: s.neutral, bearish: s.bearish }));
   const pcData = putCall.map((p) => ({ date: p.date, ratio: p.ratio }));
-  const mdData = marginDebt
-    .filter((p) => p.yoy_pct != null)
-    .map((p) => ({ date: p.month, yoy: p.yoy_pct }));
+  const mdData = marginDebt.filter((p) => p.yoy_pct != null).map((p) => ({ date: p.month, yoy: p.yoy_pct }));
+
+  // Composite ledger: the five indicators + their signals.
+  const ledger = [
+    { key: "fear_greed", label: "Fear & Greed", sig: ind.fear_greed?.signal, val: fgScore },
+    { key: "vix", label: "VIX", sig: ind.vix?.signal, val: ind.vix?.value != null ? ind.vix.value.toFixed(1) : null },
+    { key: "aaii", label: "AAII survey", sig: ind.aaii?.signal, val: ind.aaii?.value ? `${Math.round(ind.aaii.value.bearish)}% bear` : null },
+    { key: "put_call", label: "Put / Call", sig: ind.put_call?.signal, val: ind.put_call?.value != null ? ind.put_call.value.toFixed(2) : null },
+    { key: "margin_debt", label: "Margin debt", sig: ind.margin_debt?.signal, val: ind.margin_debt?.value != null ? `${ind.margin_debt.value >= 0 ? "+" : ""}${ind.margin_debt.value.toFixed(0)}%` : null },
+  ];
+
+  if (loading) {
+    return (
+      <div className={styles.wrap}>
+        <div className={styles.hero}>
+          <Skeleton w="100%" h="230px" />
+          <Skeleton w="100%" h="230px" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasAny) {
+    return (
+      <div className={styles.empty}>
+        <p className={styles.emptyTitle}>No sentiment data loaded yet</p>
+        <p className={styles.emptyText}>Pull the market indicators to read the crowd.</p>
+        <button className={styles.emptyBtn} onClick={onRefresh} disabled={busy}>
+          {busy ? "Syncing…" : "Refresh now"}
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <section className={styles.panel} id="market-sentiment">
-      <header className={styles.head}>
-        <div>
-          <h2 className={styles.title}>Market Sentiment</h2>
-          <p className={styles.subtitle}>
-            Five contrarian crash/rally indicators — extremes mark the turning points
-          </p>
-        </div>
-        {sentiment && (
-          <div className={styles.lean}>
-            <span className={styles.leanLabel}>Overall lean</span>
-            <SignalBadge signal={lean} />
+    <div className={styles.wrap}>
+      <div className={styles.hero}>
+        <Pane caption="Fear & Greed Index" right={<span className={styles.paneMeta}>CNN composite</span>} className={styles.gaugePane}>
+          <Gauge score={fgScore} rating={ind.fear_greed?.rating} />
+        </Pane>
+
+        <Pane caption="Composite read" right={<Chip signal={lean === "GREEDY" || lean === "RISK_OFF" ? "SELL" : lean === "FEARFUL" || lean === "RISK_ON" ? "BUY" : "NEUTRAL"} />}>
+          <div className={styles.leanRow}>
+            <span className={styles.leanWord} data-lean={lean}>{LEAN_LABEL[lean] || lean}</span>
           </div>
-        )}
-      </header>
+          <p className={styles.leanRead}>{LEAN_READ[lean] || ""}</p>
+          <ul className={styles.ledger}>
+            {ledger.map((row) => (
+              <li key={row.key} className={styles.ledgerRow}>
+                <span className={styles.ledgerLabel}>{row.label}</span>
+                <span className={styles.ledgerVal}>{row.val ?? "--"}</span>
+                <Chip signal={row.sig} />
+              </li>
+            ))}
+          </ul>
+        </Pane>
+      </div>
 
-      {loading ? (
-        <div className={styles.loadWrap}>
-          <Skeleton w="100%" h="120px" />
-          <Skeleton w="100%" h="120px" />
-        </div>
-      ) : !hasAny ? (
-        <div className={styles.empty}>
-          <span className={styles.emptyIcon}><Icon name="sun" size={24} /></span>
-          <p className={styles.emptyTitle}>No sentiment data loaded yet</p>
-          <button className={styles.emptyBtn} onClick={onRefresh} disabled={busy}>
-            {busy ? "Refreshing…" : "Refresh now"}
-          </button>
-        </div>
-      ) : (
-        <div className={styles.grid}>
-          <Card
-            title="Fear & Greed"
-            threshold="≤25 buy · ≥75 sell"
-            signal={ind.fear_greed?.signal}
-            value={ind.fear_greed?.value != null ? Math.round(ind.fear_greed.value) : null}
-            sub={ind.fear_greed?.rating || "CNN composite"}
-          >
-            {fgData.length === 0 ? <NoData /> : (
-              <ResponsiveContainer width="100%" height={72}>
-                <AreaChart data={fgData} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
-                  <defs>
-                    <linearGradient id="msFg" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <Area
-                    type="monotone" dataKey="score" dot={false} strokeWidth={2}
-                    stroke="var(--accent)" fill="url(#msFg)" isAnimationActive={false}
-                  />
-                  <Tooltip
-                    contentStyle={TOOLTIP_STYLE}
-                    formatter={(v, _n, props) => [
-                      `${Math.round(v)} — ${props.payload?.rating ?? ""}`,
-                      "Score",
-                    ]}
-                    labelFormatter={(_l, pts) => pts?.[0]?.payload?.date ?? ""}
-                  />
-                </AreaChart>
+      <div className={styles.grid}>
+        <Indicator
+          caption="VIX · Volatility"
+          threshold="≥19 alert · ≥30 extreme"
+          signal={ind.vix?.signal}
+          value={ind.vix?.value != null ? ind.vix.value.toFixed(1) : null}
+          sub={ind.vix?.as_of}
+          note={ind.vix?.crossed_19 ? "Crossed above 19 — a move is starting." : null}
+        >
+          <Sparkline data={vixData} dataKey="close" id="spVix"
+            refs={[{ y: 19, color: "var(--text-faint)" }, { y: 30, color: "var(--negative)" }]} />
+        </Indicator>
+
+        <Indicator
+          caption="AAII · Retail survey"
+          threshold="crowd bearish → buy"
+          signal={ind.aaii?.signal}
+          value={ind.aaii?.value ? `${Math.round(ind.aaii.value.bearish)}%` : null}
+          sub={ind.aaii?.value ? `bearish · ${Math.round(ind.aaii.value.bullish)}% bull` : "weekly"}
+        >
+          {aaiiData.length === 0 ? <div className={styles.noData}>No data yet</div> : (
+            <div className={styles.spark}>
+              <ResponsiveContainer width="100%" height={64}>
+                <LineChart data={aaiiData} margin={{ top: 4, right: 2, bottom: 2, left: 2 }}>
+                  <Line type="monotone" dataKey="bullish" stroke="var(--positive)" strokeWidth={1.6} dot={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="bearish" stroke="var(--negative)" strokeWidth={1.6} dot={false} isAnimationActive={false} />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} labelFormatter={(_l, p) => p?.[0]?.payload?.date ?? ""} />
+                </LineChart>
               </ResponsiveContainer>
-            )}
-          </Card>
+            </div>
+          )}
+        </Indicator>
 
-          <Card
-            title="VIX"
-            threshold="≥19 alert · ≥30 extreme"
-            signal={ind.vix?.signal}
-            value={ind.vix?.value != null ? ind.vix.value.toFixed(1) : null}
-            sub={ind.vix?.as_of}
-            note={ind.vix?.crossed_19 ? "Crossed above 19 — a market move is starting." : null}
-          >
-            {vixData.length === 0 ? <NoData /> : (
-              <ResponsiveContainer width="100%" height={72}>
-                <AreaChart data={vixData} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
-                  <defs>
-                    <linearGradient id="msVix" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <Area
-                    type="monotone" dataKey="close" dot={false} strokeWidth={2}
-                    stroke="var(--accent)" fill="url(#msVix)" isAnimationActive={false}
-                  />
-                  <ReferenceLine y={19} stroke="var(--text-faint)" strokeDasharray="4 3" />
-                  <ReferenceLine y={30} stroke="var(--negative)" strokeDasharray="4 3" />
-                  <Tooltip
-                    contentStyle={TOOLTIP_STYLE}
-                    formatter={(v) => [v.toFixed(2), "VIX close"]}
-                    labelFormatter={(_l, pts) => pts?.[0]?.payload?.date ?? ""}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </Card>
+        <Indicator
+          caption="Put / Call ratio"
+          threshold="≥1.00 buy · ≤0.80 sell"
+          signal={ind.put_call?.signal}
+          value={ind.put_call?.value != null ? ind.put_call.value.toFixed(2) : null}
+          sub={ind.put_call?.as_of ? `5d avg · ${ind.put_call.as_of}` : "5-day avg"}
+        >
+          <Sparkline data={pcData} dataKey="ratio" id="spPc"
+            refs={[{ y: 1.0, color: "var(--positive)" }, { y: 0.8, color: "var(--negative)" }]} />
+        </Indicator>
 
-          <Card
-            title="AAII Survey"
-            threshold="crowd bearish → buy · bullish → sell"
-            signal={ind.aaii?.signal}
-            value={
-              ind.aaii?.value
-                ? `${Math.round(ind.aaii.value.bearish)}% bearish`
-                : null
-            }
-            sub={
-              ind.aaii?.value
-                ? `${Math.round(ind.aaii.value.bullish)}% bullish · week of ${ind.aaii.as_of}`
-                : "weekly investor survey"
-            }
-          >
-            {aaiiData.length === 0 ? <NoData /> : (
-              <>
-                <ResponsiveContainer width="100%" height={72}>
-                  <LineChart data={aaiiData} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
-                    <Line
-                      type="monotone" dataKey="bullish" dot={false} strokeWidth={2}
-                      stroke="var(--positive)" isAnimationActive={false}
-                    />
-                    <Line
-                      type="monotone" dataKey="neutral" dot={false} strokeWidth={2}
-                      stroke="var(--text-faint)" isAnimationActive={false}
-                    />
-                    <Line
-                      type="monotone" dataKey="bearish" dot={false} strokeWidth={2}
-                      stroke="var(--negative)" isAnimationActive={false}
-                    />
-                    <Tooltip
-                      contentStyle={TOOLTIP_STYLE}
-                      formatter={(v, name) => [`${v.toFixed(1)}%`, name]}
-                      labelFormatter={(_l, pts) => pts?.[0]?.payload?.date ?? ""}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-                <div className={styles.legend}>
-                  <span className={styles.legendItem}>
-                    <i className={styles.swatch} style={{ background: "var(--positive)" }} />bullish
-                  </span>
-                  <span className={styles.legendItem}>
-                    <i className={styles.swatch} style={{ background: "var(--text-faint)" }} />neutral
-                  </span>
-                  <span className={styles.legendItem}>
-                    <i className={styles.swatch} style={{ background: "var(--negative)" }} />bearish
-                  </span>
-                </div>
-              </>
-            )}
-          </Card>
-
-          <Card
-            title="Put/Call Ratio"
-            threshold="≥1.00 buy · ≤0.80 sell"
-            signal={ind.put_call?.signal}
-            value={ind.put_call?.value != null ? ind.put_call.value.toFixed(2) : null}
-            sub={ind.put_call?.as_of ? `5-day avg · ${ind.put_call.as_of}` : "5-day average"}
-          >
-            {pcData.length === 0 ? <NoData /> : (
-              <ResponsiveContainer width="100%" height={72}>
-                <AreaChart data={pcData} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
-                  <defs>
-                    <linearGradient id="msPc" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <Area
-                    type="monotone" dataKey="ratio" dot={false} strokeWidth={2}
-                    stroke="var(--accent)" fill="url(#msPc)" isAnimationActive={false}
-                  />
-                  <ReferenceLine y={1.0} stroke="var(--positive)" strokeDasharray="4 3" />
-                  <ReferenceLine y={0.8} stroke="var(--negative)" strokeDasharray="4 3" />
-                  <Tooltip
-                    contentStyle={TOOLTIP_STYLE}
-                    formatter={(v) => [v.toFixed(2), "Put/Call"]}
-                    labelFormatter={(_l, pts) => pts?.[0]?.payload?.date ?? ""}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </Card>
-
-          <Card
-            title="Margin Debt"
-            threshold="≥45% sell · ≥60% extreme · ≤−20% buy"
-            signal={ind.margin_debt?.signal}
-            value={
-              ind.margin_debt?.value != null
-                ? `${ind.margin_debt.value >= 0 ? "+" : ""}${ind.margin_debt.value.toFixed(0)}%`
-                : null
-            }
-            sub={
-              ind.margin_debt?.value != null
-                ? `YoY · ${ind.margin_debt.as_of} · ${formatBalance(ind.margin_debt.debit_balances)}`
-                : "FINRA margin leverage, %YoY"
-            }
-          >
-            {mdData.length === 0 ? <NoData /> : (
-              <ResponsiveContainer width="100%" height={72}>
-                <AreaChart data={mdData} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
-                  <defs>
-                    <linearGradient id="msMd" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <Area
-                    type="monotone" dataKey="yoy" dot={false} strokeWidth={2}
-                    stroke="var(--accent)" fill="url(#msMd)" isAnimationActive={false}
-                  />
-                  <ReferenceLine y={60} stroke="var(--negative)" strokeDasharray="4 3" />
-                  <ReferenceLine y={45} stroke="var(--text-faint)" strokeDasharray="4 3" />
-                  <ReferenceLine y={-20} stroke="var(--positive)" strokeDasharray="4 3" />
-                  <Tooltip
-                    contentStyle={TOOLTIP_STYLE}
-                    formatter={(v) => [`${v >= 0 ? "+" : ""}${v.toFixed(1)}%`, "YoY"]}
-                    labelFormatter={(_l, pts) => pts?.[0]?.payload?.date ?? ""}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </Card>
-        </div>
-      )}
-    </section>
+        <Indicator
+          caption="Margin debt · leverage"
+          threshold="≥45% sell · ≤−20% buy"
+          signal={ind.margin_debt?.signal}
+          value={ind.margin_debt?.value != null ? `${ind.margin_debt.value >= 0 ? "+" : ""}${ind.margin_debt.value.toFixed(0)}%` : null}
+          sub={ind.margin_debt?.value != null ? `YoY · ${formatBalance(ind.margin_debt.debit_balances)}` : "FINRA %YoY"}
+        >
+          <Sparkline data={mdData} dataKey="yoy" id="spMd"
+            refs={[{ y: 45, color: "var(--text-faint)" }, { y: -20, color: "var(--positive)" }]} />
+        </Indicator>
+      </div>
+    </div>
   );
 }

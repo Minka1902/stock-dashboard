@@ -1,59 +1,55 @@
 import Icon from "./Icon";
 import styles from "./Sidebar.module.css";
 
+// Five modules, in the confirmed flow: mood -> act -> you -> evidence.
 const NAV = [
-  { key: "sentiment",   label: "Market Sentiment", icon: "sun"   },
-  { key: "overview",    label: "Overview",     icon: "overview"  },
-  { key: "contracts",   label: "Contracts",    icon: "contract"  },
-  { key: "trades",      label: "Trades",       icon: "trending"  },
-  { key: "news",        label: "News",         icon: "news"      },
-  { key: "watchlist",   label: "Watchlist",    icon: "star"      },
-  { key: "yield-curve", label: "Yield Curve",  icon: "trending"  },
-  { key: "signals",     label: "Signals",      icon: "spark"     },
-  { key: "fear-greed",  label: "Fear & Greed", icon: "sun"       },
-  { key: "congress",    label: "Congress",     icon: "layers"    },
-  { key: "boom-score",  label: "Boom Score",   icon: "spark"     },
-  { key: "short",       label: "Short Interest", icon: "trending" },
-  { key: "social",      label: "WSB Sentiment", icon: "news"     },
-  { key: "analyst",     label: "Analyst",      icon: "star"      },
-  { key: "fundamentals", label: "Fundamentals", icon: "star"     },
-  { key: "seasonality", label: "Seasonality",  icon: "calendar"  },
-  { key: "suggestions", label: "Suggestions",  icon: "spark"     },
-  { key: "alerts",      label: "Alerts",       icon: "bell"      },
-  { key: "portfolio",   label: "Portfolio",    icon: "trending"  },
-  { key: "settings",    label: "Settings",     icon: "settings"  },
+  { key: "sentiment",   label: "Sentiment",   icon: "gauge",    hint: "the mood" },
+  { key: "suggestions", label: "Suggestions", icon: "spark",    hint: "what to do" },
+  { key: "portfolio",   label: "Portfolio",   icon: "wallet",   hint: "your book" },
+  { key: "trades",      label: "Trades",      icon: "trending", hint: "insiders" },
+  { key: "news",        label: "News",        icon: "news",     hint: "the tape" },
 ];
 
-export default function Sidebar({ view, onNavigate, unreadAlerts = 0 }) {
+export default function Sidebar({ view, onNavigate }) {
   return (
-    <aside className={styles.sidebar}>
+    <aside className={styles.rail}>
       <div className={styles.brand}>
-        <span className={styles.logo}>
-          <Icon name="spark" size={18} />
-        </span>
-        <span className={styles.brandName}>Signal</span>
+        <span className={styles.mark}>◆</span>
+        <span className={styles.brandName}>SIGNAL</span>
+        <span className={styles.brandTag}>terminal</span>
       </div>
 
       <nav className={styles.nav}>
-        {NAV.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            className={`${styles.item} ${view === item.key ? styles.active : ""}`}
-            onClick={() => onNavigate(item.key)}
-            aria-current={view === item.key ? "page" : undefined}
-          >
-            <Icon name={item.icon} size={18} />
-            <span className={styles.itemLabel}>{item.label}</span>
-            {item.key === "alerts" && unreadAlerts > 0 && (
-              <span className={styles.navBadge}>{unreadAlerts > 9 ? "9+" : unreadAlerts}</span>
-            )}
-          </button>
-        ))}
+        {NAV.map((item, i) => {
+          const active = view === item.key;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              className={`${styles.item} ${active ? styles.active : ""}`}
+              onClick={() => onNavigate(item.key)}
+              aria-current={active ? "page" : undefined}
+            >
+              <span className={styles.index}>{String(i + 1).padStart(2, "0")}</span>
+              <Icon name={item.icon} size={17} />
+              <span className={styles.label}>{item.label}</span>
+              <span className={styles.hint}>{item.hint}</span>
+            </button>
+          );
+        })}
       </nav>
 
       <div className={styles.footer}>
-        <p className={styles.footNote}>Signals, not predictions.</p>
+        <button
+          type="button"
+          className={`${styles.gear} ${view === "settings" ? styles.active : ""}`}
+          onClick={() => onNavigate("settings")}
+          aria-current={view === "settings" ? "page" : undefined}
+        >
+          <Icon name="settings" size={16} />
+          <span className={styles.label}>Settings</span>
+        </button>
+        <p className={styles.note}>Signals, not predictions.</p>
       </div>
     </aside>
   );

@@ -1,9 +1,21 @@
 import Icon from "./Icon";
+import AlertsBell from "./AlertsBell";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./TopBar.module.css";
 
-export default function TopBar({ title, sources, busy, onRefresh, theme, onToggleTheme, dyslexia, onToggleDyslexia, unreadAlerts = 0, onOpenAlerts }) {
-  // "Live" reflects whether the most recently refreshed source succeeded.
+const LEAN_LABEL = {
+  GREEDY: "Greedy",
+  FEARFUL: "Fearful",
+  NEUTRAL: "Neutral",
+  RISK_ON: "Risk on",
+  RISK_OFF: "Risk off",
+};
+
+export default function TopBar({
+  title, index, sources, busy, onRefresh, theme, onToggleTheme,
+  dyslexia, onToggleDyslexia, lean, alerts = [], unreadAlerts = 0,
+  onMarkAlertsRead, onOpenCommand,
+}) {
   const refreshed = sources
     .filter((s) => s.last_refreshed_at)
     .sort((a, b) => (a.last_refreshed_at < b.last_refreshed_at ? 1 : -1));
@@ -14,25 +26,36 @@ export default function TopBar({ title, sources, busy, onRefresh, theme, onToggl
   return (
     <header className={styles.bar}>
       <div className={styles.left}>
+        {index && <span className={styles.index}>{index}</span>}
         <h1 className={styles.title}>{title}</h1>
         <span className={styles.status} data-live={live ? "yes" : "no"}>
           <span className={styles.dot} />
-          {live ? "Live" : "Idle"} · updated {lastRefresh}
+          {live ? "LIVE" : "IDLE"}
+          <span className={styles.since}>· {lastRefresh}</span>
         </span>
       </div>
 
       <div className={styles.actions}>
+        {lean && (
+          <span className={styles.lean} data-lean={lean}>
+            <span className={styles.leanCap}>Lean</span>
+            {LEAN_LABEL[lean] || lean}
+          </span>
+        )}
+
         <button
-          className={styles.iconBtn}
-          onClick={onOpenAlerts}
-          title="Alerts"
-          aria-label={unreadAlerts > 0 ? `Alerts (${unreadAlerts} unread)` : "Alerts"}
+          type="button"
+          className={styles.cmd}
+          onClick={onOpenCommand}
+          aria-label="Open command palette"
+          title="Jump to (Ctrl/Cmd + K)"
         >
-          <Icon name="bell" size={18} />
-          {unreadAlerts > 0 && (
-            <span className={styles.badge}>{unreadAlerts > 9 ? "9+" : unreadAlerts}</span>
-          )}
+          <Icon name="command" size={13} />
+          <kbd>K</kbd>
         </button>
+
+        <AlertsBell alerts={alerts} unread={unreadAlerts} onMarkRead={onMarkAlertsRead} />
+
         <button
           className={styles.iconBtn}
           onClick={onToggleDyslexia}
@@ -41,7 +64,7 @@ export default function TopBar({ title, sources, busy, onRefresh, theme, onToggl
           aria-pressed={dyslexia}
           data-active={dyslexia ? "yes" : "no"}
         >
-          <Icon name="book" size={18} />
+          <Icon name="book" size={17} />
         </button>
         <button
           className={styles.iconBtn}
@@ -49,13 +72,13 @@ export default function TopBar({ title, sources, busy, onRefresh, theme, onToggl
           title={theme === "dark" ? "Switch to light" : "Switch to dark"}
           aria-label="Toggle theme"
         >
-          <Icon name={theme === "dark" ? "sun" : "moon"} size={18} />
+          <Icon name={theme === "dark" ? "sun" : "moon"} size={17} />
         </button>
         <button className={styles.refresh} onClick={onRefresh} disabled={busy}>
           <span className={busy ? styles.spin : ""}>
-            <Icon name="refresh" size={16} />
+            <Icon name="refresh" size={15} />
           </span>
-          {busy ? "Refreshing…" : "Refresh"}
+          {busy ? "Syncing" : "Refresh"}
         </button>
       </div>
     </header>

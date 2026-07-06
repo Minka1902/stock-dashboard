@@ -74,6 +74,24 @@ const PATHS = {
       <path d="M13.7 21a2 2 0 0 1-3.4 0" />
     </>
   ),
+  gauge: (
+    <>
+      <path d="M3.5 15a9 9 0 1 1 17 0" />
+      <path d="M12 15l4-4" />
+      <circle cx="12" cy="15" r="1.4" />
+    </>
+  ),
+  wallet: (
+    <>
+      <path d="M3 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <path d="M3 9h14a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H3" />
+      <circle cx="16" cy="12" r="1" />
+    </>
+  ),
+  command: (
+    <path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z" />
+  ),
+  arrowRight: <path d="M5 12h14M13 6l6 6-6 6" />,
 };
 
 export default function Icon({ name, size = 18, strokeWidth = 1.8, ...rest }) {

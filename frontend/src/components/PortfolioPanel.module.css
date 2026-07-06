@@ -2,48 +2,53 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  box-shadow: var(--shadow);
   overflow: hidden;
 }
 
 .head {
-  padding: var(--s-5);
-  border-bottom: 1px solid var(--border);
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1px solid var(--grid);
 }
 
 .title {
-  font-size: 16px;
-  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .subtitle {
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: 12.5px;
+  margin-top: 3px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  max-width: 90ch;
 }
 
 .form {
   display: flex;
   gap: var(--s-2);
-  padding: var(--s-4) var(--s-5);
-  border-bottom: 1px solid var(--border);
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1px solid var(--grid);
   flex-wrap: wrap;
 }
 
 .ticker,
 .num {
-  height: 38px;
+  height: 36px;
   padding: 0 12px;
   border-radius: var(--r-sm);
   border: 1px solid var(--border-strong);
   background: var(--bg);
   color: var(--text);
-  font-size: 14px;
+  font-family: var(--mono);
+  font-size: 13px;
 }
 .ticker {
   width: 110px;
-  font-family: var(--mono);
   text-transform: uppercase;
+  font-weight: 700;
 }
 .num {
   width: 120px;
@@ -56,12 +61,13 @@
 }
 
 .add {
-  height: 38px;
+  height: 36px;
   padding: 0 18px;
   border-radius: var(--r-sm);
-  border: none;
-  background: var(--accent);
-  color: #fff;
+  border: 1px solid var(--accent-weak);
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-family: var(--mono);
   font-weight: 600;
   cursor: pointer;
 }
@@ -71,9 +77,10 @@
 }
 
 .error {
-  padding: 8px var(--s-5);
+  padding: 8px var(--s-4);
   color: var(--negative);
-  font-size: 13px;
+  font-family: var(--mono);
+  font-size: 12px;
 }
 
 .tableWrap {
@@ -83,30 +90,34 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .table thead th {
   text-align: left;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
   color: var(--text-faint);
   background: var(--surface-2);
-  padding: 10px var(--s-5);
+  padding: 8px var(--s-4);
   white-space: nowrap;
+  border-bottom: 1px solid var(--border);
 }
 
 .table tbody td {
-  padding: 11px var(--s-5);
-  border-top: 1px solid var(--border);
+  padding: 9px var(--s-4);
+  border-top: 1px solid var(--grid);
   vertical-align: middle;
 }
 .table tbody tr:nth-child(even) {
-  background: color-mix(in oklch, var(--surface-2) 45%, transparent);
+  background: color-mix(in oklab, var(--surface-2) 40%, transparent);
 }
 .table tbody tr:hover {
-  background: var(--surface-hover);
+  background: var(--surface-3);
 }
 
 .numCol {
@@ -130,13 +141,13 @@
 .pl[data-tone="flat"] { color: var(--text-muted); }
 
 .remove {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: var(--r-sm);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-muted);
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
   cursor: pointer;
 }
@@ -157,18 +168,19 @@
 .emptyIcon {
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: var(--r-md);
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-sm);
   background: var(--accent-weak);
   color: var(--accent);
   margin-bottom: var(--s-2);
 }
 .emptyTitle {
+  font-family: var(--mono);
   font-weight: 600;
   color: var(--text);
 }
 .emptyText {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 12.5px;
 }

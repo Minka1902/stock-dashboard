@@ -2,7 +2,6 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  box-shadow: var(--shadow);
   overflow: hidden;
 }
 
@@ -10,19 +9,23 @@
   display: flex;
   align-items: flex-start;
   gap: var(--s-3);
-  padding: var(--s-5);
-  border-bottom: 1px solid var(--border);
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1px solid var(--grid);
 }
 
 .title {
-  font-size: 16px;
-  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .subtitle {
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: 12.5px;
+  margin-top: 3px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11px;
 }
 
 .tableWrap {
@@ -32,33 +35,37 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .table thead th {
   position: sticky;
   top: 0;
   text-align: left;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
   color: var(--text-faint);
   background: var(--surface-2);
-  padding: 10px var(--s-5);
+  padding: 8px var(--s-4);
   white-space: nowrap;
+  border-bottom: 1px solid var(--border);
 }
 
 .table tbody td {
-  padding: 11px var(--s-5);
-  border-top: 1px solid var(--border);
+  padding: 8px var(--s-4);
+  border-top: 1px solid var(--grid);
   vertical-align: middle;
 }
 
 .table tbody tr:nth-child(even) {
-  background: color-mix(in oklch, var(--surface-2) 45%, transparent);
+  background: color-mix(in oklab, var(--surface-2) 40%, transparent);
 }
 .table tbody tr:hover {
-  background: var(--surface-hover);
+  background: var(--surface-3);
 }
 
 .num {
@@ -78,10 +85,13 @@
 
 .badge {
   display: inline-block;
-  padding: 3px 10px;
-  border-radius: var(--r-pill);
-  font-size: 11.5px;
-  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--r-xs);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   border: 1px solid var(--border);
   color: var(--text-muted);
   background: var(--surface-2);
@@ -111,7 +121,7 @@
   white-space: nowrap;
 }
 .role {
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--text-faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -134,13 +144,14 @@
 .emptyIcon {
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: var(--r-md);
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-sm);
   background: var(--accent-weak);
   color: var(--accent);
 }
 .emptyTitle {
+  font-family: var(--mono);
   font-weight: 600;
   color: var(--text);
 }
@@ -148,9 +159,10 @@
   margin-top: var(--s-2);
   padding: 8px 16px;
   border-radius: var(--r-sm);
-  border: none;
-  background: var(--accent);
-  color: #fff;
+  border: 1px solid var(--accent-weak);
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-family: var(--mono);
   font-weight: 600;
   cursor: pointer;
 }
