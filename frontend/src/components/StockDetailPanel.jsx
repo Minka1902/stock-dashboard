@@ -38,7 +38,6 @@ function Stat({ label, value, tone }) {
 export default function StockDetailPanel({ ticker, onBack }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [interval, setInterval] = useState("daily");
 
   useEffect(() => {
     let alive = true;
@@ -50,13 +49,12 @@ export default function StockDetailPanel({ ticker, onBack }) {
   }, [ticker]);
 
   const a = data?.analysis;
-  const bars = interval === "weekly" ? data?.weekly : data?.daily;
 
   return (
     <div className={styles.wrap}>
       <div className={styles.topbar}>
         <button className={styles.back} onClick={onBack}>
-          <Icon name="arrowRight" size={14} /> <span>Portfolio</span>
+          <Icon name="arrowRight" size={14} /> <span>Back</span>
         </button>
         <h2 className={styles.ticker}>{ticker}</h2>
         {a && <span className={styles.directive} data-tone={DIRECTIVE_TONE[a.directive]}>{a.directive}</span>}
@@ -76,38 +74,24 @@ export default function StockDetailPanel({ ticker, onBack }) {
 
       {loading ? (
         <Skeleton w="100%" h="460px" />
-      ) : !a ? (
-        <div className={styles.empty}>
-          <p className={styles.emptyTitle}>No analysis yet for {ticker}</p>
-          <p className={styles.emptyText}>
-            Price history is still loading, or this holding was just added. Refresh in a minute.
-          </p>
-        </div>
       ) : (
         <>
-          <Pane
-            caption={`Chart · ${interval}`}
-            right={
-              <span className={styles.tf}>
-                {["daily", "weekly"].map((iv) => (
-                  <button key={iv} className={styles.tfBtn} data-active={interval === iv ? "yes" : "no"}
-                          onClick={() => setInterval(iv)}>{iv}</button>
-                ))}
-              </span>
-            }
-          >
-            {bars && bars.length > 1 ? (
-              <ChartPro bars={bars} analysis={a} showMarkers={interval === "daily"} />
-            ) : (
-              <p className={styles.muted}>No {interval} price history.</p>
-            )}
-            <p className={styles.legend}>
-              <span data-c="info">MA20</span><span data-c="accent">MA50</span>
-              <span data-c="muted">MA150</span><span data-c="neg">MA200</span>
-              <span className={styles.legendSep}>·</span>
-              dashed = support/resistance · dots = pattern pivots · arrows = unfilled gaps
-            </p>
+          <Pane caption="Chart">
+            <ChartPro ticker={ticker} analysis={a} />
           </Pane>
+
+          {!a && (
+            <div className={styles.empty}>
+              <p className={styles.emptyTitle}>No analysis yet for {ticker}</p>
+              <p className={styles.emptyText}>
+                Price history is still loading, or this holding was just added. Refresh in a minute.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+      {!loading && a && (
+        <>
 
           <div className={styles.grid}>
             <Pane caption="Trade plan" right={a.rr != null && <span className={styles.rr}>{a.rr}:1</span>}>

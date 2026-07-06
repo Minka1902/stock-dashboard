@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app import analysis, config, db, ingest, notify, quotes, sentiment, suggestions
+from app import analysis, chart_data, config, db, ingest, notify, quotes, sentiment, suggestions
 from app import alerts as alerts_source
 from app.market_calendar import is_trading_day, next_trading_day
 from app.models import AppSettings, Holding, NotifyProfile, WatchItem
@@ -328,6 +328,23 @@ def fundamentals():
 @app.get("/api/seasonality")
 def seasonality():
     return [s.model_dump() for s in db.get_seasonality(conn)]
+
+
+# ---------- chart bars (on-demand, for the pro chart) ----------
+@app.get("/api/chart/{ticker}")
+def chart_bars(ticker: str, interval: str = "1d"):
+    if interval not in chart_data.INTERVALS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"interval must be one of {', '.join(chart_data.INTERVALS)}",
+        )
+    t = ticker.strip().upper()
+    if not t:
+        raise HTTPException(status_code=400, detail="ticker required")
+    try:
+        return chart_data.get_bars(t, interval)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"chart data unavailable: {exc}")
 
 
 # ---------- per-holding technical analysis ----------
