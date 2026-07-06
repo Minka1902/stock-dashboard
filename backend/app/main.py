@@ -9,7 +9,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app import analysis, chart_data, config, db, ingest, notify, quotes, sentiment, suggestions
+from fastapi.responses import HTMLResponse
+
+from app import analysis, chart_data, config, db, ingest, notify, quotes, report, sentiment, suggestions
 from app import alerts as alerts_source
 from app.market_calendar import is_trading_day, next_trading_day
 from app.models import AppSettings, Holding, NotifyProfile, WatchItem
@@ -360,6 +362,21 @@ def chart_bars(ticker: str, interval: str = "1d"):
 @app.get("/api/analysis")
 def analyses():
     return [a.model_dump() for a in db.get_all_analyses(conn)]
+
+
+@app.get("/api/analysis/{ticker}/report")
+def analysis_report(ticker: str, print: int = 0):
+    """Self-contained HTML report. Default downloads; ?print=1 opens inline
+    with an auto-print hook so the browser's dialog offers Save as PDF."""
+    t = ticker.strip().upper()
+    html_doc = report.build_report(conn, t, print_mode=bool(print))
+    if html_doc is None:
+        raise HTTPException(status_code=404, detail=f"no analysis for {t}")
+    today = datetime.now(timezone.utc).date().isoformat()
+    headers = {} if print else {
+        "Content-Disposition": f'attachment; filename="{t}-analysis-{today}.html"'
+    }
+    return HTMLResponse(content=html_doc, headers=headers)
 
 
 @app.get("/api/analysis/{ticker}")

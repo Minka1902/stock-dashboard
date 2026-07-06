@@ -161,3 +161,37 @@ def test_analysis_trigger_next_fire_is_weekday():
     fire = trigger.get_next_fire_time(None, saturday)
     assert fire.weekday() == 0
     assert (fire.hour, fire.minute) == (15, 30)
+
+
+def test_analysis_report_endpoint(client):
+    import json as _json
+    from app import analysis as analysis_engine
+    from app import main as main_module
+    from app.models import OHLCBar, OHLCSeries
+
+    assert client.get("/api/analysis/ZZZQ/report").status_code == 404
+
+    bars = []
+    px = 100.0
+    for i in range(80):
+        px *= 1.002
+        bars.append(OHLCBar(date=f"2026-{1 + i // 28:02d}-{1 + i % 28:02d}",
+                            open=px * 0.99, high=px * 1.01, low=px * 0.98,
+                            close=px, volume=1000))
+    db.upsert_ohlc(main_module.conn, [OHLCSeries(
+        ticker="NOC", interval="daily",
+        bars_json=_json.dumps([b.model_dump() for b in bars]),
+        fetched_at="2026-07-06T00:00:00+00:00",
+    )])
+    a = analysis_engine.build("NOC", bars, px, None, 1.0)
+    db.upsert_analyses(main_module.conn, [a])
+
+    resp = client.get("/api/analysis/NOC/report")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/html")
+    assert "attachment" in resp.headers.get("content-disposition", "")
+    assert "NOC" in resp.text
+
+    inline = client.get("/api/analysis/NOC/report?print=1")
+    assert "content-disposition" not in inline.headers
+    assert "window.print" in inline.text

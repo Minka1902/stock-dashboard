@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Icon from "./Icon";
 import ChartPro from "./ChartPro";
 import Skeleton from "./Skeleton";
-import { getAnalysis } from "../api";
+import { getAnalysis, analysisReportUrl } from "../api";
 import styles from "./StockDetailPanel.module.css";
 
 const DIRECTIVE_TONE = {
@@ -69,6 +69,19 @@ export default function StockDetailPanel({ ticker, onBack }) {
           </span>
         )}
         <span className={styles.spacer} />
+        {a && (
+          <span className={styles.reportBtns}>
+            <a className={styles.reportBtn} href={analysisReportUrl(ticker)}
+               title="Download the full analysis as a standalone HTML report">
+              <Icon name="news" size={13} /> Report
+            </a>
+            <a className={styles.reportBtn} href={analysisReportUrl(ticker, { print: true })}
+               target="_blank" rel="noreferrer"
+               title="Open the report print-ready — use the browser dialog to save as PDF">
+              PDF
+            </a>
+          </span>
+        )}
         {a?.price != null && <span className={styles.price}>${n(a.price)}</span>}
       </div>
 
