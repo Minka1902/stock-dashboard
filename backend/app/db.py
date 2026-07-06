@@ -1,5 +1,10 @@
 """All SQLite access lives here."""
+import functools
+import inspect
+import json
 import sqlite3
+import sys
+import threading
 
 from app.models import (
     AaiiSentiment,
@@ -15,7 +20,10 @@ from app.models import (
     MarginDebtPoint,
     NewsArticle,
     NotifyProfile,
+    OHLCBar,
+    OHLCSeries,
     PutCallPoint,
+    StockAnalysis,
     Seasonality,
     ShortInterest,
     SocialSentiment,
@@ -28,8 +36,22 @@ from app.models import (
 )
 
 
+class _LockingConnection(sqlite3.Connection):
+    """Connection subclass that carries a re-entrant lock.
+
+    A raw ``sqlite3.Connection`` has no ``__dict__`` so we can't attach the
+    lock to it; a subclass instance can. The lock lives on the connection
+    object itself, so every db access serializes on the *same* lock no matter
+    how this module is imported. See the ``_synchronized`` wrapper below.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._app_lock = threading.RLock()
+
+
 def connect(db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn = sqlite3.connect(db_path, factory=_LockingConnection, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -253,9 +275,24 @@ def init_schema(conn: sqlite3.Connection) -> None:
             insider_cluster_buy INTEGER,
             updated_at          TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS ohlc_series (
+            ticker     TEXT NOT NULL,
+            interval   TEXT NOT NULL,
+            bars_json  TEXT NOT NULL,
+            fetched_at TEXT NOT NULL,
+            PRIMARY KEY (ticker, interval)
+        );
+        CREATE TABLE IF NOT EXISTS stock_analysis (
+            ticker       TEXT PRIMARY KEY,
+            computed_at  TEXT NOT NULL,
+            payload_json TEXT NOT NULL
+        );
         """
     )
     conn.commit()
+
+    _try_add_column(conn, "notify_profile", "account_size", "REAL")
+    _try_add_column(conn, "notify_profile", "risk_pct", "REAL NOT NULL DEFAULT 1.0")
 
     # Migrate existing tables: add new columns (safe on pre-existing databases).
     for col, col_def in [
@@ -1111,6 +1148,8 @@ def get_notify_profile(conn: sqlite3.Connection) -> NotifyProfile:
         phone=d.get("phone"),
         email_enabled=bool(d.get("email_enabled")),
         sms_enabled=bool(d.get("sms_enabled")),
+        account_size=d.get("account_size"),
+        risk_pct=d.get("risk_pct") if d.get("risk_pct") is not None else 1.0,
         updated_at=d.get("updated_at") or "",
     )
 
@@ -1118,11 +1157,12 @@ def get_notify_profile(conn: sqlite3.Connection) -> NotifyProfile:
 def upsert_notify_profile(conn: sqlite3.Connection, profile: NotifyProfile) -> None:
     conn.execute(
         """
-        INSERT INTO notify_profile (id, email, phone, email_enabled, sms_enabled, updated_at)
-        VALUES (1, :email, :phone, :email_enabled, :sms_enabled, :updated_at)
+        INSERT INTO notify_profile (id, email, phone, email_enabled, sms_enabled, account_size, risk_pct, updated_at)
+        VALUES (1, :email, :phone, :email_enabled, :sms_enabled, :account_size, :risk_pct, :updated_at)
         ON CONFLICT(id) DO UPDATE SET
             email=excluded.email, phone=excluded.phone,
             email_enabled=excluded.email_enabled, sms_enabled=excluded.sms_enabled,
+            account_size=excluded.account_size, risk_pct=excluded.risk_pct,
             updated_at=excluded.updated_at
         """,
         {
@@ -1130,10 +1170,77 @@ def upsert_notify_profile(conn: sqlite3.Connection, profile: NotifyProfile) -> N
             "phone": profile.phone,
             "email_enabled": int(profile.email_enabled),
             "sms_enabled": int(profile.sms_enabled),
+            "account_size": profile.account_size,
+            "risk_pct": profile.risk_pct,
             "updated_at": profile.updated_at,
         },
     )
     conn.commit()
+
+
+# ---------- OHLC series + technical analysis ----------
+
+def upsert_ohlc(conn: sqlite3.Connection, series: list[OHLCSeries]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO ohlc_series (ticker, interval, bars_json, fetched_at)
+        VALUES (:ticker, :interval, :bars_json, :fetched_at)
+        ON CONFLICT(ticker, interval) DO UPDATE SET
+            bars_json=excluded.bars_json, fetched_at=excluded.fetched_at
+        """,
+        [s.model_dump() for s in series],
+    )
+    conn.commit()
+
+
+def get_ohlc(conn: sqlite3.Connection, ticker: str, interval: str = "daily") -> list[OHLCBar]:
+    cur = conn.execute(
+        "SELECT bars_json FROM ohlc_series WHERE ticker = ? AND interval = ?",
+        (ticker.upper(), interval),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return []
+    try:
+        return [OHLCBar(**b) for b in json.loads(row["bars_json"])]
+    except (ValueError, TypeError):
+        return []
+
+
+def upsert_analyses(conn: sqlite3.Connection, analyses: list[StockAnalysis]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO stock_analysis (ticker, computed_at, payload_json)
+        VALUES (:ticker, :computed_at, :payload_json)
+        ON CONFLICT(ticker) DO UPDATE SET
+            computed_at=excluded.computed_at, payload_json=excluded.payload_json
+        """,
+        [{"ticker": a.ticker, "computed_at": a.computed_at, "payload_json": a.model_dump_json()}
+         for a in analyses],
+    )
+    conn.commit()
+
+
+def get_analysis(conn: sqlite3.Connection, ticker: str) -> StockAnalysis | None:
+    cur = conn.execute("SELECT payload_json FROM stock_analysis WHERE ticker = ?", (ticker.upper(),))
+    row = cur.fetchone()
+    if row is None:
+        return None
+    try:
+        return StockAnalysis(**json.loads(row["payload_json"]))
+    except (ValueError, TypeError):
+        return None
+
+
+def get_all_analyses(conn: sqlite3.Connection) -> list[StockAnalysis]:
+    cur = conn.execute("SELECT payload_json FROM stock_analysis")
+    out: list[StockAnalysis] = []
+    for row in cur.fetchall():
+        try:
+            out.append(StockAnalysis(**json.loads(row["payload_json"])))
+        except (ValueError, TypeError):
+            continue
+    return out
 
 
 # ---------- suggestion log (append-only) ----------
@@ -1225,3 +1332,38 @@ def upsert_alert_state(
          int(insider_cluster_buy) if insider_cluster_buy is not None else None, updated_at),
     )
     conn.commit()
+
+
+# --- Thread safety -------------------------------------------------------
+# One shared SQLite connection (check_same_thread=False) is used by FastAPI's
+# threadpool AND the APScheduler jobs. sqlite3 forbids *concurrent* use of a
+# single connection, which otherwise corrupts cursor results (all-NULL rows,
+# InterfaceError, "tuple index out of range"). Serialize every public db access
+# on a re-entrant lock carried by the connection object (see connect()), so the
+# lock is shared even if this module is imported under two names. Holding the
+# lock for the whole function keeps each execute+fetch atomic; RLock lets db
+# functions call each other on the same thread without deadlock.
+def _conn_lock(args, kwargs):
+    conn = args[0] if args else kwargs.get("conn")
+    return getattr(conn, "_app_lock", None)
+
+
+def _synchronized(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        lock = _conn_lock(args, kwargs)
+        if lock is None:
+            return fn(*args, **kwargs)
+        with lock:
+            return fn(*args, **kwargs)
+    return wrapper
+
+
+_module = sys.modules[__name__]
+for _name, _obj in list(vars(_module).items()):
+    if (
+        inspect.isfunction(_obj)
+        and _obj.__module__ == __name__
+        and not _name.startswith("_")
+    ):
+        setattr(_module, _name, _synchronized(_obj))

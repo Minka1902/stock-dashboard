@@ -23,6 +23,7 @@ import {
   getPortfolio,
   getSuggestions,
   getAlerts,
+  getAnalyses,
   markAlertsRead as apiMarkAlertsRead,
   refreshSource,
   addWatch as apiAddWatch,
@@ -66,6 +67,7 @@ export function useDashboardData() {
   const [seasonality, setSeasonality] = useState([]);
   const [portfolio, setPortfolio] = useState([]);
   const [suggestions, setSuggestions] = useState(null);
+  const [analyses, setAnalyses] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [unreadAlerts, setUnreadAlerts] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -73,62 +75,59 @@ export function useDashboardData() {
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
-    try {
-      const [c, s, n, t, w, yc, sig, fg, vx, aa, pc, md, sent, ct, si, soc, ana, bs, fund, seas, port, sugg, al] = await Promise.all([
-        getContracts(),
-        getSources(),
-        getNews(),
-        getTrades(),
-        getWatchlist(),
-        getYieldCurve(),
-        getSignals(),
-        getFearGreed(),
-        getVix(),
-        getAaii(),
-        getPutCall(),
-        getMarginDebt(),
-        getSentiment(),
-        getCongressTrades(),
-        getShortInterest(),
-        getSocial(),
-        getAnalyst(),
-        getBoomScores(),
-        getFundamentals(),
-        getSeasonality(),
-        getPortfolio(),
-        getSuggestions(),
-        getAlerts(),
-      ]);
-      setContracts(c);
-      setSources(s);
-      setNews(n);
-      setTrades(t);
-      setWatchlist(w);
-      setYieldCurve(yc);
-      setSignals(sig);
-      setFearGreed(fg);
-      setVix(vx);
-      setAaii(aa);
-      setPutCall(pc);
-      setMarginDebt(md);
-      setSentiment(sent);
-      setCongressTrades(ct);
-      setShortInterest(si);
-      setSocial(soc);
-      setAnalyst(ana);
-      setBoomScores(bs);
-      setFundamentals(fund);
-      setSeasonality(seas);
-      setPortfolio(port);
-      setSuggestions(sugg);
-      setAlerts(al.alerts);
-      setUnreadAlerts(al.unread);
-      setError(null);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
+    // Load every source independently: one failing endpoint (e.g. an upstream
+    // 429/500) must not blank the whole dashboard. Each result is applied on
+    // its own; failures leave that panel's previous state untouched.
+    const results = await Promise.allSettled([
+      getContracts(),      // 0
+      getSources(),        // 1 — connectivity signal for the error banner
+      getNews(),           // 2
+      getTrades(),         // 3
+      getWatchlist(),      // 4
+      getYieldCurve(),     // 5
+      getSignals(),        // 6
+      getFearGreed(),      // 7
+      getVix(),            // 8
+      getAaii(),           // 9
+      getPutCall(),        // 10
+      getMarginDebt(),     // 11
+      getSentiment(),      // 12
+      getCongressTrades(), // 13
+      getShortInterest(),  // 14
+      getSocial(),         // 15
+      getAnalyst(),        // 16
+      getBoomScores(),     // 17
+      getFundamentals(),   // 18
+      getSeasonality(),    // 19
+      getPortfolio(),      // 20
+      getSuggestions(),    // 21
+      getAlerts(),         // 22 — special shape { alerts, unread }
+      getAnalyses(),       // 23
+    ]);
+
+    const setters = [
+      setContracts, setSources, setNews, setTrades, setWatchlist,
+      setYieldCurve, setSignals, setFearGreed, setVix, setAaii,
+      setPutCall, setMarginDebt, setSentiment, setCongressTrades,
+      setShortInterest, setSocial, setAnalyst, setBoomScores,
+      setFundamentals, setSeasonality, setPortfolio, setSuggestions,
+      null, // alerts handled below
+      setAnalyses,
+    ];
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled" && setters[i]) setters[i](r.value);
+    });
+
+    const alerts = results[22];
+    if (alerts.status === "fulfilled") {
+      setAlerts(alerts.value.alerts);
+      setUnreadAlerts(alerts.value.unread);
     }
+
+    // Only banner a genuine outage: the sources fetch is the connectivity probe.
+    const sources = results[1];
+    setError(sources.status === "fulfilled" ? null : (sources.reason?.message || "backend unreachable"));
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -198,6 +197,7 @@ export function useDashboardData() {
     seasonality,
     portfolio,
     suggestions,
+    analyses,
     alerts,
     unreadAlerts,
     loading,

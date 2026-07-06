@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app import config, db, ingest, notify, quotes, sentiment, suggestions
+from app import analysis, config, db, ingest, notify, quotes, sentiment, suggestions
 from app import alerts as alerts_source
 from app.market_calendar import is_trading_day, next_trading_day
 from app.models import Holding, NotifyProfile, WatchItem
@@ -28,6 +28,7 @@ import app.sources.analyst as analyst_source
 import app.sources.fundamentals as fundamentals_source
 import app.sources.seasonality as seasonality_source
 import app.sources.boom_score as boom_score_source
+import app.sources.ohlc as ohlc_source
 
 
 # Module-level fetchers so tests can monkeypatch them with stubs.
@@ -72,6 +73,30 @@ def score_fetch():
     return boom_score_source.compute_all(tickers, conn)
 
 
+def ohlc_fetch():
+    tickers = [h.ticker for h in db.get_portfolio(conn)]
+    if not tickers:
+        return []
+    return ohlc_source.fetch(tickers)
+
+
+def analysis_fetch():
+    """Per-holding technical analysis from stored OHLC + live price + risk settings."""
+    holdings = db.get_portfolio(conn)
+    if not holdings:
+        return []
+    profile = db.get_notify_profile(conn)
+    quote_map = {q.ticker: q.price for q in quotes.get_quotes([h.ticker for h in holdings])}
+    out = []
+    for h in holdings:
+        daily = db.get_ohlc(conn, h.ticker, "daily")
+        if len(daily) < 30:
+            continue  # not enough history yet; skip rather than fabricate
+        price = quote_map.get(h.ticker) or daily[-1].close
+        out.append(analysis.build(h.ticker, daily, price, profile.account_size, profile.risk_pct))
+    return out
+
+
 # One shared connection (SQLite with check_same_thread=False).
 conn = db.connect(config.DB_PATH)
 db.init_schema(conn)
@@ -95,6 +120,8 @@ SOURCES = {
     "fundamentals":   (lambda: fundamentals_fetch(), db.upsert_fundamentals, None),
     "seasonality":    (lambda: seasonality_fetch(), db.upsert_seasonality, config.SEASONALITY_MIN_INTERVAL_SECONDS),
     "boom_score":     (lambda: score_fetch(), db.upsert_boom_scores, None),
+    "ohlc":           (lambda: ohlc_fetch(), db.upsert_ohlc, 3600),  # 2y history barely moves intraday
+    "analysis":       (lambda: analysis_fetch(), db.upsert_analyses, None),  # after ohlc; cheap DB+quote read
     "alerts":         (lambda: alerts_source.detect(conn), db.upsert_alerts, None),  # must be last (diffs boom_score)
 }
 
@@ -257,6 +284,23 @@ def seasonality():
     return [s.model_dump() for s in db.get_seasonality(conn)]
 
 
+# ---------- per-holding technical analysis ----------
+@app.get("/api/analysis")
+def analyses():
+    return [a.model_dump() for a in db.get_all_analyses(conn)]
+
+
+@app.get("/api/analysis/{ticker}")
+def analysis_detail(ticker: str):
+    t = ticker.strip().upper()
+    a = db.get_analysis(conn, t)
+    return {
+        "analysis": a.model_dump() if a else None,
+        "daily": [b.model_dump() for b in db.get_ohlc(conn, t, "daily")],
+        "weekly": [b.model_dump() for b in db.get_ohlc(conn, t, "weekly")],
+    }
+
+
 # ---------- portfolio (user managed) ----------
 class HoldingCreate(BaseModel):
     ticker: str
@@ -291,10 +335,14 @@ def delete_holding(ticker: str):
 
 # ---------- notification profile (email/phone; secrets stay in env) ----------
 class ProfileUpdate(BaseModel):
+    # All optional: a field left None keeps the stored value (the notifications
+    # form and the trading-risk form each PUT only their own fields).
     email: str | None = None
     phone: str | None = None
-    email_enabled: bool = False
-    sms_enabled: bool = False
+    email_enabled: bool | None = None
+    sms_enabled: bool | None = None
+    account_size: float | None = None
+    risk_pct: float | None = None
 
 
 @app.get("/api/profile")
@@ -304,17 +352,26 @@ def get_profile():
 
 @app.put("/api/profile")
 def put_profile(item: ProfileUpdate):
-    email = (item.email or "").strip() or None
-    phone = (item.phone or "").strip() or None
+    cur = db.get_notify_profile(conn)
+    email = ((item.email if item.email is not None else cur.email) or "").strip() or None
+    phone = ((item.phone if item.phone is not None else cur.phone) or "").strip() or None
     if email and "@" not in email:
         raise HTTPException(status_code=400, detail="invalid email")
     if phone and not phone.startswith("+"):
         raise HTTPException(status_code=400, detail="phone must be E.164 (start with +)")
+    email_enabled = item.email_enabled if item.email_enabled is not None else cur.email_enabled
+    sms_enabled = item.sms_enabled if item.sms_enabled is not None else cur.sms_enabled
+    account_size = item.account_size if item.account_size is not None else cur.account_size
+    if account_size is not None and account_size < 0:
+        raise HTTPException(status_code=400, detail="account_size must be >= 0")
+    risk_pct = item.risk_pct if item.risk_pct is not None else cur.risk_pct
+    risk_pct = max(0.1, min(10.0, risk_pct if risk_pct else 1.0))
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     db.upsert_notify_profile(conn, NotifyProfile(
         email=email, phone=phone,
-        email_enabled=bool(item.email_enabled and email),
-        sms_enabled=bool(item.sms_enabled and phone),
+        email_enabled=bool(email_enabled and email),
+        sms_enabled=bool(sms_enabled and phone),
+        account_size=account_size, risk_pct=risk_pct,
         updated_at=now,
     ))
     return db.get_notify_profile(conn).model_dump()

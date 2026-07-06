@@ -1,7 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { getProfile, saveProfile } from "../api";
 
-const EMPTY = { email: "", phone: "", email_enabled: false, sms_enabled: false };
+const EMPTY = {
+  email: "", phone: "", email_enabled: false, sms_enabled: false,
+  account_size: null, risk_pct: 1.0,
+};
+
+function fromServer(p) {
+  return {
+    email: p.email || "",
+    phone: p.phone || "",
+    email_enabled: !!p.email_enabled,
+    sms_enabled: !!p.sms_enabled,
+    account_size: p.account_size ?? null,
+    risk_pct: p.risk_pct ?? 1.0,
+  };
+}
 
 /**
  * Server-backed notification profile (email/phone/enable flags). Unlike
@@ -18,12 +32,7 @@ export function useProfile() {
     getProfile()
       .then((p) => {
         if (!alive) return;
-        setProfile({
-          email: p.email || "",
-          phone: p.phone || "",
-          email_enabled: !!p.email_enabled,
-          sms_enabled: !!p.sms_enabled,
-        });
+        setProfile(fromServer(p));
       })
       .catch(() => {})
       .finally(() => alive && setLoaded(true));
@@ -38,12 +47,7 @@ export function useProfile() {
   // Persist the current profile to the backend; returns the saved profile.
   const save = useCallback(async (next) => {
     const saved = await saveProfile(next);
-    setProfile({
-      email: saved.email || "",
-      phone: saved.phone || "",
-      email_enabled: !!saved.email_enabled,
-      sms_enabled: !!saved.sms_enabled,
-    });
+    setProfile(fromServer(saved));
     return saved;
   }, []);
 

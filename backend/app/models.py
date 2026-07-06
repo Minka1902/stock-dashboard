@@ -235,7 +235,99 @@ class NotifyProfile(BaseModel):
     phone: str | None = None       # E.164, e.g. +14155551234
     email_enabled: bool = False
     sms_enabled: bool = False
+    # Position sizing (Trading & risk settings). risk_pct clamped 0.1–10 in the API.
+    account_size: float | None = None
+    risk_pct: float = 1.0
     updated_at: str = ""
+
+
+# ---------- Portfolio technical analysis ----------
+
+class OHLCBar(BaseModel):
+    date: str          # YYYY-MM-DD
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
+class OHLCSeries(BaseModel):
+    ticker: str
+    interval: str      # "daily" | "weekly"  (PK is ticker+interval)
+    bars_json: str     # JSON array of OHLCBar dicts, oldest first
+    fetched_at: str
+
+
+class PatternHit(BaseModel):
+    name: str              # machine key, e.g. "cup_handle"
+    label: str             # human, e.g. "Cup & Handle"
+    direction: str         # "bullish" | "bearish" | "neutral"
+    confidence: float      # 0..1
+    pivots: list[dict]     # [{date, price, role}] — the points that define it
+    measured_move: float | None = None  # classic projected target price, if any
+    note: str = ""
+
+
+class SRLevel(BaseModel):
+    price: float
+    kind: str              # "support" | "resistance"
+    touches: int
+    last_touch: str        # date
+
+
+class GapEvent(BaseModel):
+    date: str
+    from_price: float      # prior close
+    to_price: float        # open
+    pct: float
+    kind: str              # "up" | "down"
+    filled: bool
+
+
+class TargetRung(BaseModel):
+    r: float               # 3, 4, 5, 6
+    price: float
+    feasibility: str       # "base" | "likely" | "possible" | "unlikely"
+    why: str
+
+
+class StockAnalysis(BaseModel):
+    ticker: str
+    computed_at: str
+    price: float | None
+    # trend / moving averages
+    ma20: float | None = None
+    ma50: float | None = None
+    ma150: float | None = None
+    ma200: float | None = None
+    ma_alignment: str = "mixed"   # "stacked_bull" | "stacked_bear" | "mixed"
+    trend: str = "sideways"       # "up" | "down" | "sideways"
+    atr14: float | None = None
+    atr_pct: float | None = None  # atr / price
+    # structure
+    support: list[SRLevel] = []
+    resistance: list[SRLevel] = []
+    gaps: list[GapEvent] = []
+    patterns: list[PatternHit] = []
+    # trade plan
+    directive: str = "Hold"       # "Accumulate" | "Hold" | "Reduce" | "Avoid"
+    conviction: int = 0           # −100..+100
+    entry: float | None = None
+    stop: float | None = None
+    stop_basis: str = ""          # "structure" | "atr"
+    stop_atr: float | None = None
+    stop_structure: float | None = None
+    risk_per_share: float | None = None
+    target: float | None = None   # 3R base target
+    reward_per_share: float | None = None
+    rr: float | None = None       # base reward:risk
+    targets: list[TargetRung] = []
+    suggested_shares: int | None = None
+    account_size: float | None = None
+    risk_pct: float | None = None
+    reasons: list[str] = []
+    disclaimer: str = "Rule-based technical read, not a prediction. Verify before trading."
 
 
 class SuggestionLogEntry(BaseModel):
