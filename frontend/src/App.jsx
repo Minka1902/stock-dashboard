@@ -3,6 +3,7 @@ import { useDashboardData } from "./hooks/useDashboardData";
 import { useLiveQuotes } from "./hooks/useLiveQuotes";
 import { useTheme } from "./hooks/useTheme";
 import { useSettings } from "./hooks/useSettings";
+import { useAppSettings } from "./hooks/useAppSettings";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
 import LiveTicker from "./components/LiveTicker";
@@ -65,7 +66,10 @@ const MODULE_INDEX = {
 
 export default function App() {
   const data = useDashboardData();
-  const { quotes, quotesByTicker } = useLiveQuotes();
+  const appSettingsApi = useAppSettings();
+  const { quotes, quotesByTicker, asOf } = useLiveQuotes(
+    (appSettingsApi.appSettings.quotes_refresh_seconds || 30) * 1000,
+  );
   const { theme, toggle } = useTheme();
   const { settings, setSetting } = useSettings();
   const [view, setView] = useState("sentiment");
@@ -138,7 +142,7 @@ export default function App() {
             onMarkAlertsRead={markAlertsRead}
             onOpenCommand={() => setCmdOpen(true)}
           />
-          <LiveTicker quotes={quotes} />
+          <LiveTicker quotes={quotes} asOf={asOf} />
         </div>
 
         <div className={styles.scroll}>
@@ -176,7 +180,7 @@ export default function App() {
             )}
 
             {view === "settings" && (
-              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={setView} />
+              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={setView} appSettingsApi={appSettingsApi} />
             )}
 
             {view === "guide" && (

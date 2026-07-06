@@ -241,6 +241,14 @@ class NotifyProfile(BaseModel):
     updated_at: str = ""
 
 
+class AppSettings(BaseModel):
+    """Single-row app settings (id=1). Times are wall-clock in analysis_tz."""
+    analysis_time: str = "15:30"          # "HH:MM", 24h
+    analysis_tz: str = "Asia/Jerusalem"   # IANA timezone name
+    quotes_refresh_seconds: int = 30      # live-quote poll cadence, clamped 10–300 in the API
+    updated_at: str = ""
+
+
 # ---------- Portfolio technical analysis ----------
 
 class OHLCBar(BaseModel):

@@ -112,3 +112,52 @@ def test_margin_debt_endpoint_returns_yoy(client):
     assert body[0] == {"month": "2025-05", "debit_balances": 677499.0, "yoy_pct": None}
     assert body[1]["month"] == "2026-05"
     assert body[1]["yoy_pct"] == 55.0
+
+
+def test_settings_defaults_and_roundtrip(client):
+    body = client.get("/api/settings").json()
+    assert body["analysis_time"] == "15:30"
+    assert body["analysis_tz"] == "Asia/Jerusalem"
+    assert body["quotes_refresh_seconds"] == 30
+    assert "next_analysis_run" in body
+
+    updated = client.put("/api/settings", json={
+        "analysis_time": "09:45", "analysis_tz": "America/New_York",
+        "quotes_refresh_seconds": 60,
+    }).json()
+    assert updated["analysis_time"] == "09:45"
+    assert updated["analysis_tz"] == "America/New_York"
+    assert updated["quotes_refresh_seconds"] == 60
+
+    # Partial update keeps the other fields.
+    updated = client.put("/api/settings", json={"analysis_time": "15:30"}).json()
+    assert updated["analysis_time"] == "15:30"
+    assert updated["analysis_tz"] == "America/New_York"
+
+
+def test_settings_validation(client):
+    assert client.put("/api/settings", json={"analysis_time": "25:00"}).status_code == 400
+    assert client.put("/api/settings", json={"analysis_time": "noon"}).status_code == 400
+    assert client.put("/api/settings", json={"analysis_tz": "Mars/Olympus"}).status_code == 400
+    # Refresh cadence clamps into the 10-300s range instead of erroring.
+    body = client.put("/api/settings", json={"quotes_refresh_seconds": 3}).json()
+    assert body["quotes_refresh_seconds"] == 10
+    body = client.put("/api/settings", json={"quotes_refresh_seconds": 9999}).json()
+    assert body["quotes_refresh_seconds"] == 300
+
+
+def test_analysis_trigger_next_fire_is_weekday():
+    from datetime import datetime as dt
+    from zoneinfo import ZoneInfo
+    from app.main import analysis_trigger, parse_analysis_time
+    from app.models import AppSettings
+
+    assert parse_analysis_time("15:30") == (15, 30)
+
+    trigger = analysis_trigger(AppSettings())
+    tz = ZoneInfo("Asia/Jerusalem")
+    # From a Saturday, the next run must land on Monday 15:30 local time.
+    saturday = dt(2026, 7, 4, 12, 0, tzinfo=tz)
+    fire = trigger.get_next_fire_time(None, saturday)
+    assert fire.weekday() == 0
+    assert (fire.hour, fire.minute) == (15, 30)

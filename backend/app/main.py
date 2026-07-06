@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from app import analysis, config, db, ingest, notify, quotes, sentiment, suggestions
 from app import alerts as alerts_source
 from app.market_calendar import is_trading_day, next_trading_day
-from app.models import Holding, NotifyProfile, WatchItem
+from app.models import AppSettings, Holding, NotifyProfile, WatchItem
 from app.sources import edgar, gdelt, usaspending
 import app.sources.yield_curve as yield_curve_source
 import app.sources.technical as technical_source
@@ -144,6 +144,42 @@ def _send_daily_digest():
         pass  # delivery is already resilient; never let the job crash the scheduler
 
 
+def parse_analysis_time(value: str) -> tuple[int, int]:
+    """Validate "HH:MM" (24h) and return (hour, minute). Raises ValueError."""
+    parts = value.strip().split(":")
+    if len(parts) != 2:
+        raise ValueError("time must be HH:MM")
+    hour, minute = int(parts[0]), int(parts[1])
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError("time must be HH:MM in 24h range")
+    return hour, minute
+
+
+def analysis_trigger(settings: AppSettings) -> CronTrigger:
+    """Weekday cron trigger for the daily deep-analysis run."""
+    hour, minute = parse_analysis_time(settings.analysis_time)
+    return CronTrigger(
+        day_of_week="mon-fri", hour=hour, minute=minute,
+        timezone=ZoneInfo(settings.analysis_tz),
+    )
+
+
+def _run_daily_analysis():
+    """Scheduled deep run: force-refresh every source (bypassing per-source
+    min-interval throttles), which recomputes analyses, boom scores and alerts,
+    then deliver the digest for the relevant trading session."""
+    for name, (fetch, store, min_interval) in SOURCES.items():
+        ingest.run_source(conn, name, fetch, store,
+                          min_interval_seconds=min_interval, force=True)
+    settings = db.get_app_settings(conn)
+    try:
+        today = datetime.now(ZoneInfo(settings.analysis_tz)).date()
+        target = today if is_trading_day(today) else next_trading_day(today)
+        notify.send_digest(conn, target.isoformat())
+    except Exception:
+        pass  # delivery is already resilient; never let the job crash the scheduler
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     scheduler.add_job(
@@ -162,6 +198,12 @@ async def lifespan(app: FastAPI):
             timezone=ZoneInfo(config.DIGEST_TZ),
         ),
         id="daily_digest",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _run_daily_analysis,
+        analysis_trigger(db.get_app_settings(conn)),
+        id="daily_analysis",
         replace_existing=True,
     )
     scheduler.start()
@@ -246,7 +288,11 @@ def live_quotes():
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     if not tickers:
         return {"as_of": now, "quotes": []}
-    return {"as_of": now, "quotes": [q.model_dump() for q in quotes.get_quotes(tickers)]}
+    # Cache slightly under the configured poll cadence so each client poll gets
+    # at most one fresh Yahoo fetch, shared across concurrent clients.
+    interval = db.get_app_settings(conn).quotes_refresh_seconds
+    ttl = min(config.QUOTES_TTL_SECONDS, max(5, interval - 5))
+    return {"as_of": now, "quotes": [q.model_dump() for q in quotes.get_quotes(tickers, ttl_seconds=ttl)]}
 
 
 @app.get("/api/congress-trades")
@@ -375,6 +421,71 @@ def put_profile(item: ProfileUpdate):
         updated_at=now,
     ))
     return db.get_notify_profile(conn).model_dump()
+
+
+# ---------- app settings (analysis schedule + refresh cadence) ----------
+class SettingsUpdate(BaseModel):
+    # All optional: a field left None keeps the stored value.
+    analysis_time: str | None = None
+    analysis_tz: str | None = None
+    quotes_refresh_seconds: int | None = None
+
+
+def _settings_payload() -> dict:
+    settings = db.get_app_settings(conn)
+    payload = settings.model_dump()
+    # Next scheduled run: prefer the live scheduler job, fall back to computing
+    # from the trigger (tests run without the scheduler started).
+    next_run = None
+    try:
+        job = scheduler.get_job("daily_analysis")
+        if job and job.next_run_time:
+            next_run = job.next_run_time.isoformat(timespec="seconds")
+        else:
+            trigger = analysis_trigger(settings)
+            fire = trigger.get_next_fire_time(None, datetime.now(ZoneInfo(settings.analysis_tz)))
+            next_run = fire.isoformat(timespec="seconds") if fire else None
+    except Exception:
+        pass
+    payload["next_analysis_run"] = next_run
+    return payload
+
+
+@app.get("/api/settings")
+def get_settings():
+    return _settings_payload()
+
+
+@app.put("/api/settings")
+def put_settings(item: SettingsUpdate):
+    cur = db.get_app_settings(conn)
+    analysis_time = (item.analysis_time if item.analysis_time is not None else cur.analysis_time).strip()
+    analysis_tz = (item.analysis_tz if item.analysis_tz is not None else cur.analysis_tz).strip()
+    try:
+        parse_analysis_time(analysis_time)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    try:
+        ZoneInfo(analysis_tz)
+    except Exception:
+        raise HTTPException(status_code=400, detail="unknown timezone")
+    quotes_refresh = item.quotes_refresh_seconds if item.quotes_refresh_seconds is not None \
+        else cur.quotes_refresh_seconds
+    quotes_refresh = max(10, min(300, int(quotes_refresh)))
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    settings = AppSettings(
+        analysis_time=analysis_time, analysis_tz=analysis_tz,
+        quotes_refresh_seconds=quotes_refresh, updated_at=now,
+    )
+    db.upsert_app_settings(conn, settings)
+    # Re-arm the daily deep run at the new wall-clock time (no-op in tests,
+    # where the scheduler was never started).
+    try:
+        if scheduler.get_job("daily_analysis"):
+            scheduler.reschedule_job("daily_analysis", trigger=analysis_trigger(settings))
+    except Exception:
+        pass
+    return _settings_payload()
 
 
 # ---------- suggestions (digest preview + delivery) ----------

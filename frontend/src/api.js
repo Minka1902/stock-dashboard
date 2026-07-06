@@ -33,6 +33,11 @@ export const getBoomScoreHistory = (ticker) => getJSON(`/api/boom-scores/history
 export const getPortfolio = () => getJSON("/api/portfolio");
 export const getProfile = () => getJSON("/api/profile");
 export const getSuggestions = () => getJSON("/api/suggestions");
+export const getAppSettings = () => getJSON("/api/settings");
+export const getChart = (ticker, interval) =>
+  getJSON(`/api/chart/${encodeURIComponent(ticker)}?interval=${encodeURIComponent(interval)}`);
+export const analysisReportUrl = (ticker, { print = false } = {}) =>
+  `${BASE}/api/analysis/${encodeURIComponent(ticker)}/report${print ? "?print=1" : ""}`;
 export const getSuggestionLog = () => getJSON("/api/suggestions/log");
 export const getAlerts = () => getJSON("/api/alerts");
 
@@ -43,6 +48,16 @@ export async function markAlertsRead(payload = { all: true }) {
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error("could not mark alerts read");
+  return res.json();
+}
+
+export async function saveAppSettings(settings) {
+  const res = await fetch(`${BASE}/api/settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "could not save settings");
   return res.json();
 }
 

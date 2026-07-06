@@ -10,6 +10,7 @@ from app.models import (
     AaiiSentiment,
     Alert,
     AnalystSignal,
+    AppSettings,
     BoomScore,
     CongressTrade,
     ContractRecord,
@@ -248,6 +249,13 @@ def init_schema(conn: sqlite3.Connection) -> None:
             email_enabled INTEGER NOT NULL DEFAULT 0,
             sms_enabled   INTEGER NOT NULL DEFAULT 0,
             updated_at    TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS app_settings (
+            id                     INTEGER PRIMARY KEY CHECK (id = 1),
+            analysis_time          TEXT NOT NULL DEFAULT '15:30',
+            analysis_tz            TEXT NOT NULL DEFAULT 'Asia/Jerusalem',
+            quotes_refresh_seconds INTEGER NOT NULL DEFAULT 30,
+            updated_at             TEXT NOT NULL DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS suggestion_log (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1173,6 +1181,42 @@ def upsert_notify_profile(conn: sqlite3.Connection, profile: NotifyProfile) -> N
             "account_size": profile.account_size,
             "risk_pct": profile.risk_pct,
             "updated_at": profile.updated_at,
+        },
+    )
+    conn.commit()
+
+
+# ---------- app settings (single row) ----------
+
+def get_app_settings(conn: sqlite3.Connection) -> AppSettings:
+    cur = conn.execute("SELECT * FROM app_settings WHERE id = 1")
+    row = cur.fetchone()
+    if row is None:
+        return AppSettings()
+    d = dict(row)
+    return AppSettings(
+        analysis_time=d.get("analysis_time") or "15:30",
+        analysis_tz=d.get("analysis_tz") or "Asia/Jerusalem",
+        quotes_refresh_seconds=d.get("quotes_refresh_seconds") or 30,
+        updated_at=d.get("updated_at") or "",
+    )
+
+
+def upsert_app_settings(conn: sqlite3.Connection, settings: AppSettings) -> None:
+    conn.execute(
+        """
+        INSERT INTO app_settings (id, analysis_time, analysis_tz, quotes_refresh_seconds, updated_at)
+        VALUES (1, :analysis_time, :analysis_tz, :quotes_refresh_seconds, :updated_at)
+        ON CONFLICT(id) DO UPDATE SET
+            analysis_time=excluded.analysis_time, analysis_tz=excluded.analysis_tz,
+            quotes_refresh_seconds=excluded.quotes_refresh_seconds,
+            updated_at=excluded.updated_at
+        """,
+        {
+            "analysis_time": settings.analysis_time,
+            "analysis_tz": settings.analysis_tz,
+            "quotes_refresh_seconds": settings.quotes_refresh_seconds,
+            "updated_at": settings.updated_at,
         },
     )
     conn.commit()
