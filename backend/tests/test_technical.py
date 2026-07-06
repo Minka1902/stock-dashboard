@@ -156,3 +156,58 @@ def test_parse_response_volume_json_is_valid():
     vols = json.loads(sig.volume_json)
     assert isinstance(vols, list)
     assert len(vols) <= 20
+
+
+# ---------- reference-value checks (industry-standard definitions) ----------
+
+# Wilder's classic 33-close RSI dataset (the StockCharts worked example).
+_WILDER_CLOSES = [
+    44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42, 45.84, 46.08,
+    45.89, 46.03, 45.61, 46.28, 46.28, 46.00, 46.03, 46.41, 46.22, 45.64,
+    46.21, 46.25, 45.71, 46.45, 45.78, 45.35, 44.03, 44.18, 44.22, 44.57,
+    43.42, 42.66, 43.13,
+]
+
+
+def test_compute_rsi_matches_wilder_reference():
+    # First RSI uses the simple average of the first 14 gains/losses...
+    assert compute_rsi(_WILDER_CLOSES[:15]) == 70.46
+    # ...and later values use Wilder smoothing (published example: ~37.8).
+    assert compute_rsi(_WILDER_CLOSES) == 37.79
+
+
+def test_compute_rsi_all_losses_returns_low():
+    closes = [100.0 - i for i in range(20)]
+    assert compute_rsi(closes) == 0.0
+
+
+def test_compute_ema_converges_to_constant():
+    # EMA of a constant series equals the constant at every valid index.
+    ema = compute_ema([5.0] * 30, 10)
+    assert all(v == 5.0 for v in ema[9:])
+
+
+def test_compute_macd_zero_for_constant_series():
+    macd, signal, crossover = compute_macd([50.0] * 40)
+    assert macd == 0.0 and signal == 0.0 and crossover is False
+
+
+def test_compute_macd_positive_in_sustained_uptrend():
+    closes = [100.0 * (1.01 ** i) for i in range(60)]
+    macd, signal, _ = compute_macd(closes)
+    assert macd is not None and macd > 0
+
+
+def test_compute_macd_detects_fresh_bullish_crossover():
+    # Accelerating decline keeps the MACD line below its signal; a sharp
+    # 3-bar reversal must register as a crossover within the last 3 bars.
+    base = [200.0 - 0.05 * i * i for i in range(50)]
+    closes = base + [base[-1] + 8.0 * i for i in range(1, 4)]
+    macd, signal, crossover = compute_macd(closes)
+    assert crossover is True
+    assert macd > signal
+
+    # Long after the cross (7 pop bars), it is no longer "fresh".
+    stale = base + [base[-1] + 8.0 * i for i in range(1, 8)]
+    _, _, crossover_stale = compute_macd(stale)
+    assert crossover_stale is False

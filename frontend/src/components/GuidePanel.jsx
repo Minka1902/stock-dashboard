@@ -11,7 +11,7 @@ const GROUPS = [
     modules: [
       {
         key: "boom-score", icon: "spark", name: "Boom Score",
-        what: "One number from −90 to +100 that sums every other signal below.",
+        what: "One number (typically −60 to +120) that sums every other signal below; crossing +60 fires the boom alert.",
         why: "Your at-a-glance ranking. Higher means more independent signals are pointing up right now — evidence to dig into, not a prediction.",
         signal: "The score itself — every component that fired is listed so you can see why.",
       },
