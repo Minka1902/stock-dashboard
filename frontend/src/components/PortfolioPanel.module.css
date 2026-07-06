@@ -207,3 +207,30 @@
   color: var(--text-muted);
   font-size: 12.5px;
 }
+
+/* Live-price flash: retriggered by keying the span on the price value. */
+.tick {
+  display: inline-block;
+  border-radius: var(--r-xs);
+  animation: tickFlash 0.9s ease-out 1;
+}
+.tick[data-tone="neg"] { animation-name: tickFlashNeg; }
+@keyframes tickFlash {
+  0% { background: color-mix(in oklab, var(--positive) 26%, transparent); }
+  100% { background: transparent; }
+}
+@keyframes tickFlashNeg {
+  0% { background: color-mix(in oklab, var(--negative) 26%, transparent); }
+  100% { background: transparent; }
+}
+:global(:root[data-reduced-motion="on"]) .tick { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .tick { animation: none; }
+}
+
+.totals td {
+  border-top: 1px solid var(--border-strong, var(--grid));
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--text);
+}

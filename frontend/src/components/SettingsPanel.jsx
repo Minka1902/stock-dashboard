@@ -18,13 +18,61 @@ const LOOKBACK_OPTIONS = [
   { value: "all", label: "All years" },
 ];
 
-export default function SettingsPanel({ settings, setSetting, onNavigate }) {
+const TZ_OPTIONS = [
+  { value: "Asia/Jerusalem", label: "Israel (Asia/Jerusalem)" },
+  { value: "America/New_York", label: "New York (America/New_York)" },
+  { value: "Europe/London", label: "London (Europe/London)" },
+  { value: "UTC", label: "UTC" },
+];
+
+const QUOTE_INTERVALS = [
+  { value: 15, label: "15 seconds" },
+  { value: 30, label: "30 seconds" },
+  { value: 60, label: "1 minute" },
+  { value: 120, label: "2 minutes" },
+];
+
+function formatNextRun(iso, tz) {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      weekday: "short", month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit", timeZone: tz, timeZoneName: "short",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+export default function SettingsPanel({ settings, setSetting, onNavigate, appSettingsApi }) {
   const activeWindows = settings.seasonalityWindows;
   const lookback = settings.seasonalityLookback;
 
   const { profile, update, save } = useProfile();
   const [saveState, setSaveState] = useState(null); // null | "saving" | "saved" | error string
   const [testState, setTestState] = useState(null); // null | "sending" | results[]
+
+  const { appSettings, update: updateApp, save: saveApp } = appSettingsApi;
+  const [schedState, setSchedState] = useState(null); // null | "saving" | "saved" | error string
+
+  async function saveSchedule() {
+    setSchedState("saving");
+    try {
+      await saveApp({
+        analysis_time: appSettings.analysis_time,
+        analysis_tz: appSettings.analysis_tz,
+        quotes_refresh_seconds: appSettings.quotes_refresh_seconds,
+      });
+      setSchedState("saved");
+    } catch (err) {
+      setSchedState(err.message || "could not save");
+    }
+  }
+
+  const nextRun = formatNextRun(appSettings.next_analysis_run, appSettings.analysis_tz);
+  const tzOptions = TZ_OPTIONS.some((o) => o.value === appSettings.analysis_tz)
+    ? TZ_OPTIONS
+    : [{ value: appSettings.analysis_tz, label: appSettings.analysis_tz }, ...TZ_OPTIONS];
 
   const toggleWindow = (key) => {
     const next = activeWindows.includes(key)
@@ -66,6 +114,69 @@ export default function SettingsPanel({ settings, setSetting, onNavigate }) {
       </header>
 
       <div className={styles.body}>
+        {/* Analysis schedule + data refresh (server-side; drives the cron job) */}
+        <fieldset className={styles.group}>
+          <legend className={styles.legend}>Analysis schedule &amp; data refresh</legend>
+          <p className={styles.groupHint}>
+            Every weekday at this time, the dashboard force-refreshes all sources, recomputes every
+            holding&apos;s analysis and Boom Scores, and sends the daily digest. Live prices poll on
+            their own faster cadence.
+          </p>
+          <div className={styles.contact}>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="analysis-time">Daily analysis time</label>
+              <input
+                id="analysis-time"
+                className={styles.input}
+                type="time"
+                value={appSettings.analysis_time}
+                onChange={(e) => updateApp({ analysis_time: e.target.value })}
+              />
+            </div>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="analysis-tz">Timezone</label>
+              <select
+                id="analysis-tz"
+                className={styles.input}
+                value={appSettings.analysis_tz}
+                onChange={(e) => updateApp({ analysis_tz: e.target.value })}
+              >
+                {tzOptions.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="quote-interval">Live price refresh</label>
+              <select
+                id="quote-interval"
+                className={styles.input}
+                value={appSettings.quotes_refresh_seconds}
+                onChange={(e) => updateApp({ quotes_refresh_seconds: Number(e.target.value) })}
+              >
+                {QUOTE_INTERVALS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className={styles.actions}>
+            <button type="button" className={styles.primaryBtn} onClick={saveSchedule} disabled={schedState === "saving"}>
+              {schedState === "saving" ? "Saving…" : "Save schedule"}
+            </button>
+            {schedState === "saved" && <span className={styles.ok}>Saved ✓</span>}
+            {schedState && schedState !== "saving" && schedState !== "saved" && (
+              <span className={styles.err}>{schedState}</span>
+            )}
+          </div>
+          {nextRun && (
+            <p className={styles.note}>
+              <Icon name="spark" size={14} />
+              Next scheduled analysis run: <strong>{nextRun}</strong>
+            </p>
+          )}
+        </fieldset>
+
         {/* Onboarding: the in-app module guide */}
         <fieldset className={styles.group}>
           <legend className={styles.legend}>Learn the dashboard</legend>

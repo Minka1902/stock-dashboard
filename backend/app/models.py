@@ -20,6 +20,7 @@ class NewsArticle(BaseModel):
     seendate: str  # ISO timestamp
     sourcecountry: str
     image: str  # may be ""
+    ticker: str = ""  # "" = macro/geopolitics; else the portfolio/watchlist ticker it matched
 
 
 class InsiderTrade(BaseModel):
@@ -238,6 +239,14 @@ class NotifyProfile(BaseModel):
     # Position sizing (Trading & risk settings). risk_pct clamped 0.1–10 in the API.
     account_size: float | None = None
     risk_pct: float = 1.0
+    updated_at: str = ""
+
+
+class AppSettings(BaseModel):
+    """Single-row app settings (id=1). Times are wall-clock in analysis_tz."""
+    analysis_time: str = "15:30"          # "HH:MM", 24h
+    analysis_tz: str = "Asia/Jerusalem"   # IANA timezone name
+    quotes_refresh_seconds: int = 30      # live-quote poll cadence, clamped 10–300 in the API
     updated_at: str = ""
 
 

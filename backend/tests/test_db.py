@@ -36,3 +36,18 @@ def test_source_status_roundtrip(conn):
     assert statuses[0].source == "usaspending"
     assert statuses[0].record_count == 2
     assert statuses[0].last_refreshed_at == "2026-06-22T12:00:00"
+
+
+def test_news_ticker_tag_survives_untagged_upsert(conn):
+    from app.models import NewsArticle
+
+    art = dict(url="https://x/1", title="t", domain="d",
+               seendate="2026-07-06T00:00:00Z", sourcecountry="", image="")
+    db.upsert_news(conn, [NewsArticle(**art, ticker="NOC")])
+    # Same url re-ingested by the macro query (no tag) must keep its ticker.
+    db.upsert_news(conn, [NewsArticle(**art)])
+    rows = db.get_news(conn)
+    assert rows[0].ticker == "NOC"
+    # ...but a newly tagged hit may (re)assign it.
+    db.upsert_news(conn, [NewsArticle(**art, ticker="LMT")])
+    assert db.get_news(conn)[0].ticker == "LMT"

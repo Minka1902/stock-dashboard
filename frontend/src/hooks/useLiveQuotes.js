@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getQuotes } from "../api";
 
-// Faster than the 180s dashboard cycle; the backend caches for ~25s so this
-// costs at most one Yahoo fetch per ticker per poll across all clients.
-const REFRESH_MS = 30000;
+// Faster than the 180s dashboard cycle; the backend caches just under the
+// poll cadence so this costs at most one Yahoo fetch per ticker per poll
+// across all clients. Cadence is configurable in Settings (10–300s).
+const DEFAULT_REFRESH_MS = 30000;
 
 /**
  * Live quotes (incl. pre/post-market) for watchlist + portfolio tickers.
  * Polls independently of useDashboardData; on failure it keeps the last
  * good quotes and retries on the next tick.
  */
-export function useLiveQuotes() {
+export function useLiveQuotes(refreshMs = DEFAULT_REFRESH_MS) {
   const [quotes, setQuotes] = useState([]);
   const [asOf, setAsOf] = useState(null);
 
@@ -28,9 +29,9 @@ export function useLiveQuotes() {
     // Intentional: kick off the initial load on mount, then poll on an interval.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
-    const id = setInterval(load, REFRESH_MS);
+    const id = setInterval(load, Math.max(10000, refreshMs || DEFAULT_REFRESH_MS));
     return () => clearInterval(id);
-  }, [load]);
+  }, [load, refreshMs]);
 
   const quotesByTicker = useMemo(
     () => Object.fromEntries(quotes.map((q) => [q.ticker, q])),

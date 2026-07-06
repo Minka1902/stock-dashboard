@@ -1,13 +1,14 @@
 import Icon from "./Icon";
 import styles from "./Sidebar.module.css";
 
-// Five modules, in the confirmed flow: mood -> act -> you -> evidence.
+// Modules in the confirmed flow: mood -> act -> you -> evidence -> radar.
 const NAV = [
   { key: "sentiment",   label: "Sentiment",   icon: "gauge",    hint: "the mood" },
   { key: "suggestions", label: "Suggestions", icon: "spark",    hint: "what to do" },
   { key: "portfolio",   label: "Portfolio",   icon: "wallet",   hint: "your book" },
   { key: "trades",      label: "Trades",      icon: "trending", hint: "insiders" },
   { key: "news",        label: "News",        icon: "news",     hint: "the tape" },
+  { key: "watchlist",   label: "Watchlist",   icon: "star",     hint: "charts & radar" },
 ];
 
 export default function Sidebar({ view, onNavigate }) {

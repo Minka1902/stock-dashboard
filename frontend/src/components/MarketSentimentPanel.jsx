@@ -122,7 +122,7 @@ function Sparkline({ data, dataKey, id, refs = [] }) {
   );
 }
 
-function Indicator({ caption, threshold, signal, value, sub, note, children }) {
+function Indicator({ caption, threshold, signal, value, sub, note, stale, children }) {
   return (
     <Pane caption={caption} right={<Chip signal={signal} />} className={styles.indicator}>
       <div className={styles.valRow}>
@@ -130,10 +130,28 @@ function Indicator({ caption, threshold, signal, value, sub, note, children }) {
         {sub && <span className={styles.sub}>{sub}</span>}
       </div>
       <span className={styles.threshold}>{threshold}</span>
+      {stale && (
+        <span className={styles.staleBadge} data-warn={stale.warn ? "yes" : "no"}>
+          {stale.text}
+        </span>
+      )}
       {note && <p className={styles.note}>{note}</p>}
       {children}
     </Pane>
   );
+}
+
+// Honest data-age badge for slow-cadence sources: shows the period the latest
+// datum covers and flags it when it's older than the expected release rhythm.
+function staleness(latestIso, { warnDays, label }) {
+  if (!latestIso) return null;
+  const then = new Date(latestIso);
+  if (Number.isNaN(then.getTime())) return null;
+  const days = Math.floor((Date.now() - then.getTime()) / 86400000);
+  return {
+    text: `${label} ${latestIso}${days > 0 ? ` · ${days}d ago` : ""}`,
+    warn: days > warnDays,
+  };
 }
 
 export default function MarketSentimentPanel({
@@ -149,6 +167,14 @@ export default function MarketSentimentPanel({
   const aaiiData = aaii.map((s) => ({ date: s.week_ending, bullish: s.bullish, neutral: s.neutral, bearish: s.bearish }));
   const pcData = putCall.map((p) => ({ date: p.date, ratio: p.ratio }));
   const mdData = marginDebt.filter((p) => p.yoy_pct != null).map((p) => ({ date: p.month, yoy: p.yoy_pct }));
+
+  // Data-age badges: AAII is weekly (warn >10 days), FINRA margin debt is
+  // monthly with a ~1-month publication lag (warn >45 days).
+  const aaiiLatest = aaii.reduce((m, s) => (s.week_ending > m ? s.week_ending : m), "");
+  const mdLatest = marginDebt.reduce((m, p) => (p.month > m ? p.month : m), "");
+  const aaiiStale = staleness(aaiiLatest, { warnDays: 10, label: "week ending" });
+  const mdStale = staleness(mdLatest ? `${mdLatest}-01` : null, { warnDays: 75, label: "data for" });
+  if (mdStale) mdStale.text = `data for ${mdLatest} (monthly)${mdStale.warn ? " · stale" : ""}`;
 
   // Composite ledger: the five indicators + their signals.
   const ledger = [
@@ -225,6 +251,7 @@ export default function MarketSentimentPanel({
           signal={ind.aaii?.signal}
           value={ind.aaii?.value ? `${Math.round(ind.aaii.value.bearish)}%` : null}
           sub={ind.aaii?.value ? `bearish · ${Math.round(ind.aaii.value.bullish)}% bull` : "weekly"}
+          stale={aaiiStale}
         >
           {aaiiData.length === 0 ? <div className={styles.noData}>No data yet</div> : (
             <div className={styles.spark}>
@@ -256,6 +283,7 @@ export default function MarketSentimentPanel({
           signal={ind.margin_debt?.signal}
           value={ind.margin_debt?.value != null ? `${ind.margin_debt.value >= 0 ? "+" : ""}${ind.margin_debt.value.toFixed(0)}%` : null}
           sub={ind.margin_debt?.value != null ? `YoY · ${formatBalance(ind.margin_debt.debit_balances)}` : "FINRA %YoY"}
+          stale={mdStale}
         >
           <Sparkline data={mdData} dataKey="yoy" id="spMd"
             refs={[{ y: 45, color: "var(--text-faint)" }, { y: -20, color: "var(--positive)" }]} />

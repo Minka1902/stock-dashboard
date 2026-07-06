@@ -59,3 +59,42 @@ def test_parse_returns_empty_on_out_of_range_pct():
 
 def test_parse_returns_empty_on_blank_page():
     assert aaii.parse_response("<html></html>", FETCHED_AT) == []
+
+
+# ---------- spreadsheet fallback (rows_to_sentiments) ----------
+
+def test_rows_to_sentiments_fraction_format():
+    # sentiment.xls stores bull/neutral/bear as fractions summing to ~1.
+    rows = [
+        (None, []),                                # header
+        ("2026-06-25", [0.375, 0.318, 0.307]),
+        ("2026-07-02", [0.412, 0.301, 0.287]),
+    ]
+    out = aaii.rows_to_sentiments(rows, "2026-07-06T00:00:00+00:00")
+    assert [s.week_ending for s in out] == ["2026-06-25", "2026-07-02"]
+    assert out[1].bullish == 41.2
+    assert out[1].bearish == 28.7
+
+
+def test_rows_to_sentiments_percent_format():
+    rows = [("2026-07-02", [41.2, 30.1, 28.7])]
+    out = aaii.rows_to_sentiments(rows, "2026-07-06T00:00:00+00:00")
+    assert len(out) == 1
+    assert out[0].neutral == 30.1
+
+
+def test_rows_to_sentiments_rejects_garbage():
+    rows = [
+        ("2026-07-02", [1500.0, 30.0, 28.0]),   # implausible
+        ("2026-07-02", [0.9, 0.9, 0.9]),        # doesn't sum to ~1
+        (None, [0.4, 0.3, 0.3]),                # no date
+        ("2026-07-02", [0.4]),                  # too few values
+    ]
+    assert aaii.rows_to_sentiments(rows, "2026-07-06T00:00:00+00:00") == []
+
+
+def test_rows_to_sentiments_keeps_most_recent_limit():
+    rows = [(f"2026-01-{d:02d}", [0.4, 0.3, 0.3]) for d in range(1, 29)]
+    out = aaii.rows_to_sentiments(rows, "2026-07-06T00:00:00+00:00", limit=5)
+    assert len(out) == 5
+    assert out[-1].week_ending == "2026-01-28"

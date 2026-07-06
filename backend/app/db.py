@@ -10,6 +10,7 @@ from app.models import (
     AaiiSentiment,
     Alert,
     AnalystSignal,
+    AppSettings,
     BoomScore,
     CongressTrade,
     ContractRecord,
@@ -249,6 +250,13 @@ def init_schema(conn: sqlite3.Connection) -> None:
             sms_enabled   INTEGER NOT NULL DEFAULT 0,
             updated_at    TEXT NOT NULL DEFAULT ''
         );
+        CREATE TABLE IF NOT EXISTS app_settings (
+            id                     INTEGER PRIMARY KEY CHECK (id = 1),
+            analysis_time          TEXT NOT NULL DEFAULT '15:30',
+            analysis_tz            TEXT NOT NULL DEFAULT 'Asia/Jerusalem',
+            quotes_refresh_seconds INTEGER NOT NULL DEFAULT 30,
+            updated_at             TEXT NOT NULL DEFAULT ''
+        );
         CREATE TABLE IF NOT EXISTS suggestion_log (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at TEXT NOT NULL,
@@ -293,6 +301,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
     _try_add_column(conn, "notify_profile", "account_size", "REAL")
     _try_add_column(conn, "notify_profile", "risk_pct", "REAL NOT NULL DEFAULT 1.0")
+    _try_add_column(conn, "news", "ticker", "TEXT NOT NULL DEFAULT ''")
 
     # Migrate existing tables: add new columns (safe on pre-existing databases).
     for col, col_def in [
@@ -375,25 +384,43 @@ def get_contracts(conn: sqlite3.Connection, limit: int = 100) -> list[ContractRe
 def upsert_news(conn: sqlite3.Connection, records: list[NewsArticle]) -> None:
     conn.executemany(
         """
-        INSERT INTO news (url, title, domain, seendate, sourcecountry, image)
-        VALUES (:url, :title, :domain, :seendate, :sourcecountry, :image)
+        INSERT INTO news (url, title, domain, seendate, sourcecountry, image, ticker)
+        VALUES (:url, :title, :domain, :seendate, :sourcecountry, :image, :ticker)
         ON CONFLICT(url) DO UPDATE SET
             title=excluded.title,
             domain=excluded.domain,
             seendate=excluded.seendate,
             sourcecountry=excluded.sourcecountry,
-            image=excluded.image
+            image=excluded.image,
+            -- a ticker tag, once earned, is never wiped by an untagged macro hit
+            ticker=CASE WHEN excluded.ticker != '' THEN excluded.ticker ELSE news.ticker END
         """,
         [r.model_dump() for r in records],
     )
     conn.commit()
 
 
-def get_news(conn: sqlite3.Connection, limit: int = 60) -> list[NewsArticle]:
+def get_news(conn: sqlite3.Connection, limit: int = 120) -> list[NewsArticle]:
     cur = conn.execute(
         "SELECT * FROM news ORDER BY seendate DESC LIMIT ?", (limit,)
     )
     return [NewsArticle(**dict(row)) for row in cur.fetchall()]
+
+
+def get_company_names(conn: sqlite3.Connection, tickers: list[str]) -> dict[str, str]:
+    """ticker -> latest known company name (from insider filings, where seen)."""
+    if not tickers:
+        return {}
+    marks = ",".join("?" * len(tickers))
+    cur = conn.execute(
+        f"""
+        SELECT ticker, company FROM insider_trades
+        WHERE ticker IN ({marks}) AND company != ''
+        GROUP BY ticker HAVING MAX(filed_at)
+        """,
+        [t.upper() for t in tickers],
+    )
+    return {row["ticker"]: row["company"] for row in cur.fetchall()}
 
 
 # ---------- insider trades ----------
@@ -1173,6 +1200,42 @@ def upsert_notify_profile(conn: sqlite3.Connection, profile: NotifyProfile) -> N
             "account_size": profile.account_size,
             "risk_pct": profile.risk_pct,
             "updated_at": profile.updated_at,
+        },
+    )
+    conn.commit()
+
+
+# ---------- app settings (single row) ----------
+
+def get_app_settings(conn: sqlite3.Connection) -> AppSettings:
+    cur = conn.execute("SELECT * FROM app_settings WHERE id = 1")
+    row = cur.fetchone()
+    if row is None:
+        return AppSettings()
+    d = dict(row)
+    return AppSettings(
+        analysis_time=d.get("analysis_time") or "15:30",
+        analysis_tz=d.get("analysis_tz") or "Asia/Jerusalem",
+        quotes_refresh_seconds=d.get("quotes_refresh_seconds") or 30,
+        updated_at=d.get("updated_at") or "",
+    )
+
+
+def upsert_app_settings(conn: sqlite3.Connection, settings: AppSettings) -> None:
+    conn.execute(
+        """
+        INSERT INTO app_settings (id, analysis_time, analysis_tz, quotes_refresh_seconds, updated_at)
+        VALUES (1, :analysis_time, :analysis_tz, :quotes_refresh_seconds, :updated_at)
+        ON CONFLICT(id) DO UPDATE SET
+            analysis_time=excluded.analysis_time, analysis_tz=excluded.analysis_tz,
+            quotes_refresh_seconds=excluded.quotes_refresh_seconds,
+            updated_at=excluded.updated_at
+        """,
+        {
+            "analysis_time": settings.analysis_time,
+            "analysis_tz": settings.analysis_tz,
+            "quotes_refresh_seconds": settings.quotes_refresh_seconds,
+            "updated_at": settings.updated_at,
         },
     )
     conn.commit()

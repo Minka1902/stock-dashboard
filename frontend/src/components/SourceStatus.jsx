@@ -15,9 +15,11 @@ export default function SourceStatus({ sources }) {
   return (
     <div className={styles.row}>
       {sources.map((s) => {
-        const ok = s.status === "ok";
+        // "ok" or "ok (fallback: …)" — a fallback tier still delivered real data.
+        const ok = s.status === "ok" || s.status.startsWith("ok (");
+        const note = ok && s.status.length > 2 ? s.status.slice(3).replace(/^\(|\)$/g, "") : null;
         return (
-          <div key={s.source} className={styles.chip} data-state={ok ? "ok" : "error"}>
+          <div key={s.source} className={styles.chip} data-state={ok ? "ok" : "error"} title={note || undefined}>
             <span className={styles.dot} />
             <span className={styles.name}>{s.source}</span>
             {ok ? (

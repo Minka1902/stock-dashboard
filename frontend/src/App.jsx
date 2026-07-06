@@ -3,6 +3,7 @@ import { useDashboardData } from "./hooks/useDashboardData";
 import { useLiveQuotes } from "./hooks/useLiveQuotes";
 import { useTheme } from "./hooks/useTheme";
 import { useSettings } from "./hooks/useSettings";
+import { useAppSettings } from "./hooks/useAppSettings";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
 import LiveTicker from "./components/LiveTicker";
@@ -61,11 +62,15 @@ const MODULE_INDEX = {
   portfolio: "03",
   trades: "04",
   news: "05",
+  watchlist: "06",
 };
 
 export default function App() {
   const data = useDashboardData();
-  const { quotes, quotesByTicker } = useLiveQuotes();
+  const appSettingsApi = useAppSettings();
+  const { quotes, quotesByTicker, asOf } = useLiveQuotes(
+    (appSettingsApi.appSettings.quotes_refresh_seconds || 30) * 1000,
+  );
   const { theme, toggle } = useTheme();
   const { settings, setSetting } = useSettings();
   const [view, setView] = useState("sentiment");
@@ -110,6 +115,7 @@ export default function App() {
     { id: "portfolio",   label: "Portfolio",        hint: "your book",  icon: "wallet",   run: () => setView("portfolio") },
     { id: "trades",      label: "Trades",           hint: "insiders",   icon: "trending", run: () => setView("trades") },
     { id: "news",        label: "News",             hint: "the tape",   icon: "news",     run: () => setView("news") },
+    { id: "watchlist",   label: "Watchlist",        hint: "charts & radar", icon: "star", run: () => setView("watchlist") },
     { id: "settings",    label: "Settings",         hint: "config & guide", icon: "settings", run: () => setView("settings") },
     { id: "refresh",     label: "Refresh all sources", hint: "sync now", icon: "refresh", run: () => refresh() },
     { id: "theme",       label: "Toggle theme", hint: theme === "dark" ? "to light" : "to dark", icon: theme === "dark" ? "sun" : "moon", run: () => toggle() },
@@ -138,7 +144,7 @@ export default function App() {
             onMarkAlertsRead={markAlertsRead}
             onOpenCommand={() => setCmdOpen(true)}
           />
-          <LiveTicker quotes={quotes} />
+          <LiveTicker quotes={quotes} asOf={asOf} />
         </div>
 
         <div className={styles.scroll}>
@@ -172,11 +178,11 @@ export default function App() {
             )}
 
             {view === "news" && (
-              <NewsPanel news={news} loading={loading} busy={busy} onRefresh={refresh} />
+              <NewsPanel news={news} portfolio={portfolio} loading={loading} busy={busy} onRefresh={refresh} />
             )}
 
             {view === "settings" && (
-              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={setView} />
+              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={setView} appSettingsApi={appSettingsApi} />
             )}
 
             {view === "guide" && (

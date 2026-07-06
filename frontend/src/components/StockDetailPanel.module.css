@@ -169,3 +169,23 @@
 }
 .emptyTitle { font-family: var(--mono); font-weight: 600; }
 .emptyText { color: var(--text-muted); font-size: 12.5px; }
+
+/* Download / print-to-PDF report links, styled like the back button. */
+.reportBtns {
+  display: inline-flex;
+  gap: 6px;
+}
+.reportBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-decoration: none;
+}
+.reportBtn:hover { color: var(--accent); border-color: var(--accent-weak); }

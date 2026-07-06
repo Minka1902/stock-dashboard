@@ -85,3 +85,35 @@ def test_run_source_no_min_interval_always_runs(conn):
     ingest.run_source(conn, "usaspending", counting_fetch, db.upsert_contracts)
     ingest.run_source(conn, "usaspending", counting_fetch, db.upsert_contracts)
     assert call_count == 2
+
+
+def test_run_source_force_bypasses_min_interval(conn):
+    call_count = 0
+
+    def counting_fetch():
+        nonlocal call_count
+        call_count += 1
+        return _records()
+
+    # First run stamps the status as "just now".
+    ingest.run_source(conn, "usaspending", counting_fetch, db.upsert_contracts)
+    assert call_count == 1
+
+    # Within the interval, a normal run skips but a forced run fetches.
+    ingest.run_source(conn, "usaspending", counting_fetch, db.upsert_contracts, min_interval_seconds=3600)
+    assert call_count == 1
+    ingest.run_source(conn, "usaspending", counting_fetch, db.upsert_contracts,
+                      min_interval_seconds=3600, force=True)
+    assert call_count == 2
+
+
+def test_run_source_records_fetch_result_note(conn):
+    from app.ingest import FetchResult
+
+    def fallback_fetch():
+        return FetchResult(_records(), note="fallback: workbook")
+
+    ingest.run_source(conn, "usaspending", fallback_fetch, db.upsert_contracts)
+    status = {s.source: s for s in db.get_source_statuses(conn)}["usaspending"]
+    assert status.status == "ok (fallback: workbook)"
+    assert status.record_count == 1

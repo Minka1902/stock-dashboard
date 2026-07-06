@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
@@ -18,22 +19,66 @@ function SkeletonItems({ rows = 6 }) {
   ));
 }
 
-export default function NewsPanel({ news, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
+export default function NewsPanel({ news, portfolio = [], loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
+  const held = useMemo(() => new Set(portfolio.map((h) => h.ticker)), [portfolio]);
+  const tickers = useMemo(
+    () => [...new Set(news.filter((a) => a.ticker).map((a) => a.ticker))].sort(),
+    [news],
+  );
+  const hasTagged = tickers.length > 0;
+
+  // "portfolio" = articles tagged with any held/watched symbol; default to it
+  // when the user actually holds something and tagged articles exist.
+  const [filter, setFilter] = useState(null); // null = auto
+  const active = filter ?? (hasTagged && held.size > 0 ? "portfolio" : "all");
+
+  const filtered = useMemo(() => {
+    if (active === "all") return news;
+    if (active === "macro") return news.filter((a) => !a.ticker);
+    if (active === "portfolio") return news.filter((a) => a.ticker && (held.size === 0 || held.has(a.ticker)));
+    return news.filter((a) => a.ticker === active);
+  }, [news, active, held]);
+
   const showEmpty = !loading && news.length === 0;
-  const rows = compact ? news.slice(0, COMPACT_LIMIT) : news;
+  const rows = compact ? filtered.slice(0, COMPACT_LIMIT) : filtered;
 
   return (
     <section className={styles.panel} id="news">
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="News" />}
         <div>
-          <h2 className={styles.title}>World &amp; market news</h2>
+          <h2 className={styles.title}>News</h2>
           <p className={styles.subtitle}>
-            Geopolitics and economy, aggregated from GDELT
+            Your portfolio&apos;s tape plus macro headlines, aggregated from GDELT
           </p>
         </div>
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
+
+      {!collapsed && !compact && !showEmpty && (
+        <div className={styles.tabs} role="tablist" aria-label="News filter">
+          <button className={styles.tab} role="tab" aria-selected={active === "all"}
+                  data-active={active === "all" ? "yes" : "no"} onClick={() => setFilter("all")}>
+            All
+          </button>
+          {hasTagged && (
+            <button className={styles.tab} role="tab" aria-selected={active === "portfolio"}
+                    data-active={active === "portfolio" ? "yes" : "no"} onClick={() => setFilter("portfolio")}>
+              Portfolio
+            </button>
+          )}
+          <button className={styles.tab} role="tab" aria-selected={active === "macro"}
+                  data-active={active === "macro" ? "yes" : "no"} onClick={() => setFilter("macro")}>
+            Macro
+          </button>
+          {tickers.map((t) => (
+            <button key={t} className={styles.tab} role="tab" aria-selected={active === t}
+                    data-active={active === t ? "yes" : "no"} onClick={() => setFilter(t)}>
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
 
       {!collapsed && (showEmpty ? (
         <div className={styles.empty}>
@@ -47,6 +92,10 @@ export default function NewsPanel({ news, loading, busy, onRefresh, compact = fa
         <ul className={styles.list}>
           {loading ? (
             <SkeletonItems />
+          ) : rows.length === 0 ? (
+            <li className={styles.noMatch}>
+              No articles for this filter yet — they arrive with the next news refresh.
+            </li>
           ) : (
             rows.map((a) => (
               <li key={a.url} className={styles.item}>
@@ -60,6 +109,7 @@ export default function NewsPanel({ news, loading, busy, onRefresh, compact = fa
                     {a.title}
                   </a>
                   <div className={styles.meta}>
+                    {a.ticker && <span className={styles.tickerBadge}>{a.ticker}</span>}
                     <span className={styles.domain}>{a.domain}</span>
                     {a.sourcecountry && <span className={styles.sep}>·</span>}
                     {a.sourcecountry && <span>{a.sourcecountry}</span>}

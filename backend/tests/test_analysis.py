@@ -139,3 +139,51 @@ def test_build_uptrend_is_constructive():
     assert a.rr == 3.0
     assert a.suggested_shares and a.suggested_shares > 0
     assert len(a.targets) == 4 and a.targets[0].feasibility == "base"
+
+
+# ---------- trade-plan invariants ----------
+
+def _uptrend_bars(n=260):
+    # gentle uptrend with periodic pullbacks so pivots/support exist
+    closes = []
+    px = 50.0
+    for i in range(n):
+        px *= 1.004 if (i // 10) % 3 != 2 else 0.997
+        closes.append(round(px, 2))
+    return series(closes)
+
+
+def test_build_trade_plan_invariants():
+    bars = _uptrend_bars()
+    price = bars[-1].close
+    a = analysis.build("TEST", bars, price, account_size=50_000, risk_pct=1.0)
+
+    assert a.entry == round(price, 4)
+    if a.stop is not None:
+        # long setup: stop below entry, 3R target above, R math consistent
+        assert a.stop < a.entry
+        assert a.risk_per_share == round(a.entry - a.stop, 4)
+        assert a.target == round(a.entry + 3 * a.risk_per_share, 2)
+        assert a.rr == round((a.target - a.entry) / a.risk_per_share, 2)
+        # ladder: rungs strictly increasing at 3/4/5/6R with the base first
+        assert [r.r for r in a.targets] == [3, 4, 5, 6]
+        assert all(a.targets[i].price < a.targets[i + 1].price for i in range(3))
+        assert a.targets[0].feasibility == "base"
+        # position size = risk$ / risk-per-share (int-truncated)
+        assert a.suggested_shares == int(50_000 * 0.01 / a.risk_per_share)
+
+
+def test_build_without_account_size_has_no_share_count():
+    bars = _uptrend_bars()
+    a = analysis.build("TEST", bars, bars[-1].close, account_size=None, risk_pct=1.0)
+    assert a.suggested_shares is None
+
+
+def test_swing_pivots_merge_plateau_as_one_peak():
+    # A flat 3-bar top must register as a single high pivot, not several.
+    closes = [10, 11, 12, 13, 14, 15, 15, 15, 14, 13, 12, 11, 10, 9, 8]
+    bars = series([float(c) for c in closes], hi_pad=0.0, lo_pad=0.0)
+    pivots = analysis.swing_pivots(bars, k=3)
+    highs = [p for p in pivots if p["kind"] == "high"]
+    assert len(highs) == 1
+    assert highs[0]["price"] == 15.0

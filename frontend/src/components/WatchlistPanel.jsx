@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Icon from "./Icon";
+import StockDetailPanel from "./StockDetailPanel";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./WatchlistPanel.module.css";
 
@@ -13,6 +14,11 @@ export default function WatchlistPanel({ watchlist, quotes = {}, onAdd, onRemove
   const [note, setNote] = useState("");
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
+  const [selected, setSelected] = useState(null);
+
+  if (selected) {
+    return <StockDetailPanel key={selected} ticker={selected} onBack={() => setSelected(null)} />;
+  }
 
   async function submit(e) {
     e.preventDefault();
@@ -73,7 +79,13 @@ export default function WatchlistPanel({ watchlist, quotes = {}, onAdd, onRemove
             const q = quotes[w.ticker];
             return (
             <li key={w.ticker} className={styles.item}>
-              <span className={styles.symbol}>{w.ticker}</span>
+              <button
+                className={styles.symbolBtn}
+                onClick={() => setSelected(w.ticker)}
+                title={`Open ${w.ticker} chart`}
+              >
+                <span className={styles.symbol}>{w.ticker}</span>
+              </button>
               <span className={styles.price}>
                 {q && q.price != null ? q.price.toFixed(2) : "—"}
               </span>

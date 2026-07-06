@@ -84,7 +84,9 @@ _cache: dict[str, tuple[float, LiveQuote | None]] = {}
 _lock = threading.Lock()
 
 
-def get_quotes(tickers: list[str]) -> list[LiveQuote]:
+def get_quotes(tickers: list[str], ttl_seconds: float | None = None) -> list[LiveQuote]:
+    if ttl_seconds is None:
+        ttl_seconds = config.QUOTES_TTL_SECONDS
     now = time.monotonic()
     hits: list[LiveQuote] = []
     missing: list[str] = []
@@ -104,7 +106,7 @@ def get_quotes(tickers: list[str]) -> list[LiveQuote]:
         # Yahoo (last write wins) — benign, and better than serializing every
         # client behind network latency.
         fetched = fetch_quotes(missing)
-        expires = time.monotonic() + config.QUOTES_TTL_SECONDS
+        expires = time.monotonic() + ttl_seconds
         by_ticker = {q.ticker: q for q in fetched}
         with _lock:
             for t in missing:

@@ -3,7 +3,10 @@
 Must run AFTER all other sources have stored their data (registered last in SOURCES).
 Dict insertion order (Python 3.7+) guarantees this when boom_score is the final entry.
 
-Score range: −90 … +100 (negative scores mean net bearish evidence).
+Score is an open-ended sum of the weights below (negative = net bearish
+evidence). Theoretical bounds are −110 … +230 (the congress weight scales up
+to 2× by trade amount), but in practice scores rarely leave −60 … +120; the UI
+treats +60 as the "boom" alert threshold and caps its bar at +100.
 """
 import json
 from datetime import datetime, timezone
@@ -191,10 +194,11 @@ def _score_ticker(
         earnings_soon = _is_earnings_soon(analyst.next_earnings)
 
     # --- Macro: Fear & Greed (market-wide, applied once per compute_all call) ---
+    # Same thresholds as sentiment.py so the score and the sentiment panel agree.
     if fg_score is not None:
-        if fg_score < 25:
+        if fg_score < config.SENT_FG_BUY:
             components["fear_greed_contrarian"] = WEIGHTS["fear_greed_contrarian"]
-        elif fg_score > 78:
+        elif fg_score > config.SENT_FG_SELL:
             components["extreme_greed"] = WEIGHTS["extreme_greed"]
 
     # --- Macro: Yield curve un-inversion ---

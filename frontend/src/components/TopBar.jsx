@@ -20,7 +20,7 @@ export default function TopBar({
     .filter((s) => s.last_refreshed_at)
     .sort((a, b) => (a.last_refreshed_at < b.last_refreshed_at ? 1 : -1));
   const latest = refreshed[0];
-  const live = latest && latest.status === "ok";
+  const live = latest && (latest.status === "ok" || latest.status.startsWith("ok ("));
   const lastRefresh = latest ? formatRelativeTime(latest.last_refreshed_at) : "never";
 
   return (

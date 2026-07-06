@@ -10,22 +10,37 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+class FetchResult(list):
+    """A list of records with an optional status note.
+
+    Sources with layered fallbacks return this so the status UI can show which
+    tier produced the data (e.g. "ok (fallback: sentiment.xls)") — data is
+    still real, never fabricated; the note just records its provenance.
+    """
+
+    def __init__(self, records: list, note: str = ""):
+        super().__init__(records)
+        self.note = note
+
+
 def run_source(
     conn: sqlite3.Connection,
     source_name: str,
     fetch: Callable[[], list],
     store: Callable[[sqlite3.Connection, list], None],
     min_interval_seconds: int | None = None,
+    force: bool = False,
 ) -> None:
     """Run one source: fetch records, persist them via `store`, stamp status.
 
     When min_interval_seconds is set, skip silently if the source was refreshed
     more recently than that interval (used for slow sources like congress trades).
+    `force=True` bypasses that guard (scheduled daily deep run, manual refresh).
 
     Never raises: any failure is recorded as the source's status so the UI can
     show that the source tried and failed.
     """
-    if min_interval_seconds is not None:
+    if min_interval_seconds is not None and not force:
         statuses = {s.source: s for s in db.get_source_statuses(conn)}
         existing = statuses.get(source_name)
         if existing and existing.last_refreshed_at:
@@ -42,6 +57,8 @@ def run_source(
     try:
         records = fetch()
         store(conn, records)
-        db.update_source_status(conn, source_name, _now_iso(), "ok", len(records))
+        note = getattr(records, "note", "")
+        status = f"ok ({note})" if note else "ok"
+        db.update_source_status(conn, source_name, _now_iso(), status, len(records))
     except Exception as exc:  # noqa: BLE001 - we want to capture any failure
         db.update_source_status(conn, source_name, _now_iso(), f"error: {exc}", 0)
