@@ -24,7 +24,7 @@ def parse_response(payload: dict, captured_at: str) -> list[FearGreedSnapshot]:
 
 def fetch() -> list[FearGreedSnapshot]:
     captured_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    with httpx.Client(timeout=15.0) as client:
+    with httpx.Client(timeout=15.0, follow_redirects=True) as client:
         resp = client.get(_CNN_URL, headers=_HEADERS)
         resp.raise_for_status()
         return parse_response(resp.json(), captured_at)

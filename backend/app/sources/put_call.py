@@ -39,7 +39,7 @@ def parse_response(payload: dict) -> list[PutCallPoint]:
 
 
 def fetch() -> list[PutCallPoint]:
-    with httpx.Client(timeout=15.0) as client:
+    with httpx.Client(timeout=15.0, follow_redirects=True) as client:
         resp = client.get(_CNN_URL, headers=_HEADERS)
         resp.raise_for_status()
         return parse_response(resp.json())
