@@ -1,6 +1,7 @@
 """All SQLite access lives here."""
 import functools
 import inspect
+import json
 import sqlite3
 import sys
 import threading
@@ -19,7 +20,10 @@ from app.models import (
     MarginDebtPoint,
     NewsArticle,
     NotifyProfile,
+    OHLCBar,
+    OHLCSeries,
     PutCallPoint,
+    StockAnalysis,
     Seasonality,
     ShortInterest,
     SocialSentiment,
@@ -271,9 +275,24 @@ def init_schema(conn: sqlite3.Connection) -> None:
             insider_cluster_buy INTEGER,
             updated_at          TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS ohlc_series (
+            ticker     TEXT NOT NULL,
+            interval   TEXT NOT NULL,
+            bars_json  TEXT NOT NULL,
+            fetched_at TEXT NOT NULL,
+            PRIMARY KEY (ticker, interval)
+        );
+        CREATE TABLE IF NOT EXISTS stock_analysis (
+            ticker       TEXT PRIMARY KEY,
+            computed_at  TEXT NOT NULL,
+            payload_json TEXT NOT NULL
+        );
         """
     )
     conn.commit()
+
+    _try_add_column(conn, "notify_profile", "account_size", "REAL")
+    _try_add_column(conn, "notify_profile", "risk_pct", "REAL NOT NULL DEFAULT 1.0")
 
     # Migrate existing tables: add new columns (safe on pre-existing databases).
     for col, col_def in [
@@ -1129,6 +1148,8 @@ def get_notify_profile(conn: sqlite3.Connection) -> NotifyProfile:
         phone=d.get("phone"),
         email_enabled=bool(d.get("email_enabled")),
         sms_enabled=bool(d.get("sms_enabled")),
+        account_size=d.get("account_size"),
+        risk_pct=d.get("risk_pct") if d.get("risk_pct") is not None else 1.0,
         updated_at=d.get("updated_at") or "",
     )
 
@@ -1136,11 +1157,12 @@ def get_notify_profile(conn: sqlite3.Connection) -> NotifyProfile:
 def upsert_notify_profile(conn: sqlite3.Connection, profile: NotifyProfile) -> None:
     conn.execute(
         """
-        INSERT INTO notify_profile (id, email, phone, email_enabled, sms_enabled, updated_at)
-        VALUES (1, :email, :phone, :email_enabled, :sms_enabled, :updated_at)
+        INSERT INTO notify_profile (id, email, phone, email_enabled, sms_enabled, account_size, risk_pct, updated_at)
+        VALUES (1, :email, :phone, :email_enabled, :sms_enabled, :account_size, :risk_pct, :updated_at)
         ON CONFLICT(id) DO UPDATE SET
             email=excluded.email, phone=excluded.phone,
             email_enabled=excluded.email_enabled, sms_enabled=excluded.sms_enabled,
+            account_size=excluded.account_size, risk_pct=excluded.risk_pct,
             updated_at=excluded.updated_at
         """,
         {
@@ -1148,10 +1170,77 @@ def upsert_notify_profile(conn: sqlite3.Connection, profile: NotifyProfile) -> N
             "phone": profile.phone,
             "email_enabled": int(profile.email_enabled),
             "sms_enabled": int(profile.sms_enabled),
+            "account_size": profile.account_size,
+            "risk_pct": profile.risk_pct,
             "updated_at": profile.updated_at,
         },
     )
     conn.commit()
+
+
+# ---------- OHLC series + technical analysis ----------
+
+def upsert_ohlc(conn: sqlite3.Connection, series: list[OHLCSeries]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO ohlc_series (ticker, interval, bars_json, fetched_at)
+        VALUES (:ticker, :interval, :bars_json, :fetched_at)
+        ON CONFLICT(ticker, interval) DO UPDATE SET
+            bars_json=excluded.bars_json, fetched_at=excluded.fetched_at
+        """,
+        [s.model_dump() for s in series],
+    )
+    conn.commit()
+
+
+def get_ohlc(conn: sqlite3.Connection, ticker: str, interval: str = "daily") -> list[OHLCBar]:
+    cur = conn.execute(
+        "SELECT bars_json FROM ohlc_series WHERE ticker = ? AND interval = ?",
+        (ticker.upper(), interval),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return []
+    try:
+        return [OHLCBar(**b) for b in json.loads(row["bars_json"])]
+    except (ValueError, TypeError):
+        return []
+
+
+def upsert_analyses(conn: sqlite3.Connection, analyses: list[StockAnalysis]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO stock_analysis (ticker, computed_at, payload_json)
+        VALUES (:ticker, :computed_at, :payload_json)
+        ON CONFLICT(ticker) DO UPDATE SET
+            computed_at=excluded.computed_at, payload_json=excluded.payload_json
+        """,
+        [{"ticker": a.ticker, "computed_at": a.computed_at, "payload_json": a.model_dump_json()}
+         for a in analyses],
+    )
+    conn.commit()
+
+
+def get_analysis(conn: sqlite3.Connection, ticker: str) -> StockAnalysis | None:
+    cur = conn.execute("SELECT payload_json FROM stock_analysis WHERE ticker = ?", (ticker.upper(),))
+    row = cur.fetchone()
+    if row is None:
+        return None
+    try:
+        return StockAnalysis(**json.loads(row["payload_json"]))
+    except (ValueError, TypeError):
+        return None
+
+
+def get_all_analyses(conn: sqlite3.Connection) -> list[StockAnalysis]:
+    cur = conn.execute("SELECT payload_json FROM stock_analysis")
+    out: list[StockAnalysis] = []
+    for row in cur.fetchall():
+        try:
+            out.append(StockAnalysis(**json.loads(row["payload_json"])))
+        except (ValueError, TypeError):
+            continue
+    return out
 
 
 # ---------- suggestion log (append-only) ----------
