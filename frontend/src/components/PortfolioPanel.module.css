@@ -126,6 +126,29 @@
   font-variant-numeric: tabular-nums;
 }
 
+.row { cursor: pointer; }
+
+.advice {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.advice em { font-style: normal; font-size: 10px; opacity: 0.85; }
+.advice[data-tone="buy"] { color: var(--positive); background: var(--positive-weak); border-color: transparent; }
+.advice[data-tone="hold"] { color: var(--accent); background: var(--accent-weak); border-color: transparent; }
+.advice[data-tone="warn"] { color: var(--negative); border-color: var(--negative-weak); }
+.advice[data-tone="sell"] { color: var(--negative); background: var(--negative-weak); border-color: transparent; }
+.advicePending { font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); }
+
 .symbol {
   font-family: var(--mono);
   font-weight: 700;

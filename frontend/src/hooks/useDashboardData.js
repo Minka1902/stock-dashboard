@@ -23,6 +23,7 @@ import {
   getPortfolio,
   getSuggestions,
   getAlerts,
+  getAnalyses,
   markAlertsRead as apiMarkAlertsRead,
   refreshSource,
   addWatch as apiAddWatch,
@@ -66,6 +67,7 @@ export function useDashboardData() {
   const [seasonality, setSeasonality] = useState([]);
   const [portfolio, setPortfolio] = useState([]);
   const [suggestions, setSuggestions] = useState(null);
+  const [analyses, setAnalyses] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [unreadAlerts, setUnreadAlerts] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -100,6 +102,7 @@ export function useDashboardData() {
       getPortfolio(),      // 20
       getSuggestions(),    // 21
       getAlerts(),         // 22 — special shape { alerts, unread }
+      getAnalyses(),       // 23
     ]);
 
     const setters = [
@@ -109,6 +112,7 @@ export function useDashboardData() {
       setShortInterest, setSocial, setAnalyst, setBoomScores,
       setFundamentals, setSeasonality, setPortfolio, setSuggestions,
       null, // alerts handled below
+      setAnalyses,
     ];
     results.forEach((r, i) => {
       if (r.status === "fulfilled" && setters[i]) setters[i](r.value);
@@ -193,6 +197,7 @@ export function useDashboardData() {
     seasonality,
     portfolio,
     suggestions,
+    analyses,
     alerts,
     unreadAlerts,
     loading,

@@ -99,7 +99,7 @@ export default function App() {
     contracts, sources, news, trades, watchlist,
     yieldCurve, signals, fearGreed, vix, aaii, putCall, marginDebt, sentiment, congressTrades,
     shortInterest, social, analyst, boomScores, fundamentals, seasonality,
-    portfolio, suggestions, alerts, unreadAlerts,
+    portfolio, suggestions, analyses, alerts, unreadAlerts,
     loading, busy, error, refresh, addWatch, removeWatch, addHolding, removeHolding,
     markAlertsRead,
   } = data;
@@ -164,7 +164,7 @@ export default function App() {
             )}
 
             {view === "portfolio" && (
-              <PortfolioPanel portfolio={portfolio} signals={signals} quotes={quotesByTicker} onAdd={addHolding} onRemove={removeHolding} />
+              <PortfolioPanel portfolio={portfolio} signals={signals} quotes={quotesByTicker} analyses={analyses} onAdd={addHolding} onRemove={removeHolding} />
             )}
 
             {view === "trades" && (

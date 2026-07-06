@@ -77,6 +77,53 @@ export default function SettingsPanel({ settings, setSetting, onNavigate }) {
           </button>
         </fieldset>
 
+        {/* Trading & risk: position sizing for each holding's analysis */}
+        <fieldset className={styles.group}>
+          <legend className={styles.legend}>Trading &amp; risk</legend>
+          <p className={styles.groupHint}>
+            Sizes positions in each holding's analysis: shares = (risk&nbsp;% × account) ÷ risk-per-share.
+            Risk is capped at 10% per trade.
+          </p>
+          <div className={styles.contact}>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="acct-size">Account size ($)</label>
+              <input
+                id="acct-size"
+                className={styles.input}
+                type="number"
+                min="0"
+                step="any"
+                placeholder="50000"
+                value={profile.account_size ?? ""}
+                onChange={(e) => update({ account_size: e.target.value === "" ? null : Number(e.target.value) })}
+              />
+            </div>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="risk-pct">Risk per trade (%)</label>
+              <input
+                id="risk-pct"
+                className={styles.input}
+                type="number"
+                min="0.1"
+                max="10"
+                step="0.1"
+                value={profile.risk_pct ?? 1}
+                onChange={(e) => update({ risk_pct: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          <div className={styles.actions}>
+            <button type="button" className={styles.primaryBtn} onClick={saveProfile} disabled={saveState === "saving"}>
+              {saveState === "saving" ? "Saving…" : "Save trading settings"}
+            </button>
+            {profile.account_size ? (
+              <span className={styles.ok}>
+                Risking ${Math.round((profile.account_size * (profile.risk_pct || 1)) / 100).toLocaleString()} per trade
+              </span>
+            ) : null}
+          </div>
+        </fieldset>
+
         {/* Notifications: email + phone for the daily suggestion digest */}
         <fieldset className={styles.group}>
           <legend className={styles.legend}>Daily suggestions — email &amp; phone</legend>

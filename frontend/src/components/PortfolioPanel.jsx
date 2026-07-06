@@ -1,14 +1,24 @@
 import { useState } from "react";
 import Icon from "./Icon";
+import StockDetailPanel from "./StockDetailPanel";
 import { formatCurrencyCompact } from "../lib/format";
 import styles from "./PortfolioPanel.module.css";
 
-export default function PortfolioPanel({ portfolio, signals, quotes = {}, onAdd, onRemove }) {
+const DIRECTIVE_TONE = { Accumulate: "buy", Hold: "hold", Reduce: "warn", Avoid: "sell" };
+
+export default function PortfolioPanel({ portfolio, signals, quotes = {}, analyses = [], onAdd, onRemove }) {
   const [ticker, setTicker] = useState("");
   const [shares, setShares] = useState("");
   const [avgCost, setAvgCost] = useState("");
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
+  const [selected, setSelected] = useState(null);
+
+  const analysisByTicker = Object.fromEntries(analyses.map((a) => [a.ticker, a]));
+
+  if (selected) {
+    return <StockDetailPanel key={selected} ticker={selected} onBack={() => setSelected(null)} />;
+  }
 
   // ticker -> current price, for P/L: live quote first, signal price fallback.
   const priceOf = (t) => {
@@ -100,6 +110,7 @@ export default function PortfolioPanel({ portfolio, signals, quotes = {}, onAdd,
                 <th className={styles.numCol}>Price</th>
                 <th className={styles.numCol}>Mkt Value</th>
                 <th className={styles.numCol}>P/L</th>
+                <th>Advice</th>
                 <th></th>
               </tr>
             </thead>
@@ -110,8 +121,10 @@ export default function PortfolioPanel({ portfolio, signals, quotes = {}, onAdd,
                 const plPct = price != null && h.avg_cost > 0
                   ? (price - h.avg_cost) / h.avg_cost * 100 : null;
                 const tone = plPct == null ? "flat" : plPct >= 0 ? "pos" : "neg";
+                const an = analysisByTicker[h.ticker];
                 return (
-                  <tr key={h.ticker}>
+                  <tr key={h.ticker} className={styles.row} onClick={() => setSelected(h.ticker)}
+                      title={`Analyze ${h.ticker}`}>
                     <td><span className={styles.symbol}>{h.ticker}</span></td>
                     <td className={styles.numCol}>{h.shares}</td>
                     <td className={styles.numCol}>{formatCurrencyCompact(h.avg_cost)}</td>
@@ -122,10 +135,20 @@ export default function PortfolioPanel({ portfolio, signals, quotes = {}, onAdd,
                         {plPct != null ? `${plPct >= 0 ? "+" : ""}${plPct.toFixed(1)}%` : "—"}
                       </span>
                     </td>
+                    <td>
+                      {an ? (
+                        <span className={styles.advice} data-tone={DIRECTIVE_TONE[an.directive]}>
+                          {an.directive}
+                          <em className={styles.conv}>{an.conviction > 0 ? "+" : ""}{an.conviction}</em>
+                        </span>
+                      ) : (
+                        <span className={styles.advicePending}>analyzing…</span>
+                      )}
+                    </td>
                     <td className={styles.numCol}>
                       <button
                         className={styles.remove}
-                        onClick={() => onRemove(h.ticker)}
+                        onClick={(e) => { e.stopPropagation(); onRemove(h.ticker); }}
                         title={`Remove ${h.ticker}`}
                         aria-label={`Remove ${h.ticker}`}
                       >

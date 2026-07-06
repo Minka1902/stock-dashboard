@@ -27,6 +27,8 @@ export const getAnalyst = () => getJSON("/api/analyst");
 export const getBoomScores = () => getJSON("/api/boom-scores");
 export const getFundamentals = () => getJSON("/api/fundamentals");
 export const getSeasonality = () => getJSON("/api/seasonality");
+export const getAnalyses = () => getJSON("/api/analysis");
+export const getAnalysis = (ticker) => getJSON(`/api/analysis/${encodeURIComponent(ticker)}`);
 export const getBoomScoreHistory = (ticker) => getJSON(`/api/boom-scores/history/${ticker}`);
 export const getPortfolio = () => getJSON("/api/portfolio");
 export const getProfile = () => getJSON("/api/profile");
