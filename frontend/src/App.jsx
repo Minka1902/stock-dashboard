@@ -62,6 +62,7 @@ const MODULE_INDEX = {
   portfolio: "03",
   trades: "04",
   news: "05",
+  watchlist: "06",
 };
 
 export default function App() {
@@ -114,6 +115,7 @@ export default function App() {
     { id: "portfolio",   label: "Portfolio",        hint: "your book",  icon: "wallet",   run: () => setView("portfolio") },
     { id: "trades",      label: "Trades",           hint: "insiders",   icon: "trending", run: () => setView("trades") },
     { id: "news",        label: "News",             hint: "the tape",   icon: "news",     run: () => setView("news") },
+    { id: "watchlist",   label: "Watchlist",        hint: "charts & radar", icon: "star", run: () => setView("watchlist") },
     { id: "settings",    label: "Settings",         hint: "config & guide", icon: "settings", run: () => setView("settings") },
     { id: "refresh",     label: "Refresh all sources", hint: "sync now", icon: "refresh", run: () => refresh() },
     { id: "theme",       label: "Toggle theme", hint: theme === "dark" ? "to light" : "to dark", icon: theme === "dark" ? "sun" : "moon", run: () => toggle() },
