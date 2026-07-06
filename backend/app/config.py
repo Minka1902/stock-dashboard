@@ -21,6 +21,9 @@ NEWS_QUERY = os.environ.get(
     '("stock market" OR "federal reserve" OR economy OR sanctions OR "defense spending")',
 )
 NEWS_LIMIT = int(os.environ.get("STOCKS_NEWS_LIMIT", "40"))
+# Per-ticker news pulled for every portfolio/watchlist symbol (kept small to
+# stay polite with GDELT: one extra request per symbol per refresh).
+NEWS_PER_TICKER_LIMIT = int(os.environ.get("STOCKS_NEWS_PER_TICKER_LIMIT", "8"))
 
 # --- Insider trades (SEC EDGAR Form 4) ---
 # SEC requires a descriptive User-Agent with contact info for fair-access.

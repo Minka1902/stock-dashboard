@@ -20,6 +20,7 @@ class NewsArticle(BaseModel):
     seendate: str  # ISO timestamp
     sourcecountry: str
     image: str  # may be ""
+    ticker: str = ""  # "" = macro/geopolitics; else the portfolio/watchlist ticker it matched
 
 
 class InsiderTrade(BaseModel):

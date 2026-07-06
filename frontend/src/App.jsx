@@ -176,7 +176,7 @@ export default function App() {
             )}
 
             {view === "news" && (
-              <NewsPanel news={news} loading={loading} busy={busy} onRefresh={refresh} />
+              <NewsPanel news={news} portfolio={portfolio} loading={loading} busy={busy} onRefresh={refresh} />
             )}
 
             {view === "settings" && (

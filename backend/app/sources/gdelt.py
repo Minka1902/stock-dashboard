@@ -74,3 +74,52 @@ def fetch(query: str, limit: int) -> list[NewsArticle]:
             return []  # GDELT returns an empty body when it has nothing
         payload = _loads_lenient(body)
     return parse_response(payload)
+
+
+# Company-name suffixes that hurt phrase matching ("Tesla, Inc." -> "Tesla").
+_NAME_SUFFIX = re.compile(
+    r"[,.]?\s*(incorporated|corporation|company|holdings?|group|inc|corp|co|ltd|plc|sa|nv|ag)\.?$",
+    re.IGNORECASE,
+)
+
+
+def clean_company_name(name: str) -> str:
+    prev = None
+    name = name.strip().strip('"')
+    while name and name != prev:
+        prev = name
+        name = _NAME_SUFFIX.sub("", name).strip(" ,.")
+    return name
+
+
+def build_ticker_query(ticker: str, company: str | None = None) -> str:
+    """Precision-oriented GDELT query for one symbol.
+
+    Bare tickers are too noisy ("F", "A"), so match the cashtag / "X stock"
+    phrasing, plus the cleaned company name when one is known.
+    """
+    ticker = ticker.upper()
+    parts = [f'"{ticker} stock"', f'"${ticker}"']
+    cleaned = clean_company_name(company or "")
+    if len(cleaned) >= 3:
+        parts.append(f'"{cleaned}"')
+    return f"({' OR '.join(parts)})"
+
+
+def fetch_for_tickers(tickers: list[str], names: dict[str, str],
+                      per_ticker_limit: int) -> list[NewsArticle]:
+    """One query per portfolio/watchlist ticker, results tagged with it.
+
+    Failures for a single ticker are skipped (that symbol just contributes no
+    articles this cycle) so one bad query can't sink the whole news refresh.
+    """
+    out: list[NewsArticle] = []
+    for ticker in tickers:
+        try:
+            articles = fetch(build_ticker_query(ticker, names.get(ticker)), per_ticker_limit)
+        except (httpx.HTTPError, ValueError):
+            continue
+        for a in articles:
+            a.ticker = ticker.upper()
+        out.extend(articles)
+    return out

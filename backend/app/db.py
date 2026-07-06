@@ -301,6 +301,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
     _try_add_column(conn, "notify_profile", "account_size", "REAL")
     _try_add_column(conn, "notify_profile", "risk_pct", "REAL NOT NULL DEFAULT 1.0")
+    _try_add_column(conn, "news", "ticker", "TEXT NOT NULL DEFAULT ''")
 
     # Migrate existing tables: add new columns (safe on pre-existing databases).
     for col, col_def in [
@@ -383,25 +384,43 @@ def get_contracts(conn: sqlite3.Connection, limit: int = 100) -> list[ContractRe
 def upsert_news(conn: sqlite3.Connection, records: list[NewsArticle]) -> None:
     conn.executemany(
         """
-        INSERT INTO news (url, title, domain, seendate, sourcecountry, image)
-        VALUES (:url, :title, :domain, :seendate, :sourcecountry, :image)
+        INSERT INTO news (url, title, domain, seendate, sourcecountry, image, ticker)
+        VALUES (:url, :title, :domain, :seendate, :sourcecountry, :image, :ticker)
         ON CONFLICT(url) DO UPDATE SET
             title=excluded.title,
             domain=excluded.domain,
             seendate=excluded.seendate,
             sourcecountry=excluded.sourcecountry,
-            image=excluded.image
+            image=excluded.image,
+            -- a ticker tag, once earned, is never wiped by an untagged macro hit
+            ticker=CASE WHEN excluded.ticker != '' THEN excluded.ticker ELSE news.ticker END
         """,
         [r.model_dump() for r in records],
     )
     conn.commit()
 
 
-def get_news(conn: sqlite3.Connection, limit: int = 60) -> list[NewsArticle]:
+def get_news(conn: sqlite3.Connection, limit: int = 120) -> list[NewsArticle]:
     cur = conn.execute(
         "SELECT * FROM news ORDER BY seendate DESC LIMIT ?", (limit,)
     )
     return [NewsArticle(**dict(row)) for row in cur.fetchall()]
+
+
+def get_company_names(conn: sqlite3.Connection, tickers: list[str]) -> dict[str, str]:
+    """ticker -> latest known company name (from insider filings, where seen)."""
+    if not tickers:
+        return {}
+    marks = ",".join("?" * len(tickers))
+    cur = conn.execute(
+        f"""
+        SELECT ticker, company FROM insider_trades
+        WHERE ticker IN ({marks}) AND company != ''
+        GROUP BY ticker HAVING MAX(filed_at)
+        """,
+        [t.upper() for t in tickers],
+    )
+    return {row["ticker"]: row["company"] for row in cur.fetchall()}
 
 
 # ---------- insider trades ----------

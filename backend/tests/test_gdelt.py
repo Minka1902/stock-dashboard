@@ -48,3 +48,35 @@ def test_parse_handles_missing_image():
 def test_parse_empty():
     assert gdelt.parse_response({"articles": []}) == []
     assert gdelt.parse_response({}) == []
+
+
+# ---------- per-ticker (portfolio) news ----------
+
+def test_clean_company_name_strips_suffixes():
+    assert gdelt.clean_company_name("Tesla, Inc.") == "Tesla"
+    assert gdelt.clean_company_name("Lockheed Martin Corporation") == "Lockheed Martin"
+    assert gdelt.clean_company_name("ACME HOLDINGS CO") == "ACME"
+    assert gdelt.clean_company_name("") == ""
+
+
+def test_build_ticker_query_with_and_without_name():
+    q = gdelt.build_ticker_query("tsla", "Tesla, Inc.")
+    assert q == '("TSLA stock" OR "$TSLA" OR "Tesla")'
+    # no (or too-short) company name -> cashtag + "X stock" phrases only
+    assert gdelt.build_ticker_query("F", None) == '("F stock" OR "$F")'
+    assert gdelt.build_ticker_query("GE", "GE") == '("GE stock" OR "$GE")'
+
+
+def test_fetch_for_tickers_tags_and_survives_failures(monkeypatch):
+    import httpx
+    from app.models import NewsArticle
+
+    def stub_fetch(query, limit):
+        if '"$BAD"' in query:
+            raise httpx.ConnectError("boom")
+        return [NewsArticle(url=f"https://x/{query[:12]}", title="t", domain="d",
+                            seendate="2026-07-06T00:00:00Z", sourcecountry="", image="")]
+
+    monkeypatch.setattr(gdelt, "fetch", stub_fetch)
+    out = gdelt.fetch_for_tickers(["NOC", "BAD", "LMT"], {"NOC": "Northrop Grumman Corp"}, 5)
+    assert [a.ticker for a in out] == ["NOC", "LMT"]

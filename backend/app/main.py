@@ -38,7 +38,16 @@ def contracts_fetch():
 
 
 def news_fetch():
-    return gdelt.fetch(config.NEWS_QUERY, config.NEWS_LIMIT)
+    """Macro headlines plus per-ticker news for every portfolio/watchlist
+    symbol. Tagged articles come last so their ticker wins the url upsert."""
+    macro = gdelt.fetch(config.NEWS_QUERY, config.NEWS_LIMIT)
+    tickers = sorted(
+        {h.ticker for h in db.get_portfolio(conn)} | {w.ticker for w in db.get_watchlist(conn)}
+    )
+    if not tickers:
+        return macro
+    names = db.get_company_names(conn, tickers)
+    return macro + gdelt.fetch_for_tickers(tickers, names, config.NEWS_PER_TICKER_LIMIT)
 
 
 def trades_fetch():
