@@ -69,3 +69,73 @@ def test_compute_yoy_zero_prior_is_none():
 def test_compute_yoy_preserves_month_and_balance():
     rows = margin_debt.compute_yoy([_point("2026-05", 1_000_000.0)])
     assert rows == [{"month": "2026-05", "debit_balances": 1_000_000.0, "yoy_pct": None}]
+
+
+# ---------- FINRA Query API tier ----------
+
+def test_parse_api_rows_millions_and_dollars():
+    rows = [
+        # $ millions (matches the published table scale)
+        {"monthDt": "2026-05-01", "debitBalancesCustomersSecuritiesMarginAccounts": 1_050_123.0},
+        # full dollars — must be normalized down to millions
+        {"monthDt": "2026-04-01", "debitBalancesCustomersSecuritiesMarginAccounts": 995_000_000_000.0},
+        # unrelated fields ignored
+        {"monthDt": "2026-03-01", "freeCreditBalancesCashAccounts": 500_000.0},
+    ]
+    points = margin_debt.parse_api_rows(rows)
+    assert [(p.month, p.debit_balances) for p in points] == [
+        ("2026-04", 995_000.0), ("2026-05", 1_050_123.0),
+    ]
+
+
+def test_parse_api_rows_ignores_non_dicts_and_garbage():
+    assert margin_debt.parse_api_rows(["x", 42, {"foo": "bar"}]) == []
+
+
+# ---------- workbook tier ----------
+
+def test_find_workbook_url_relative_and_absolute():
+    html = '<a href="/sites/default/files/2026-06/margin-statistics.xlsx">xlsx</a>'
+    assert margin_debt.find_workbook_url(html) == \
+        "https://www.finra.org/sites/default/files/2026-06/margin-statistics.xlsx"
+    html2 = '<a href="https://cdn.finra.org/margin_stats.xlsx">xlsx</a>'
+    assert margin_debt.find_workbook_url(html2) == "https://cdn.finra.org/margin_stats.xlsx"
+    assert margin_debt.find_workbook_url("<p>no link</p>") is None
+
+
+def test_rows_to_points_handles_datetime_and_text_months():
+    from datetime import datetime as dt
+    rows = [
+        ["Month", "Debit Balances"],                    # header skipped
+        [dt(2026, 5, 1), 1_050_123.0],
+        ["Apr-26", 1_020_000.0],
+        ["March 2026", 990_000.0],
+        ["2026-02", 970_000.0],
+        ["not a month", 960_000.0],                     # no month -> skipped
+        [dt(2026, 1, 1), 12.5],                         # implausible value -> skipped
+    ]
+    points = margin_debt.rows_to_points(rows)
+    assert [(p.month, p.debit_balances) for p in points] == [
+        ("2026-02", 970_000.0), ("2026-03", 990_000.0),
+        ("2026-04", 1_020_000.0), ("2026-05", 1_050_123.0),
+    ]
+
+
+def test_parse_workbook_roundtrip():
+    # Build a real xlsx in memory and run it through the workbook tier.
+    import io
+    from datetime import datetime as dt
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Month", "Debit Balances in Customers' Securities Margin Accounts"])
+    ws.append([dt(2026, 4, 1), 1_020_000])
+    ws.append([dt(2026, 5, 1), 1_050_123])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    points = margin_debt.parse_workbook(buf.getvalue())
+    assert [(p.month, p.debit_balances) for p in points] == [
+        ("2026-04", 1_020_000.0), ("2026-05", 1_050_123.0),
+    ]

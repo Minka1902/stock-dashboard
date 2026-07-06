@@ -10,6 +10,19 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+class FetchResult(list):
+    """A list of records with an optional status note.
+
+    Sources with layered fallbacks return this so the status UI can show which
+    tier produced the data (e.g. "ok (fallback: sentiment.xls)") — data is
+    still real, never fabricated; the note just records its provenance.
+    """
+
+    def __init__(self, records: list, note: str = ""):
+        super().__init__(records)
+        self.note = note
+
+
 def run_source(
     conn: sqlite3.Connection,
     source_name: str,
@@ -44,6 +57,8 @@ def run_source(
     try:
         records = fetch()
         store(conn, records)
-        db.update_source_status(conn, source_name, _now_iso(), "ok", len(records))
+        note = getattr(records, "note", "")
+        status = f"ok ({note})" if note else "ok"
+        db.update_source_status(conn, source_name, _now_iso(), status, len(records))
     except Exception as exc:  # noqa: BLE001 - we want to capture any failure
         db.update_source_status(conn, source_name, _now_iso(), f"error: {exc}", 0)

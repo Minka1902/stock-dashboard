@@ -105,3 +105,15 @@ def test_run_source_force_bypasses_min_interval(conn):
     ingest.run_source(conn, "usaspending", counting_fetch, db.upsert_contracts,
                       min_interval_seconds=3600, force=True)
     assert call_count == 2
+
+
+def test_run_source_records_fetch_result_note(conn):
+    from app.ingest import FetchResult
+
+    def fallback_fetch():
+        return FetchResult(_records(), note="fallback: workbook")
+
+    ingest.run_source(conn, "usaspending", fallback_fetch, db.upsert_contracts)
+    status = {s.source: s for s in db.get_source_statuses(conn)}["usaspending"]
+    assert status.status == "ok (fallback: workbook)"
+    assert status.record_count == 1
