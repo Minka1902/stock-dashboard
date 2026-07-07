@@ -18,7 +18,7 @@ def conn():
 
 
 def _watch(conn, ticker="GME"):
-    db.add_watch(conn, WatchItem(ticker=ticker, note="", added_at="t"))
+    db.add_watch(conn, 0, WatchItem(ticker=ticker, note="", added_at="t"))
 
 
 def _boom(conn, ticker="GME", score=40, **flags):
@@ -108,7 +108,7 @@ def test_mark_read_and_unread_count(conn):
     _boom(conn, score=40); alerts.detect(conn)
     _boom(conn, score=70)
     db.upsert_alerts(conn, alerts.detect(conn))
-    assert db.count_unread_alerts(conn) == 1
-    db.mark_alerts_read(conn)  # all
-    assert db.count_unread_alerts(conn) == 0
-    assert db.get_alerts(conn)[0].read is True
+    assert db.count_unread_alerts(conn, 0) == 1
+    db.mark_alerts_read(conn, 0)  # all
+    assert db.count_unread_alerts(conn, 0) == 0
+    assert db.get_alerts(conn, 0)[0].read is True

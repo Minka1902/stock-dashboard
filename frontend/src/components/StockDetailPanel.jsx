@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Icon from "./Icon";
 import ChartPro from "./ChartPro";
 import Skeleton from "./Skeleton";
-import { getAnalysis, analysisReportUrl } from "../api";
+import { getAnalyze, analysisReportUrl } from "../api";
 import styles from "./StockDetailPanel.module.css";
 
 const DIRECTIVE_TONE = {
@@ -35,20 +35,35 @@ function Stat({ label, value, tone }) {
   );
 }
 
-export default function StockDetailPanel({ ticker, onBack }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch }) {
+  // Track which ticker the loaded payload belongs to: switching tickers
+  // shows the skeleton again without any synchronous setState in the effect.
+  const [result, setResult] = useState(null);
+  const [watchBusy, setWatchBusy] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    getAnalysis(ticker)
-      .then((d) => { if (alive) setData(d); })
-      .catch(() => { if (alive) setData(null); })
-      .finally(() => { if (alive) setLoading(false); });
+    getAnalyze(ticker)
+      .then((d) => { if (alive) setResult({ ticker, data: d }); })
+      .catch(() => { if (alive) setResult({ ticker, data: null }); });
     return () => { alive = false; };
   }, [ticker]);
 
+  const loading = result?.ticker !== ticker;
+  const data = result?.data;
   const a = data?.analysis;
+  const anchors = data?.seasonality_anchors || [];
+  const lastClose = data?.daily?.length ? data.daily[data.daily.length - 1].close : null;
+  const refPrice = a?.price ?? lastClose;
+  const watched = watchlist?.some((w) => w.ticker === ticker);
+  const canWatch = Boolean(onAddWatch) && watchlist && !watched;
+
+  const addToWatchlist = () => {
+    setWatchBusy(true);
+    Promise.resolve(onAddWatch(ticker, ""))
+      .catch(() => {})
+      .finally(() => setWatchBusy(false));
+  };
 
   return (
     <div className={styles.wrap}>
@@ -69,6 +84,22 @@ export default function StockDetailPanel({ ticker, onBack }) {
           </span>
         )}
         <span className={styles.spacer} />
+        {canWatch && (
+          <button
+            type="button"
+            className={styles.reportBtn}
+            onClick={addToWatchlist}
+            disabled={watchBusy}
+            title="Track this stock: adds it to your watchlist so every signal source covers it"
+          >
+            <Icon name="star" size={13} /> {watchBusy ? "Adding…" : "Watch"}
+          </button>
+        )}
+        {watched && watchlist && (
+          <span className={styles.reportBtn} title="Already on your watchlist" aria-disabled="true">
+            <Icon name="star" size={13} /> Watching
+          </span>
+        )}
         {a && (
           <span className={styles.reportBtns}>
             <a className={styles.reportBtn} href={analysisReportUrl(ticker)}
@@ -93,11 +124,38 @@ export default function StockDetailPanel({ ticker, onBack }) {
             <ChartPro ticker={ticker} analysis={a} />
           </Pane>
 
+          {anchors.length > 0 && (
+            <Pane caption="This day in history"
+                  right={<span className={styles.muted}>close on this date, past years</span>}>
+              <div className={styles.anchors}>
+                {anchors.map((an) => {
+                  const delta = refPrice && an.close
+                    ? (refPrice / an.close - 1) * 100
+                    : null;
+                  const label = an.years_ago === "max" ? "earliest" : `${an.years_ago}y ago`;
+                  return (
+                    <div key={`${an.years_ago}`} className={styles.anchor}>
+                      <span className={styles.anchorLabel}>{label}</span>
+                      <span className={styles.anchorDate}>{an.date}</span>
+                      <span className={styles.anchorClose}>${n(an.close)}</span>
+                      {delta != null && (
+                        <span className={styles.anchorDelta} data-tone={delta >= 0 ? "pos" : "neg"}>
+                          {delta >= 0 ? "+" : ""}{delta.toFixed(1)}% since
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Pane>
+          )}
+
           {!a && (
             <div className={styles.empty}>
               <p className={styles.emptyTitle}>No analysis yet for {ticker}</p>
               <p className={styles.emptyText}>
-                Price history is still loading, or this holding was just added. Refresh in a minute.
+                Price history is still loading, or there isn't enough of it yet —
+                an honest read needs about 30 trading days. Try again in a minute.
               </p>
             </div>
           )}

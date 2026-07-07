@@ -1,18 +1,22 @@
 """FastAPI surface + scheduler wiring."""
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
-from app import analysis, chart_data, config, db, ingest, notify, quotes, report, sentiment, suggestions
+from app import analysis, analyze, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, search, sentiment, suggestions
 from app import alerts as alerts_source
+from app.logging_config import setup_logging
+from app.security import SecurityHeadersMiddleware, rate_limit
+from app.validation import clean_ticker
 from app.market_calendar import is_trading_day, next_trading_day
 from app.models import AppSettings, Holding, NotifyProfile, WatchItem
 from app.sources import edgar, gdelt, usaspending
@@ -32,6 +36,9 @@ import app.sources.seasonality as seasonality_source
 import app.sources.boom_score as boom_score_source
 import app.sources.ohlc as ohlc_source
 
+setup_logging()
+logger = logging.getLogger(__name__)
+
 
 # Module-level fetchers so tests can monkeypatch them with stubs.
 def contracts_fetch():
@@ -41,10 +48,11 @@ def contracts_fetch():
 
 def news_fetch():
     """Macro headlines plus per-ticker news for every portfolio/watchlist
-    symbol. Tagged articles come last so their ticker wins the url upsert."""
+    symbol (union across all users). Tagged articles come last so their
+    ticker wins the url upsert."""
     macro = gdelt.fetch(config.NEWS_QUERY, config.NEWS_LIMIT)
     tickers = sorted(
-        {h.ticker for h in db.get_portfolio(conn)} | {w.ticker for w in db.get_watchlist(conn)}
+        set(db.get_all_portfolio_tickers(conn)) | set(db.get_all_watched_tickers(conn))
     )
     if not tickers:
         return macro
@@ -57,54 +65,56 @@ def trades_fetch():
 
 
 def signals_fetch():
-    tickers = [w.ticker for w in db.get_watchlist(conn)]
+    tickers = db.get_all_watched_tickers(conn)
     if not tickers:
         return []
     return technical_source.fetch(tickers, config.ALPHA_VANTAGE_KEY)
 
 
 def fundamentals_fetch():
-    tickers = [w.ticker for w in db.get_watchlist(conn)]
+    tickers = db.get_all_watched_tickers(conn)
     if not tickers:
         return []
     return fundamentals_source.fetch(tickers)
 
 
 def seasonality_fetch():
-    tickers = [w.ticker for w in db.get_watchlist(conn)]
+    tickers = db.get_all_watched_tickers(conn)
     if not tickers:
         return []
     return seasonality_source.fetch(tickers, config.SEASONALITY_RANGE)
 
 
 def score_fetch():
-    tickers = [w.ticker for w in db.get_watchlist(conn)]
+    tickers = db.get_all_watched_tickers(conn)
     if not tickers:
         return []
     return boom_score_source.compute_all(tickers, conn)
 
 
 def ohlc_fetch():
-    tickers = [h.ticker for h in db.get_portfolio(conn)]
+    tickers = db.get_all_portfolio_tickers(conn)
     if not tickers:
         return []
     return ohlc_source.fetch(tickers)
 
 
 def analysis_fetch():
-    """Per-holding technical analysis from stored OHLC + live price + risk settings."""
-    holdings = db.get_portfolio(conn)
-    if not holdings:
+    """Per-holding technical analysis from stored OHLC + live price.
+
+    Computed once per ticker across all users and stored UNSIZED; each user's
+    account size / risk % is applied at read time (analysis.apply_sizing)."""
+    tickers = db.get_all_portfolio_tickers(conn)
+    if not tickers:
         return []
-    profile = db.get_notify_profile(conn)
-    quote_map = {q.ticker: q.price for q in quotes.get_quotes([h.ticker for h in holdings])}
+    quote_map = {q.ticker: q.price for q in quotes.get_quotes(tickers)}
     out = []
-    for h in holdings:
-        daily = db.get_ohlc(conn, h.ticker, "daily")
+    for t in tickers:
+        daily = db.get_ohlc(conn, t, "daily")
         if len(daily) < 30:
             continue  # not enough history yet; skip rather than fabricate
-        price = quote_map.get(h.ticker) or daily[-1].close
-        out.append(analysis.build(h.ticker, daily, price, profile.account_size, profile.risk_pct))
+        price = quote_map.get(t) or daily[-1].close
+        out.append(analysis.build(t, daily, price, None, None))
     return out
 
 
@@ -125,9 +135,9 @@ SOURCES = {
     "put_call":    (lambda: put_call_source.fetch(), db.upsert_put_call, config.PUT_CALL_MIN_INTERVAL_SECONDS),
     "margin_debt": (lambda: margin_debt_source.fetch(), db.upsert_margin_debt, config.MARGIN_DEBT_MIN_INTERVAL_SECONDS),
     "congress":       (lambda: congress_source.fetch(config.CONGRESS_LOOKBACK_DAYS), db.upsert_congress_trades, config.CONGRESS_MIN_INTERVAL_SECONDS),
-    "short_interest": (lambda: short_interest_source.fetch([w.ticker for w in db.get_watchlist(conn)]), db.upsert_short_interest, None),
-    "social":         (lambda: social_source.fetch([w.ticker for w in db.get_watchlist(conn)]), db.upsert_social_sentiment, None),
-    "analyst":        (lambda: analyst_source.fetch([w.ticker for w in db.get_watchlist(conn)]), db.upsert_analyst_signals, None),
+    "short_interest": (lambda: short_interest_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_short_interest, None),
+    "social":         (lambda: social_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_social_sentiment, None),
+    "analyst":        (lambda: analyst_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_analyst_signals, None),
     "fundamentals":   (lambda: fundamentals_fetch(), db.upsert_fundamentals, None),
     "seasonality":    (lambda: seasonality_fetch(), db.upsert_seasonality, config.SEASONALITY_MIN_INTERVAL_SECONDS),
     "boom_score":     (lambda: score_fetch(), db.upsert_boom_scores, None),
@@ -152,7 +162,8 @@ def _send_daily_digest():
     try:
         notify.send_digest(conn, target.isoformat())
     except Exception:
-        pass  # delivery is already resilient; never let the job crash the scheduler
+        # Delivery is already resilient; never let the job crash the scheduler.
+        logger.exception("daily digest delivery failed")
 
 
 def parse_analysis_time(value: str) -> tuple[int, int]:
@@ -188,7 +199,8 @@ def _run_daily_analysis():
         target = today if is_trading_day(today) else next_trading_day(today)
         notify.send_digest(conn, target.isoformat())
     except Exception:
-        pass  # delivery is already resilient; never let the job crash the scheduler
+        # Delivery is already resilient; never let the job crash the scheduler.
+        logger.exception("post-analysis digest delivery failed")
 
 
 @asynccontextmanager
@@ -223,12 +235,38 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Stock Signal Dashboard", lifespan=lifespan)
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Everything under /api requires an active session except health and auth itself.
+_PUBLIC_PATHS = {"/api/health"}
+_PUBLIC_PREFIXES = ("/api/auth/",)
+
+
+@app.middleware("http")
+async def _authenticate(request, call_next):
+    request.state.user = auth.resolve_user(conn, request)
+    path = request.url.path
+    protected = (
+        path.startswith("/api")
+        and path not in _PUBLIC_PATHS
+        and not path.startswith(_PUBLIC_PREFIXES)
+    )
+    if protected and request.state.user is None:
+        return JSONResponse(status_code=401, content={"detail": "not authenticated"})
+    return await call_next(request)
+
+
+# CORS is added last (outermost) so even 401s from the auth middleware carry
+# CORS headers — the browser then surfaces the status instead of a CORS error.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=config.CORS_ORIGINS,
+    allow_credentials=True,  # session cookie
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(routes_auth.build_router(conn))
 
 
 @app.get("/api/health")
@@ -292,9 +330,10 @@ def market_sentiment():
 
 
 @app.get("/api/quotes")
-def live_quotes():
+def live_quotes(user=Depends(auth.get_current_user)):
     tickers = sorted(
-        {w.ticker for w in db.get_watchlist(conn)} | {h.ticker for h in db.get_portfolio(conn)}
+        {w.ticker for w in db.get_watchlist(conn, user.id)}
+        | {h.ticker for h in db.get_portfolio(conn, user.id)}
     )
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     if not tickers:
@@ -349,27 +388,81 @@ def chart_bars(ticker: str, interval: str = "1d"):
             status_code=400,
             detail=f"interval must be one of {', '.join(chart_data.INTERVALS)}",
         )
-    t = ticker.strip().upper()
-    if not t:
-        raise HTTPException(status_code=400, detail="ticker required")
+    t = clean_ticker(ticker)
     try:
         return chart_data.get_bars(t, interval)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"chart data unavailable: {exc}")
+    except Exception:
+        logger.warning("chart data fetch failed for %s (%s)", t, interval, exc_info=True)
+        raise HTTPException(status_code=502, detail="chart data unavailable")
+
+
+# ---------- search & on-demand analysis (any ticker) ----------
+@app.get("/api/search", dependencies=[Depends(rate_limit("search", 30, 60))])
+def search_stocks(q: str = ""):
+    q = q.strip()
+    if not (1 <= len(q) <= 40):
+        raise HTTPException(status_code=400, detail="query must be 1-40 characters")
+    try:
+        return search.search(q)
+    except Exception:
+        logger.warning("stock search failed for %r", q, exc_info=True)
+        raise HTTPException(status_code=502, detail="search unavailable")
+
+
+@app.get("/api/analyze/{ticker}", dependencies=[Depends(rate_limit("analyze", 10, 60))])
+def analyze_ticker(ticker: str, user=Depends(auth.get_current_user)):
+    """Full analysis for ANY ticker — stored for holdings, computed live otherwise."""
+    t = clean_ticker(ticker)
+    try:
+        result = analyze.analyze(conn, t)
+    except Exception:
+        logger.warning("on-demand analysis failed for %s", t, exc_info=True)
+        raise HTTPException(status_code=502, detail="analysis data unavailable")
+    a = result["analysis"]
+    if a is not None:
+        profile = db.get_notify_profile(conn, user.id)
+        a = analysis.apply_sizing(a, profile.account_size, profile.risk_pct)
+    return {
+        "analysis": a.model_dump() if a else None,
+        "daily": [b.model_dump() for b in result["daily"]],
+        "weekly": [b.model_dump() for b in result["weekly"]],
+        "source": result["source"],
+        "seasonality_anchors": analyze.get_anchors(conn, t),
+    }
 
 
 # ---------- per-holding technical analysis ----------
 @app.get("/api/analysis")
-def analyses():
-    return [a.model_dump() for a in db.get_all_analyses(conn)]
+def analyses(user=Depends(auth.get_current_user)):
+    profile = db.get_notify_profile(conn, user.id)
+    return [
+        analysis.apply_sizing(a, profile.account_size, profile.risk_pct).model_dump()
+        for a in db.get_all_analyses(conn)
+    ]
 
 
 @app.get("/api/analysis/{ticker}/report")
-def analysis_report(ticker: str, print: int = 0):
+def analysis_report(ticker: str, print: int = 0, user=Depends(auth.get_current_user)):
     """Self-contained HTML report. Default downloads; ?print=1 opens inline
     with an auto-print hook so the browser's dialog offers Save as PDF."""
-    t = ticker.strip().upper()
-    html_doc = report.build_report(conn, t, print_mode=bool(print))
+    t = clean_ticker(ticker)
+    profile = db.get_notify_profile(conn, user.id)
+    anchors = analyze.get_anchors(conn, t)
+    html_doc = report.build_report(conn, t, print_mode=bool(print), profile=profile,
+                                   anchors_override=anchors)
+    if html_doc is None:
+        # Not a holding — build the analysis on demand so any ticker gets a report.
+        try:
+            result = analyze.analyze(conn, t)
+        except Exception:
+            logger.warning("on-demand report analysis failed for %s", t, exc_info=True)
+            result = None
+        if result and result["analysis"] is not None:
+            html_doc = report.build_report(
+                conn, t, print_mode=bool(print), profile=profile,
+                analysis_override=result["analysis"], daily_override=result["daily"],
+                anchors_override=anchors,
+            )
     if html_doc is None:
         raise HTTPException(status_code=404, detail=f"no analysis for {t}")
     today = datetime.now(timezone.utc).date().isoformat()
@@ -380,9 +473,12 @@ def analysis_report(ticker: str, print: int = 0):
 
 
 @app.get("/api/analysis/{ticker}")
-def analysis_detail(ticker: str):
-    t = ticker.strip().upper()
+def analysis_detail(ticker: str, user=Depends(auth.get_current_user)):
+    t = clean_ticker(ticker)
     a = db.get_analysis(conn, t)
+    if a is not None:
+        profile = db.get_notify_profile(conn, user.id)
+        a = analysis.apply_sizing(a, profile.account_size, profile.risk_pct)
     return {
         "analysis": a.model_dump() if a else None,
         "daily": [b.model_dump() for b in db.get_ohlc(conn, t, "daily")],
@@ -398,28 +494,26 @@ class HoldingCreate(BaseModel):
 
 
 @app.get("/api/portfolio")
-def portfolio():
-    return [h.model_dump() for h in db.get_portfolio(conn)]
+def portfolio(user=Depends(auth.get_current_user)):
+    return [h.model_dump() for h in db.get_portfolio(conn, user.id)]
 
 
 @app.post("/api/portfolio")
-def add_holding(item: HoldingCreate):
-    ticker = item.ticker.strip().upper()
-    if not ticker:
-        raise HTTPException(status_code=400, detail="ticker required")
+def add_holding(item: HoldingCreate, user=Depends(auth.get_current_user)):
+    ticker = clean_ticker(item.ticker)
     if item.shares <= 0 or item.avg_cost < 0:
         raise HTTPException(status_code=400, detail="shares must be > 0 and avg_cost >= 0")
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    db.upsert_holding(conn, Holding(
+    db.upsert_holding(conn, user.id, Holding(
         ticker=ticker, shares=item.shares, avg_cost=item.avg_cost, added_at=now,
     ))
-    return [h.model_dump() for h in db.get_portfolio(conn)]
+    return [h.model_dump() for h in db.get_portfolio(conn, user.id)]
 
 
 @app.delete("/api/portfolio/{ticker}")
-def delete_holding(ticker: str):
-    db.remove_holding(conn, ticker.strip().upper())
-    return [h.model_dump() for h in db.get_portfolio(conn)]
+def delete_holding(ticker: str, user=Depends(auth.get_current_user)):
+    db.remove_holding(conn, user.id, clean_ticker(ticker))
+    return [h.model_dump() for h in db.get_portfolio(conn, user.id)]
 
 
 # ---------- notification profile (email/phone; secrets stay in env) ----------
@@ -435,13 +529,13 @@ class ProfileUpdate(BaseModel):
 
 
 @app.get("/api/profile")
-def get_profile():
-    return db.get_notify_profile(conn).model_dump()
+def get_profile(user=Depends(auth.get_current_user)):
+    return db.get_notify_profile(conn, user.id).model_dump()
 
 
 @app.put("/api/profile")
-def put_profile(item: ProfileUpdate):
-    cur = db.get_notify_profile(conn)
+def put_profile(item: ProfileUpdate, user=Depends(auth.get_current_user)):
+    cur = db.get_notify_profile(conn, user.id)
     email = ((item.email if item.email is not None else cur.email) or "").strip() or None
     phone = ((item.phone if item.phone is not None else cur.phone) or "").strip() or None
     if email and "@" not in email:
@@ -456,14 +550,14 @@ def put_profile(item: ProfileUpdate):
     risk_pct = item.risk_pct if item.risk_pct is not None else cur.risk_pct
     risk_pct = max(0.1, min(10.0, risk_pct if risk_pct else 1.0))
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    db.upsert_notify_profile(conn, NotifyProfile(
+    db.upsert_notify_profile(conn, user.id, NotifyProfile(
         email=email, phone=phone,
         email_enabled=bool(email_enabled and email),
         sms_enabled=bool(sms_enabled and phone),
         account_size=account_size, risk_pct=risk_pct,
         updated_at=now,
     ))
-    return db.get_notify_profile(conn).model_dump()
+    return db.get_notify_profile(conn, user.id).model_dump()
 
 
 # ---------- app settings (analysis schedule + refresh cadence) ----------
@@ -500,7 +594,9 @@ def get_settings():
 
 
 @app.put("/api/settings")
-def put_settings(item: SettingsUpdate):
+def put_settings(item: SettingsUpdate, user=Depends(auth.get_current_user)):
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="admin only")
     cur = db.get_app_settings(conn)
     analysis_time = (item.analysis_time if item.analysis_time is not None else cur.analysis_time).strip()
     analysis_tz = (item.analysis_tz if item.analysis_tz is not None else cur.analysis_tz).strip()
@@ -533,13 +629,13 @@ def put_settings(item: SettingsUpdate):
 
 # ---------- suggestions (digest preview + delivery) ----------
 @app.get("/api/suggestions")
-def get_suggestions():
-    return suggestions.build_digest(conn, next_trading_day().isoformat())
+def get_suggestions(user=Depends(auth.get_current_user)):
+    return suggestions.build_digest(conn, next_trading_day().isoformat(), user_id=user.id)
 
 
 @app.post("/api/suggestions/send-test")
-def send_test_suggestions():
-    return {"results": notify.send_digest(conn)}
+def send_test_suggestions(user=Depends(auth.get_current_user)):
+    return {"results": notify.send_digest_for_user(conn, user.id)}
 
 
 @app.get("/api/suggestions/log")
@@ -553,27 +649,28 @@ class AlertsRead(BaseModel):
     all: bool = False
 
 
-def _alerts_payload():
+def _alerts_payload(user_id: int):
     return {
-        "alerts": [a.model_dump() for a in db.get_alerts(conn)],
-        "unread": db.count_unread_alerts(conn),
+        "alerts": [a.model_dump() for a in db.get_alerts(conn, user_id)],
+        "unread": db.count_unread_alerts(conn, user_id),
     }
 
 
 @app.get("/api/alerts")
-def alerts():
-    return _alerts_payload()
+def alerts(user=Depends(auth.get_current_user)):
+    return _alerts_payload(user.id)
 
 
 @app.post("/api/alerts/read")
-def alerts_read(body: AlertsRead):
-    db.mark_alerts_read(conn, body.keys if not body.all else None)
-    return _alerts_payload()
+def alerts_read(body: AlertsRead, user=Depends(auth.get_current_user)):
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    db.mark_alerts_read(conn, user.id, body.keys if not body.all else None, read_at=now)
+    return _alerts_payload(user.id)
 
 
 @app.get("/api/boom-scores/history/{ticker}")
 def boom_score_history(ticker: str):
-    return db.get_boom_score_history(conn, ticker.upper())
+    return db.get_boom_score_history(conn, clean_ticker(ticker))
 
 
 # ---------- watchlist (user managed, no external source) ----------
@@ -583,24 +680,22 @@ class WatchCreate(BaseModel):
 
 
 @app.get("/api/watchlist")
-def watchlist():
-    return [w.model_dump() for w in db.get_watchlist(conn)]
+def watchlist(user=Depends(auth.get_current_user)):
+    return [w.model_dump() for w in db.get_watchlist(conn, user.id)]
 
 
 @app.post("/api/watchlist")
-def add_watch(item: WatchCreate):
-    ticker = item.ticker.strip().upper()
-    if not ticker:
-        raise HTTPException(status_code=400, detail="ticker required")
+def add_watch(item: WatchCreate, user=Depends(auth.get_current_user)):
+    ticker = clean_ticker(item.ticker)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    db.add_watch(conn, WatchItem(ticker=ticker, note=item.note.strip(), added_at=now))
-    return [w.model_dump() for w in db.get_watchlist(conn)]
+    db.add_watch(conn, user.id, WatchItem(ticker=ticker, note=item.note.strip(), added_at=now))
+    return [w.model_dump() for w in db.get_watchlist(conn, user.id)]
 
 
 @app.delete("/api/watchlist/{ticker}")
-def delete_watch(ticker: str):
-    db.remove_watch(conn, ticker.strip().upper())
-    return [w.model_dump() for w in db.get_watchlist(conn)]
+def delete_watch(ticker: str, user=Depends(auth.get_current_user)):
+    db.remove_watch(conn, user.id, clean_ticker(ticker))
+    return [w.model_dump() for w in db.get_watchlist(conn, user.id)]
 
 
 @app.get("/api/sources")
@@ -608,7 +703,7 @@ def sources():
     return [s.model_dump() for s in db.get_source_statuses(conn)]
 
 
-@app.post("/api/refresh/{source_name}")
+@app.post("/api/refresh/{source_name}", dependencies=[Depends(rate_limit("refresh", 30, 60))])
 def refresh(source_name: str):
     if source_name not in SOURCES:
         raise HTTPException(status_code=404, detail="unknown source")

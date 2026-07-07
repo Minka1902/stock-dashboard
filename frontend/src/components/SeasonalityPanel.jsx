@@ -105,6 +105,34 @@ function WindowCell({ window, lookback }) {
   );
 }
 
+// "Where was this stock on this day 1/2/5/max years ago" — close then, and
+// the move from that close to the current price when a live quote is known.
+function AnchorStrip({ anchors, price }) {
+  if (!anchors || anchors.length === 0) return null;
+  return (
+    <div className={styles.anchorStrip}>
+      {anchors.map((an) => {
+        const delta = price && an.close ? (price / an.close - 1) * 100 : null;
+        const label = an.years_ago === "max" ? "earliest" : `${an.years_ago}y ago`;
+        return (
+          <span
+            key={String(an.years_ago)}
+            className={styles.anchorChip}
+            title={`Close on ${an.date}${delta != null ? ` → ${delta >= 0 ? "+" : ""}${delta.toFixed(1)}% to now` : ""}`}
+          >
+            <em>{label}</em> ${an.close != null ? Number(an.close).toFixed(2) : "—"}
+            {delta != null && (
+              <b data-tone={delta >= 0 ? "pos" : "neg"}>
+                {delta >= 0 ? "+" : ""}{delta.toFixed(1)}%
+              </b>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function SkeletonRows({ rows = 4 }) {
   return Array.from({ length: rows }).map((_, i) => (
     <li key={i} className={styles.row}>
@@ -121,7 +149,7 @@ function SkeletonRows({ rows = 4 }) {
   ));
 }
 
-export default function SeasonalityPanel({ data, settings, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
+export default function SeasonalityPanel({ data, settings, quotes, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
   const lookback = settings?.seasonalityLookback ?? 10;
   const activeKeys = settings?.seasonalityWindows ?? ["fwd_week", "fwd_month", "cal_month"];
@@ -158,6 +186,8 @@ export default function SeasonalityPanel({ data, settings, loading, busy, onRefr
             rows.map((s) => {
               let windows = [];
               try { windows = JSON.parse(s.windows_json); } catch { /* keep empty */ }
+              let anchors = [];
+              try { anchors = JSON.parse(s.anchors_json || "[]"); } catch { /* keep empty */ }
               const byKey = Object.fromEntries(windows.map((w) => [w.key, w]));
               const shown = WINDOW_ORDER.filter((k) => activeKeys.includes(k) && byKey[k]);
               return (
@@ -166,14 +196,17 @@ export default function SeasonalityPanel({ data, settings, loading, busy, onRefr
                     <span className={styles.ticker}>{s.ticker}</span>
                     <span className={styles.meta}>{s.history_years} yrs</span>
                   </div>
-                  <div className={styles.windows}>
-                    {shown.length === 0 ? (
-                      <span className={styles.muted}>No windows selected — enable some in Settings</span>
-                    ) : (
-                      shown.map((k) => (
-                        <WindowCell key={k} window={byKey[k]} lookback={lookback} />
-                      ))
-                    )}
+                  <div className={styles.rowBody}>
+                    <div className={styles.windows}>
+                      {shown.length === 0 ? (
+                        <span className={styles.muted}>No windows selected — enable some in Settings</span>
+                      ) : (
+                        shown.map((k) => (
+                          <WindowCell key={k} window={byKey[k]} lookback={lookback} />
+                        ))
+                      )}
+                    </div>
+                    <AnchorStrip anchors={anchors} price={quotes?.[s.ticker]?.price} />
                   </div>
                 </li>
               );

@@ -1,9 +1,12 @@
 """Ingestion orchestration: run a source's fetch, store results, stamp status."""
+import logging
 import sqlite3
 from datetime import datetime, timezone
 from typing import Callable
 
 from app import db
+
+logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -61,4 +64,8 @@ def run_source(
         status = f"ok ({note})" if note else "ok"
         db.update_source_status(conn, source_name, _now_iso(), status, len(records))
     except Exception as exc:  # noqa: BLE001 - we want to capture any failure
-        db.update_source_status(conn, source_name, _now_iso(), f"error: {exc}", 0)
+        logger.warning("source %s failed", source_name, exc_info=exc)
+        # The status string is a UI feature, but raw exception text can leak
+        # internals — keep it short and typed.
+        brief = f"error: {type(exc).__name__}: {str(exc)[:120]}"
+        db.update_source_status(conn, source_name, _now_iso(), brief, 0)

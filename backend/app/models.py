@@ -222,6 +222,7 @@ class Seasonality(BaseModel):
     as_of: str             # "MM-DD" anchor (server compute date)
     history_years: int     # distinct years with >=1 usable window value
     windows_json: str      # JSON list of window objects (key/label/kind/per_year)
+    anchors_json: str = "[]"  # JSON list of {years_ago: 1|2|5|"max", date, close}
 
 
 class Holding(BaseModel):
@@ -248,6 +249,31 @@ class AppSettings(BaseModel):
     analysis_tz: str = "Asia/Jerusalem"   # IANA timezone name
     quotes_refresh_seconds: int = 30      # live-quote poll cadence, clamped 10–300 in the API
     updated_at: str = ""
+
+
+# ---------- Accounts & sessions ----------
+
+class User(BaseModel):
+    id: int
+    email: str
+    password_hash: str
+    totp_secret: str | None = None
+    totp_enabled: bool = False
+    is_admin: bool = False
+    created_at: str = ""
+
+    def public(self) -> dict:
+        """The shape safe to return to the browser."""
+        return {"id": self.id, "email": self.email, "is_admin": self.is_admin}
+
+
+class AuthSession(BaseModel):
+    token_hash: str    # sha256 of the raw cookie token; raw value never stored
+    user_id: int
+    state: str         # 'totp_setup' | 'pending_totp' | 'active'
+    created_at: str
+    expires_at: str
+    last_seen_at: str
 
 
 # ---------- Portfolio technical analysis ----------

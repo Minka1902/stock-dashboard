@@ -166,14 +166,26 @@ def _plan_section(a: StockAnalysis) -> str:
     return stats + "<h3>Target ladder</h3>" + ladder + sizing
 
 
-def build_report(conn, ticker: str, *, print_mode: bool = False) -> str | None:
-    """Full standalone HTML document, or None when no analysis exists."""
+def build_report(conn, ticker: str, *, print_mode: bool = False, profile=None,
+                 analysis_override: StockAnalysis | None = None,
+                 daily_override: list[OHLCBar] | None = None,
+                 anchors_override: list[dict] | None = None) -> str | None:
+    """Full standalone HTML document, or None when no analysis exists.
+
+    `profile` (the requesting user's NotifyProfile) personalizes position
+    sizing; stored analyses are unsized and shared across users. The overrides
+    let the on-demand analyzer render reports for never-stored tickers.
+    """
+    from app.analysis import apply_sizing  # local import avoids a cycle
+
     ticker = ticker.strip().upper()
-    a = db.get_analysis(conn, ticker)
+    a = analysis_override or db.get_analysis(conn, ticker)
     if a is None:
         return None
+    if profile is not None:
+        a = apply_sizing(a, profile.account_size, profile.risk_pct)
 
-    daily = db.get_ohlc(conn, ticker, "daily")
+    daily = daily_override if daily_override is not None else db.get_ohlc(conn, ticker, "daily")
     boom = next((b for b in db.get_boom_scores(conn) if b.ticker == ticker), None)
     fund = db.get_fundamentals_for(conn, ticker)
     season = db.get_seasonality_for(conn, ticker)
@@ -245,6 +257,33 @@ def build_report(conn, ticker: str, *, print_mode: bool = False) -> str | None:
     else:
         fund_html = "<p class='muted'>No fundamentals stored.</p>"
 
+    # "On this day in past years" — close then vs the current price.
+    anchors = anchors_override
+    if anchors is None and season:
+        try:
+            anchors = json.loads(season.anchors_json)
+        except (json.JSONDecodeError, TypeError):
+            anchors = []
+    anchors = anchors or []
+    if anchors:
+        anchor_rows = []
+        for an in anchors:
+            label = "earliest on record" if an.get("years_ago") == "max" \
+                else f"{an.get('years_ago')}y ago"
+            close = an.get("close")
+            delta = None
+            if isinstance(close, (int, float)) and close and isinstance(a.price, (int, float)):
+                delta = (a.price / close - 1.0) * 100
+            anchor_rows.append([
+                _e(label), _e(an.get("date")), f"${_n(close)}",
+                _pct(delta) + (" since" if delta is not None else ""),
+            ])
+        anchors_html = ("<h3>On this day in past years</h3>"
+                        + _table(["When", "Date", "Close", "Move to today"], anchor_rows))
+    else:
+        anchors_html = ("<h3>On this day in past years</h3>"
+                        "<p class='muted'>No deep price history available.</p>")
+
     if season:
         try:
             windows = json.loads(season.windows_json)
@@ -260,9 +299,9 @@ def build_report(conn, ticker: str, *, print_mode: bool = False) -> str | None:
             win = sum(1 for r in returns if r > 0) / len(returns) * 100
             rows.append([_e(w.get("label", w.get("key"))), _pct(avg),
                          f"{win:.0f}%", str(len(returns))])
-        season_html = _table(["Window", "Avg move", "Win rate", "Years"], rows)
+        season_html = anchors_html + _table(["Window", "Avg move", "Win rate", "Years"], rows)
     else:
-        season_html = "<p class='muted'>No seasonality history stored.</p>"
+        season_html = anchors_html + "<p class='muted'>No seasonality window stats stored.</p>"
 
     news_html = _table(
         ["Date", "Headline", "Source"],

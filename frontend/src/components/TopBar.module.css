@@ -160,3 +160,22 @@
   .status .since, .lean .leanCap { display: none; }
   .title { font-size: 16px; }
 }
+
+.user {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding-left: var(--s-2);
+  border-left: 1px solid var(--border);
+}
+.userEmail {
+  color: var(--text-faint);
+  font-size: 0.82em;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 960px) {
+  .userEmail { display: none; }
+}

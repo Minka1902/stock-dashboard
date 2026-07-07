@@ -4,10 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A personal, locally-run **Stock Signal Dashboard** that aggregates *public* signals
+A **multi-user Stock Signal Dashboard** that aggregates *public* signals
 (federal contracts, SEC Form 4 insider trades, congressional trades, news, technicals,
 short interest, social sentiment, analyst ratings, fundamentals, seasonality) and surfaces
-explainable "something is happening here" indicators per ticker.
+explainable "something is happening here" indicators per ticker. Accounts require
+**mandatory TOTP 2FA** (Google/Microsoft Authenticator); each user has their own
+watchlist, portfolio and notification profile, while market data is shared.
 
 **Core product principle — signals, not predictions.** Every signal must show its source and
 reasoning; never a black-box score and never fabricated/placeholder data. If a data source is
@@ -39,8 +41,43 @@ npm run dev      # Vite dev server on :5173
 npm run build
 npm run lint     # eslint
 ```
-The frontend talks to `http://localhost:8000` (hardcoded `BASE` in `src/api.js`); the backend
-CORS allowlist is locked to `http://localhost:5173` (`app/main.py`). Both must run together.
+The frontend talks to `http://localhost:8000` (override with `VITE_API_BASE`, see
+`frontend/.env.example`); the backend CORS allowlist defaults to `http://localhost:5173`
+(override with `STOCKS_CORS_ORIGINS`; wildcard rejected because requests carry the session
+cookie). Both must run together.
+
+**Run exactly one uvicorn worker.** The scheduler, TTL caches, rate limiter and the shared
+SQLite connection are all in-process — see `docs/scaling-roadmap.md` before scaling out.
+
+## Auth & multi-tenancy
+
+- **`app/auth.py` + `app/routes_auth.py`** — Argon2id passwords; opaque session tokens
+  (SHA-256-hashed in the `sessions` table) delivered as httpOnly SameSite=Lax cookies; 2FA is
+  mandatory: register → `totp_setup` session → QR enrollment (pyotp + segno SVG) → `active`;
+  login → `pending_totp` → 6-digit verify → `active`. Tokens rotate on every state upgrade.
+  Single-use recovery codes are stored hashed.
+- An ASGI middleware in `app/main.py` resolves the cookie once per request into
+  `request.state.user` and 401s everything under `/api` except `/api/health` and `/api/auth/*`.
+  Routes needing the user take `Depends(auth.get_current_user)`.
+- **Per-user tables**: `watchlist`, `portfolio` (PK `(user_id, ticker)`), `notify_profile`
+  (PK `user_id`), `alert_reads`. **Shared**: all market-data tables, `stock_analysis` (stored
+  *unsized*; `analysis.apply_sizing` personalizes at read time), `app_settings` (PUT is
+  admin-only). The first registered account becomes admin and claims legacy `user_id=0` rows
+  (`db.claim_legacy_rows`); old single-user DBs are rebuilt in place by `init_schema`.
+- Tests authenticate a `TestClient` with `tests/conftest.py::authenticate` (registers +
+  enrolls TOTP via pyotp).
+- Rate limiting (`app/security.py`) is a fixed-window in-memory limiter; ticker inputs are
+  whitelisted by `app/validation.py::clean_ticker` before reaching outbound URLs.
+
+## On-demand analysis & search (any ticker)
+
+- `GET /api/search?q=` — Yahoo keyless search (`app/search.py`, TTL-cached), surfaced in the
+  frontend Cmd/Ctrl+K palette.
+- `GET /api/analyze/{ticker}` — `app/analyze.py`: stored fast-path for holdings, otherwise a
+  live 2y-bars build (TTL-cached, **never persisted** — `stock_analysis` stays portfolio-only).
+  Also powers the HTML report fallback for never-watched tickers and serves the seasonality
+  anchors ("this day 1/2/5/max years ago", `seasonality.compute_anchors`, stored in
+  `anchors_json`).
 
 ## Backend architecture
 

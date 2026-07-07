@@ -61,14 +61,14 @@ def send_sms(profile: NotifyProfile, body: str) -> str:
         return f"error: {exc}"
 
 
-def send_digest(conn, for_date: str | None = None) -> list[dict]:
-    """Build the digest and deliver on every enabled+configured channel.
+def send_digest_for_user(conn, user_id: int, for_date: str | None = None) -> list[dict]:
+    """Build one user's digest and deliver on their enabled+configured channels.
 
     Logs each channel's outcome to suggestion_log and returns per-channel status.
     """
-    digest = build_digest(conn, for_date)
+    digest = build_digest(conn, for_date, user_id)
     for_date = digest["for_date"]
-    profile = db.get_notify_profile(conn)
+    profile = db.get_notify_profile(conn, user_id)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     subject, text, html = render_email(digest)
@@ -86,19 +86,33 @@ def send_digest(conn, for_date: str | None = None) -> list[dict]:
     return results
 
 
+def send_digest(conn, for_date: str | None = None) -> list[dict]:
+    """Scheduled delivery: every user with an enabled channel gets their own digest."""
+    results = []
+    for user in db.get_users(conn):
+        profile = db.get_notify_profile(conn, user.id)
+        if not (profile.email_enabled or profile.sms_enabled):
+            continue
+        results.extend(send_digest_for_user(conn, user.id, for_date))
+    return results
+
+
 def push_alert(conn, alert: Alert) -> None:
-    """Push a single alert via any enabled+configured channel. Resilient; sets
-    alert.pushed when at least one channel delivered. Logged to suggestion_log."""
-    profile = db.get_notify_profile(conn)
+    """Push a single alert to every user with an enabled+configured channel.
+    Resilient; sets alert.pushed when at least one delivery succeeded.
+    Logged to suggestion_log."""
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     subject = f"[{alert.severity.upper()}] {alert.ticker}: {alert.title}"
     body = f"{alert.title} — {alert.message}"
     html = f"<b>{alert.ticker}</b> · {alert.title}<br>{alert.message}"
 
-    statuses = [
-        ("email", send_email(profile, subject, body, html)),
-        ("sms", send_sms(profile, f"{alert.ticker}: {body}")),
-    ]
+    statuses = []
+    for user in db.get_users(conn):
+        profile = db.get_notify_profile(conn, user.id)
+        if not (profile.email_enabled or profile.sms_enabled):
+            continue
+        statuses.append(("email", send_email(profile, subject, body, html)))
+        statuses.append(("sms", send_sms(profile, f"{alert.ticker}: {body}")))
     if any(s == "sent" for _, s in statuses):
         alert.pushed = True
 

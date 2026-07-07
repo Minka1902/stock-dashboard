@@ -14,7 +14,7 @@ const LEAN_LABEL = {
 export default function TopBar({
   title, index, sources, busy, onRefresh, theme, onToggleTheme,
   dyslexia, onToggleDyslexia, lean, alerts = [], unreadAlerts = 0,
-  onMarkAlertsRead, onOpenCommand,
+  onMarkAlertsRead, onOpenCommand, user, onLogout, hasTour, onStartTour,
 }) {
   const refreshed = sources
     .filter((s) => s.last_refreshed_at)
@@ -47,14 +47,29 @@ export default function TopBar({
           type="button"
           className={styles.cmd}
           onClick={onOpenCommand}
-          aria-label="Open command palette"
-          title="Jump to (Ctrl/Cmd + K)"
+          aria-label="Open command palette and stock search"
+          title="Jump to a view, or search any stock (Ctrl/Cmd + K)"
+          data-tour="palette"
         >
           <Icon name="command" size={13} />
           <kbd>K</kbd>
         </button>
 
-        <AlertsBell alerts={alerts} unread={unreadAlerts} onMarkRead={onMarkAlertsRead} />
+        <span data-tour="alerts">
+          <AlertsBell alerts={alerts} unread={unreadAlerts} onMarkRead={onMarkAlertsRead} />
+        </span>
+
+        {hasTour && (
+          <button
+            type="button"
+            className={styles.iconBtn}
+            onClick={onStartTour}
+            title="Take a guided tour of this view"
+            aria-label="Take a guided tour of this view"
+          >
+            <span aria-hidden="true" style={{ fontWeight: 700 }}>?</span>
+          </button>
+        )}
 
         <button
           className={styles.iconBtn}
@@ -74,12 +89,27 @@ export default function TopBar({
         >
           <Icon name={theme === "dark" ? "sun" : "moon"} size={17} />
         </button>
-        <button className={styles.refresh} onClick={onRefresh} disabled={busy}>
+        <button className={styles.refresh} onClick={onRefresh} disabled={busy} data-tour="refresh">
           <span className={busy ? styles.spin : ""}>
             <Icon name="refresh" size={15} />
           </span>
           {busy ? "Syncing" : "Refresh"}
         </button>
+
+        {user && (
+          <span className={styles.user} title={`Signed in as ${user.email}`}>
+            <span className={styles.userEmail}>{user.email}</span>
+            <button
+              type="button"
+              className={styles.iconBtn}
+              onClick={onLogout}
+              title="Sign out"
+              aria-label="Sign out"
+            >
+              <Icon name="arrowRight" size={15} />
+            </button>
+          </span>
+        )}
       </div>
     </header>
   );

@@ -104,7 +104,8 @@ def _seasonality_signal(season, primary=_PRIMARY_WINDOW):
     return stats["avg"], stats["win_rate"], stats["n"], win.get("label", primary)
 
 
-def build_digest(conn, for_date: str | None = None) -> dict:
+def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
+    """Digest scoped to one user's holdings + watchlist (market data is shared)."""
     if for_date is None:
         for_date = next_trading_day().isoformat()
     ref = date.fromisoformat(for_date)
@@ -112,9 +113,9 @@ def build_digest(conn, for_date: str | None = None) -> dict:
     boom = {b.ticker: b for b in db.get_boom_scores(conn)}
     tech = {t.ticker: t for t in db.get_technical_signals(conn)}
     analyst = {a.ticker: a for a in db.get_analyst_signals(conn)}
-    portfolio = db.get_portfolio(conn)
+    portfolio = db.get_portfolio(conn, user_id)
     held = {h.ticker for h in portfolio}
-    watchlist = [w.ticker for w in db.get_watchlist(conn)]
+    watchlist = [w.ticker for w in db.get_watchlist(conn, user_id)]
 
     fg_score = db.get_latest_fear_greed_score(conn)
     uninversion = db.has_yield_uninversion(conn)

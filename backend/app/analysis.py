@@ -590,5 +590,22 @@ def build(ticker: str, daily: list[OHLCBar], price: float | None,
     )
 
 
+def apply_sizing(a: StockAnalysis, account_size: float | None,
+                 risk_pct: float | None) -> StockAnalysis:
+    """Fill per-user position sizing into a globally-computed analysis.
+
+    Analyses are stored unsized (shared across users); the requesting user's
+    account size / risk tolerance is applied at read time.
+    """
+    out = a.model_copy(deep=True)
+    out.account_size = account_size
+    out.risk_pct = risk_pct
+    out.suggested_shares = None
+    if (account_size and risk_pct and risk_pct > 0
+            and out.risk_per_share and out.risk_per_share > 0):
+        out.suggested_shares = int((account_size * (risk_pct / 100.0)) / out.risk_per_share)
+    return out
+
+
 def _r(v: float | None) -> float | None:
     return round(v, 4) if v is not None else None

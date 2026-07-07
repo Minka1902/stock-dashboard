@@ -11,6 +11,7 @@ from app.models import (
     Alert,
     AnalystSignal,
     AppSettings,
+    AuthSession,
     BoomScore,
     CongressTrade,
     ContractRecord,
@@ -31,6 +32,7 @@ from app.models import (
     SourceStatus,
     SuggestionLogEntry,
     TechnicalSignal,
+    User,
     VixPoint,
     WatchItem,
     YieldPoint,
@@ -54,6 +56,11 @@ class _LockingConnection(sqlite3.Connection):
 def connect(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, factory=_LockingConnection, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    # WAL lets readers proceed while a write is in flight; busy_timeout keeps
+    # a briefly-locked DB from surfacing as an exception under load.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
@@ -62,6 +69,79 @@ def _try_add_column(conn: sqlite3.Connection, table: str, col: str, col_def: str
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}")
     except Exception:
         pass  # column already exists
+
+
+def _migrate_per_user_tables(conn: sqlite3.Connection) -> None:
+    """One-time rebuild of pre-auth single-user tables to per-user shape.
+
+    SQLite can't alter a primary key, so tables created before multi-user
+    support are rebuilt with rows parked under user_id=0 ("unclaimed legacy").
+    The first account to register claims them (see claim_legacy_rows).
+    Idempotent: skipped once the user_id column exists.
+    """
+    def has_col(table: str, col: str) -> bool:
+        return any(r[1] == col for r in conn.execute(f"PRAGMA table_info({table})"))
+
+    if not has_col("watchlist", "user_id"):
+        conn.executescript(
+            """
+            CREATE TABLE watchlist_v2 (
+                user_id  INTEGER NOT NULL DEFAULT 0,
+                ticker   TEXT NOT NULL,
+                note     TEXT NOT NULL,
+                added_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, ticker)
+            );
+            INSERT INTO watchlist_v2 (user_id, ticker, note, added_at)
+                SELECT 0, ticker, note, added_at FROM watchlist;
+            DROP TABLE watchlist;
+            ALTER TABLE watchlist_v2 RENAME TO watchlist;
+            """
+        )
+
+    if not has_col("portfolio", "user_id"):
+        conn.executescript(
+            """
+            CREATE TABLE portfolio_v2 (
+                user_id  INTEGER NOT NULL DEFAULT 0,
+                ticker   TEXT NOT NULL,
+                shares   REAL NOT NULL,
+                avg_cost REAL NOT NULL,
+                added_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, ticker)
+            );
+            INSERT INTO portfolio_v2 (user_id, ticker, shares, avg_cost, added_at)
+                SELECT 0, ticker, shares, avg_cost, added_at FROM portfolio;
+            DROP TABLE portfolio;
+            ALTER TABLE portfolio_v2 RENAME TO portfolio;
+            """
+        )
+
+    if not has_col("notify_profile", "user_id"):
+        conn.executescript(
+            """
+            CREATE TABLE notify_profile_v2 (
+                user_id       INTEGER PRIMARY KEY,
+                email         TEXT,
+                phone         TEXT,
+                email_enabled INTEGER NOT NULL DEFAULT 0,
+                sms_enabled   INTEGER NOT NULL DEFAULT 0,
+                account_size  REAL,
+                risk_pct      REAL NOT NULL DEFAULT 1.0,
+                updated_at    TEXT NOT NULL DEFAULT ''
+            );
+            INSERT INTO notify_profile_v2
+                (user_id, email, phone, email_enabled, sms_enabled,
+                 account_size, risk_pct, updated_at)
+                SELECT 0, email, phone, email_enabled, sms_enabled,
+                       account_size, COALESCE(risk_pct, 1.0), updated_at
+                FROM notify_profile;
+            DROP TABLE notify_profile;
+            ALTER TABLE notify_profile_v2 RENAME TO notify_profile;
+            """
+        )
+
+    conn.commit()
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
@@ -98,9 +178,11 @@ def init_schema(conn: sqlite3.Connection) -> None:
             filed_at         TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS watchlist (
-            ticker   TEXT PRIMARY KEY,
+            user_id  INTEGER NOT NULL DEFAULT 0,
+            ticker   TEXT NOT NULL,
             note     TEXT NOT NULL,
-            added_at TEXT NOT NULL
+            added_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, ticker)
         );
         CREATE TABLE IF NOT EXISTS source_status (
             source            TEXT PRIMARY KEY,
@@ -234,20 +316,25 @@ def init_schema(conn: sqlite3.Connection) -> None:
             computed_at   TEXT NOT NULL,
             as_of         TEXT NOT NULL,
             history_years INTEGER NOT NULL DEFAULT 0,
-            windows_json  TEXT NOT NULL DEFAULT '[]'
+            windows_json  TEXT NOT NULL DEFAULT '[]',
+            anchors_json  TEXT NOT NULL DEFAULT '[]'
         );
         CREATE TABLE IF NOT EXISTS portfolio (
-            ticker   TEXT PRIMARY KEY,
+            user_id  INTEGER NOT NULL DEFAULT 0,
+            ticker   TEXT NOT NULL,
             shares   REAL NOT NULL,
             avg_cost REAL NOT NULL,
-            added_at TEXT NOT NULL
+            added_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, ticker)
         );
         CREATE TABLE IF NOT EXISTS notify_profile (
-            id            INTEGER PRIMARY KEY CHECK (id = 1),
+            user_id       INTEGER PRIMARY KEY,
             email         TEXT,
             phone         TEXT,
             email_enabled INTEGER NOT NULL DEFAULT 0,
             sms_enabled   INTEGER NOT NULL DEFAULT 0,
+            account_size  REAL,
+            risk_pct      REAL NOT NULL DEFAULT 1.0,
             updated_at    TEXT NOT NULL DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS app_settings (
@@ -295,12 +382,43 @@ def init_schema(conn: sqlite3.Connection) -> None:
             computed_at  TEXT NOT NULL,
             payload_json TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS users (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            email         TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            password_hash TEXT NOT NULL,
+            totp_secret   TEXT,
+            totp_enabled  INTEGER NOT NULL DEFAULT 0,
+            is_admin      INTEGER NOT NULL DEFAULT 0,
+            created_at    TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS sessions (
+            token_hash   TEXT PRIMARY KEY,
+            user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            state        TEXT NOT NULL,
+            created_at   TEXT NOT NULL,
+            expires_at   TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS recovery_codes (
+            user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            code_hash TEXT NOT NULL,
+            used_at   TEXT,
+            PRIMARY KEY (user_id, code_hash)
+        );
+        CREATE TABLE IF NOT EXISTS alert_reads (
+            user_id   INTEGER NOT NULL,
+            dedup_key TEXT NOT NULL,
+            read_at   TEXT NOT NULL,
+            PRIMARY KEY (user_id, dedup_key)
+        );
         """
     )
     conn.commit()
 
+    # Older DBs may predate these columns; the per-user rebuild below copies them.
     _try_add_column(conn, "notify_profile", "account_size", "REAL")
     _try_add_column(conn, "notify_profile", "risk_pct", "REAL NOT NULL DEFAULT 1.0")
+    _migrate_per_user_tables(conn)
     _try_add_column(conn, "news", "ticker", "TEXT NOT NULL DEFAULT ''")
 
     # Migrate existing tables: add new columns (safe on pre-existing databases).
@@ -339,6 +457,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         _try_add_column(conn, "boom_scores", col, col_def)
 
     _try_add_column(conn, "contracts", "ticker", "TEXT")
+    _try_add_column(conn, "seasonality", "anchors_json", "TEXT NOT NULL DEFAULT '[]'")
     conn.commit()
 
 
@@ -458,27 +577,38 @@ def get_trades(conn: sqlite3.Connection, limit: int = 60) -> list[InsiderTrade]:
     return [InsiderTrade(**dict(row)) for row in cur.fetchall()]
 
 
-# ---------- watchlist (user managed) ----------
-def add_watch(conn: sqlite3.Connection, item: WatchItem) -> None:
+# ---------- watchlist (user managed, per-user) ----------
+def add_watch(conn: sqlite3.Connection, user_id: int, item: WatchItem) -> None:
     conn.execute(
         """
-        INSERT INTO watchlist (ticker, note, added_at)
-        VALUES (:ticker, :note, :added_at)
-        ON CONFLICT(ticker) DO UPDATE SET note=excluded.note
+        INSERT INTO watchlist (user_id, ticker, note, added_at)
+        VALUES (:user_id, :ticker, :note, :added_at)
+        ON CONFLICT(user_id, ticker) DO UPDATE SET note=excluded.note
         """,
-        item.model_dump(),
+        {"user_id": user_id, **item.model_dump()},
     )
     conn.commit()
 
 
-def remove_watch(conn: sqlite3.Connection, ticker: str) -> None:
-    conn.execute("DELETE FROM watchlist WHERE ticker = ?", (ticker,))
+def remove_watch(conn: sqlite3.Connection, user_id: int, ticker: str) -> None:
+    conn.execute(
+        "DELETE FROM watchlist WHERE user_id = ? AND ticker = ?", (user_id, ticker))
     conn.commit()
 
 
-def get_watchlist(conn: sqlite3.Connection) -> list[WatchItem]:
-    cur = conn.execute("SELECT * FROM watchlist ORDER BY added_at DESC")
+def get_watchlist(conn: sqlite3.Connection, user_id: int) -> list[WatchItem]:
+    cur = conn.execute(
+        "SELECT ticker, note, added_at FROM watchlist WHERE user_id = ? "
+        "ORDER BY added_at DESC",
+        (user_id,),
+    )
     return [WatchItem(**dict(row)) for row in cur.fetchall()]
+
+
+def get_all_watched_tickers(conn: sqlite3.Connection) -> list[str]:
+    """Every ticker on any user's watchlist — the ingestion pipeline's universe."""
+    cur = conn.execute("SELECT DISTINCT ticker FROM watchlist ORDER BY ticker")
+    return [row[0] for row in cur.fetchall()]
 
 
 # ---------- source status ----------
@@ -1114,12 +1244,13 @@ def upsert_seasonality(conn: sqlite3.Connection, records: list[Seasonality]) -> 
     conn.executemany(
         """
         INSERT INTO seasonality
-            (ticker, computed_at, as_of, history_years, windows_json)
+            (ticker, computed_at, as_of, history_years, windows_json, anchors_json)
         VALUES
-            (:ticker, :computed_at, :as_of, :history_years, :windows_json)
+            (:ticker, :computed_at, :as_of, :history_years, :windows_json, :anchors_json)
         ON CONFLICT(ticker) DO UPDATE SET
             computed_at=excluded.computed_at, as_of=excluded.as_of,
-            history_years=excluded.history_years, windows_json=excluded.windows_json
+            history_years=excluded.history_years, windows_json=excluded.windows_json,
+            anchors_json=excluded.anchors_json
         """,
         [r.model_dump() for r in records],
     )
@@ -1139,33 +1270,44 @@ def get_seasonality_for(conn: sqlite3.Connection, ticker: str) -> Seasonality | 
 
 # ---------- portfolio (user managed) ----------
 
-def upsert_holding(conn: sqlite3.Connection, item: Holding) -> None:
+def upsert_holding(conn: sqlite3.Connection, user_id: int, item: Holding) -> None:
     conn.execute(
         """
-        INSERT INTO portfolio (ticker, shares, avg_cost, added_at)
-        VALUES (:ticker, :shares, :avg_cost, :added_at)
-        ON CONFLICT(ticker) DO UPDATE SET
+        INSERT INTO portfolio (user_id, ticker, shares, avg_cost, added_at)
+        VALUES (:user_id, :ticker, :shares, :avg_cost, :added_at)
+        ON CONFLICT(user_id, ticker) DO UPDATE SET
             shares=excluded.shares, avg_cost=excluded.avg_cost
         """,
-        item.model_dump(),
+        {"user_id": user_id, **item.model_dump()},
     )
     conn.commit()
 
 
-def remove_holding(conn: sqlite3.Connection, ticker: str) -> None:
-    conn.execute("DELETE FROM portfolio WHERE ticker = ?", (ticker,))
+def remove_holding(conn: sqlite3.Connection, user_id: int, ticker: str) -> None:
+    conn.execute(
+        "DELETE FROM portfolio WHERE user_id = ? AND ticker = ?", (user_id, ticker))
     conn.commit()
 
 
-def get_portfolio(conn: sqlite3.Connection) -> list[Holding]:
-    cur = conn.execute("SELECT * FROM portfolio ORDER BY ticker ASC")
+def get_portfolio(conn: sqlite3.Connection, user_id: int) -> list[Holding]:
+    cur = conn.execute(
+        "SELECT ticker, shares, avg_cost, added_at FROM portfolio "
+        "WHERE user_id = ? ORDER BY ticker ASC",
+        (user_id,),
+    )
     return [Holding(**dict(row)) for row in cur.fetchall()]
 
 
-# ---------- notify profile (single row) ----------
+def get_all_portfolio_tickers(conn: sqlite3.Connection) -> list[str]:
+    """Every ticker held by any user — the ingestion pipeline's universe."""
+    cur = conn.execute("SELECT DISTINCT ticker FROM portfolio ORDER BY ticker")
+    return [row[0] for row in cur.fetchall()]
 
-def get_notify_profile(conn: sqlite3.Connection) -> NotifyProfile:
-    cur = conn.execute("SELECT * FROM notify_profile WHERE id = 1")
+
+# ---------- notify profile (one row per user) ----------
+
+def get_notify_profile(conn: sqlite3.Connection, user_id: int) -> NotifyProfile:
+    cur = conn.execute("SELECT * FROM notify_profile WHERE user_id = ?", (user_id,))
     row = cur.fetchone()
     if row is None:
         return NotifyProfile()
@@ -1181,18 +1323,20 @@ def get_notify_profile(conn: sqlite3.Connection) -> NotifyProfile:
     )
 
 
-def upsert_notify_profile(conn: sqlite3.Connection, profile: NotifyProfile) -> None:
+def upsert_notify_profile(conn: sqlite3.Connection, user_id: int,
+                          profile: NotifyProfile) -> None:
     conn.execute(
         """
-        INSERT INTO notify_profile (id, email, phone, email_enabled, sms_enabled, account_size, risk_pct, updated_at)
-        VALUES (1, :email, :phone, :email_enabled, :sms_enabled, :account_size, :risk_pct, :updated_at)
-        ON CONFLICT(id) DO UPDATE SET
+        INSERT INTO notify_profile (user_id, email, phone, email_enabled, sms_enabled, account_size, risk_pct, updated_at)
+        VALUES (:user_id, :email, :phone, :email_enabled, :sms_enabled, :account_size, :risk_pct, :updated_at)
+        ON CONFLICT(user_id) DO UPDATE SET
             email=excluded.email, phone=excluded.phone,
             email_enabled=excluded.email_enabled, sms_enabled=excluded.sms_enabled,
             account_size=excluded.account_size, risk_pct=excluded.risk_pct,
             updated_at=excluded.updated_at
         """,
         {
+            "user_id": user_id,
             "email": profile.email,
             "phone": profile.phone,
             "email_enabled": int(profile.email_enabled),
@@ -1347,24 +1491,48 @@ def _row_to_alert(d: dict) -> Alert:
     return Alert(**d)
 
 
-def get_alerts(conn: sqlite3.Connection, limit: int = 100) -> list[Alert]:
+def get_alerts(conn: sqlite3.Connection, user_id: int, limit: int = 100) -> list[Alert]:
+    """Alerts are global (market events); read-state is per user via alert_reads."""
     cur = conn.execute(
-        "SELECT dedup_key, created_at, ticker, type, severity, title, message, read, pushed "
-        "FROM alerts ORDER BY id DESC LIMIT ?",
-        (limit,),
+        """
+        SELECT a.dedup_key, a.created_at, a.ticker, a.type, a.severity, a.title,
+               a.message, (ar.dedup_key IS NOT NULL) AS read, a.pushed
+        FROM alerts a
+        LEFT JOIN alert_reads ar
+            ON ar.dedup_key = a.dedup_key AND ar.user_id = ?
+        ORDER BY a.id DESC LIMIT ?
+        """,
+        (user_id, limit),
     )
     return [_row_to_alert(dict(row)) for row in cur.fetchall()]
 
 
-def count_unread_alerts(conn: sqlite3.Connection) -> int:
-    return conn.execute("SELECT COUNT(*) FROM alerts WHERE read = 0").fetchone()[0]
+def count_unread_alerts(conn: sqlite3.Connection, user_id: int) -> int:
+    return conn.execute(
+        """
+        SELECT COUNT(*) FROM alerts a
+        WHERE NOT EXISTS (
+            SELECT 1 FROM alert_reads ar
+            WHERE ar.user_id = ? AND ar.dedup_key = a.dedup_key
+        )
+        """,
+        (user_id,),
+    ).fetchone()[0]
 
 
-def mark_alerts_read(conn: sqlite3.Connection, keys: list[str] | None = None) -> None:
+def mark_alerts_read(conn: sqlite3.Connection, user_id: int,
+                     keys: list[str] | None = None, read_at: str = "") -> None:
     if keys:
-        conn.executemany("UPDATE alerts SET read = 1 WHERE dedup_key = ?", [(k,) for k in keys])
+        conn.executemany(
+            "INSERT OR IGNORE INTO alert_reads (user_id, dedup_key, read_at) VALUES (?, ?, ?)",
+            [(user_id, k, read_at) for k in keys],
+        )
     else:
-        conn.execute("UPDATE alerts SET read = 1 WHERE read = 0")
+        conn.execute(
+            "INSERT OR IGNORE INTO alert_reads (user_id, dedup_key, read_at) "
+            "SELECT ?, dedup_key, ? FROM alerts",
+            (user_id, read_at),
+        )
     conn.commit()
 
 
@@ -1394,6 +1562,127 @@ def upsert_alert_state(
         (ticker, score, int(golden_cross) if golden_cross is not None else None,
          int(insider_cluster_buy) if insider_cluster_buy is not None else None, updated_at),
     )
+    conn.commit()
+
+
+# ---------- users, sessions & recovery codes ----------
+def create_user(conn: sqlite3.Connection, email: str, password_hash: str,
+                created_at: str, is_admin: bool = False) -> User:
+    cur = conn.execute(
+        "INSERT INTO users (email, password_hash, created_at, is_admin) VALUES (?, ?, ?, ?)",
+        (email, password_hash, created_at, int(is_admin)),
+    )
+    conn.commit()
+    return get_user(conn, cur.lastrowid)
+
+
+def get_user(conn: sqlite3.Connection, user_id: int) -> User | None:
+    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return User(**dict(row)) if row else None
+
+
+def get_user_by_email(conn: sqlite3.Connection, email: str) -> User | None:
+    row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    return User(**dict(row)) if row else None
+
+
+def count_users(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+
+def get_users(conn: sqlite3.Connection) -> list[User]:
+    cur = conn.execute("SELECT * FROM users ORDER BY id ASC")
+    return [User(**dict(row)) for row in cur.fetchall()]
+
+
+def set_totp_secret(conn: sqlite3.Connection, user_id: int, secret: str) -> None:
+    conn.execute("UPDATE users SET totp_secret = ? WHERE id = ?", (secret, user_id))
+    conn.commit()
+
+
+def enable_totp(conn: sqlite3.Connection, user_id: int) -> None:
+    conn.execute("UPDATE users SET totp_enabled = 1 WHERE id = ?", (user_id,))
+    conn.commit()
+
+
+def create_session(conn: sqlite3.Connection, session: AuthSession) -> None:
+    conn.execute(
+        """
+        INSERT INTO sessions (token_hash, user_id, state, created_at, expires_at, last_seen_at)
+        VALUES (:token_hash, :user_id, :state, :created_at, :expires_at, :last_seen_at)
+        """,
+        session.model_dump(),
+    )
+    conn.commit()
+
+
+def get_session(conn: sqlite3.Connection, token_hash: str) -> AuthSession | None:
+    row = conn.execute(
+        "SELECT * FROM sessions WHERE token_hash = ?", (token_hash,)
+    ).fetchone()
+    return AuthSession(**dict(row)) if row else None
+
+
+def touch_session(conn: sqlite3.Connection, token_hash: str, last_seen_at: str) -> None:
+    conn.execute(
+        "UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?",
+        (last_seen_at, token_hash),
+    )
+    conn.commit()
+
+
+def delete_session(conn: sqlite3.Connection, token_hash: str) -> None:
+    conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
+    conn.commit()
+
+
+def purge_expired_sessions(conn: sqlite3.Connection, now_iso: str) -> None:
+    conn.execute("DELETE FROM sessions WHERE expires_at < ?", (now_iso,))
+    conn.commit()
+
+
+def replace_recovery_codes(conn: sqlite3.Connection, user_id: int,
+                           code_hashes: list[str]) -> None:
+    conn.execute("DELETE FROM recovery_codes WHERE user_id = ?", (user_id,))
+    conn.executemany(
+        "INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)",
+        [(user_id, h) for h in code_hashes],
+    )
+    conn.commit()
+
+
+def consume_recovery_code(conn: sqlite3.Connection, user_id: int,
+                          code_hash: str, used_at: str) -> bool:
+    """Mark one unused code as used. Returns False if no such unused code."""
+    cur = conn.execute(
+        "UPDATE recovery_codes SET used_at = ? "
+        "WHERE user_id = ? AND code_hash = ? AND used_at IS NULL",
+        (used_at, user_id, code_hash),
+    )
+    conn.commit()
+    return cur.rowcount == 1
+
+
+def count_unused_recovery_codes(conn: sqlite3.Connection, user_id: int) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) FROM recovery_codes WHERE user_id = ? AND used_at IS NULL",
+        (user_id,),
+    ).fetchone()[0]
+
+
+def _has_column(conn: sqlite3.Connection, table: str, col: str) -> bool:
+    return any(r[1] == col for r in conn.execute(f"PRAGMA table_info({table})"))
+
+
+def claim_legacy_rows(conn: sqlite3.Connection, user_id: int) -> None:
+    """Assign pre-auth single-user data (user_id=0 sentinel) to `user_id`.
+
+    Called when the first account registers, so an existing single-user DB
+    migrates to its owner. No-op on tables that predate the user_id column.
+    """
+    for table in ("watchlist", "portfolio", "notify_profile"):
+        if _has_column(conn, table, "user_id"):
+            conn.execute(f"UPDATE {table} SET user_id = ? WHERE user_id = 0", (user_id,))
     conn.commit()
 
 

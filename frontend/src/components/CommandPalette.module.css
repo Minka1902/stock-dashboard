@@ -114,3 +114,13 @@
 @keyframes rise {
   from { opacity: 0; transform: translateY(8px) scale(0.98); }
 }
+
+.section {
+  padding: var(--s-2) var(--s-3) var(--s-1);
+  color: var(--text-faint);
+  font-size: 0.72em;
+  text-transform: uppercase;
+  letter-spacing: var(--caption-spacing);
+  border-top: 1px solid var(--border);
+  margin-top: var(--s-1);
+}

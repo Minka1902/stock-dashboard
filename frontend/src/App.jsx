@@ -30,6 +30,9 @@ import SettingsPanel from "./components/SettingsPanel";
 import SuggestionsPanel from "./components/SuggestionsPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
 import GuidePanel from "./components/GuidePanel";
+import StockDetailPanel from "./components/StockDetailPanel";
+import Tour from "./components/Tour";
+import { TOURS } from "./lib/tours";
 import styles from "./App.module.css";
 
 const TITLES = {
@@ -65,7 +68,7 @@ const MODULE_INDEX = {
   watchlist: "06",
 };
 
-export default function App() {
+export default function App({ auth }) {
   const data = useDashboardData();
   const appSettingsApi = useAppSettings();
   const { quotes, quotesByTicker, asOf } = useLiveQuotes(
@@ -75,6 +78,11 @@ export default function App() {
   const { settings, setSetting } = useSettings();
   const [view, setView] = useState("sentiment");
   const [cmdOpen, setCmdOpen] = useState(false);
+  // Any-ticker detail view (opened from search); overlays the current view.
+  const [detailTicker, setDetailTicker] = useState(null);
+  const navigate = (v) => { setDetailTicker(null); setView(v); };
+  // Guided tour: which view's tour is currently running (null = none).
+  const [tourView, setTourView] = useState(null);
 
   // Cmd/Ctrl+K toggles the command palette (palette mounts only while open).
   useEffect(() => {
@@ -109,14 +117,28 @@ export default function App() {
     markAlertsRead,
   } = data;
 
+  // Auto-run each view's tour the first time it's visited (marked seen on close).
+  useEffect(() => {
+    if (loading || detailTicker || !TOURS[view] || settings.toursSeen[view]) {
+      return undefined;
+    }
+    const id = setTimeout(() => setTourView(view), 450); // let the panel render first
+    return () => clearTimeout(id);
+  }, [view, loading, detailTicker, settings.toursSeen]);
+
+  const closeTour = () => {
+    if (tourView) setSetting("toursSeen", { ...settings.toursSeen, [tourView]: true });
+    setTourView(null);
+  };
+
   const commandItems = [
-    { id: "sentiment",   label: "Market Sentiment", hint: "the mood",   icon: "gauge",    run: () => setView("sentiment") },
-    { id: "suggestions", label: "Suggestions",      hint: "what to do", icon: "spark",    run: () => setView("suggestions") },
-    { id: "portfolio",   label: "Portfolio",        hint: "your book",  icon: "wallet",   run: () => setView("portfolio") },
-    { id: "trades",      label: "Trades",           hint: "insiders",   icon: "trending", run: () => setView("trades") },
-    { id: "news",        label: "News",             hint: "the tape",   icon: "news",     run: () => setView("news") },
-    { id: "watchlist",   label: "Watchlist",        hint: "charts & radar", icon: "star", run: () => setView("watchlist") },
-    { id: "settings",    label: "Settings",         hint: "config & guide", icon: "settings", run: () => setView("settings") },
+    { id: "sentiment",   label: "Market Sentiment", hint: "the mood",   icon: "gauge",    run: () => navigate("sentiment") },
+    { id: "suggestions", label: "Suggestions",      hint: "what to do", icon: "spark",    run: () => navigate("suggestions") },
+    { id: "portfolio",   label: "Portfolio",        hint: "your book",  icon: "wallet",   run: () => navigate("portfolio") },
+    { id: "trades",      label: "Trades",           hint: "insiders",   icon: "trending", run: () => navigate("trades") },
+    { id: "news",        label: "News",             hint: "the tape",   icon: "news",     run: () => navigate("news") },
+    { id: "watchlist",   label: "Watchlist",        hint: "charts & radar", icon: "star", run: () => navigate("watchlist") },
+    { id: "settings",    label: "Settings",         hint: "config & guide", icon: "settings", run: () => navigate("settings") },
     { id: "refresh",     label: "Refresh all sources", hint: "sync now", icon: "refresh", run: () => refresh() },
     { id: "theme",       label: "Toggle theme", hint: theme === "dark" ? "to light" : "to dark", icon: theme === "dark" ? "sun" : "moon", run: () => toggle() },
     { id: "dyslexia",    label: "Dyslexia-friendly mode", hint: settings.dyslexia ? "on" : "off", icon: "book", run: () => setSetting("dyslexia", !settings.dyslexia) },
@@ -124,7 +146,7 @@ export default function App() {
 
   return (
     <div className={styles.app}>
-      <Sidebar view={view} onNavigate={setView} />
+      <Sidebar view={view} onNavigate={navigate} />
 
       <main className={styles.main}>
         <div className={styles.band}>
@@ -143,6 +165,10 @@ export default function App() {
             unreadAlerts={unreadAlerts}
             onMarkAlertsRead={markAlertsRead}
             onOpenCommand={() => setCmdOpen(true)}
+            user={auth?.user}
+            onLogout={auth?.logout}
+            hasTour={Boolean(TOURS[view]) && !detailTicker}
+            onStartTour={() => setTourView(view)}
           />
           <LiveTicker quotes={quotes} asOf={asOf} />
         </div>
@@ -157,6 +183,17 @@ export default function App() {
 
             <SourceStatus sources={sources} />
 
+            {detailTicker && (
+              <StockDetailPanel
+                ticker={detailTicker}
+                onBack={() => setDetailTicker(null)}
+                watchlist={watchlist}
+                onAddWatch={addWatch}
+              />
+            )}
+
+            {!detailTicker && (
+            <>
             {view === "sentiment" && (
               <MarketSentimentPanel
                 sentiment={sentiment} fearGreed={fearGreed} vix={vix} aaii={aaii}
@@ -182,11 +219,11 @@ export default function App() {
             )}
 
             {view === "settings" && (
-              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={setView} appSettingsApi={appSettingsApi} />
+              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={navigate} appSettingsApi={appSettingsApi} />
             )}
 
             {view === "guide" && (
-              <GuidePanel onNavigate={setView} />
+              <GuidePanel onNavigate={navigate} />
             )}
 
             {/* --- Retained but no longer in navigation (reachable only via code) --- */}
@@ -198,7 +235,7 @@ export default function App() {
                 <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("contracts")} collapsible collapsed={isCollapsed("contracts")} onToggleCollapse={() => toggleCollapsed("contracts")} />
                 <div className={styles.twoCol}>
                   <TechnicalPanel data={signals} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("signals")} collapsible collapsed={isCollapsed("signals")} onToggleCollapse={() => toggleCollapsed("signals")} />
-                  <SeasonalityPanel data={seasonality} settings={settings} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("seasonality")} collapsible collapsed={isCollapsed("seasonality")} onToggleCollapse={() => toggleCollapsed("seasonality")} />
+                  <SeasonalityPanel data={seasonality} settings={settings} quotes={quotesByTicker} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("seasonality")} collapsible collapsed={isCollapsed("seasonality")} onToggleCollapse={() => toggleCollapsed("seasonality")} />
                 </div>
                 <div className={styles.twoCol}>
                   <YieldCurvePanel data={yieldCurve} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("yield-curve")} collapsible collapsed={isCollapsed("yield-curve")} onToggleCollapse={() => toggleCollapsed("yield-curve")} />
@@ -224,12 +261,24 @@ export default function App() {
             {view === "social" && <SocialPanel data={social} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "analyst" && <AnalystPanel data={analyst} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "fundamentals" && <FundamentalsPanel data={fundamentals} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "seasonality" && <SeasonalityPanel data={seasonality} settings={settings} loading={loading} busy={busy} onRefresh={refresh} />}
+            {view === "seasonality" && <SeasonalityPanel data={seasonality} settings={settings} quotes={quotesByTicker} loading={loading} busy={busy} onRefresh={refresh} />}
+            </>
+            )}
           </div>
         </div>
       </main>
 
-      {cmdOpen && <CommandPalette items={commandItems} onClose={() => setCmdOpen(false)} />}
+      {cmdOpen && (
+        <CommandPalette
+          items={commandItems}
+          onClose={() => setCmdOpen(false)}
+          onOpenTicker={(t) => setDetailTicker(t)}
+        />
+      )}
+
+      {tourView && TOURS[tourView] && (
+        <Tour steps={TOURS[tourView]} onClose={closeTour} />
+      )}
     </div>
   );
 }

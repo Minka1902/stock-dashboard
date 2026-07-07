@@ -53,11 +53,11 @@ def test_trades_upsert_idempotent_and_ordered(conn):
 
 
 def test_watchlist_add_remove(conn):
-    db.add_watch(conn, WatchItem(ticker="AAPL", note="watching", added_at="2026-06-22T10:00:00Z"))
-    db.add_watch(conn, WatchItem(ticker="MSFT", note="", added_at="2026-06-22T11:00:00Z"))
-    assert [w.ticker for w in db.get_watchlist(conn)] == ["MSFT", "AAPL"]  # newest first
-    db.remove_watch(conn, "AAPL")
-    assert [w.ticker for w in db.get_watchlist(conn)] == ["MSFT"]
+    db.add_watch(conn, 0, WatchItem(ticker="AAPL", note="watching", added_at="2026-06-22T10:00:00Z"))
+    db.add_watch(conn, 0, WatchItem(ticker="MSFT", note="", added_at="2026-06-22T11:00:00Z"))
+    assert [w.ticker for w in db.get_watchlist(conn, 0)] == ["MSFT", "AAPL"]  # newest first
+    db.remove_watch(conn, 0, "AAPL")
+    assert [w.ticker for w in db.get_watchlist(conn, 0)] == ["MSFT"]
 
 
 def test_yield_curve_upsert_and_get(conn):
