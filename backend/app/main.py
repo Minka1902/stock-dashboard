@@ -427,6 +427,7 @@ def analyze_ticker(ticker: str, user=Depends(auth.get_current_user)):
         "daily": [b.model_dump() for b in result["daily"]],
         "weekly": [b.model_dump() for b in result["weekly"]],
         "source": result["source"],
+        "seasonality_anchors": analyze.get_anchors(conn, t),
     }
 
 
@@ -446,7 +447,9 @@ def analysis_report(ticker: str, print: int = 0, user=Depends(auth.get_current_u
     with an auto-print hook so the browser's dialog offers Save as PDF."""
     t = clean_ticker(ticker)
     profile = db.get_notify_profile(conn, user.id)
-    html_doc = report.build_report(conn, t, print_mode=bool(print), profile=profile)
+    anchors = analyze.get_anchors(conn, t)
+    html_doc = report.build_report(conn, t, print_mode=bool(print), profile=profile,
+                                   anchors_override=anchors)
     if html_doc is None:
         # Not a holding — build the analysis on demand so any ticker gets a report.
         try:
@@ -458,6 +461,7 @@ def analysis_report(ticker: str, print: int = 0, user=Depends(auth.get_current_u
             html_doc = report.build_report(
                 conn, t, print_mode=bool(print), profile=profile,
                 analysis_override=result["analysis"], daily_override=result["daily"],
+                anchors_override=anchors,
             )
     if html_doc is None:
         raise HTTPException(status_code=404, detail=f"no analysis for {t}")

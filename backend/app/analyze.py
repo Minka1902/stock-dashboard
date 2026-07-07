@@ -6,13 +6,16 @@ persisted — stock_analysis stays "portfolio only" and no fabricated rows land
 in the DB. Results are unsized; callers apply the requesting user's sizing
 via analysis.apply_sizing.
 """
+import json
 import threading
 import time
 
 from app import analysis, chart_data, db, quotes
 from app.models import OHLCBar, StockAnalysis
+from app.sources import seasonality as seasonality_source
 
 _TTL_SECONDS = 600
+_ANCHOR_TTL_SECONDS = 43200  # deep history barely moves intraday
 _MIN_BARS = 30
 
 
@@ -72,3 +75,43 @@ def analyze(conn, ticker: str) -> dict:
         with _lock:
             _cache[ticker] = (time.monotonic() + _TTL_SECONDS, result)
     return result
+
+
+# ---- "this day N years ago" anchors ----
+_anchor_cache: dict[str, tuple[float, list[dict]]] = {}
+_anchor_lock = threading.Lock()
+
+
+def get_anchors(conn, ticker: str) -> list[dict]:
+    """Seasonality anchors ({years_ago, date, close}) for any ticker.
+
+    Watched tickers read the scheduled seasonality row; anything else costs
+    one Yahoo range=max fetch, cached 12h. Returns [] when no data exists —
+    never fabricated values.
+    """
+    ticker = ticker.strip().upper()
+    stored = db.get_seasonality_for(conn, ticker)
+    if stored is not None:
+        try:
+            return json.loads(stored.anchors_json)
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    now = time.monotonic()
+    with _anchor_lock:
+        entry = _anchor_cache.get(ticker)
+        if entry is not None and entry[0] > now:
+            return entry[1]
+
+    # seasonality.fetch never raises; it returns [] on any upstream failure.
+    rows = seasonality_source.fetch([ticker])
+    anchors: list[dict] = []
+    if rows:
+        try:
+            anchors = json.loads(rows[0].anchors_json)
+        except (json.JSONDecodeError, TypeError):
+            anchors = []
+    if anchors:  # don't cache empties
+        with _anchor_lock:
+            _anchor_cache[ticker] = (time.monotonic() + _ANCHOR_TTL_SECONDS, anchors)
+    return anchors

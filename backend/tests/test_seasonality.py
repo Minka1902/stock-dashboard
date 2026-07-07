@@ -105,3 +105,85 @@ def test_parse_response_none_on_insufficient_history():
     }
     season = parse_response(payload, "x", "2026-06-15T00:00:00+00:00", today=date(2026, 6, 15))
     assert season is None
+
+
+# ---------- "this day N years ago" anchors ----------
+
+def test_compute_anchors_picks_nearest_on_or_before():
+    from app.sources.seasonality import compute_anchors
+    # Weekday-only series: skip Saturdays/Sundays so weekend targets must fall
+    # back to the prior Friday.
+    series = []
+    price = 100.0
+    d = date(2015, 1, 1)
+    while d <= date(2026, 7, 7):
+        if d.weekday() < 5:
+            series.append((d, round(price, 4)))
+            price += 0.1
+        d += timedelta(days=1)
+
+    today = date(2026, 7, 7)
+    anchors = compute_anchors(series, today)
+    by_key = {a["years_ago"]: a for a in anchors}
+    assert set(by_key) == {1, 2, 5, "max"}
+    # 2025-07-07 was a Monday (trading day) — exact hit.
+    assert by_key[1]["date"] == "2025-07-07"
+    # 2024-07-07 was a Sunday — nearest on-or-before is Friday 2024-07-05.
+    assert by_key[2]["date"] == "2024-07-05"
+    # 2021-07-07 was a Wednesday — exact hit.
+    assert by_key[5]["date"] == "2021-07-07"
+    # max = earliest trading day on record.
+    assert by_key["max"]["date"] == "2015-01-01"
+    assert all(isinstance(a["close"], float) for a in anchors)
+
+
+def test_compute_anchors_short_history_skips_missing_years():
+    from app.sources.seasonality import compute_anchors
+    series = _daily_series(date(2024, 9, 1), 500)  # ~1.4 years of data
+    anchors = compute_anchors(series, date(2026, 1, 10))
+    keys = [a["years_ago"] for a in anchors]
+    assert keys == [1, "max"]  # 2y and 5y unavailable; never fabricated
+    assert anchors[-1]["date"] == "2024-09-01"
+
+
+def test_compute_anchors_leap_day_clamps():
+    from app.sources.seasonality import compute_anchors
+    series = _daily_series(date(2020, 1, 1), 365 * 7)
+    anchors = compute_anchors(series, date(2024, 2, 29))
+    by_key = {a["years_ago"]: a for a in anchors}
+    # 2023 has no Feb 29 — clamp to Feb 28.
+    assert by_key[1]["date"] == "2023-02-28"
+
+
+def test_compute_anchors_empty_series():
+    from app.sources.seasonality import compute_anchors
+    assert compute_anchors([], date(2026, 7, 7)) == []
+
+
+def test_parse_response_includes_anchors_and_roundtrips(conn):
+    from app import db
+    from datetime import datetime, timezone
+
+    start = date(2019, 1, 6)
+    days = (date(2026, 7, 7) - start).days
+    ts, closes = [], []
+    price = 50.0
+    for i in range(days):
+        d = start + timedelta(days=i)
+        ts.append(int(datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp()))
+        closes.append(round(price, 2))
+        price += 0.05
+    payload = {"chart": {"result": [{
+        "timestamp": ts,
+        "indicators": {"quote": [{"close": closes}]},
+    }]}}
+
+    season = parse_response(payload, "aapl", "2026-07-07T00:00:00+00:00",
+                            today=date(2026, 7, 7))
+    assert season is not None
+    anchors = json.loads(season.anchors_json)
+    assert [a["years_ago"] for a in anchors] == [1, 2, 5, "max"]
+
+    db.upsert_seasonality(conn, [season])
+    stored = db.get_seasonality_for(conn, "AAPL")
+    assert json.loads(stored.anchors_json) == anchors

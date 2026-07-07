@@ -57,3 +57,23 @@ def test_render_svg_chart_handles_thin_history():
     assert "Not enough" in report.render_svg_chart(_bars(1), None)
     svg = report.render_svg_chart(_bars(40), None)
     assert svg.startswith("<svg")
+
+
+def test_build_report_renders_anchor_table(conn):
+    _seed(conn)
+    anchors = [
+        {"years_ago": 1, "date": "2025-07-07", "close": 100.0},
+        {"years_ago": "max", "date": "2015-01-02", "close": 20.0},
+    ]
+    html_doc = report.build_report(conn, "NOC", anchors_override=anchors)
+    assert "On this day in past years" in html_doc
+    assert "2025-07-07" in html_doc
+    assert "earliest on record" in html_doc
+    assert "since" in html_doc  # delta vs current price rendered
+
+
+def test_build_report_anchor_section_honest_when_empty(conn):
+    _seed(conn)
+    html_doc = report.build_report(conn, "NOC", anchors_override=[])
+    assert "On this day in past years" in html_doc
+    assert "No deep price history available." in html_doc

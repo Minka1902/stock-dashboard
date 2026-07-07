@@ -52,6 +52,9 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   const loading = result?.ticker !== ticker;
   const data = result?.data;
   const a = data?.analysis;
+  const anchors = data?.seasonality_anchors || [];
+  const lastClose = data?.daily?.length ? data.daily[data.daily.length - 1].close : null;
+  const refPrice = a?.price ?? lastClose;
   const watched = watchlist?.some((w) => w.ticker === ticker);
   const canWatch = Boolean(onAddWatch) && watchlist && !watched;
 
@@ -120,6 +123,32 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
           <Pane caption="Chart">
             <ChartPro ticker={ticker} analysis={a} />
           </Pane>
+
+          {anchors.length > 0 && (
+            <Pane caption="This day in history"
+                  right={<span className={styles.muted}>close on this date, past years</span>}>
+              <div className={styles.anchors}>
+                {anchors.map((an) => {
+                  const delta = refPrice && an.close
+                    ? (refPrice / an.close - 1) * 100
+                    : null;
+                  const label = an.years_ago === "max" ? "earliest" : `${an.years_ago}y ago`;
+                  return (
+                    <div key={`${an.years_ago}`} className={styles.anchor}>
+                      <span className={styles.anchorLabel}>{label}</span>
+                      <span className={styles.anchorDate}>{an.date}</span>
+                      <span className={styles.anchorClose}>${n(an.close)}</span>
+                      {delta != null && (
+                        <span className={styles.anchorDelta} data-tone={delta >= 0 ? "pos" : "neg"}>
+                          {delta >= 0 ? "+" : ""}{delta.toFixed(1)}% since
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Pane>
+          )}
 
           {!a && (
             <div className={styles.empty}>

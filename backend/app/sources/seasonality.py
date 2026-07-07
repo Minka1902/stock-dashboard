@@ -153,6 +153,41 @@ def compute_seasonality(series: list[tuple[date, float]], today: date) -> list[d
     return windows
 
 
+# "Where was this stock on this day N years ago?" — persisted alongside the
+# window stats so the analysis page and report can show it without a refetch.
+_ANCHOR_YEARS = [1, 2, 5]
+
+
+def compute_anchors(series: list[tuple[date, float]], today: date) -> list[dict]:
+    """Closing price on (or just before) today's date 1/2/5/max years ago.
+
+    Each anchor records the real trading date used and its close; the %-change
+    vs the current price is computed at render time so it never goes stale.
+    """
+    if not series:
+        return []
+    series = sorted(series, key=lambda x: x[0])
+    anchors: list[dict] = []
+    used_dates: set[date] = set()
+    for n in _ANCHOR_YEARS:
+        try:
+            target = date(today.year - n, today.month, today.day)
+        except ValueError:  # Feb 29 in a non-leap year
+            target = date(today.year - n, today.month, 28)
+        i = _nearest_on_or_before(series, target, tolerance_days=7)
+        if i is None:
+            continue
+        d, close = series[i]
+        anchors.append({"years_ago": n, "date": d.isoformat(), "close": round(close, 4)})
+        used_dates.add(d)
+    # "max": the earliest close on record, unless an explicit anchor already
+    # sits on that same day (short histories) or it's not actually in the past.
+    d0, c0 = series[0]
+    if d0 not in used_dates and d0 < today:
+        anchors.append({"years_ago": "max", "date": d0.isoformat(), "close": round(c0, 4)})
+    return anchors
+
+
 def _parse_series(payload: dict) -> list[tuple[date, float]]:
     """Extract sorted (date, close) pairs from a Yahoo chart payload."""
     result = (payload.get("chart") or {}).get("result") or []
@@ -192,6 +227,7 @@ def parse_response(payload: dict, ticker: str, fetched_at: str,
         as_of=f"{today.month:02d}-{today.day:02d}",
         history_years=len(usable_years),
         windows_json=json.dumps(windows),
+        anchors_json=json.dumps(compute_anchors(series, today)),
     )
 
 

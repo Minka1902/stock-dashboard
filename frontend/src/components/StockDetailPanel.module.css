@@ -189,3 +189,30 @@
   text-decoration: none;
 }
 .reportBtn:hover { color: var(--accent); border-color: var(--accent-weak); }
+
+/* --- "this day in history" anchors --- */
+.anchors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+.anchor {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-2) var(--s-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  min-width: 128px;
+}
+.anchorLabel {
+  color: var(--text-faint);
+  text-transform: uppercase;
+  font-size: 0.72em;
+  letter-spacing: var(--caption-spacing);
+}
+.anchorDate { color: var(--text-muted); font-size: 0.82em; }
+.anchorClose { font-weight: 600; }
+.anchorDelta[data-tone="pos"] { color: var(--positive); font-size: 0.86em; }
+.anchorDelta[data-tone="neg"] { color: var(--negative); font-size: 0.86em; }

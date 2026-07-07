@@ -215,7 +215,7 @@ export default function App({ auth }) {
                 <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("contracts")} collapsible collapsed={isCollapsed("contracts")} onToggleCollapse={() => toggleCollapsed("contracts")} />
                 <div className={styles.twoCol}>
                   <TechnicalPanel data={signals} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("signals")} collapsible collapsed={isCollapsed("signals")} onToggleCollapse={() => toggleCollapsed("signals")} />
-                  <SeasonalityPanel data={seasonality} settings={settings} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("seasonality")} collapsible collapsed={isCollapsed("seasonality")} onToggleCollapse={() => toggleCollapsed("seasonality")} />
+                  <SeasonalityPanel data={seasonality} settings={settings} quotes={quotesByTicker} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("seasonality")} collapsible collapsed={isCollapsed("seasonality")} onToggleCollapse={() => toggleCollapsed("seasonality")} />
                 </div>
                 <div className={styles.twoCol}>
                   <YieldCurvePanel data={yieldCurve} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("yield-curve")} collapsible collapsed={isCollapsed("yield-curve")} onToggleCollapse={() => toggleCollapsed("yield-curve")} />
@@ -241,7 +241,7 @@ export default function App({ auth }) {
             {view === "social" && <SocialPanel data={social} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "analyst" && <AnalystPanel data={analyst} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "fundamentals" && <FundamentalsPanel data={fundamentals} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "seasonality" && <SeasonalityPanel data={seasonality} settings={settings} loading={loading} busy={busy} onRefresh={refresh} />}
+            {view === "seasonality" && <SeasonalityPanel data={seasonality} settings={settings} quotes={quotesByTicker} loading={loading} busy={busy} onRefresh={refresh} />}
             </>
             )}
           </div>

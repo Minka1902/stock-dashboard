@@ -222,6 +222,7 @@ class Seasonality(BaseModel):
     as_of: str             # "MM-DD" anchor (server compute date)
     history_years: int     # distinct years with >=1 usable window value
     windows_json: str      # JSON list of window objects (key/label/kind/per_year)
+    anchors_json: str = "[]"  # JSON list of {years_ago: 1|2|5|"max", date, close}
 
 
 class Holding(BaseModel):

@@ -316,7 +316,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
             computed_at   TEXT NOT NULL,
             as_of         TEXT NOT NULL,
             history_years INTEGER NOT NULL DEFAULT 0,
-            windows_json  TEXT NOT NULL DEFAULT '[]'
+            windows_json  TEXT NOT NULL DEFAULT '[]',
+            anchors_json  TEXT NOT NULL DEFAULT '[]'
         );
         CREATE TABLE IF NOT EXISTS portfolio (
             user_id  INTEGER NOT NULL DEFAULT 0,
@@ -456,6 +457,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         _try_add_column(conn, "boom_scores", col, col_def)
 
     _try_add_column(conn, "contracts", "ticker", "TEXT")
+    _try_add_column(conn, "seasonality", "anchors_json", "TEXT NOT NULL DEFAULT '[]'")
     conn.commit()
 
 
@@ -1242,12 +1244,13 @@ def upsert_seasonality(conn: sqlite3.Connection, records: list[Seasonality]) -> 
     conn.executemany(
         """
         INSERT INTO seasonality
-            (ticker, computed_at, as_of, history_years, windows_json)
+            (ticker, computed_at, as_of, history_years, windows_json, anchors_json)
         VALUES
-            (:ticker, :computed_at, :as_of, :history_years, :windows_json)
+            (:ticker, :computed_at, :as_of, :history_years, :windows_json, :anchors_json)
         ON CONFLICT(ticker) DO UPDATE SET
             computed_at=excluded.computed_at, as_of=excluded.as_of,
-            history_years=excluded.history_years, windows_json=excluded.windows_json
+            history_years=excluded.history_years, windows_json=excluded.windows_json,
+            anchors_json=excluded.anchors_json
         """,
         [r.model_dump() for r in records],
     )
