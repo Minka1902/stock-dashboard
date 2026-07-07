@@ -30,6 +30,7 @@ import SettingsPanel from "./components/SettingsPanel";
 import SuggestionsPanel from "./components/SuggestionsPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
 import GuidePanel from "./components/GuidePanel";
+import StockDetailPanel from "./components/StockDetailPanel";
 import styles from "./App.module.css";
 
 const TITLES = {
@@ -75,6 +76,9 @@ export default function App({ auth }) {
   const { settings, setSetting } = useSettings();
   const [view, setView] = useState("sentiment");
   const [cmdOpen, setCmdOpen] = useState(false);
+  // Any-ticker detail view (opened from search); overlays the current view.
+  const [detailTicker, setDetailTicker] = useState(null);
+  const navigate = (v) => { setDetailTicker(null); setView(v); };
 
   // Cmd/Ctrl+K toggles the command palette (palette mounts only while open).
   useEffect(() => {
@@ -110,13 +114,13 @@ export default function App({ auth }) {
   } = data;
 
   const commandItems = [
-    { id: "sentiment",   label: "Market Sentiment", hint: "the mood",   icon: "gauge",    run: () => setView("sentiment") },
-    { id: "suggestions", label: "Suggestions",      hint: "what to do", icon: "spark",    run: () => setView("suggestions") },
-    { id: "portfolio",   label: "Portfolio",        hint: "your book",  icon: "wallet",   run: () => setView("portfolio") },
-    { id: "trades",      label: "Trades",           hint: "insiders",   icon: "trending", run: () => setView("trades") },
-    { id: "news",        label: "News",             hint: "the tape",   icon: "news",     run: () => setView("news") },
-    { id: "watchlist",   label: "Watchlist",        hint: "charts & radar", icon: "star", run: () => setView("watchlist") },
-    { id: "settings",    label: "Settings",         hint: "config & guide", icon: "settings", run: () => setView("settings") },
+    { id: "sentiment",   label: "Market Sentiment", hint: "the mood",   icon: "gauge",    run: () => navigate("sentiment") },
+    { id: "suggestions", label: "Suggestions",      hint: "what to do", icon: "spark",    run: () => navigate("suggestions") },
+    { id: "portfolio",   label: "Portfolio",        hint: "your book",  icon: "wallet",   run: () => navigate("portfolio") },
+    { id: "trades",      label: "Trades",           hint: "insiders",   icon: "trending", run: () => navigate("trades") },
+    { id: "news",        label: "News",             hint: "the tape",   icon: "news",     run: () => navigate("news") },
+    { id: "watchlist",   label: "Watchlist",        hint: "charts & radar", icon: "star", run: () => navigate("watchlist") },
+    { id: "settings",    label: "Settings",         hint: "config & guide", icon: "settings", run: () => navigate("settings") },
     { id: "refresh",     label: "Refresh all sources", hint: "sync now", icon: "refresh", run: () => refresh() },
     { id: "theme",       label: "Toggle theme", hint: theme === "dark" ? "to light" : "to dark", icon: theme === "dark" ? "sun" : "moon", run: () => toggle() },
     { id: "dyslexia",    label: "Dyslexia-friendly mode", hint: settings.dyslexia ? "on" : "off", icon: "book", run: () => setSetting("dyslexia", !settings.dyslexia) },
@@ -124,7 +128,7 @@ export default function App({ auth }) {
 
   return (
     <div className={styles.app}>
-      <Sidebar view={view} onNavigate={setView} />
+      <Sidebar view={view} onNavigate={navigate} />
 
       <main className={styles.main}>
         <div className={styles.band}>
@@ -159,6 +163,17 @@ export default function App({ auth }) {
 
             <SourceStatus sources={sources} />
 
+            {detailTicker && (
+              <StockDetailPanel
+                ticker={detailTicker}
+                onBack={() => setDetailTicker(null)}
+                watchlist={watchlist}
+                onAddWatch={addWatch}
+              />
+            )}
+
+            {!detailTicker && (
+            <>
             {view === "sentiment" && (
               <MarketSentimentPanel
                 sentiment={sentiment} fearGreed={fearGreed} vix={vix} aaii={aaii}
@@ -184,11 +199,11 @@ export default function App({ auth }) {
             )}
 
             {view === "settings" && (
-              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={setView} appSettingsApi={appSettingsApi} />
+              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={navigate} appSettingsApi={appSettingsApi} />
             )}
 
             {view === "guide" && (
-              <GuidePanel onNavigate={setView} />
+              <GuidePanel onNavigate={navigate} />
             )}
 
             {/* --- Retained but no longer in navigation (reachable only via code) --- */}
@@ -227,11 +242,19 @@ export default function App({ auth }) {
             {view === "analyst" && <AnalystPanel data={analyst} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "fundamentals" && <FundamentalsPanel data={fundamentals} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "seasonality" && <SeasonalityPanel data={seasonality} settings={settings} loading={loading} busy={busy} onRefresh={refresh} />}
+            </>
+            )}
           </div>
         </div>
       </main>
 
-      {cmdOpen && <CommandPalette items={commandItems} onClose={() => setCmdOpen(false)} />}
+      {cmdOpen && (
+        <CommandPalette
+          items={commandItems}
+          onClose={() => setCmdOpen(false)}
+          onOpenTicker={(t) => setDetailTicker(t)}
+        />
+      )}
     </div>
   );
 }

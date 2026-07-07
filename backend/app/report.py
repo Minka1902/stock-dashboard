@@ -166,23 +166,25 @@ def _plan_section(a: StockAnalysis) -> str:
     return stats + "<h3>Target ladder</h3>" + ladder + sizing
 
 
-def build_report(conn, ticker: str, *, print_mode: bool = False,
-                 profile=None) -> str | None:
+def build_report(conn, ticker: str, *, print_mode: bool = False, profile=None,
+                 analysis_override: StockAnalysis | None = None,
+                 daily_override: list[OHLCBar] | None = None) -> str | None:
     """Full standalone HTML document, or None when no analysis exists.
 
     `profile` (the requesting user's NotifyProfile) personalizes position
-    sizing; stored analyses are unsized and shared across users.
+    sizing; stored analyses are unsized and shared across users. The overrides
+    let the on-demand analyzer render reports for never-stored tickers.
     """
     from app.analysis import apply_sizing  # local import avoids a cycle
 
     ticker = ticker.strip().upper()
-    a = db.get_analysis(conn, ticker)
+    a = analysis_override or db.get_analysis(conn, ticker)
     if a is None:
         return None
     if profile is not None:
         a = apply_sizing(a, profile.account_size, profile.risk_pct)
 
-    daily = db.get_ohlc(conn, ticker, "daily")
+    daily = daily_override if daily_override is not None else db.get_ohlc(conn, ticker, "daily")
     boom = next((b for b in db.get_boom_scores(conn) if b.ticker == ticker), None)
     fund = db.get_fundamentals_for(conn, ticker)
     season = db.get_seasonality_for(conn, ticker)

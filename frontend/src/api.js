@@ -62,6 +62,10 @@ export const analysisReportUrl = (ticker, { print = false } = {}) =>
   `${BASE}/api/analysis/${encodeURIComponent(ticker)}/report${print ? "?print=1" : ""}`;
 export const getSuggestionLog = () => getJSON("/api/suggestions/log");
 export const getAlerts = () => getJSON("/api/alerts");
+export const searchStocks = (q) =>
+  getJSON(`/api/search?q=${encodeURIComponent(q)}`);
+export const getAnalyze = (ticker) =>
+  getJSON(`/api/analyze/${encodeURIComponent(ticker)}`);
 
 export const markAlertsRead = (payload = { all: true }) =>
   request("/api/alerts/read", { method: "POST", body: payload });

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from app import analysis, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, sentiment, suggestions
+from app import analysis, analyze, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, search, sentiment, suggestions
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.security import SecurityHeadersMiddleware, rate_limit
@@ -396,6 +396,40 @@ def chart_bars(ticker: str, interval: str = "1d"):
         raise HTTPException(status_code=502, detail="chart data unavailable")
 
 
+# ---------- search & on-demand analysis (any ticker) ----------
+@app.get("/api/search", dependencies=[Depends(rate_limit("search", 30, 60))])
+def search_stocks(q: str = ""):
+    q = q.strip()
+    if not (1 <= len(q) <= 40):
+        raise HTTPException(status_code=400, detail="query must be 1-40 characters")
+    try:
+        return search.search(q)
+    except Exception:
+        logger.warning("stock search failed for %r", q, exc_info=True)
+        raise HTTPException(status_code=502, detail="search unavailable")
+
+
+@app.get("/api/analyze/{ticker}", dependencies=[Depends(rate_limit("analyze", 10, 60))])
+def analyze_ticker(ticker: str, user=Depends(auth.get_current_user)):
+    """Full analysis for ANY ticker — stored for holdings, computed live otherwise."""
+    t = clean_ticker(ticker)
+    try:
+        result = analyze.analyze(conn, t)
+    except Exception:
+        logger.warning("on-demand analysis failed for %s", t, exc_info=True)
+        raise HTTPException(status_code=502, detail="analysis data unavailable")
+    a = result["analysis"]
+    if a is not None:
+        profile = db.get_notify_profile(conn, user.id)
+        a = analysis.apply_sizing(a, profile.account_size, profile.risk_pct)
+    return {
+        "analysis": a.model_dump() if a else None,
+        "daily": [b.model_dump() for b in result["daily"]],
+        "weekly": [b.model_dump() for b in result["weekly"]],
+        "source": result["source"],
+    }
+
+
 # ---------- per-holding technical analysis ----------
 @app.get("/api/analysis")
 def analyses(user=Depends(auth.get_current_user)):
@@ -413,6 +447,18 @@ def analysis_report(ticker: str, print: int = 0, user=Depends(auth.get_current_u
     t = clean_ticker(ticker)
     profile = db.get_notify_profile(conn, user.id)
     html_doc = report.build_report(conn, t, print_mode=bool(print), profile=profile)
+    if html_doc is None:
+        # Not a holding — build the analysis on demand so any ticker gets a report.
+        try:
+            result = analyze.analyze(conn, t)
+        except Exception:
+            logger.warning("on-demand report analysis failed for %s", t, exc_info=True)
+            result = None
+        if result and result["analysis"] is not None:
+            html_doc = report.build_report(
+                conn, t, print_mode=bool(print), profile=profile,
+                analysis_override=result["analysis"], daily_override=result["daily"],
+            )
     if html_doc is None:
         raise HTTPException(status_code=404, detail=f"no analysis for {t}")
     today = datetime.now(timezone.utc).date().isoformat()
