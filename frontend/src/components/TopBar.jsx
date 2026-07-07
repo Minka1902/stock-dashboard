@@ -14,7 +14,7 @@ const LEAN_LABEL = {
 export default function TopBar({
   title, index, sources, busy, onRefresh, theme, onToggleTheme,
   dyslexia, onToggleDyslexia, lean, alerts = [], unreadAlerts = 0,
-  onMarkAlertsRead, onOpenCommand,
+  onMarkAlertsRead, onOpenCommand, user, onLogout,
 }) {
   const refreshed = sources
     .filter((s) => s.last_refreshed_at)
@@ -80,6 +80,21 @@ export default function TopBar({
           </span>
           {busy ? "Syncing" : "Refresh"}
         </button>
+
+        {user && (
+          <span className={styles.user} title={`Signed in as ${user.email}`}>
+            <span className={styles.userEmail}>{user.email}</span>
+            <button
+              type="button"
+              className={styles.iconBtn}
+              onClick={onLogout}
+              title="Sign out"
+              aria-label="Sign out"
+            >
+              <Icon name="arrowRight" size={15} />
+            </button>
+          </span>
+        )}
       </div>
     </header>
   );

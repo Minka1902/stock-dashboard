@@ -1,10 +1,32 @@
 const BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
-async function getJSON(path) {
-  const res = await fetch(`${BASE}${path}`);
-  if (!res.ok) throw new Error(`failed to load ${path}`);
+export class ApiError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function request(path, { method = "GET", body } = {}) {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    credentials: "include", // session cookie
+    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    // A 401 outside the auth endpoints means the session expired mid-use:
+    // tell useAuth so the app returns to the login screen cleanly.
+    if (res.status === 401 && !path.startsWith("/api/auth/")) {
+      window.dispatchEvent(new Event("auth:expired"));
+    }
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new ApiError(detail || `request failed: ${path}`, res.status);
+  }
   return res.json();
 }
+
+const getJSON = (path) => request(path);
 
 export const getContracts = () => getJSON("/api/contracts");
 export const getSources = () => getJSON("/api/sources");
@@ -29,7 +51,7 @@ export const getFundamentals = () => getJSON("/api/fundamentals");
 export const getSeasonality = () => getJSON("/api/seasonality");
 export const getAnalyses = () => getJSON("/api/analysis");
 export const getAnalysis = (ticker) => getJSON(`/api/analysis/${encodeURIComponent(ticker)}`);
-export const getBoomScoreHistory = (ticker) => getJSON(`/api/boom-scores/history/${ticker}`);
+export const getBoomScoreHistory = (ticker) => getJSON(`/api/boom-scores/history/${encodeURIComponent(ticker)}`);
 export const getPortfolio = () => getJSON("/api/portfolio");
 export const getProfile = () => getJSON("/api/profile");
 export const getSuggestions = () => getJSON("/api/suggestions");
@@ -41,80 +63,36 @@ export const analysisReportUrl = (ticker, { print = false } = {}) =>
 export const getSuggestionLog = () => getJSON("/api/suggestions/log");
 export const getAlerts = () => getJSON("/api/alerts");
 
-export async function markAlertsRead(payload = { all: true }) {
-  const res = await fetch(`${BASE}/api/alerts/read`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("could not mark alerts read");
-  return res.json();
-}
+export const markAlertsRead = (payload = { all: true }) =>
+  request("/api/alerts/read", { method: "POST", body: payload });
+export const saveAppSettings = (settings) =>
+  request("/api/settings", { method: "PUT", body: settings });
+export const saveProfile = (profile) =>
+  request("/api/profile", { method: "PUT", body: profile });
+export const addHolding = (ticker, shares, avg_cost) =>
+  request("/api/portfolio", { method: "POST", body: { ticker, shares, avg_cost } });
+export const removeHolding = (ticker) =>
+  request(`/api/portfolio/${encodeURIComponent(ticker)}`, { method: "DELETE" });
+export const sendTestSuggestions = () =>
+  request("/api/suggestions/send-test", { method: "POST" });
+export const refreshSource = (name) =>
+  request(`/api/refresh/${encodeURIComponent(name)}`, { method: "POST" });
+export const addWatch = (ticker, note) =>
+  request("/api/watchlist", { method: "POST", body: { ticker, note } });
+export const removeWatch = (ticker) =>
+  request(`/api/watchlist/${encodeURIComponent(ticker)}`, { method: "DELETE" });
 
-export async function saveAppSettings(settings) {
-  const res = await fetch(`${BASE}/api/settings`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(settings),
-  });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "could not save settings");
-  return res.json();
-}
-
-export async function saveProfile(profile) {
-  const res = await fetch(`${BASE}/api/profile`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(profile),
-  });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "could not save profile");
-  return res.json();
-}
-
-export async function addHolding(ticker, shares, avg_cost) {
-  const res = await fetch(`${BASE}/api/portfolio`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ticker, shares, avg_cost }),
-  });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "could not add holding");
-  return res.json();
-}
-
-export async function removeHolding(ticker) {
-  const res = await fetch(`${BASE}/api/portfolio/${encodeURIComponent(ticker)}`, {
-    method: "DELETE",
-  });
-  if (!res.ok) throw new Error("could not remove holding");
-  return res.json();
-}
-
-export async function sendTestSuggestions() {
-  const res = await fetch(`${BASE}/api/suggestions/send-test`, { method: "POST" });
-  if (!res.ok) throw new Error("could not send test");
-  return res.json();
-}
-
-export async function refreshSource(name) {
-  const res = await fetch(`${BASE}/api/refresh/${name}`, { method: "POST" });
-  if (!res.ok) throw new Error("refresh failed");
-  return res.json();
-}
-
-export async function addWatch(ticker, note) {
-  const res = await fetch(`${BASE}/api/watchlist`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ticker, note }),
-  });
-  if (!res.ok) throw new Error("could not add ticker");
-  return res.json();
-}
-
-export async function removeWatch(ticker) {
-  const res = await fetch(`${BASE}/api/watchlist/${encodeURIComponent(ticker)}`, {
-    method: "DELETE",
-  });
-  if (!res.ok) throw new Error("could not remove ticker");
-  return res.json();
-}
+// ---------- auth ----------
+export const getMe = () => getJSON("/api/auth/me");
+export const register = (email, password) =>
+  request("/api/auth/register", { method: "POST", body: { email, password } });
+export const login = (email, password) =>
+  request("/api/auth/login", { method: "POST", body: { email, password } });
+export const totpSetup = () => getJSON("/api/auth/totp/setup");
+export const totpEnable = (code) =>
+  request("/api/auth/totp/enable", { method: "POST", body: { code } });
+export const totpVerify = (code) =>
+  request("/api/auth/totp/verify", { method: "POST", body: { code } });
+export const useRecoveryCode = (code) =>
+  request("/api/auth/recovery", { method: "POST", body: { code } });
+export const logout = () => request("/api/auth/logout", { method: "POST" });

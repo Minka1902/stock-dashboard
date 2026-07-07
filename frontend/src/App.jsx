@@ -65,7 +65,7 @@ const MODULE_INDEX = {
   watchlist: "06",
 };
 
-export default function App() {
+export default function App({ auth }) {
   const data = useDashboardData();
   const appSettingsApi = useAppSettings();
   const { quotes, quotesByTicker, asOf } = useLiveQuotes(
@@ -143,6 +143,8 @@ export default function App() {
             unreadAlerts={unreadAlerts}
             onMarkAlertsRead={markAlertsRead}
             onOpenCommand={() => setCmdOpen(true)}
+            user={auth?.user}
+            onLogout={auth?.logout}
           />
           <LiveTicker quotes={quotes} asOf={asOf} />
         </div>
