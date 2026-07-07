@@ -5,6 +5,32 @@ from datetime import date, timedelta
 # SQLite file location (one file, no server).
 DB_PATH = os.environ.get("STOCKS_DB_PATH", "stocks.db")
 
+# Log level for the app-wide logging config (see app/logging_config.py).
+LOG_LEVEL = os.environ.get("STOCKS_LOG_LEVEL", "INFO")
+
+# --- Web security ---
+# Comma-separated list of allowed browser origins. Because the session cookie
+# rides on allow_credentials=True, a wildcard here would be a security hole —
+# reject it outright rather than silently weaken auth.
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.environ.get("STOCKS_CORS_ORIGINS", "http://localhost:5173").split(",")
+    if o.strip()
+]
+if "*" in CORS_ORIGINS:
+    raise ValueError(
+        "STOCKS_CORS_ORIGINS must list explicit origins; '*' is not allowed "
+        "because the API uses credentialed (cookie) requests."
+    )
+
+# Set to 1 when serving over HTTPS so session cookies are marked Secure.
+COOKIE_SECURE = os.environ.get("STOCKS_COOKIE_SECURE", "0") in ("1", "true", "True")
+
+# Lifetime of a fully-authenticated session. Default 14 days.
+SESSION_TTL_SECONDS = int(os.environ.get("STOCKS_SESSION_TTL_SECONDS", str(14 * 86400)))
+# Lifetime of the short-lived session between password check and TOTP entry.
+PENDING_SESSION_TTL_SECONDS = int(os.environ.get("STOCKS_PENDING_SESSION_TTL_SECONDS", "300"))
+
 # How often the scheduler re-runs fast ingestion, in seconds. Default 3 min.
 REFRESH_INTERVAL_SECONDS = int(os.environ.get("STOCKS_REFRESH_SECONDS", "180"))
 

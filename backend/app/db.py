@@ -54,6 +54,11 @@ class _LockingConnection(sqlite3.Connection):
 def connect(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, factory=_LockingConnection, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    # WAL lets readers proceed while a write is in flight; busy_timeout keeps
+    # a briefly-locked DB from surfacing as an exception under load.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 

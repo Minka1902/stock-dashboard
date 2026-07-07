@@ -1,11 +1,12 @@
 """FastAPI surface + scheduler wiring."""
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -13,6 +14,9 @@ from fastapi.responses import HTMLResponse
 
 from app import analysis, chart_data, config, db, ingest, notify, quotes, report, sentiment, suggestions
 from app import alerts as alerts_source
+from app.logging_config import setup_logging
+from app.security import SecurityHeadersMiddleware, rate_limit
+from app.validation import clean_ticker
 from app.market_calendar import is_trading_day, next_trading_day
 from app.models import AppSettings, Holding, NotifyProfile, WatchItem
 from app.sources import edgar, gdelt, usaspending
@@ -31,6 +35,9 @@ import app.sources.fundamentals as fundamentals_source
 import app.sources.seasonality as seasonality_source
 import app.sources.boom_score as boom_score_source
 import app.sources.ohlc as ohlc_source
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 
 # Module-level fetchers so tests can monkeypatch them with stubs.
@@ -152,7 +159,8 @@ def _send_daily_digest():
     try:
         notify.send_digest(conn, target.isoformat())
     except Exception:
-        pass  # delivery is already resilient; never let the job crash the scheduler
+        # Delivery is already resilient; never let the job crash the scheduler.
+        logger.exception("daily digest delivery failed")
 
 
 def parse_analysis_time(value: str) -> tuple[int, int]:
@@ -188,7 +196,8 @@ def _run_daily_analysis():
         target = today if is_trading_day(today) else next_trading_day(today)
         notify.send_digest(conn, target.isoformat())
     except Exception:
-        pass  # delivery is already resilient; never let the job crash the scheduler
+        # Delivery is already resilient; never let the job crash the scheduler.
+        logger.exception("post-analysis digest delivery failed")
 
 
 @asynccontextmanager
@@ -223,9 +232,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Stock Signal Dashboard", lifespan=lifespan)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=config.CORS_ORIGINS,
+    allow_credentials=True,  # session cookie
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -349,13 +360,12 @@ def chart_bars(ticker: str, interval: str = "1d"):
             status_code=400,
             detail=f"interval must be one of {', '.join(chart_data.INTERVALS)}",
         )
-    t = ticker.strip().upper()
-    if not t:
-        raise HTTPException(status_code=400, detail="ticker required")
+    t = clean_ticker(ticker)
     try:
         return chart_data.get_bars(t, interval)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"chart data unavailable: {exc}")
+    except Exception:
+        logger.warning("chart data fetch failed for %s (%s)", t, interval, exc_info=True)
+        raise HTTPException(status_code=502, detail="chart data unavailable")
 
 
 # ---------- per-holding technical analysis ----------
@@ -368,7 +378,7 @@ def analyses():
 def analysis_report(ticker: str, print: int = 0):
     """Self-contained HTML report. Default downloads; ?print=1 opens inline
     with an auto-print hook so the browser's dialog offers Save as PDF."""
-    t = ticker.strip().upper()
+    t = clean_ticker(ticker)
     html_doc = report.build_report(conn, t, print_mode=bool(print))
     if html_doc is None:
         raise HTTPException(status_code=404, detail=f"no analysis for {t}")
@@ -381,7 +391,7 @@ def analysis_report(ticker: str, print: int = 0):
 
 @app.get("/api/analysis/{ticker}")
 def analysis_detail(ticker: str):
-    t = ticker.strip().upper()
+    t = clean_ticker(ticker)
     a = db.get_analysis(conn, t)
     return {
         "analysis": a.model_dump() if a else None,
@@ -404,9 +414,7 @@ def portfolio():
 
 @app.post("/api/portfolio")
 def add_holding(item: HoldingCreate):
-    ticker = item.ticker.strip().upper()
-    if not ticker:
-        raise HTTPException(status_code=400, detail="ticker required")
+    ticker = clean_ticker(item.ticker)
     if item.shares <= 0 or item.avg_cost < 0:
         raise HTTPException(status_code=400, detail="shares must be > 0 and avg_cost >= 0")
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -418,7 +426,7 @@ def add_holding(item: HoldingCreate):
 
 @app.delete("/api/portfolio/{ticker}")
 def delete_holding(ticker: str):
-    db.remove_holding(conn, ticker.strip().upper())
+    db.remove_holding(conn, clean_ticker(ticker))
     return [h.model_dump() for h in db.get_portfolio(conn)]
 
 
@@ -573,7 +581,7 @@ def alerts_read(body: AlertsRead):
 
 @app.get("/api/boom-scores/history/{ticker}")
 def boom_score_history(ticker: str):
-    return db.get_boom_score_history(conn, ticker.upper())
+    return db.get_boom_score_history(conn, clean_ticker(ticker))
 
 
 # ---------- watchlist (user managed, no external source) ----------
@@ -589,9 +597,7 @@ def watchlist():
 
 @app.post("/api/watchlist")
 def add_watch(item: WatchCreate):
-    ticker = item.ticker.strip().upper()
-    if not ticker:
-        raise HTTPException(status_code=400, detail="ticker required")
+    ticker = clean_ticker(item.ticker)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     db.add_watch(conn, WatchItem(ticker=ticker, note=item.note.strip(), added_at=now))
     return [w.model_dump() for w in db.get_watchlist(conn)]
@@ -599,7 +605,7 @@ def add_watch(item: WatchCreate):
 
 @app.delete("/api/watchlist/{ticker}")
 def delete_watch(ticker: str):
-    db.remove_watch(conn, ticker.strip().upper())
+    db.remove_watch(conn, clean_ticker(ticker))
     return [w.model_dump() for w in db.get_watchlist(conn)]
 
 
@@ -608,7 +614,7 @@ def sources():
     return [s.model_dump() for s in db.get_source_statuses(conn)]
 
 
-@app.post("/api/refresh/{source_name}")
+@app.post("/api/refresh/{source_name}", dependencies=[Depends(rate_limit("refresh", 30, 60))])
 def refresh(source_name: str):
     if source_name not in SOURCES:
         raise HTTPException(status_code=404, detail="unknown source")
