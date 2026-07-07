@@ -38,7 +38,7 @@ def score_conn():
 
 
 def _add_ticker(conn, ticker="GME"):
-    db.add_watch(conn, WatchItem(ticker=ticker, note="", added_at="2026-06-22T10:00:00+00:00"))
+    db.add_watch(conn, 0, WatchItem(ticker=ticker, note="", added_at="2026-06-22T10:00:00+00:00"))
 
 
 def _add_technical(conn, ticker="GME", golden_cross=None, rsi14=55.0,

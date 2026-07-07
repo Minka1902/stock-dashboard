@@ -42,9 +42,9 @@ def _seed_seasonality(conn, ticker, returns):
 
 def _setup(conn):
     for t in ("AAPL", "PLTR", "NVDA"):
-        db.add_watch(conn, WatchItem(ticker=t, note="", added_at="2026-06-28T00:00:00+00:00"))
+        db.add_watch(conn, 0, WatchItem(ticker=t, note="", added_at="2026-06-28T00:00:00+00:00"))
     # Hold AAPL, bought at 100.
-    db.upsert_holding(conn, Holding(ticker="AAPL", shares=10, avg_cost=100.0,
+    db.upsert_holding(conn, 0, Holding(ticker="AAPL", shares=10, avg_cost=100.0,
                                     added_at="2026-06-28T00:00:00+00:00"))
     # AAPL bearish (overbought), PLTR strong bullish, NVDA mild.
     db.upsert_boom_scores(conn, [

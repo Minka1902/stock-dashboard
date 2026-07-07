@@ -19,23 +19,23 @@ def conn():
 # ---- DB round-trips ----
 
 def test_portfolio_roundtrip(conn):
-    db.upsert_holding(conn, Holding(ticker="AAPL", shares=10, avg_cost=100.0, added_at="t"))
-    db.upsert_holding(conn, Holding(ticker="AAPL", shares=15, avg_cost=110.0, added_at="t"))  # upsert
-    rows = db.get_portfolio(conn)
+    db.upsert_holding(conn, 0, Holding(ticker="AAPL", shares=10, avg_cost=100.0, added_at="t"))
+    db.upsert_holding(conn, 0, Holding(ticker="AAPL", shares=15, avg_cost=110.0, added_at="t"))  # upsert
+    rows = db.get_portfolio(conn, 0)
     assert len(rows) == 1
     assert rows[0].shares == 15 and rows[0].avg_cost == 110.0
-    db.remove_holding(conn, "AAPL")
-    assert db.get_portfolio(conn) == []
+    db.remove_holding(conn, 0, "AAPL")
+    assert db.get_portfolio(conn, 0) == []
 
 
 def test_profile_roundtrip_and_default(conn):
     # Default before anything is saved.
-    p = db.get_notify_profile(conn)
+    p = db.get_notify_profile(conn, 0)
     assert p.email is None and p.email_enabled is False
-    db.upsert_notify_profile(conn, NotifyProfile(
+    db.upsert_notify_profile(conn, 0, NotifyProfile(
         email="a@b.com", phone="+14155551234", email_enabled=True, sms_enabled=False, updated_at="t",
     ))
-    p2 = db.get_notify_profile(conn)
+    p2 = db.get_notify_profile(conn, 0)
     assert p2.email == "a@b.com"
     assert p2.email_enabled is True
     assert p2.sms_enabled is False
@@ -63,7 +63,9 @@ def test_send_sms_skipped_when_unconfigured(conn, monkeypatch):
 def test_send_digest_logs_each_channel(conn, monkeypatch):
     monkeypatch.setattr(notify.config, "SMTP_HOST", None)
     monkeypatch.setattr(notify.config, "TWILIO_ACCOUNT_SID", None)
-    db.upsert_notify_profile(conn, NotifyProfile(
+    # Scheduled delivery loops over registered users with an enabled channel.
+    user = db.create_user(conn, "a@b.com", "x", "t")
+    db.upsert_notify_profile(conn, user.id, NotifyProfile(
         email="a@b.com", email_enabled=True, updated_at="t",
     ))
     results = notify.send_digest(conn, "2026-06-29")
@@ -72,3 +74,8 @@ def test_send_digest_logs_each_channel(conn, monkeypatch):
     log = db.get_recent_suggestions(conn)
     assert len(log) == 2
     assert all(e.for_date == "2026-06-29" for e in log)
+
+
+def test_send_digest_skips_users_without_channels(conn):
+    db.create_user(conn, "quiet@b.com", "x", "t")  # no profile at all
+    assert notify.send_digest(conn, "2026-06-29") == []

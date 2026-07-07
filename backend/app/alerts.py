@@ -35,7 +35,7 @@ def detect(conn) -> list[Alert]:
     threshold = config.ALERT_BOOM_THRESHOLD
 
     boom = {b.ticker: b for b in db.get_boom_scores(conn)}
-    watchlist = [w.ticker for w in db.get_watchlist(conn)]
+    watchlist = db.get_all_watched_tickers(conn)
     new_alerts: list[Alert] = []
 
     for ticker in watchlist:
