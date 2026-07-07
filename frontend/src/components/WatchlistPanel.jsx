@@ -46,7 +46,7 @@ export default function WatchlistPanel({ watchlist, quotes = {}, onAdd, onRemove
         </div>
       </header>
 
-      <form className={styles.form} onSubmit={submit}>
+      <form className={styles.form} onSubmit={submit} data-tour="add-form">
         <input
           className={styles.ticker}
           placeholder="Ticker (e.g. LMT)"

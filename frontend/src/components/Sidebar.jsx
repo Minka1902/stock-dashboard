@@ -20,7 +20,7 @@ export default function Sidebar({ view, onNavigate }) {
         <span className={styles.brandTag}>terminal</span>
       </div>
 
-      <nav className={styles.nav}>
+      <nav className={styles.nav} data-tour="nav">
         {NAV.map((item, i) => {
           const active = view === item.key;
           return (

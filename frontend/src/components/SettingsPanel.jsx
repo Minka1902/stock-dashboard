@@ -177,14 +177,24 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
           )}
         </fieldset>
 
-        {/* Onboarding: the in-app module guide */}
+        {/* Onboarding: the in-app module guide + guided tours */}
         <fieldset className={styles.group}>
           <legend className={styles.legend}>Learn the dashboard</legend>
           <p className={styles.groupHint}>
             New here? The module guide explains what every panel shows and how it feeds the Boom Score.
+            Each view also has a guided tour (the <strong>?</strong> button in the top bar) that runs
+            automatically on first visit.
           </p>
           <button type="button" className={styles.primaryBtn} onClick={() => onNavigate?.("guide")}>
             Open the module guide
+          </button>{" "}
+          <button
+            type="button"
+            className={styles.primaryBtn}
+            onClick={() => setSetting("toursSeen", {})}
+            title="Guided tours will auto-run again the next time you visit each view"
+          >
+            Replay all tours
           </button>
         </fieldset>
 

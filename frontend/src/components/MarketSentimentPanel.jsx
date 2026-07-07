@@ -209,8 +209,8 @@ export default function MarketSentimentPanel({
   }
 
   return (
-    <div className={styles.wrap}>
-      <div className={styles.hero}>
+    <div className={styles.wrap} id="sentiment">
+      <div className={styles.hero} data-tour="sentiment-hero">
         <Pane caption="Fear & Greed Index" right={<span className={styles.paneMeta}>CNN composite</span>} className={styles.gaugePane}>
           <Gauge score={fgScore} rating={ind.fear_greed?.rating} />
         </Pane>

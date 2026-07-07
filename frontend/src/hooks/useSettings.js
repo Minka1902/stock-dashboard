@@ -17,6 +17,8 @@ const DEFAULTS = {
   focusMode: false,
   // Map of Overview section key -> true when the user has collapsed it.
   collapsed: {},
+  // Map of view key -> true once its guided tour has run (auto-runs once per view).
+  toursSeen: {},
 };
 
 function initialSettings() {

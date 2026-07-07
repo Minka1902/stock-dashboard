@@ -31,6 +31,8 @@ import SuggestionsPanel from "./components/SuggestionsPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
 import GuidePanel from "./components/GuidePanel";
 import StockDetailPanel from "./components/StockDetailPanel";
+import Tour from "./components/Tour";
+import { TOURS } from "./lib/tours";
 import styles from "./App.module.css";
 
 const TITLES = {
@@ -79,6 +81,8 @@ export default function App({ auth }) {
   // Any-ticker detail view (opened from search); overlays the current view.
   const [detailTicker, setDetailTicker] = useState(null);
   const navigate = (v) => { setDetailTicker(null); setView(v); };
+  // Guided tour: which view's tour is currently running (null = none).
+  const [tourView, setTourView] = useState(null);
 
   // Cmd/Ctrl+K toggles the command palette (palette mounts only while open).
   useEffect(() => {
@@ -112,6 +116,20 @@ export default function App({ auth }) {
     loading, busy, error, refresh, addWatch, removeWatch, addHolding, removeHolding,
     markAlertsRead,
   } = data;
+
+  // Auto-run each view's tour the first time it's visited (marked seen on close).
+  useEffect(() => {
+    if (loading || detailTicker || !TOURS[view] || settings.toursSeen[view]) {
+      return undefined;
+    }
+    const id = setTimeout(() => setTourView(view), 450); // let the panel render first
+    return () => clearTimeout(id);
+  }, [view, loading, detailTicker, settings.toursSeen]);
+
+  const closeTour = () => {
+    if (tourView) setSetting("toursSeen", { ...settings.toursSeen, [tourView]: true });
+    setTourView(null);
+  };
 
   const commandItems = [
     { id: "sentiment",   label: "Market Sentiment", hint: "the mood",   icon: "gauge",    run: () => navigate("sentiment") },
@@ -149,6 +167,8 @@ export default function App({ auth }) {
             onOpenCommand={() => setCmdOpen(true)}
             user={auth?.user}
             onLogout={auth?.logout}
+            hasTour={Boolean(TOURS[view]) && !detailTicker}
+            onStartTour={() => setTourView(view)}
           />
           <LiveTicker quotes={quotes} asOf={asOf} />
         </div>
@@ -254,6 +274,10 @@ export default function App({ auth }) {
           onClose={() => setCmdOpen(false)}
           onOpenTicker={(t) => setDetailTicker(t)}
         />
+      )}
+
+      {tourView && TOURS[tourView] && (
+        <Tour steps={TOURS[tourView]} onClose={closeTour} />
       )}
     </div>
   );
