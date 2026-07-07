@@ -11,6 +11,7 @@ from app.models import (
     Alert,
     AnalystSignal,
     AppSettings,
+    AuthSession,
     BoomScore,
     CongressTrade,
     ContractRecord,
@@ -31,6 +32,7 @@ from app.models import (
     SourceStatus,
     SuggestionLogEntry,
     TechnicalSignal,
+    User,
     VixPoint,
     WatchItem,
     YieldPoint,
@@ -299,6 +301,29 @@ def init_schema(conn: sqlite3.Connection) -> None:
             ticker       TEXT PRIMARY KEY,
             computed_at  TEXT NOT NULL,
             payload_json TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS users (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            email         TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            password_hash TEXT NOT NULL,
+            totp_secret   TEXT,
+            totp_enabled  INTEGER NOT NULL DEFAULT 0,
+            is_admin      INTEGER NOT NULL DEFAULT 0,
+            created_at    TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS sessions (
+            token_hash   TEXT PRIMARY KEY,
+            user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            state        TEXT NOT NULL,
+            created_at   TEXT NOT NULL,
+            expires_at   TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS recovery_codes (
+            user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            code_hash TEXT NOT NULL,
+            used_at   TEXT,
+            PRIMARY KEY (user_id, code_hash)
         );
         """
     )
@@ -1399,6 +1424,122 @@ def upsert_alert_state(
         (ticker, score, int(golden_cross) if golden_cross is not None else None,
          int(insider_cluster_buy) if insider_cluster_buy is not None else None, updated_at),
     )
+    conn.commit()
+
+
+# ---------- users, sessions & recovery codes ----------
+def create_user(conn: sqlite3.Connection, email: str, password_hash: str,
+                created_at: str, is_admin: bool = False) -> User:
+    cur = conn.execute(
+        "INSERT INTO users (email, password_hash, created_at, is_admin) VALUES (?, ?, ?, ?)",
+        (email, password_hash, created_at, int(is_admin)),
+    )
+    conn.commit()
+    return get_user(conn, cur.lastrowid)
+
+
+def get_user(conn: sqlite3.Connection, user_id: int) -> User | None:
+    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return User(**dict(row)) if row else None
+
+
+def get_user_by_email(conn: sqlite3.Connection, email: str) -> User | None:
+    row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    return User(**dict(row)) if row else None
+
+
+def count_users(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+
+def set_totp_secret(conn: sqlite3.Connection, user_id: int, secret: str) -> None:
+    conn.execute("UPDATE users SET totp_secret = ? WHERE id = ?", (secret, user_id))
+    conn.commit()
+
+
+def enable_totp(conn: sqlite3.Connection, user_id: int) -> None:
+    conn.execute("UPDATE users SET totp_enabled = 1 WHERE id = ?", (user_id,))
+    conn.commit()
+
+
+def create_session(conn: sqlite3.Connection, session: AuthSession) -> None:
+    conn.execute(
+        """
+        INSERT INTO sessions (token_hash, user_id, state, created_at, expires_at, last_seen_at)
+        VALUES (:token_hash, :user_id, :state, :created_at, :expires_at, :last_seen_at)
+        """,
+        session.model_dump(),
+    )
+    conn.commit()
+
+
+def get_session(conn: sqlite3.Connection, token_hash: str) -> AuthSession | None:
+    row = conn.execute(
+        "SELECT * FROM sessions WHERE token_hash = ?", (token_hash,)
+    ).fetchone()
+    return AuthSession(**dict(row)) if row else None
+
+
+def touch_session(conn: sqlite3.Connection, token_hash: str, last_seen_at: str) -> None:
+    conn.execute(
+        "UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?",
+        (last_seen_at, token_hash),
+    )
+    conn.commit()
+
+
+def delete_session(conn: sqlite3.Connection, token_hash: str) -> None:
+    conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
+    conn.commit()
+
+
+def purge_expired_sessions(conn: sqlite3.Connection, now_iso: str) -> None:
+    conn.execute("DELETE FROM sessions WHERE expires_at < ?", (now_iso,))
+    conn.commit()
+
+
+def replace_recovery_codes(conn: sqlite3.Connection, user_id: int,
+                           code_hashes: list[str]) -> None:
+    conn.execute("DELETE FROM recovery_codes WHERE user_id = ?", (user_id,))
+    conn.executemany(
+        "INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)",
+        [(user_id, h) for h in code_hashes],
+    )
+    conn.commit()
+
+
+def consume_recovery_code(conn: sqlite3.Connection, user_id: int,
+                          code_hash: str, used_at: str) -> bool:
+    """Mark one unused code as used. Returns False if no such unused code."""
+    cur = conn.execute(
+        "UPDATE recovery_codes SET used_at = ? "
+        "WHERE user_id = ? AND code_hash = ? AND used_at IS NULL",
+        (used_at, user_id, code_hash),
+    )
+    conn.commit()
+    return cur.rowcount == 1
+
+
+def count_unused_recovery_codes(conn: sqlite3.Connection, user_id: int) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) FROM recovery_codes WHERE user_id = ? AND used_at IS NULL",
+        (user_id,),
+    ).fetchone()[0]
+
+
+def _has_column(conn: sqlite3.Connection, table: str, col: str) -> bool:
+    return any(r[1] == col for r in conn.execute(f"PRAGMA table_info({table})"))
+
+
+def claim_legacy_rows(conn: sqlite3.Connection, user_id: int) -> None:
+    """Assign pre-auth single-user data (user_id=0 sentinel) to `user_id`.
+
+    Called when the first account registers, so an existing single-user DB
+    migrates to its owner. No-op on tables that predate the user_id column.
+    """
+    for table in ("watchlist", "portfolio", "notify_profile"):
+        if _has_column(conn, table, "user_id"):
+            conn.execute(f"UPDATE {table} SET user_id = ? WHERE user_id = 0", (user_id,))
     conn.commit()
 
 

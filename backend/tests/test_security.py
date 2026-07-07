@@ -68,6 +68,8 @@ def client(tmp_path, monkeypatch):
     importlib.reload(config)
     importlib.reload(main_module)
     with TestClient(main_module.app) as c:
+        from tests.conftest import authenticate
+        authenticate(c)
         yield c
 
 

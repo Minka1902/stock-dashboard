@@ -10,9 +10,9 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
-from app import analysis, chart_data, config, db, ingest, notify, quotes, report, sentiment, suggestions
+from app import analysis, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, sentiment, suggestions
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.security import SecurityHeadersMiddleware, rate_limit
@@ -233,6 +233,28 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Stock Signal Dashboard", lifespan=lifespan)
 app.add_middleware(SecurityHeadersMiddleware)
+
+# Everything under /api requires an active session except health and auth itself.
+_PUBLIC_PATHS = {"/api/health"}
+_PUBLIC_PREFIXES = ("/api/auth/",)
+
+
+@app.middleware("http")
+async def _authenticate(request, call_next):
+    request.state.user = auth.resolve_user(conn, request)
+    path = request.url.path
+    protected = (
+        path.startswith("/api")
+        and path not in _PUBLIC_PATHS
+        and not path.startswith(_PUBLIC_PREFIXES)
+    )
+    if protected and request.state.user is None:
+        return JSONResponse(status_code=401, content={"detail": "not authenticated"})
+    return await call_next(request)
+
+
+# CORS is added last (outermost) so even 401s from the auth middleware carry
+# CORS headers — the browser then surfaces the status instead of a CORS error.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.CORS_ORIGINS,
@@ -240,6 +262,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(routes_auth.build_router(conn))
 
 
 @app.get("/api/health")

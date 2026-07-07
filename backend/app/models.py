@@ -250,6 +250,31 @@ class AppSettings(BaseModel):
     updated_at: str = ""
 
 
+# ---------- Accounts & sessions ----------
+
+class User(BaseModel):
+    id: int
+    email: str
+    password_hash: str
+    totp_secret: str | None = None
+    totp_enabled: bool = False
+    is_admin: bool = False
+    created_at: str = ""
+
+    def public(self) -> dict:
+        """The shape safe to return to the browser."""
+        return {"id": self.id, "email": self.email, "is_admin": self.is_admin}
+
+
+class AuthSession(BaseModel):
+    token_hash: str    # sha256 of the raw cookie token; raw value never stored
+    user_id: int
+    state: str         # 'totp_setup' | 'pending_totp' | 'active'
+    created_at: str
+    expires_at: str
+    last_seen_at: str
+
+
 # ---------- Portfolio technical analysis ----------
 
 class OHLCBar(BaseModel):

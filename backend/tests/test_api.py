@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from app import db
 from app import quotes as quotes_module
 from app.models import ContractRecord, LiveQuote
+from tests.conftest import authenticate
 
 
 @pytest.fixture
@@ -27,6 +28,7 @@ def client(tmp_path, monkeypatch):
 
     quotes_module._cache.clear()
     with TestClient(main_module.app) as c:
+        authenticate(c)
         yield c
     quotes_module._cache.clear()
 
