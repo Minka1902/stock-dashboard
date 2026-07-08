@@ -34,6 +34,7 @@ export const getNews = () => getJSON("/api/news");
 export const getTrades = () => getJSON("/api/trades");
 export const getWatchlist = () => getJSON("/api/watchlist");
 export const getYieldCurve = () => getJSON("/api/yield-curve");
+export const getEconCalendar = () => getJSON("/api/econ-calendar");
 export const getSignals = () => getJSON("/api/signals");
 export const getFearGreed = () => getJSON("/api/fear-greed");
 export const getVix = () => getJSON("/api/vix");

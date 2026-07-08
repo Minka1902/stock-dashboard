@@ -71,6 +71,25 @@ CONGRESS_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_CONGRESS_MIN_INTERVAL
 # --- Yield curve ---
 YIELD_CURVE_MONTHS = int(os.environ.get("STOCKS_YIELD_CURVE_MONTHS", "3"))
 
+# --- Economic calendar ---
+# Optional Financial Modeling Prep key. When set, we use FMP's economic_calendar
+# (which carries official Low/Medium/High impact ratings); otherwise we fall back
+# to Nasdaq's keyless endpoint and classify importance ourselves.
+FMP_KEY: str | None = os.environ.get("STOCKS_FMP_KEY") or None
+ECON_CALENDAR_DAYS_AHEAD = int(os.environ.get("STOCKS_ECON_CALENDAR_DAYS_AHEAD", "7"))
+ECON_CALENDAR_DAYS_BACK = int(os.environ.get("STOCKS_ECON_CALENDAR_DAYS_BACK", "1"))
+# Calendar entries move slowly — refresh at most hourly.
+ECON_CALENDAR_MIN_INTERVAL_SECONDS = int(
+    os.environ.get("STOCKS_ECON_CALENDAR_MIN_INTERVAL_SECONDS", "3600")
+)
+# Comma-separated country allowlist (matches the app's US-equity orientation).
+# Empty string = keep every country.
+ECON_CALENDAR_COUNTRIES = [
+    c.strip()
+    for c in os.environ.get("STOCKS_ECON_CALENDAR_COUNTRIES", "United States").split(",")
+    if c.strip()
+]
+
 # --- Seasonality ---
 # Yahoo chart range for deep history ("max" so the "all years" lookback is meaningful).
 SEASONALITY_RANGE = os.environ.get("STOCKS_SEASONALITY_RANGE", "max")
