@@ -15,6 +15,7 @@ from app.models import (
     BoomScore,
     CongressTrade,
     ContractRecord,
+    EconEvent,
     FearGreedSnapshot,
     Fundamentals,
     Holding,
@@ -196,6 +197,20 @@ def init_schema(conn: sqlite3.Connection) -> None:
             yr10   REAL,
             yr30   REAL,
             spread REAL
+        );
+        CREATE TABLE IF NOT EXISTS econ_events (
+            event_id          TEXT PRIMARY KEY,
+            date              TEXT NOT NULL,
+            time              TEXT NOT NULL,
+            country           TEXT NOT NULL,
+            event             TEXT NOT NULL,
+            importance        TEXT NOT NULL,
+            importance_source TEXT NOT NULL,
+            actual            TEXT,
+            forecast          TEXT,
+            previous          TEXT,
+            source            TEXT NOT NULL,
+            fetched_at        TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS technical_signals (
             ticker       TEXT PRIMARY KEY,
@@ -659,6 +674,47 @@ def get_yield_curve(conn: sqlite3.Connection, days: int = 90) -> list[YieldPoint
         (f"-{days} days",),
     )
     return [YieldPoint(**dict(row)) for row in cur.fetchall()]
+
+
+# ---------- economic calendar ----------
+def upsert_econ_events(conn: sqlite3.Connection, records: list[EconEvent]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO econ_events
+            (event_id, date, time, country, event, importance, importance_source,
+             actual, forecast, previous, source, fetched_at)
+        VALUES
+            (:event_id, :date, :time, :country, :event, :importance, :importance_source,
+             :actual, :forecast, :previous, :source, :fetched_at)
+        ON CONFLICT(event_id) DO UPDATE SET
+            time=excluded.time, importance=excluded.importance,
+            importance_source=excluded.importance_source,
+            actual=excluded.actual, forecast=excluded.forecast,
+            previous=excluded.previous, source=excluded.source,
+            fetched_at=excluded.fetched_at
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+
+
+def get_econ_events(
+    conn: sqlite3.Connection,
+    days_ahead: int = 7,
+    days_back: int = 1,
+    importance: str | None = None,
+) -> list[EconEvent]:
+    sql = (
+        "SELECT * FROM econ_events "
+        "WHERE date >= date('now', ?) AND date <= date('now', ?)"
+    )
+    params: list = [f"-{days_back} days", f"+{days_ahead} days"]
+    if importance:
+        sql += " AND importance = ?"
+        params.append(importance)
+    sql += " ORDER BY date ASC, CASE WHEN time = '' THEN '99:99' ELSE time END ASC"
+    cur = conn.execute(sql, params)
+    return [EconEvent(**dict(row)) for row in cur.fetchall()]
 
 
 # ---------- technical signals ----------

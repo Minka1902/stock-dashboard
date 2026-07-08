@@ -16,6 +16,7 @@ import TradesPanel from "./components/TradesPanel";
 import NewsPanel from "./components/NewsPanel";
 import WatchlistPanel from "./components/WatchlistPanel";
 import YieldCurvePanel from "./components/YieldCurvePanel";
+import EconCalendarPanel from "./components/EconCalendarPanel";
 import TechnicalPanel from "./components/TechnicalPanel";
 import FearGreedPanel from "./components/FearGreedPanel";
 import MarketSentimentPanel from "./components/MarketSentimentPanel";
@@ -43,6 +44,7 @@ const TITLES = {
   news:        "News",
   watchlist:   "Watchlist",
   "yield-curve": "Yield Curve",
+  "econ-calendar": "Economic Calendar",
   signals:     "Signals",
   "fear-greed": "Fear & Greed",
   congress:    "Congress",
@@ -110,7 +112,7 @@ export default function App({ auth }) {
 
   const {
     contracts, sources, news, trades, watchlist,
-    yieldCurve, signals, fearGreed, vix, aaii, putCall, marginDebt, sentiment, congressTrades,
+    yieldCurve, econCalendar, signals, fearGreed, vix, aaii, putCall, marginDebt, sentiment, congressTrades,
     shortInterest, social, analyst, boomScores, fundamentals, seasonality,
     portfolio, suggestions, analyses, alerts, unreadAlerts,
     loading, busy, error, refresh, addWatch, removeWatch, addHolding, removeHolding,
@@ -138,6 +140,7 @@ export default function App({ auth }) {
     { id: "trades",      label: "Trades",           hint: "insiders",   icon: "trending", run: () => navigate("trades") },
     { id: "news",        label: "News",             hint: "the tape",   icon: "news",     run: () => navigate("news") },
     { id: "watchlist",   label: "Watchlist",        hint: "charts & radar", icon: "star", run: () => navigate("watchlist") },
+    { id: "econ-calendar", label: "Economic Calendar", hint: "macro events", icon: "calendar", run: () => navigate("econ-calendar") },
     { id: "settings",    label: "Settings",         hint: "config & guide", icon: "settings", run: () => navigate("settings") },
     { id: "refresh",     label: "Refresh all sources", hint: "sync now", icon: "refresh", run: () => refresh() },
     { id: "theme",       label: "Toggle theme", hint: theme === "dark" ? "to light" : "to dark", icon: theme === "dark" ? "sun" : "moon", run: () => toggle() },
@@ -253,6 +256,7 @@ export default function App({ auth }) {
             {view === "contracts" && <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "watchlist" && <WatchlistPanel watchlist={watchlist} quotes={quotesByTicker} onAdd={addWatch} onRemove={removeWatch} />}
             {view === "yield-curve" && <YieldCurvePanel data={yieldCurve} loading={loading} busy={busy} onRefresh={refresh} />}
+            {view === "econ-calendar" && <EconCalendarPanel data={econCalendar} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "signals" && <TechnicalPanel data={signals} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "fear-greed" && <FearGreedPanel data={fearGreed} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "congress" && <CongressPanel data={congressTrades} loading={loading} busy={busy} onRefresh={refresh} />}

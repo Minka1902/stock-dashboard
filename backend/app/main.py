@@ -21,6 +21,7 @@ from app.market_calendar import is_trading_day, next_trading_day
 from app.models import AppSettings, Holding, NotifyProfile, WatchItem
 from app.sources import edgar, gdelt, usaspending
 import app.sources.yield_curve as yield_curve_source
+import app.sources.econ_calendar as econ_calendar_source
 import app.sources.technical as technical_source
 import app.sources.fear_greed as fear_greed_source
 import app.sources.vix as vix_source
@@ -92,6 +93,17 @@ def score_fetch():
     return boom_score_source.compute_all(tickers, conn)
 
 
+def econ_calendar_fetch():
+    """Upcoming macro releases. FMP path (official impact) when a key is set,
+    otherwise the keyless Nasdaq path (curated impact)."""
+    return econ_calendar_source.fetch(
+        config.ECON_CALENDAR_DAYS_AHEAD,
+        config.ECON_CALENDAR_DAYS_BACK,
+        config.FMP_KEY,
+        config.ECON_CALENDAR_COUNTRIES,
+    )
+
+
 def ohlc_fetch():
     tickers = db.get_all_portfolio_tickers(conn)
     if not tickers:
@@ -128,6 +140,7 @@ SOURCES = {
     "gdelt":       (lambda: news_fetch(), db.upsert_news, None),
     "edgar":       (lambda: trades_fetch(), db.upsert_trades, None),
     "yield_curve": (lambda: yield_curve_source.fetch(config.YIELD_CURVE_MONTHS), db.upsert_yield_curve, None),
+    "econ_calendar": (lambda: econ_calendar_fetch(), db.upsert_econ_events, config.ECON_CALENDAR_MIN_INTERVAL_SECONDS),
     "technical":   (lambda: signals_fetch(), db.upsert_technical_signals, None),
     "fear_greed":  (lambda: fear_greed_source.fetch(), db.upsert_fear_greed, None),
     "vix":         (lambda: vix_source.fetch(config.VIX_RANGE), db.upsert_vix, None),
@@ -292,6 +305,18 @@ def trades():
 @app.get("/api/yield-curve")
 def yield_curve():
     return [p.model_dump() for p in db.get_yield_curve(conn)]
+
+
+@app.get("/api/econ-calendar")
+def econ_calendar(importance: str | None = None):
+    imp = importance if importance in ("high", "medium", "low") else None
+    events = db.get_econ_events(
+        conn,
+        config.ECON_CALENDAR_DAYS_AHEAD,
+        config.ECON_CALENDAR_DAYS_BACK,
+        imp,
+    )
+    return [e.model_dump() for e in events]
 
 
 @app.get("/api/signals")

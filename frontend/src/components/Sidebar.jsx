@@ -9,6 +9,7 @@ const NAV = [
   { key: "trades",      label: "Trades",      icon: "trending", hint: "insiders" },
   { key: "news",        label: "News",        icon: "news",     hint: "the tape" },
   { key: "watchlist",   label: "Watchlist",   icon: "star",     hint: "charts & radar" },
+  { key: "econ-calendar", label: "Calendar",  icon: "calendar", hint: "macro events" },
 ];
 
 export default function Sidebar({ view, onNavigate }) {

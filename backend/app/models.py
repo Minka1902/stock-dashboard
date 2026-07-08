@@ -115,6 +115,21 @@ class MarginDebtPoint(BaseModel):
     debit_balances: float  # $ millions (FINRA margin account debit balances)
 
 
+class EconEvent(BaseModel):
+    event_id: str          # PRIMARY KEY — stable hash of date+country+event
+    date: str              # YYYY-MM-DD (local release date)
+    time: str              # "HH:MM" UTC, or "" when only a date is known
+    country: str           # e.g. "United States"
+    event: str             # e.g. "CPI (YoY)", "FOMC Rate Decision"
+    importance: str        # "high" | "medium" | "low"
+    importance_source: str # "fmp" (official) | "curated" (our keyword classification)
+    actual: str | None     # released value, when available (kept as strings — units vary)
+    forecast: str | None   # consensus / estimate
+    previous: str | None
+    source: str            # "fmp" | "nasdaq"
+    fetched_at: str
+
+
 class CongressTrade(BaseModel):
     trade_hash: str        # PRIMARY KEY (content hash)
     representative: str

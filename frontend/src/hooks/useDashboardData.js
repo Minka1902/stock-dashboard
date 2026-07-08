@@ -6,6 +6,7 @@ import {
   getTrades,
   getWatchlist,
   getYieldCurve,
+  getEconCalendar,
   getSignals,
   getFearGreed,
   getVix,
@@ -35,7 +36,7 @@ import {
 const REFRESH_MS = 180000; // 3 minutes, matches backend default
 const EXTERNAL_SOURCES = [
   "usaspending", "gdelt", "edgar",
-  "yield_curve", "technical", "fear_greed", "vix", "aaii", "put_call", "margin_debt", "congress",
+  "yield_curve", "econ_calendar", "technical", "fear_greed", "vix", "aaii", "put_call", "margin_debt", "congress",
   "short_interest", "social", "analyst", "fundamentals", "seasonality", "boom_score",
 ];
 
@@ -51,6 +52,7 @@ export function useDashboardData() {
   const [trades, setTrades] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
   const [yieldCurve, setYieldCurve] = useState([]);
+  const [econCalendar, setEconCalendar] = useState([]);
   const [signals, setSignals] = useState([]);
   const [fearGreed, setFearGreed] = useState([]);
   const [vix, setVix] = useState([]);
@@ -103,6 +105,7 @@ export function useDashboardData() {
       getSuggestions(),    // 21
       getAlerts(),         // 22 — special shape { alerts, unread }
       getAnalyses(),       // 23
+      getEconCalendar(),   // 24
     ]);
 
     const setters = [
@@ -113,6 +116,7 @@ export function useDashboardData() {
       setFundamentals, setSeasonality, setPortfolio, setSuggestions,
       null, // alerts handled below
       setAnalyses,
+      setEconCalendar,
     ];
     results.forEach((r, i) => {
       if (r.status === "fulfilled" && setters[i]) setters[i](r.value);
@@ -181,6 +185,7 @@ export function useDashboardData() {
     trades,
     watchlist,
     yieldCurve,
+    econCalendar,
     signals,
     fearGreed,
     vix,
