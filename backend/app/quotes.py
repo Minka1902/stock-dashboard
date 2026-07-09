@@ -9,6 +9,7 @@ since yesterday's close, like most ticker strips.
 """
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import httpx
@@ -57,31 +58,63 @@ def parse_quote(payload: dict, ticker: str, fetched_at: str) -> LiveQuote | None
     )
 
 
+def _fetch_one(client: httpx.Client, ticker: str, fetched_at: str) -> LiveQuote | None:
+    try:
+        resp = client.get(
+            _YAHOO_URL.format(ticker=ticker),
+            params={"interval": "1m", "range": "1d", "includePrePost": "true"},
+            headers=_YAHOO_HEADERS,
+        )
+        resp.raise_for_status()
+        return parse_quote(resp.json(), ticker, fetched_at)
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
 def fetch_quotes(tickers: list[str]) -> list[LiveQuote]:
+    """Fetch quotes for `tickers` concurrently (bounded pool) so a cold miss for
+    N tickers costs ~one timeout, not N sequential timeouts."""
+    if not tickers:
+        return []
     fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    quotes: list[LiveQuote] = []
+    workers = max(1, min(config.QUOTES_MAX_WORKERS, len(tickers)))
     with httpx.Client(timeout=config.QUOTES_TIMEOUT_SECONDS) as client:
-        for ticker in tickers:
-            try:
-                resp = client.get(
-                    _YAHOO_URL.format(ticker=ticker),
-                    params={"interval": "1m", "range": "1d", "includePrePost": "true"},
-                    headers=_YAHOO_HEADERS,
-                )
-                resp.raise_for_status()
-                quote = parse_quote(resp.json(), ticker, fetched_at)
-            except (httpx.HTTPError, ValueError):
-                continue
-            if quote is not None:
-                quotes.append(quote)
-    return quotes
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            results = pool.map(lambda t: _fetch_one(client, t, fetched_at), tickers)
+    return [q for q in results if q is not None]
 
 
-# ---- TTL cache ----
+# ---- TTL cache (stale-while-revalidate) ----
 # ticker -> (expires_at_monotonic, quote-or-None). A None value is a negative
-# entry: Yahoo failed for that ticker, don't retry it until the TTL lapses.
+# entry: Yahoo failed for that ticker last time. On expiry we keep serving the
+# stale value and refresh it in the background, so a request never blocks on a
+# network round-trip once a ticker has been seen once.
 _cache: dict[str, tuple[float, LiveQuote | None]] = {}
 _lock = threading.Lock()
+_refreshing: set[str] = set()  # tickers with an in-flight background refresh
+
+
+def _store(tickers: list[str], fetched: list[LiveQuote], ttl_seconds: float) -> None:
+    expires = time.monotonic() + ttl_seconds
+    by_ticker = {q.ticker: q for q in fetched}
+    with _lock:
+        for t in tickers:
+            newq = by_ticker.get(t.upper())
+            if newq is not None:
+                _cache[t] = (expires, newq)
+            else:
+                # This fetch missed the ticker — keep any prior (stale) value
+                # rather than dropping it, but push the expiry out.
+                prev = _cache.get(t)
+                _cache[t] = (expires, prev[1] if prev else None)
+
+
+def _background_refresh(tickers: list[str], ttl_seconds: float) -> None:
+    try:
+        _store(tickers, fetch_quotes(tickers), ttl_seconds)
+    finally:
+        with _lock:
+            _refreshing.difference_update(tickers)
 
 
 def get_quotes(tickers: list[str], ttl_seconds: float | None = None) -> list[LiveQuote]:
@@ -89,27 +122,30 @@ def get_quotes(tickers: list[str], ttl_seconds: float | None = None) -> list[Liv
         ttl_seconds = config.QUOTES_TTL_SECONDS
     now = time.monotonic()
     hits: list[LiveQuote] = []
-    missing: list[str] = []
+    cold: list[str] = []   # never seen — must fetch now so first paint isn't empty
+    stale: list[str] = []  # expired — serve stale, refresh in background
 
     with _lock:
         for t in tickers:
             entry = _cache.get(t)
-            if entry is not None and entry[0] > now:
-                if entry[1] is not None:
-                    hits.append(entry[1])
-            else:
-                missing.append(t)
+            if entry is None:
+                cold.append(t)
+                continue
+            if entry[1] is not None:
+                hits.append(entry[1])  # serve fresh OR stale value immediately
+            if entry[0] <= now:
+                stale.append(t)
+        to_refresh = [t for t in stale if t not in _refreshing]
+        _refreshing.update(to_refresh)
+
+    if to_refresh:
+        threading.Thread(
+            target=_background_refresh, args=(to_refresh, ttl_seconds), daemon=True
+        ).start()
 
     fetched: list[LiveQuote] = []
-    if missing:
-        # Fetch outside the lock: two concurrent cold requests may both hit
-        # Yahoo (last write wins) — benign, and better than serializing every
-        # client behind network latency.
-        fetched = fetch_quotes(missing)
-        expires = time.monotonic() + ttl_seconds
-        by_ticker = {q.ticker: q for q in fetched}
-        with _lock:
-            for t in missing:
-                _cache[t] = (expires, by_ticker.get(t.upper()))
+    if cold:
+        fetched = fetch_quotes(cold)
+        _store(cold, fetched, ttl_seconds)
 
     return sorted(hits + fetched, key=lambda q: q.ticker)

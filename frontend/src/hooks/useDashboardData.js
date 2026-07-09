@@ -143,11 +143,20 @@ export function useDashboardData() {
   }, [load]);
 
   // Refresh every external source, then reload. Partial failures are fine:
-  // each source records its own status server-side.
+  // each source records its own status server-side. Bounded concurrency: firing
+  // all ~18 refreshes at once saturates the single backend worker (each does
+  // blocking network I/O), so run them a few at a time.
   const refresh = useCallback(async () => {
     setBusy(true);
     try {
-      await Promise.allSettled(EXTERNAL_SOURCES.map((s) => refreshSource(s)));
+      const queue = [...EXTERNAL_SOURCES];
+      const worker = async () => {
+        while (queue.length) {
+          const s = queue.shift();
+          try { await refreshSource(s); } catch { /* status recorded server-side */ }
+        }
+      };
+      await Promise.all(Array.from({ length: 4 }, worker));
       await load();
     } catch (e) {
       setError(e.message);

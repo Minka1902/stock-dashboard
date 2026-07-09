@@ -83,7 +83,7 @@ def build_router(conn) -> APIRouter:
         if user.totp_secret != secret:
             db.set_totp_secret(conn, user.id, secret)
         uri = auth.provisioning_uri(secret, user.email)
-        return {"otpauth_uri": uri, "qr_svg": auth.qr_svg(uri), "secret": secret}
+        return {"otpauth_uri": uri, "qr_png": auth.qr_data_uri(uri), "secret": secret}
 
     @router.post("/totp/enable", dependencies=[Depends(rate_limit("auth_totp", 10, 60))])
     def totp_enable(body: CodeBody, request: Request, response: Response):

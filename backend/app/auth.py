@@ -67,9 +67,14 @@ def provisioning_uri(secret: str, email: str) -> str:
     return pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name=TOTP_ISSUER)
 
 
-def qr_svg(uri: str) -> str:
-    """Inline SVG string of the otpauth:// QR (scannable by any authenticator)."""
-    return segno.make(uri, error="m").svg_inline(scale=4)
+def qr_data_uri(uri: str) -> str:
+    """PNG data URI of the otpauth:// QR.
+
+    A crisp raster (black-on-white, baked in) rather than an inline stroke SVG:
+    downscaling segno's stroke-based SVG blurs the modules enough that phone
+    cameras can't lock on, whereas a high-res PNG stays sharp at any display size.
+    """
+    return segno.make(uri, error="m").png_data_uri(scale=8, border=4)
 
 
 def verify_totp(secret: str, code: str) -> bool:

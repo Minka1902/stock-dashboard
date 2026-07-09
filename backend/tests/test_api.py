@@ -17,7 +17,7 @@ def client(tmp_path, monkeypatch):
     importlib.reload(main_module)
 
     # Replace the real contracts fetch with a stub (no network in tests).
-    def stub_fetch():
+    def stub_fetch(conn):
         return [
             ContractRecord(
                 external_id="A", award_id="AWD-A", recipient_name="Acme",

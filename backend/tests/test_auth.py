@@ -43,8 +43,8 @@ def test_provisioning_uri_and_qr():
     uri = auth.provisioning_uri(secret, "a@b.co")
     assert uri.startswith("otpauth://totp/")
     assert "Stock%20Signal%20Dashboard" in uri
-    svg = auth.qr_svg(uri)
-    assert svg.startswith("<svg")
+    qr = auth.qr_data_uri(uri)
+    assert qr.startswith("data:image/png;base64,")
 
 
 def test_recovery_codes_shape():
@@ -69,7 +69,7 @@ def test_register_enroll_and_me(client):
 
     setup = client.get("/api/auth/totp/setup").json()
     assert setup["otpauth_uri"].startswith("otpauth://totp/")
-    assert setup["qr_svg"].startswith("<svg")
+    assert setup["qr_png"].startswith("data:image/png;base64,")
 
     enabled = client.post(
         "/api/auth/totp/enable",

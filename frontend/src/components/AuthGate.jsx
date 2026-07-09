@@ -164,8 +164,10 @@ function TotpSetup({ auth, busy, run }) {
             Scan with Google or Microsoft Authenticator, then enter the 6-digit
             code it shows.
           </p>
-          {/* SVG comes from our own backend (segno-generated), not user content. */}
-          <div className={styles.qr} dangerouslySetInnerHTML={{ __html: setup.qr_svg }} />
+          {/* PNG comes from our own backend (segno-generated), not user content. */}
+          <div className={styles.qr}>
+            <img src={setup.qr_png} width={220} height={220} alt="Two-factor setup QR code" />
+          </div>
           <details className={styles.manual}>
             <summary>Can't scan? Enter the key manually</summary>
             <code className={styles.secret}>{setup.secret}</code>

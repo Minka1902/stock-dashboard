@@ -41,13 +41,15 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 
-# Module-level fetchers so tests can monkeypatch them with stubs.
-def contracts_fetch():
+# Module-level fetchers so tests can monkeypatch them with stubs. Each takes the
+# connection to read from — the scheduler passes its own (refresh_conn) so an
+# ingestion cycle never contends with request reads on the request connection.
+def contracts_fetch(conn):
     start, end = config.contracts_date_window()
     return usaspending.fetch(start, end, config.CONTRACTS_LIMIT)
 
 
-def news_fetch():
+def news_fetch(conn):
     """Macro headlines plus per-ticker news for every portfolio/watchlist
     symbol (union across all users). Tagged articles come last so their
     ticker wins the url upsert."""
@@ -57,43 +59,46 @@ def news_fetch():
     )
     if not tickers:
         return macro
+    # Cap the per-ticker fan-out: each is a blocking GDELT call, so an unbounded
+    # watchlist could make the news step outlast the whole refresh interval.
+    tickers = tickers[: config.NEWS_MAX_TICKERS]
     names = db.get_company_names(conn, tickers)
     return macro + gdelt.fetch_for_tickers(tickers, names, config.NEWS_PER_TICKER_LIMIT)
 
 
-def trades_fetch():
+def trades_fetch(conn):
     return edgar.fetch(config.EDGAR_LIMIT, config.SEC_USER_AGENT)
 
 
-def signals_fetch():
+def signals_fetch(conn):
     tickers = db.get_all_watched_tickers(conn)
     if not tickers:
         return []
     return technical_source.fetch(tickers, config.ALPHA_VANTAGE_KEY)
 
 
-def fundamentals_fetch():
+def fundamentals_fetch(conn):
     tickers = db.get_all_watched_tickers(conn)
     if not tickers:
         return []
     return fundamentals_source.fetch(tickers)
 
 
-def seasonality_fetch():
+def seasonality_fetch(conn):
     tickers = db.get_all_watched_tickers(conn)
     if not tickers:
         return []
     return seasonality_source.fetch(tickers, config.SEASONALITY_RANGE)
 
 
-def score_fetch():
+def score_fetch(conn):
     tickers = db.get_all_watched_tickers(conn)
     if not tickers:
         return []
     return boom_score_source.compute_all(tickers, conn)
 
 
-def econ_calendar_fetch():
+def econ_calendar_fetch(conn):
     """Upcoming macro releases. FMP path (official impact) when a key is set,
     otherwise the keyless Nasdaq path (curated impact)."""
     return econ_calendar_source.fetch(
@@ -104,14 +109,14 @@ def econ_calendar_fetch():
     )
 
 
-def ohlc_fetch():
+def ohlc_fetch(conn):
     tickers = db.get_all_portfolio_tickers(conn)
     if not tickers:
         return []
     return ohlc_source.fetch(tickers)
 
 
-def analysis_fetch():
+def analysis_fetch(conn):
     """Per-holding technical analysis from stored OHLC + live price.
 
     Computed once per ticker across all users and stored UNSIZED; each user's
@@ -130,41 +135,61 @@ def analysis_fetch():
     return out
 
 
-# One shared connection (SQLite with check_same_thread=False).
+# Request connection: used by all API route handlers. SQLite in WAL mode
+# (check_same_thread=False), so it serves reads concurrently with writes on the
+# separate refresh connection below.
 conn = db.connect(config.DB_PATH)
 db.init_schema(conn)
 
-# Registry: name -> (fetch_callable, store_fn, min_interval_seconds | None).
-SOURCES = {
-    "usaspending": (lambda: contracts_fetch(), db.upsert_contracts, None),
-    "gdelt":       (lambda: news_fetch(), db.upsert_news, None),
-    "edgar":       (lambda: trades_fetch(), db.upsert_trades, None),
-    "yield_curve": (lambda: yield_curve_source.fetch(config.YIELD_CURVE_MONTHS), db.upsert_yield_curve, None),
-    "econ_calendar": (lambda: econ_calendar_fetch(), db.upsert_econ_events, config.ECON_CALENDAR_MIN_INTERVAL_SECONDS),
-    "technical":   (lambda: signals_fetch(), db.upsert_technical_signals, None),
-    "fear_greed":  (lambda: fear_greed_source.fetch(), db.upsert_fear_greed, None),
-    "vix":         (lambda: vix_source.fetch(config.VIX_RANGE), db.upsert_vix, None),
-    "aaii":        (lambda: aaii_source.fetch(), db.upsert_aaii, config.AAII_MIN_INTERVAL_SECONDS),
-    "put_call":    (lambda: put_call_source.fetch(), db.upsert_put_call, config.PUT_CALL_MIN_INTERVAL_SECONDS),
-    "margin_debt": (lambda: margin_debt_source.fetch(), db.upsert_margin_debt, config.MARGIN_DEBT_MIN_INTERVAL_SECONDS),
-    "congress":       (lambda: congress_source.fetch(config.CONGRESS_LOOKBACK_DAYS), db.upsert_congress_trades, config.CONGRESS_MIN_INTERVAL_SECONDS),
-    "short_interest": (lambda: short_interest_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_short_interest, None),
-    "social":         (lambda: social_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_social_sentiment, None),
-    "analyst":        (lambda: analyst_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_analyst_signals, None),
-    "fundamentals":   (lambda: fundamentals_fetch(), db.upsert_fundamentals, None),
-    "seasonality":    (lambda: seasonality_fetch(), db.upsert_seasonality, config.SEASONALITY_MIN_INTERVAL_SECONDS),
-    "boom_score":     (lambda: score_fetch(), db.upsert_boom_scores, None),
-    "ohlc":           (lambda: ohlc_fetch(), db.upsert_ohlc, 3600),  # 2y history barely moves intraday
-    "analysis":       (lambda: analysis_fetch(), db.upsert_analyses, None),  # after ohlc; cheap DB+quote read
-    "alerts":         (lambda: alerts_source.detect(conn), db.upsert_alerts, None),  # must be last (diffs boom_score)
-}
+# Refresh connection: used exclusively by the scheduler jobs and the manual
+# /api/refresh route. Keeping ingestion writes off the request connection means
+# a 3-minute refresh cycle can't block dashboard reads on the shared DB lock.
+refresh_conn = db.connect(config.DB_PATH)
+
+
+def build_sources(conn):
+    """Registry bound to a connection: name -> (fetch, store, min_interval).
+
+    Fetch closures reference the module-global fetcher names (so tests can still
+    monkeypatch them) and pass in `conn`; store fns take the connection from
+    ingest.run_source. Ordering matters: boom_score is a pure DB computation and
+    must run after every source it reads; alerts must run last (diffs boom_score).
+    """
+    return {
+        "usaspending": (lambda: contracts_fetch(conn), db.upsert_contracts, None),
+        "gdelt":       (lambda: news_fetch(conn), db.upsert_news, config.GDELT_MIN_INTERVAL_SECONDS),
+        "edgar":       (lambda: trades_fetch(conn), db.upsert_trades, None),
+        "yield_curve": (lambda: yield_curve_source.fetch(config.YIELD_CURVE_MONTHS), db.upsert_yield_curve, None),
+        "econ_calendar": (lambda: econ_calendar_fetch(conn), db.upsert_econ_events, config.ECON_CALENDAR_MIN_INTERVAL_SECONDS),
+        "technical":   (lambda: signals_fetch(conn), db.upsert_technical_signals, None),
+        "fear_greed":  (lambda: fear_greed_source.fetch(), db.upsert_fear_greed, None),
+        "vix":         (lambda: vix_source.fetch(config.VIX_RANGE), db.upsert_vix, None),
+        "aaii":        (lambda: aaii_source.fetch(), db.upsert_aaii, config.AAII_MIN_INTERVAL_SECONDS),
+        "put_call":    (lambda: put_call_source.fetch(), db.upsert_put_call, config.PUT_CALL_MIN_INTERVAL_SECONDS),
+        "margin_debt": (lambda: margin_debt_source.fetch(), db.upsert_margin_debt, config.MARGIN_DEBT_MIN_INTERVAL_SECONDS),
+        "congress":       (lambda: congress_source.fetch(config.CONGRESS_LOOKBACK_DAYS), db.upsert_congress_trades, config.CONGRESS_MIN_INTERVAL_SECONDS),
+        "short_interest": (lambda: short_interest_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_short_interest, None),
+        "social":         (lambda: social_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_social_sentiment, None),
+        "analyst":        (lambda: analyst_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_analyst_signals, None),
+        "fundamentals":   (lambda: fundamentals_fetch(conn), db.upsert_fundamentals, None),
+        "seasonality":    (lambda: seasonality_fetch(conn), db.upsert_seasonality, config.SEASONALITY_MIN_INTERVAL_SECONDS),
+        "boom_score":     (lambda: score_fetch(conn), db.upsert_boom_scores, None),
+        "ohlc":           (lambda: ohlc_fetch(conn), db.upsert_ohlc, 3600),  # 2y history barely moves intraday
+        "analysis":       (lambda: analysis_fetch(conn), db.upsert_analyses, None),  # after ohlc; cheap DB+quote read
+        "alerts":         (lambda: alerts_source.detect(conn), db.upsert_alerts, None),  # must be last (diffs boom_score)
+    }
+
+
+# The scheduler and the manual-refresh route drive ingestion through the refresh
+# connection; API read routes use `conn`.
+SOURCES = build_sources(refresh_conn)
 
 scheduler = BackgroundScheduler()
 
 
 def _refresh_all():
     for name, (fetch, store, min_interval) in SOURCES.items():
-        ingest.run_source(conn, name, fetch, store, min_interval_seconds=min_interval)
+        ingest.run_source(refresh_conn, name, fetch, store, min_interval_seconds=min_interval)
 
 
 def _send_daily_digest():
@@ -173,7 +198,7 @@ def _send_daily_digest():
     if not is_trading_day(target):
         return
     try:
-        notify.send_digest(conn, target.isoformat())
+        notify.send_digest(refresh_conn, target.isoformat())
     except Exception:
         # Delivery is already resilient; never let the job crash the scheduler.
         logger.exception("daily digest delivery failed")
@@ -204,13 +229,13 @@ def _run_daily_analysis():
     min-interval throttles), which recomputes analyses, boom scores and alerts,
     then deliver the digest for the relevant trading session."""
     for name, (fetch, store, min_interval) in SOURCES.items():
-        ingest.run_source(conn, name, fetch, store,
+        ingest.run_source(refresh_conn, name, fetch, store,
                           min_interval_seconds=min_interval, force=True)
-    settings = db.get_app_settings(conn)
+    settings = db.get_app_settings(refresh_conn)
     try:
         today = datetime.now(ZoneInfo(settings.analysis_tz)).date()
         target = today if is_trading_day(today) else next_trading_day(today)
-        notify.send_digest(conn, target.isoformat())
+        notify.send_digest(refresh_conn, target.isoformat())
     except Exception:
         # Delivery is already resilient; never let the job crash the scheduler.
         logger.exception("post-analysis digest delivery failed")
@@ -733,6 +758,8 @@ def refresh(source_name: str):
     if source_name not in SOURCES:
         raise HTTPException(status_code=404, detail="unknown source")
     fetch, store, min_interval = SOURCES[source_name]
-    ingest.run_source(conn, source_name, fetch, store, min_interval_seconds=min_interval)
-    statuses = {s.source: s for s in db.get_source_statuses(conn)}
+    # Ingestion runs on the refresh connection (shared with the scheduler,
+    # serialized by its lock) so a manual refresh never blocks request reads.
+    ingest.run_source(refresh_conn, source_name, fetch, store, min_interval_seconds=min_interval)
+    statuses = {s.source: s for s in db.get_source_statuses(refresh_conn)}
     return statuses[source_name].model_dump()

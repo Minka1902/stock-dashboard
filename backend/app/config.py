@@ -50,6 +50,19 @@ NEWS_LIMIT = int(os.environ.get("STOCKS_NEWS_LIMIT", "40"))
 # Per-ticker news pulled for every portfolio/watchlist symbol (kept small to
 # stay polite with GDELT: one extra request per symbol per refresh).
 NEWS_PER_TICKER_LIMIT = int(os.environ.get("STOCKS_NEWS_PER_TICKER_LIMIT", "8"))
+# Cap how many tickers get a per-ticker GDELT query per fast refresh cycle. Each
+# is a blocking HTTP call, so an unbounded watchlist could make the news step
+# outlast the whole refresh interval and starve the single worker.
+NEWS_MAX_TICKERS = int(os.environ.get("STOCKS_NEWS_MAX_TICKERS", "12"))
+# GDELT per-request timeout. Kept short so a hung/slow GDELT can't pin a worker
+# thread for 30s each.
+GDELT_TIMEOUT_SECONDS = float(os.environ.get("STOCKS_GDELT_TIMEOUT_SECONDS", "8"))
+# After GDELT returns 429 (rate limited), skip it entirely for this long instead
+# of hammering it every cycle (which just earns more 429s and burns worker time).
+GDELT_COOLDOWN_SECONDS = float(os.environ.get("STOCKS_GDELT_COOLDOWN_SECONDS", "600"))
+# GDELT rate-limits hard, so refresh news at most once a day rather than every
+# cycle. The scheduled daily deep run (force=True) bypasses this for one pull/day.
+GDELT_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_GDELT_MIN_INTERVAL_SECONDS", str(86400)))
 
 # --- Insider trades (SEC EDGAR Form 4) ---
 # SEC requires a descriptive User-Agent with contact info for fair-access.
@@ -103,7 +116,10 @@ SEASONALITY_MIN_INTERVAL_SECONDS = int(
 # Server-side cache TTL; slightly under the frontend's 30s poll so each poll
 # gets at most one fresh Yahoo fetch and concurrent clients share it.
 QUOTES_TTL_SECONDS = int(os.environ.get("STOCKS_QUOTES_TTL_SECONDS", "25"))
-QUOTES_TIMEOUT_SECONDS = float(os.environ.get("STOCKS_QUOTES_TIMEOUT_SECONDS", "10"))
+QUOTES_TIMEOUT_SECONDS = float(os.environ.get("STOCKS_QUOTES_TIMEOUT_SECONDS", "6"))
+# Yahoo quote fetches run in a bounded thread pool so a cold miss for N tickers
+# costs ~one timeout, not N sequential timeouts, on the request thread.
+QUOTES_MAX_WORKERS = int(os.environ.get("STOCKS_QUOTES_MAX_WORKERS", "8"))
 
 
 # --- Market sentiment indicators ---
