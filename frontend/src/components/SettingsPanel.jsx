@@ -2,6 +2,7 @@ import { useState } from "react";
 import Icon from "./Icon";
 import { useProfile } from "../hooks/useProfile";
 import { sendTestSuggestions } from "../api";
+import SourceGuide from "./SourceGuide";
 import styles from "./SettingsPanel.module.css";
 
 const WINDOW_OPTIONS = [
@@ -44,7 +45,7 @@ function formatNextRun(iso, tz) {
   }
 }
 
-export default function SettingsPanel({ settings, setSetting, onNavigate, appSettingsApi }) {
+export default function SettingsPanel({ settings, setSetting, onNavigate, appSettingsApi, sources }) {
   const activeWindows = settings.seasonalityWindows;
   const lookback = settings.seasonalityLookback;
 
@@ -175,6 +176,17 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
               Next scheduled analysis run: <strong>{nextRun}</strong>
             </p>
           )}
+        </fieldset>
+
+        {/* Source guide: every external feed and whether it last responded */}
+        <fieldset className={styles.group}>
+          <legend className={styles.legend}>Data sources</legend>
+          <p className={styles.groupHint}>
+            Every public feed this dashboard pulls, its upstream provider, and whether it last
+            responded. If a source can&apos;t be reached it shows an error here rather than inventing
+            data. The top-of-screen strip only appears when one of these fails.
+          </p>
+          <SourceGuide sources={sources} />
         </fieldset>
 
         {/* Onboarding: the in-app module guide + guided tours */}

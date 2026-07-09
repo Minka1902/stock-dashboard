@@ -1,36 +1,23 @@
-import { formatRelativeTime, formatCount } from "../lib/format";
+import { sourceState, SOURCE_META } from "../lib/sources";
 import styles from "./SourceStatus.module.css";
 
-// A small chip per data source: colored dot + name + record count + freshness.
+// A compact strip flagging only the data sources that failed to respond. When every
+// source is healthy this renders nothing — the full directory lives in Settings →
+// Data sources. Never invents data: a red chip means the source recorded an error.
 export default function SourceStatus({ sources }) {
-  if (!sources || sources.length === 0) {
-    return (
-      <div className={styles.chip} data-state="idle">
-        <span className={styles.dot} />
-        <span className={styles.name}>no sources yet</span>
-      </div>
-    );
-  }
+  const failed = (sources || []).filter((s) => sourceState(s.status) === "error");
+  if (failed.length === 0) return null;
 
   return (
     <div className={styles.row}>
-      {sources.map((s) => {
-        // "ok" or "ok (fallback: …)" — a fallback tier still delivered real data.
-        const ok = s.status === "ok" || s.status.startsWith("ok (");
-        const note = ok && s.status.length > 2 ? s.status.slice(3).replace(/^\(|\)$/g, "") : null;
+      <span className={styles.label}>Not responding</span>
+      {failed.map((s) => {
+        const name = SOURCE_META[s.source]?.label || s.source;
         return (
-          <div key={s.source} className={styles.chip} data-state={ok ? "ok" : "error"} title={note || undefined}>
+          <div key={s.source} className={styles.chip} data-state="error" title={s.status}>
             <span className={styles.dot} />
-            <span className={styles.name}>{s.source}</span>
-            {ok ? (
-              <span className={styles.meta}>
-                {formatCount(s.record_count)} · {formatRelativeTime(s.last_refreshed_at)}
-              </span>
-            ) : (
-              <span className={styles.meta} title={s.status}>
-                {s.status}
-              </span>
-            )}
+            <span className={styles.name}>{name}</span>
+            <span className={styles.meta}>{s.status}</span>
           </div>
         );
       })}

@@ -1,6 +1,20 @@
 import Icon from "./Icon";
 import GLOSSARY from "../lib/glossary";
+import { MODULE_SOURCE, SOURCE_META, sourceState } from "../lib/sources";
 import styles from "./GuidePanel.module.css";
+
+// Resolves a module card's data source into a display line + live status dot state.
+function cardSource(key, statusByName) {
+  const entry = MODULE_SOURCE[key];
+  if (!entry) return null;
+  if (entry.note) return { text: entry.note, state: "none" };
+  const meta = SOURCE_META[entry];
+  const status = statusByName.get(entry);
+  return {
+    text: `Source: ${meta?.provider || entry}`,
+    state: status ? sourceState(status.status) : "idle",
+  };
+}
 
 // Grouped, scannable module reference. One idea per card, consistent
 // What / Why / Boom Score-signal structure. Weights mirror WEIGHTS in
@@ -145,7 +159,8 @@ const GROUPS = [
   },
 ];
 
-export default function GuidePanel({ onNavigate }) {
+export default function GuidePanel({ onNavigate, sources }) {
+  const statusByName = new Map((sources || []).map((s) => [s.source, s]));
   return (
     <section className={styles.panel} id="guide">
       <header className={styles.head}>
@@ -174,23 +189,32 @@ export default function GuidePanel({ onNavigate }) {
           <div key={group.heading} className={styles.group}>
             <h3 className={styles.groupTitle}>{group.heading}</h3>
             <div className={styles.cards}>
-              {group.modules.map((m) => (
-                <button
-                  key={m.key}
-                  type="button"
-                  className={styles.card}
-                  onClick={() => onNavigate?.(m.key)}
-                  title={`Go to ${m.name}`}
-                >
-                  <span className={styles.cardHead}>
-                    <span className={styles.cardIcon}><Icon name={m.icon} size={18} /></span>
-                    <span className={styles.cardName}>{m.name}</span>
-                  </span>
-                  <span className={styles.what}>{m.what}</span>
-                  <span className={styles.why}>{m.why}</span>
-                  <span className={styles.signal}>{m.signal}</span>
-                </button>
-              ))}
+              {group.modules.map((m) => {
+                const src = cardSource(m.key, statusByName);
+                return (
+                  <button
+                    key={m.key}
+                    type="button"
+                    className={styles.card}
+                    onClick={() => onNavigate?.(m.key)}
+                    title={`Go to ${m.name}`}
+                  >
+                    <span className={styles.cardHead}>
+                      <span className={styles.cardIcon}><Icon name={m.icon} size={18} /></span>
+                      <span className={styles.cardName}>{m.name}</span>
+                    </span>
+                    <span className={styles.what}>{m.what}</span>
+                    <span className={styles.why}>{m.why}</span>
+                    <span className={styles.signal}>{m.signal}</span>
+                    {src && (
+                      <span className={styles.cardSource} data-state={src.state}>
+                        <span className={styles.sourceDot} />
+                        {src.text}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         ))}

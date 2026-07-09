@@ -222,11 +222,11 @@ export default function App({ auth }) {
             )}
 
             {view === "settings" && (
-              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={navigate} appSettingsApi={appSettingsApi} />
+              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={navigate} appSettingsApi={appSettingsApi} sources={sources} />
             )}
 
             {view === "guide" && (
-              <GuidePanel onNavigate={navigate} />
+              <GuidePanel onNavigate={navigate} sources={sources} />
             )}
 
             {/* --- Retained but no longer in navigation (reachable only via code) --- */}
