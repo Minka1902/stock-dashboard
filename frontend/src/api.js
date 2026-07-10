@@ -74,8 +74,8 @@ export const getPortfolio = () => getJSON("/api/portfolio");
 export const getProfile = () => getJSON("/api/profile");
 export const getSuggestions = () => getJSON("/api/suggestions");
 export const getAppSettings = () => getJSON("/api/settings");
-export const getChart = (ticker, interval) =>
-  getJSON(`/api/chart/${encodeURIComponent(ticker)}?interval=${encodeURIComponent(interval)}`);
+export const getChart = (ticker, interval, prepost = false) =>
+  getJSON(`/api/chart/${encodeURIComponent(ticker)}?interval=${encodeURIComponent(interval)}${prepost ? "&prepost=1" : ""}`);
 export const analysisReportUrl = (ticker, { print = false } = {}) =>
   `${BASE}/api/analysis/${encodeURIComponent(ticker)}/report${print ? "?print=1" : ""}`;
 export const getSuggestionLog = () => getJSON("/api/suggestions/log");
@@ -97,6 +97,11 @@ export const updateHolding = (ticker, shares, avg_cost) =>
   request(`/api/portfolio/${encodeURIComponent(ticker)}`, {
     method: "PUT",
     body: { shares, avg_cost },
+  });
+export const setHoldingCategory = (ticker, category) =>
+  request(`/api/portfolio/${encodeURIComponent(ticker)}/category`, {
+    method: "PUT",
+    body: { category },
   });
 export const removeHolding = (ticker) =>
   request(`/api/portfolio/${encodeURIComponent(ticker)}`, { method: "DELETE" });
