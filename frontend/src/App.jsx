@@ -147,7 +147,8 @@ export default function App({ auth }) {
     yieldCurve, econCalendar, signals, fearGreed, vix, aaii, putCall, marginDebt, sentiment, congressTrades,
     shortInterest, social, analyst, boomScores, fundamentals, seasonality,
     portfolio, xPosts, suggestions, analyses, alerts, unreadAlerts,
-    loading, busy, error, refresh, addWatch, removeWatch, addHolding, removeHolding,
+    loading, busy, error, refresh, addWatch, removeWatch, addHolding, updateHolding,
+    setHoldingCategory, removeHolding,
     markAlertsRead,
   } = data;
 
@@ -204,6 +205,7 @@ export default function App({ auth }) {
             onOpenCommand={() => setCmdOpen(true)}
             user={auth?.user}
             onLogout={auth?.logout}
+            onNavigate={navigate}
             hasTour={Boolean(TOURS[view]) && !detailTicker}
             onStartTour={() => setTourView(view)}
           />
@@ -244,7 +246,7 @@ export default function App({ auth }) {
             )}
 
             {view === "portfolio" && (
-              <PortfolioPanel portfolio={portfolio} signals={signals} quotes={quotesByTicker} analyses={analyses} onAdd={addHolding} onRemove={removeHolding} />
+              <PortfolioPanel portfolio={portfolio} signals={signals} quotes={quotesByTicker} analyses={analyses} onAdd={addHolding} onEdit={updateHolding} onSetCategory={setHoldingCategory} onRemove={removeHolding} />
             )}
 
             {view === "trades" && (

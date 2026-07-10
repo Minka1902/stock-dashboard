@@ -180,7 +180,9 @@ export function useDashboardData() {
   }, []);
 
   const addHolding = useCallback(async (ticker, shares, avgCost) => {
-    setPortfolio(await apiAddHolding(ticker, shares, avgCost));
+    const list = await apiAddHolding(ticker, shares, avgCost);
+    setPortfolio(list);
+    return list;
   }, []);
 
   const updateHolding = useCallback(async (ticker, shares, avgCost) => {
