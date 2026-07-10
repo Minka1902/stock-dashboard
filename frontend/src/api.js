@@ -93,6 +93,11 @@ export const saveProfile = (profile) =>
   request("/api/profile", { method: "PUT", body: profile });
 export const addHolding = (ticker, shares, avg_cost) =>
   request("/api/portfolio", { method: "POST", body: { ticker, shares, avg_cost } });
+export const updateHolding = (ticker, shares, avg_cost) =>
+  request(`/api/portfolio/${encodeURIComponent(ticker)}`, {
+    method: "PUT",
+    body: { shares, avg_cost },
+  });
 export const removeHolding = (ticker) =>
   request(`/api/portfolio/${encodeURIComponent(ticker)}`, { method: "DELETE" });
 export const sendTestSuggestions = () =>

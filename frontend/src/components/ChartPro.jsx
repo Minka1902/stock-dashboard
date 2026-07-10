@@ -111,6 +111,16 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   const [error, setError] = useState(null);
   const [legend, setLegend] = useState(null);
 
+  // Persistent chart handles: the chart is created once (see the mount effect)
+  // and only its *series* are torn down/rebuilt on data/indicator changes, so
+  // the user's zoom/pan (visible logical range) survives toolbar interactions.
+  const chartRef = useRef(null);
+  const seriesRef = useRef([]);        // every removable series (main + overlays + panes)
+  const overlayRef = useRef([]);       // {series,label,color} for the crosshair legend
+  const datasetKeyRef = useRef(null);  // `${ticker}|${tf}` — only refit when this changes
+  const prevBarsRef = useRef(null);    // identity check: did the bar data actually change?
+  const legendMapsRef = useRef({ bars: [], byTime: new Map(), idx: new Map() });
+
   const setPref = useCallback((patch) => {
     setPrefs((p) => {
       const next = { ...p, ...patch, inds: { ...p.inds, ...(patch.inds || {}) } };
@@ -160,19 +170,14 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     return prefs.type === "heikin" ? heikinAshi(bars) : bars;
   }, [bars, prefs.type]);
 
-  // ---- chart lifecycle ----
+  // ---- chart lifecycle: create once, keep across every pref change ----
   useEffect(() => {
-    if (!elRef.current || !displayBars || displayBars.length === 0) return undefined;
-
     const el = elRef.current;
-    const inds = prefs.inds;
-    const showOverlays = prefs.overlays && prefs.tf === "1d" && analysis && !prefs.compare;
-    const priceMode = prefs.compare
-      ? PriceScaleMode.Percentage
-      : prefs.logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal;
+    if (!el) return undefined;
 
     const chart = createChart(el, {
       height,
+      width: el.clientWidth,
       layout: {
         background: { color: "transparent" },
         textColor: COLORS.text,
@@ -182,19 +187,88 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
         panes: { separatorColor: COLORS.border, enableResize: false },
       },
       grid: { vertLines: { color: COLORS.grid }, horzLines: { color: COLORS.grid } },
-      rightPriceScale: {
-        borderColor: COLORS.border,
-        mode: priceMode,
-        scaleMargins: { top: 0.08, bottom: inds.vol ? 0.26 : 0.08 },
-      },
-      timeScale: {
-        borderColor: COLORS.border,
-        rightOffset: 4,
-        timeVisible: INTRADAY.has(prefs.tf),
-        secondsVisible: false,
-      },
+      rightPriceScale: { borderColor: COLORS.border },
+      timeScale: { borderColor: COLORS.border, rightOffset: 4, secondsVisible: false },
       crosshair: { mode: 0 },
     });
+    chartRef.current = chart;
+
+    // The crosshair handler reads live maps/overlays from refs so it never has
+    // to be re-subscribed when the series are rebuilt.
+    const onMove = (param) => {
+      const { bars: lbars, byTime, idx } = legendMapsRef.current;
+      if (!lbars.length) { setLegend(null); return; }
+      let b, prev;
+      if (param.time && byTime.has(param.time)) {
+        const i = idx.get(param.time);
+        b = lbars[i]; prev = i > 0 ? lbars[i - 1] : null;
+      } else {
+        b = lbars[lbars.length - 1]; prev = lbars[lbars.length - 2];
+      }
+      if (!b) { setLegend(null); return; }
+      const changePct = prev && prev.close ? ((b.close - prev.close) / prev.close) * 100 : null;
+      const overlays = [];
+      for (const o of overlayRef.current) {
+        const d = param.seriesData.get(o.series);
+        if (d && d.value != null) overlays.push({ label: o.label, color: o.color, value: d.value });
+      }
+      setLegend({ ...b, changePct, overlays });
+    };
+    chart.subscribeCrosshairMove(onMove);
+
+    const ro = new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth }));
+    ro.observe(el);
+
+    return () => {
+      chart.unsubscribeCrosshairMove(onMove);
+      ro.disconnect();
+      chart.remove();
+      chartRef.current = null;
+      seriesRef.current = [];
+      overlayRef.current = [];
+      datasetKeyRef.current = null;
+      prevBarsRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---- height changes: just resize, never rebuild ----
+  useEffect(() => { chartRef.current?.applyOptions({ height }); }, [height]);
+
+  // ---- options-only changes: price-scale mode/margins + intraday time axis ----
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const priceMode = prefs.compare
+      ? PriceScaleMode.Percentage
+      : prefs.logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal;
+    chart.priceScale("right").applyOptions({
+      mode: priceMode,
+      scaleMargins: { top: 0.08, bottom: prefs.inds.vol ? 0.26 : 0.08 },
+    });
+    chart.timeScale().applyOptions({ timeVisible: intraday });
+  }, [prefs.compare, prefs.logScale, prefs.inds.vol, intraday]);
+
+  // ---- series (re)build: tears down only series, preserves the view ----
+  const { ma, ema, bb, vwap, vol, rsi, macd } = prefs.inds;
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !displayBars || displayBars.length === 0) return;
+
+    const showOverlays = prefs.overlays && prefs.tf === "1d" && analysis && !prefs.compare;
+    const datasetKey = `${ticker}|${prefs.tf}`;
+    const isNewDataset = datasetKeyRef.current !== datasetKey;
+    const prevBars = prevBarsRef.current;
+    const dataChanged = displayBars !== prevBars;
+    const prevLen = prevBars ? prevBars.length : 0;
+    // Capture the user's view before we touch the series (skip on a new dataset).
+    const savedRange = isNewDataset ? null : chart.timeScale().getVisibleLogicalRange();
+
+    // tear down previous series only (chart, panes-config, view untouched)
+    for (const s of seriesRef.current) { try { chart.removeSeries(s); } catch { /* already gone */ } }
+    seriesRef.current = [];
+    overlayRef.current = [];
+    const track = (s) => { seriesRef.current.push(s); return s; };
 
     // main series by chart type
     let main;
@@ -207,108 +281,109 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     }));
     const closeData = displayBars.map((b) => ({ time: b.time, value: b.close }));
     if (prefs.type === "hollow") {
-      main = chart.addSeries(CandlestickSeries, {
+      main = track(chart.addSeries(CandlestickSeries, {
         ...upDown,
         upColor: "transparent", borderVisible: true,
         borderUpColor: COLORS.up, borderDownColor: COLORS.down,
-      });
+      }));
       main.setData(ohlcData);
     } else if (prefs.type === "bars") {
-      main = chart.addSeries(BarSeries, { upColor: COLORS.up, downColor: COLORS.down, thinBars: false });
+      main = track(chart.addSeries(BarSeries, { upColor: COLORS.up, downColor: COLORS.down, thinBars: false }));
       main.setData(ohlcData);
     } else if (prefs.type === "line") {
-      main = chart.addSeries(LineSeries, { color: COLORS.accent, lineWidth: 2 });
+      main = track(chart.addSeries(LineSeries, { color: COLORS.accent, lineWidth: 2 }));
       main.setData(closeData);
     } else if (prefs.type === "area") {
-      main = chart.addSeries(AreaSeries, {
+      main = track(chart.addSeries(AreaSeries, {
         lineColor: COLORS.accent, lineWidth: 2,
         topColor: "rgba(240,180,41,0.28)", bottomColor: "rgba(240,180,41,0.02)",
-      });
+      }));
       main.setData(closeData);
     } else if (prefs.type === "baseline") {
-      main = chart.addSeries(BaselineSeries, {
+      main = track(chart.addSeries(BaselineSeries, {
         baseValue: { type: "price", price: displayBars[0].close },
         topLineColor: COLORS.up, bottomLineColor: COLORS.down,
         topFillColor1: "rgba(79,214,160,0.22)", topFillColor2: "rgba(79,214,160,0.02)",
         bottomFillColor1: "rgba(229,84,75,0.02)", bottomFillColor2: "rgba(229,84,75,0.22)",
-      });
+      }));
       main.setData(closeData);
     } else {
-      main = chart.addSeries(CandlestickSeries, upDown);
+      main = track(chart.addSeries(CandlestickSeries, upDown));
       main.setData(ohlcData);
     }
 
     // volume histogram (overlay scale at the bottom of the main pane)
-    if (inds.vol) {
-      const vol = chart.addSeries(HistogramSeries, {
+    if (vol) {
+      const volS = track(chart.addSeries(HistogramSeries, {
         priceScaleId: "vol", priceFormat: { type: "volume" }, priceLineVisible: false,
         lastValueVisible: false,
-      });
-      vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-      vol.setData(displayBars.map((b) => ({
+      }));
+      volS.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+      volS.setData(displayBars.map((b) => ({
         time: b.time, value: b.volume,
         color: (b.close >= b.open ? COLORS.up : COLORS.down) + "55",
       })));
     }
 
-    const addLine = (data, color, width = 1, style) => {
+    // A tracked line series; `label` (if given) registers it for the crosshair legend.
+    const addLine = (data, color, label, width = 1, style) => {
       if (data.length < 2) return;
-      const s = chart.addSeries(LineSeries, {
+      const s = track(chart.addSeries(LineSeries, {
         color, lineWidth: width, priceLineVisible: false,
-        lastValueVisible: false, crosshairMarkerVisible: false,
+        lastValueVisible: false, crosshairMarkerVisible: true,
         ...(style != null ? { lineStyle: style } : {}),
-      });
+      }));
       s.setData(data);
+      if (label) overlayRef.current.push({ series: s, label, color });
     };
 
     // overlays computed from the *raw* bars (indicator math on real OHLC)
-    if (inds.ma) for (const def of MA_DEFS) addLine(smaSeries(bars, def.n), COLORS[def.key], def.n >= 150 ? 2 : 1);
-    if (inds.ema) for (const def of EMA_DEFS) addLine(emaSeries(bars, def.n), COLORS[def.key], 1, LineStyle.Dotted);
-    if (inds.bb) {
-      const bb = bollingerSeries(bars);
-      addLine(bb.upper, COLORS.muted, 1, LineStyle.Dashed);
-      addLine(bb.middle, COLORS.muted, 1);
-      addLine(bb.lower, COLORS.muted, 1, LineStyle.Dashed);
+    if (ma) for (const def of MA_DEFS) addLine(smaSeries(bars, def.n), COLORS[def.key], `SMA ${def.n}`, def.n >= 150 ? 2 : 1);
+    if (ema) for (const def of EMA_DEFS) addLine(emaSeries(bars, def.n), COLORS[def.key], `EMA ${def.n}`, 1, LineStyle.Dotted);
+    if (bb) {
+      const bands = bollingerSeries(bars);
+      addLine(bands.upper, COLORS.muted, "BB upper", 1, LineStyle.Dashed);
+      addLine(bands.middle, COLORS.muted, "BB mid", 1);
+      addLine(bands.lower, COLORS.muted, "BB lower", 1, LineStyle.Dashed);
     }
-    if (inds.vwap && intraday) addLine(vwapSeries(bars), COLORS.compare, 2);
+    if (vwap && intraday) addLine(vwapSeries(bars), COLORS.compare, "VWAP", 2);
 
-    // SPY comparison (percent scale set above)
+    // SPY comparison (percent scale set in the options effect)
     if (prefs.compare && compareBars && compareBars.length > 1) {
-      const cmp = chart.addSeries(LineSeries, {
-        color: COLORS.compare, lineWidth: 2, priceLineVisible: false,
-        title: "SPY",
-      });
+      const cmp = track(chart.addSeries(LineSeries, {
+        color: COLORS.compare, lineWidth: 2, priceLineVisible: false, title: "SPY",
+      }));
       cmp.setData(compareBars.map((b) => ({ time: b.time, value: b.close })));
     }
 
     // sub-panes
     let paneIndex = 0;
-    if (inds.rsi) {
+    if (rsi) {
       paneIndex += 1;
-      const rsi = chart.addSeries(LineSeries, {
+      const rsiS = track(chart.addSeries(LineSeries, {
         color: COLORS.info, lineWidth: 2, priceLineVisible: false, title: "RSI 14",
-      }, paneIndex);
-      rsi.setData(rsiSeries(bars));
-      rsi.createPriceLine({ price: 70, color: COLORS.down, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
-      rsi.createPriceLine({ price: 30, color: COLORS.up, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
+      }, paneIndex));
+      rsiS.setData(rsiSeries(bars));
+      rsiS.createPriceLine({ price: 70, color: COLORS.down, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
+      rsiS.createPriceLine({ price: 30, color: COLORS.up, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
       chart.panes()[paneIndex]?.setHeight?.(96);
     }
-    if (inds.macd) {
+    if (macd) {
       paneIndex += 1;
-      const { macd, signal, hist } = macdSeries(bars);
-      const histSeries = chart.addSeries(HistogramSeries, {
+      const { macd: macdData, signal, hist } = macdSeries(bars);
+      const histSeries = track(chart.addSeries(HistogramSeries, {
         priceLineVisible: false, lastValueVisible: false,
-      }, paneIndex);
+      }, paneIndex));
       histSeries.setData(hist.map((p) => ({
         ...p, color: (p.value >= 0 ? COLORS.up : COLORS.down) + "88",
       })));
-      const macdLine = chart.addSeries(LineSeries, {
+      const macdLine = track(chart.addSeries(LineSeries, {
         color: COLORS.accent, lineWidth: 2, priceLineVisible: false, title: "MACD",
-      }, paneIndex);
-      macdLine.setData(macd);
-      const sigLine = chart.addSeries(LineSeries, {
+      }, paneIndex));
+      macdLine.setData(macdData);
+      const sigLine = track(chart.addSeries(LineSeries, {
         color: COLORS.info, lineWidth: 1, priceLineVisible: false,
-      }, paneIndex);
+      }, paneIndex));
       sigLine.setData(signal);
       chart.panes()[paneIndex]?.setHeight?.(110);
     }
@@ -345,38 +420,27 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       if (markers.length) createSeriesMarkers(main, markers);
     }
 
-    // crosshair legend
+    // refresh the crosshair legend maps + reset the resting legend to the last bar
     const byTime = new Map(displayBars.map((b) => [b.time, b]));
-    const setFromBar = (b, prev) => {
-      if (!b) { setLegend(null); return; }
-      const changePct = prev && prev.close ? ((b.close - prev.close) / prev.close) * 100 : null;
-      setLegend({ ...b, changePct });
-    };
     const idx = new Map(displayBars.map((b, i) => [b.time, i]));
-    setFromBar(displayBars[displayBars.length - 1], displayBars[displayBars.length - 2]);
-    const onMove = (param) => {
-      if (!param.time || !byTime.has(param.time)) {
-        setFromBar(displayBars[displayBars.length - 1], displayBars[displayBars.length - 2]);
-        return;
-      }
-      const i = idx.get(param.time);
-      setFromBar(displayBars[i], i > 0 ? displayBars[i - 1] : null);
-    };
-    chart.subscribeCrosshairMove(onMove);
+    legendMapsRef.current = { bars: displayBars, byTime, idx };
+    const lastB = displayBars[displayBars.length - 1];
+    const prevB = displayBars[displayBars.length - 2];
+    const lastChange = prevB && prevB.close ? ((lastB.close - prevB.close) / prevB.close) * 100 : null;
+    setLegend({ ...lastB, changePct: lastChange, overlays: [] });
 
-    chart.timeScale().fitContent();
-
-    const ro = new ResizeObserver(() => {
-      if (el) chart.applyOptions({ width: el.clientWidth });
-    });
-    ro.observe(el);
-
-    return () => {
-      chart.unsubscribeCrosshairMove(onMove);
-      ro.disconnect();
-      chart.remove();
-    };
-  }, [bars, displayBars, compareBars, analysis, prefs, height, intraday]);
+    // view preservation: refit only for a genuinely new dataset (ticker/timeframe)
+    if (isNewDataset) {
+      chart.timeScale().fitContent();
+      datasetKeyRef.current = datasetKey;
+    } else if (savedRange) {
+      const wasAtEdge = savedRange.to >= prevLen - 1.5;
+      if (dataChanged && wasAtEdge) chart.timeScale().scrollToRealTime();
+      else chart.timeScale().setVisibleLogicalRange(savedRange);
+    }
+    prevBarsRef.current = displayBars;
+  }, [bars, displayBars, compareBars, analysis, prefs.type, prefs.overlays, prefs.compare,
+      prefs.tf, ticker, intraday, ma, ema, bb, vwap, vol, rsi, macd]);
 
   const toneOf = (b) => (b && b.close >= b.open ? "pos" : "neg");
 
@@ -446,6 +510,12 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
           )}
           <span>Vol <em>{fmtVol(legend.volume)}</em></span>
           {prefs.compare && <span className={styles.legendCompare}>vs SPY (%)</span>}
+          {legend.overlays?.map((o) => (
+            <span key={o.label} className={styles.overlayChip}>
+              <span className={styles.overlayDot} style={{ background: o.color }} aria-hidden="true" />
+              {o.label} <em>{fmt(o.value)}</em>
+            </span>
+          ))}
         </div>
       )}
 

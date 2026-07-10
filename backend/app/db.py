@@ -1327,14 +1327,37 @@ def get_seasonality_for(conn: sqlite3.Connection, ticker: str) -> Seasonality | 
 # ---------- portfolio (user managed) ----------
 
 def upsert_holding(conn: sqlite3.Connection, user_id: int, item: Holding) -> None:
+    """Add shares to a position, merging into any existing holding.
+
+    On conflict the shares are summed and ``avg_cost`` becomes the
+    share-weighted average of the existing and incoming cost basis, so P/L
+    stays correct. ``added_at`` (first-buy date) is preserved. In SQLite's
+    ``DO UPDATE SET`` every RHS expression evaluates against the pre-update
+    row, so the ordering of the two assignments below is safe.
+    """
     conn.execute(
         """
         INSERT INTO portfolio (user_id, ticker, shares, avg_cost, added_at)
         VALUES (:user_id, :ticker, :shares, :avg_cost, :added_at)
         ON CONFLICT(user_id, ticker) DO UPDATE SET
-            shares=excluded.shares, avg_cost=excluded.avg_cost
+            avg_cost = (portfolio.shares * portfolio.avg_cost
+                        + excluded.shares * excluded.avg_cost)
+                       / (portfolio.shares + excluded.shares),
+            shares   = portfolio.shares + excluded.shares
         """,
         {"user_id": user_id, **item.model_dump()},
+    )
+    conn.commit()
+
+
+def replace_holding(
+    conn: sqlite3.Connection, user_id: int, ticker: str, shares: float, avg_cost: float
+) -> None:
+    """Overwrite an existing position outright (the edit/correct path)."""
+    conn.execute(
+        "UPDATE portfolio SET shares = ?, avg_cost = ? "
+        "WHERE user_id = ? AND ticker = ?",
+        (shares, avg_cost, user_id, ticker),
     )
     conn.commit()
 

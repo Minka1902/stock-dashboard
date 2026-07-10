@@ -30,6 +30,7 @@ import {
   addWatch as apiAddWatch,
   removeWatch as apiRemoveWatch,
   addHolding as apiAddHolding,
+  updateHolding as apiUpdateHolding,
   removeHolding as apiRemoveHolding,
 } from "../api";
 
@@ -177,6 +178,10 @@ export function useDashboardData() {
     setPortfolio(await apiAddHolding(ticker, shares, avgCost));
   }, []);
 
+  const updateHolding = useCallback(async (ticker, shares, avgCost) => {
+    setPortfolio(await apiUpdateHolding(ticker, shares, avgCost));
+  }, []);
+
   const removeHolding = useCallback(async (ticker) => {
     setPortfolio(await apiRemoveHolding(ticker));
   }, []);
@@ -221,6 +226,7 @@ export function useDashboardData() {
     addWatch,
     removeWatch,
     addHolding,
+    updateHolding,
     removeHolding,
     markAlertsRead,
   };

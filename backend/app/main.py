@@ -560,6 +560,24 @@ def add_holding(item: HoldingCreate, user=Depends(auth.get_current_user)):
     return [h.model_dump() for h in db.get_portfolio(conn, user.id)]
 
 
+class HoldingReplace(BaseModel):
+    shares: float
+    avg_cost: float
+
+
+@app.put("/api/portfolio/{ticker}")
+def edit_holding(ticker: str, item: HoldingReplace, user=Depends(auth.get_current_user)):
+    """Overwrite a held position outright (correct a mistaken entry)."""
+    t = clean_ticker(ticker)
+    if item.shares <= 0 or item.avg_cost < 0:
+        raise HTTPException(status_code=400, detail="shares must be > 0 and avg_cost >= 0")
+    held = {h.ticker for h in db.get_portfolio(conn, user.id)}
+    if t not in held:
+        raise HTTPException(status_code=404, detail="ticker not in portfolio")
+    db.replace_holding(conn, user.id, t, item.shares, item.avg_cost)
+    return [h.model_dump() for h in db.get_portfolio(conn, user.id)]
+
+
 @app.delete("/api/portfolio/{ticker}")
 def delete_holding(ticker: str, user=Depends(auth.get_current_user)):
     db.remove_holding(conn, user.id, clean_ticker(ticker))

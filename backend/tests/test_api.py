@@ -95,6 +95,28 @@ def test_quotes_union_of_watchlist_and_portfolio(client, monkeypatch):
     assert all("price" in q and "market_state" in q for q in body["quotes"])
 
 
+def test_portfolio_add_twice_merges(client):
+    client.post("/api/portfolio", json={"ticker": "AAPL", "shares": 10, "avg_cost": 100})
+    body = client.post(
+        "/api/portfolio", json={"ticker": "AAPL", "shares": 10, "avg_cost": 200}).json()
+    row = next(h for h in body if h["ticker"] == "AAPL")
+    assert row["shares"] == 20
+    assert row["avg_cost"] == 150.0
+
+
+def test_portfolio_put_replaces_outright(client):
+    client.post("/api/portfolio", json={"ticker": "AAPL", "shares": 10, "avg_cost": 100})
+    body = client.put("/api/portfolio/AAPL", json={"shares": 3, "avg_cost": 500}).json()
+    row = next(h for h in body if h["ticker"] == "AAPL")
+    assert row["shares"] == 3
+    assert row["avg_cost"] == 500.0
+
+
+def test_portfolio_put_unknown_ticker_404(client):
+    resp = client.put("/api/portfolio/ZZZZ", json={"shares": 1, "avg_cost": 1})
+    assert resp.status_code == 404
+
+
 def test_vix_aaii_put_call_endpoints_empty(client):
     assert client.get("/api/vix").json() == []
     assert client.get("/api/aaii").json() == []
