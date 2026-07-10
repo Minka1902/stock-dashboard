@@ -117,3 +117,42 @@ def test_run_source_records_fetch_result_note(conn):
     status = {s.source: s for s in db.get_source_statuses(conn)}["usaspending"]
     assert status.status == "ok (fallback: workbook)"
     assert status.record_count == 1
+
+
+def test_run_source_stores_error_detail_with_traceback(conn):
+    def boom():
+        raise RuntimeError("network down")
+
+    ingest.run_source(conn, "usaspending", boom, db.upsert_contracts)
+    status = {s.source: s for s in db.get_source_statuses(conn)}["usaspending"]
+    assert status.status.startswith("error:")
+    assert status.error_detail is not None
+    assert "RuntimeError: network down" in status.error_detail
+    assert "Traceback" in status.error_detail
+
+
+def test_run_source_success_clears_stale_error_detail(conn):
+    def boom():
+        raise RuntimeError("boom")
+
+    ingest.run_source(conn, "usaspending", boom, db.upsert_contracts)
+    assert {s.source: s for s in db.get_source_statuses(conn)}["usaspending"].error_detail
+
+    ingest.run_source(conn, "usaspending", _records, db.upsert_contracts)
+    status = {s.source: s for s in db.get_source_statuses(conn)}["usaspending"]
+    assert status.status == "ok"
+    assert status.error_detail is None
+
+
+def test_run_source_warning_flags_error_but_keeps_data(conn):
+    from app.ingest import FetchResult
+
+    def degraded_fetch():
+        return FetchResult(_records(), warning="unofficial mirror — set STOCKS_X_BEARER")
+
+    ingest.run_source(conn, "usaspending", degraded_fetch, db.upsert_contracts)
+    status = {s.source: s for s in db.get_source_statuses(conn)}["usaspending"]
+    assert status.status.startswith("error:")
+    assert "unofficial mirror" in status.status
+    assert status.record_count == 1  # data was still stored
+    assert len(db.get_contracts(conn)) == 1

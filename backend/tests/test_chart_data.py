@@ -52,7 +52,7 @@ def test_parse_chart_bars_empty_payload():
 def test_get_bars_caches_per_ticker_interval(monkeypatch):
     calls = []
 
-    def stub_fetch(ticker, interval):
+    def stub_fetch(ticker, interval, prepost=False):
         calls.append((ticker, interval))
         return [{"time": "2026-07-03", "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10}]
 
@@ -69,10 +69,51 @@ def test_get_bars_caches_per_ticker_interval(monkeypatch):
     chart_data._cache.clear()
 
 
+def test_get_bars_prepost_is_separate_cache_key(monkeypatch):
+    calls = []
+
+    def stub_fetch(ticker, interval, prepost=False):
+        calls.append((ticker, interval, prepost))
+        return [{"time": 1751800000, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10}]
+
+    monkeypatch.setattr(chart_data, "fetch_bars", stub_fetch)
+    chart_data._cache.clear()
+
+    chart_data.get_bars("AAPL", "5m")               # prepost=False
+    chart_data.get_bars("AAPL", "5m", prepost=True)  # distinct key -> new fetch
+    chart_data.get_bars("AAPL", "5m", prepost=True)  # cache hit
+    assert calls == [("AAPL", "5m", False), ("AAPL", "5m", True)]
+    chart_data._cache.clear()
+
+
+def test_fetch_bars_includes_prepost_only_for_intraday(monkeypatch):
+    captured = {}
+
+    class _Resp:
+        def raise_for_status(self): pass
+        def json(self): return {"chart": {"result": []}}
+
+    class _Client:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url, params=None):
+            captured["params"] = params
+            return _Resp()
+
+    monkeypatch.setattr(chart_data.httpx, "Client", _Client)
+
+    chart_data.fetch_bars("AAPL", "5m", prepost=True)
+    assert captured["params"]["includePrePost"] == "true"
+
+    chart_data.fetch_bars("AAPL", "1d", prepost=True)  # daily: no extended hours
+    assert captured["params"]["includePrePost"] == "false"
+
+
 def test_get_bars_does_not_cache_empty(monkeypatch):
     calls = []
 
-    def stub_fetch(ticker, interval):
+    def stub_fetch(ticker, interval, prepost=False):
         calls.append(1)
         return []
 

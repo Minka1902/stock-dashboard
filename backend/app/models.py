@@ -48,6 +48,7 @@ class SourceStatus(BaseModel):
     last_refreshed_at: str | None  # ISO timestamp, None if never run
     status: str                    # "ok" or "error: <msg>"
     record_count: int
+    error_detail: str | None = None  # full error + traceback for the Info page
 
 
 class YieldPoint(BaseModel):
@@ -83,6 +84,8 @@ class LiveQuote(BaseModel):
     change_pct: float | None    # vs previous regular close
     previous_close: float | None
     market_state: str           # "PRE" | "LIVE" | "POST" | "CLOSED"
+    regular_price: float | None = None       # meta.regularMarketPrice (session close)
+    extended_change_pct: float | None = None  # PRE: vs prev close; POST: vs regular close
     fetched_at: str
 
 
@@ -229,6 +232,16 @@ class Fundamentals(BaseModel):
     revenue_growth: float | None
     profit_margin: float | None
     market_cap: float | None
+
+
+class XPost(BaseModel):
+    account: str        # handle without @, e.g. "realDonaldTrump"
+    post_id: str        # provider post id (PK with account)
+    text: str
+    url: str
+    posted_at: str      # ISO timestamp
+    tickers: str        # "" or comma-joined detected cashtags/matches
+    fetched_at: str
 
 
 class Seasonality(BaseModel):
