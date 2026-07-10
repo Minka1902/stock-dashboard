@@ -22,6 +22,7 @@ import {
   getFundamentals,
   getSeasonality,
   getPortfolio,
+  getXPosts,
   getSuggestions,
   getAlerts,
   getAnalyses,
@@ -39,7 +40,7 @@ const REFRESH_MS = 180000; // 3 minutes, matches backend default
 const EXTERNAL_SOURCES = [
   "usaspending", "gdelt", "edgar",
   "yield_curve", "econ_calendar", "technical", "fear_greed", "vix", "aaii", "put_call", "margin_debt", "congress",
-  "short_interest", "social", "analyst", "fundamentals", "seasonality", "boom_score",
+  "short_interest", "social", "analyst", "fundamentals", "x_posts", "seasonality", "boom_score",
 ];
 
 /**
@@ -70,6 +71,7 @@ export function useDashboardData() {
   const [fundamentals, setFundamentals] = useState([]);
   const [seasonality, setSeasonality] = useState([]);
   const [portfolio, setPortfolio] = useState([]);
+  const [xPosts, setXPosts] = useState([]);
   const [suggestions, setSuggestions] = useState(null);
   const [analyses, setAnalyses] = useState([]);
   const [alerts, setAlerts] = useState([]);
@@ -108,6 +110,7 @@ export function useDashboardData() {
       getAlerts(),         // 22 — special shape { alerts, unread }
       getAnalyses(),       // 23
       getEconCalendar(),   // 24
+      getXPosts(),         // 25
     ]);
 
     const setters = [
@@ -119,6 +122,7 @@ export function useDashboardData() {
       null, // alerts handled below
       setAnalyses,
       setEconCalendar,
+      setXPosts,
     ];
     results.forEach((r, i) => {
       if (r.status === "fulfilled" && setters[i]) setters[i](r.value);
@@ -220,6 +224,7 @@ export function useDashboardData() {
     fundamentals,
     seasonality,
     portfolio,
+    xPosts,
     suggestions,
     analyses,
     alerts,

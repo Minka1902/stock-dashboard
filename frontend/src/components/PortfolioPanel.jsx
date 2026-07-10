@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Icon from "./Icon";
-import StockDetailPanel from "./StockDetailPanel";
+import { openTickerTab } from "../lib/nav";
 import { formatCurrencyCompact } from "../lib/format";
 import styles from "./PortfolioPanel.module.css";
 
@@ -12,13 +12,8 @@ export default function PortfolioPanel({ portfolio, signals, quotes = {}, analys
   const [avgCost, setAvgCost] = useState("");
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
-  const [selected, setSelected] = useState(null);
 
   const analysisByTicker = Object.fromEntries(analyses.map((a) => [a.ticker, a]));
-
-  if (selected) {
-    return <StockDetailPanel key={selected} ticker={selected} onBack={() => setSelected(null)} />;
-  }
 
   // ticker -> current price, for P/L: live quote first, signal price fallback.
   const priceOf = (t) => {
@@ -143,8 +138,8 @@ export default function PortfolioPanel({ portfolio, signals, quotes = {}, analys
                 const dayTone = dayPct == null ? "flat" : dayPct >= 0 ? "pos" : "neg";
                 const an = analysisByTicker[h.ticker];
                 return (
-                  <tr key={h.ticker} className={styles.row} onClick={() => setSelected(h.ticker)}
-                      title={`Analyze ${h.ticker}`}>
+                  <tr key={h.ticker} className={styles.row} onClick={() => openTickerTab(h.ticker)}
+                      title={`Analyze ${h.ticker} in a new tab`}>
                     <td><span className={styles.symbol}>{h.ticker}</span></td>
                     <td className={styles.numCol}>{h.shares}</td>
                     <td className={styles.numCol}>{formatCurrencyCompact(h.avg_cost)}</td>

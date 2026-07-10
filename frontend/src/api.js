@@ -66,6 +66,7 @@ export const getSocial = () => getJSON("/api/social");
 export const getAnalyst = () => getJSON("/api/analyst");
 export const getBoomScores = () => getJSON("/api/boom-scores");
 export const getFundamentals = () => getJSON("/api/fundamentals");
+export const getXPosts = () => getJSON("/api/x-posts");
 export const getSeasonality = () => getJSON("/api/seasonality");
 export const getAnalyses = () => getJSON("/api/analysis");
 export const getAnalysis = (ticker) => getJSON(`/api/analysis/${encodeURIComponent(ticker)}`);

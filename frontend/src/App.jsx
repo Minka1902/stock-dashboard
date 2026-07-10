@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDashboardData } from "./hooks/useDashboardData";
 import { useLiveQuotes } from "./hooks/useLiveQuotes";
 import { useTheme } from "./hooks/useTheme";
@@ -30,10 +30,14 @@ import SeasonalityPanel from "./components/SeasonalityPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import SuggestionsPanel from "./components/SuggestionsPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
-import GuidePanel from "./components/GuidePanel";
+import XPostsPanel from "./components/XPostsPanel";
+import InfoPanel from "./components/InfoPanel";
 import StockDetailPanel from "./components/StockDetailPanel";
+import BackToTop from "./components/BackToTop";
 import Tour from "./components/Tour";
 import { TOURS } from "./lib/tours";
+import { parseStockHash, openTickerTab } from "./lib/nav";
+import { prefersReducedMotion } from "./lib/motionConfig";
 import styles from "./App.module.css";
 
 const TITLES = {
@@ -56,7 +60,8 @@ const TITLES = {
   seasonality: "Seasonality",
   suggestions: "Suggestions",
   portfolio:   "Portfolio",
-  guide:       "Module Guide",
+  x:           "X Watch",
+  info:        "Info",
   settings:    "Settings",
 };
 
@@ -80,11 +85,38 @@ export default function App({ auth }) {
   const { settings, setSetting } = useSettings();
   const [view, setView] = useState("sentiment");
   const [cmdOpen, setCmdOpen] = useState(false);
-  // Any-ticker detail view (opened from search); overlays the current view.
-  const [detailTicker, setDetailTicker] = useState(null);
-  const navigate = (v) => { setDetailTicker(null); setView(v); };
+  const scrollRef = useRef(null);
+  // Any-ticker detail view is driven by the URL hash (#/stock/TICKER) so it can
+  // live in its own tab (Task 13). It overlays the current view when present.
+  const [detailTicker, setDetailTicker] = useState(parseStockHash);
+  const navigate = (v) => { setView(v); };
+  // Open the Info page scrolled to its data-sources section (from the failed-
+  // source strip). The panel mounts on navigate, so scroll on the next frame.
+  const openSourceDetails = () => {
+    navigate("info");
+    setTimeout(() => {
+      document.getElementById("info-sources")?.scrollIntoView({
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+        block: "start",
+      });
+    }, 80);
+  };
   // Guided tour: which view's tour is currently running (null = none).
   const [tourView, setTourView] = useState(null);
+
+  useEffect(() => {
+    const onHash = () => setDetailTicker(parseStockHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  // Back control for the standalone tab: close it if it was script-opened,
+  // otherwise (hand-typed URL) just clear the hash to reveal the dashboard.
+  const closeDetail = () => {
+    window.close();
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    setDetailTicker(null);
+  };
 
   // Cmd/Ctrl+K toggles the command palette (palette mounts only while open).
   useEffect(() => {
@@ -114,7 +146,7 @@ export default function App({ auth }) {
     contracts, sources, news, trades, watchlist,
     yieldCurve, econCalendar, signals, fearGreed, vix, aaii, putCall, marginDebt, sentiment, congressTrades,
     shortInterest, social, analyst, boomScores, fundamentals, seasonality,
-    portfolio, suggestions, analyses, alerts, unreadAlerts,
+    portfolio, xPosts, suggestions, analyses, alerts, unreadAlerts,
     loading, busy, error, refresh, addWatch, removeWatch, addHolding, removeHolding,
     markAlertsRead,
   } = data;
@@ -141,7 +173,9 @@ export default function App({ auth }) {
     { id: "news",        label: "News",             hint: "the tape",   icon: "news",     run: () => navigate("news") },
     { id: "watchlist",   label: "Watchlist",        hint: "charts & radar", icon: "star", run: () => navigate("watchlist") },
     { id: "econ-calendar", label: "Economic Calendar", hint: "macro events", icon: "calendar", run: () => navigate("econ-calendar") },
-    { id: "settings",    label: "Settings",         hint: "config & guide", icon: "settings", run: () => navigate("settings") },
+    { id: "x",           label: "X Watch",          hint: "tracked accounts", icon: "x", run: () => navigate("x") },
+    { id: "info",        label: "Info",             hint: "modules, sources & glossary", icon: "info", run: () => navigate("info") },
+    { id: "settings",    label: "Settings",         hint: "config", icon: "settings", run: () => navigate("settings") },
     { id: "refresh",     label: "Refresh all sources", hint: "sync now", icon: "refresh", run: () => refresh() },
     { id: "theme",       label: "Toggle theme", hint: theme === "dark" ? "to light" : "to dark", icon: theme === "dark" ? "sun" : "moon", run: () => toggle() },
     { id: "dyslexia",    label: "Dyslexia-friendly mode", hint: settings.dyslexia ? "on" : "off", icon: "book", run: () => setSetting("dyslexia", !settings.dyslexia) },
@@ -176,7 +210,7 @@ export default function App({ auth }) {
           <LiveTicker quotes={quotes} asOf={asOf} />
         </div>
 
-        <div className={styles.scroll}>
+        <div className={styles.scroll} ref={scrollRef}>
           <div className={styles.inner}>
             {error && (
               <div className={styles.error} role="alert">
@@ -184,12 +218,12 @@ export default function App({ auth }) {
               </div>
             )}
 
-            <SourceStatus sources={sources} />
+            <SourceStatus sources={sources} onOpenDetails={openSourceDetails} />
 
             {detailTicker && (
               <StockDetailPanel
                 ticker={detailTicker}
-                onBack={() => setDetailTicker(null)}
+                onBack={closeDetail}
                 watchlist={watchlist}
                 onAddWatch={addWatch}
               />
@@ -222,11 +256,15 @@ export default function App({ auth }) {
             )}
 
             {view === "settings" && (
-              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={navigate} appSettingsApi={appSettingsApi} sources={sources} />
+              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={navigate} appSettingsApi={appSettingsApi} />
             )}
 
-            {view === "guide" && (
-              <GuidePanel onNavigate={navigate} sources={sources} />
+            {view === "info" && (
+              <InfoPanel onNavigate={navigate} sources={sources} />
+            )}
+
+            {view === "x" && (
+              <XPostsPanel data={xPosts} sources={sources} loading={loading} busy={busy} onRefresh={refresh} />
             )}
 
             {/* --- Retained but no longer in navigation (reachable only via code) --- */}
@@ -270,13 +308,15 @@ export default function App({ auth }) {
             )}
           </div>
         </div>
+
+        <BackToTop scrollRef={scrollRef} />
       </main>
 
       {cmdOpen && (
         <CommandPalette
           items={commandItems}
           onClose={() => setCmdOpen(false)}
-          onOpenTicker={(t) => setDetailTicker(t)}
+          onOpenTicker={openTickerTab}
         />
       )}
 

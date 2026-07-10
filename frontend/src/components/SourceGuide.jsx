@@ -1,43 +1,95 @@
+import { useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { formatRelativeTime, formatCount } from "../lib/format";
 import { SOURCE_META, SOURCE_ORDER, sourceState, sourceNote } from "../lib/sources";
+import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./SourceGuide.module.css";
 
-// The source directory: every external feed the dashboard pulls, its upstream provider,
-// and whether it last responded. Joins the static SOURCE_META to live /api/sources status.
-export default function SourceGuide({ sources }) {
-  const byName = new Map((sources || []).map((s) => [s.source, s]));
+// One row: static SOURCE_META joined to live /api/sources status. Errored rows
+// gain a "details" disclosure with the full traceback (error_detail), the
+// last-attempt time, the record count, and a copy button.
+function SourceRow({ sourceKey, status }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const meta = SOURCE_META[sourceKey];
+  const state = status ? sourceState(status.status) : "idle";
+  const note = status ? sourceNote(status.status) : null;
+  const isError = state === "error";
+  const detail = status?.error_detail || status?.status || "";
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(detail);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard unavailable */ }
+  };
 
   return (
+    <li className={styles.item} data-state={state}>
+      <div className={styles.row}>
+        <span className={styles.dot} title={note || undefined} />
+        <span className={styles.text}>
+          <span className={styles.name}>
+            {meta.label}
+            <span className={styles.provider}>{meta.provider}</span>
+          </span>
+          <span className={styles.blurb}>{meta.blurb}</span>
+        </span>
+        <span className={styles.meta}>
+          {!status ? (
+            "no data yet"
+          ) : state === "ok" ? (
+            <>{formatCount(status.record_count)} · {formatRelativeTime(status.last_refreshed_at)}</>
+          ) : (
+            <button
+              type="button"
+              className={styles.detailsBtn}
+              onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
+            >
+              <span className={styles.err}>{status.status}</span>
+              <span className={styles.chevron} data-open={open ? "yes" : "no"}>▾</span>
+            </button>
+          )}
+        </span>
+      </div>
+
+      <AnimatePresence initial={false}>
+        {isError && open && (
+          <motion.div
+            className={styles.details}
+            initial={prefersReducedMotion() ? false : { height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={prefersReducedMotion() ? { opacity: 0 } : { height: 0, opacity: 0 }}
+            transition={{ duration: prefersReducedMotion() ? 0 : 0.22, ease: "easeOut" }}
+          >
+            <div className={styles.detailsInner}>
+              <div className={styles.detailsMeta}>
+                <span>Last attempt: {formatRelativeTime(status.last_refreshed_at) || "—"}</span>
+                <span>Records: {formatCount(status.record_count)}</span>
+                <button type="button" className={styles.copyBtn} onClick={copy}>
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <pre className={styles.pre}>{detail}</pre>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </li>
+  );
+}
+
+// The source directory: every external feed the dashboard pulls, its upstream
+// provider, whether it last responded, and expandable diagnostics on failure.
+export default function SourceGuide({ sources }) {
+  const byName = new Map((sources || []).map((s) => [s.source, s]));
+  return (
     <ul className={styles.list}>
-      {SOURCE_ORDER.map((key) => {
-        const meta = SOURCE_META[key];
-        const status = byName.get(key);
-        const state = status ? sourceState(status.status) : "idle";
-        const note = status ? sourceNote(status.status) : null;
-        return (
-          <li key={key} className={styles.row} data-state={state}>
-            <span className={styles.dot} title={note || undefined} />
-            <span className={styles.text}>
-              <span className={styles.name}>
-                {meta.label}
-                <span className={styles.provider}>{meta.provider}</span>
-              </span>
-              <span className={styles.blurb}>{meta.blurb}</span>
-            </span>
-            <span className={styles.meta}>
-              {!status ? (
-                "no data yet"
-              ) : state === "ok" ? (
-                <>
-                  {formatCount(status.record_count)} · {formatRelativeTime(status.last_refreshed_at)}
-                </>
-              ) : (
-                <span className={styles.err} title={status.status}>{status.status}</span>
-              )}
-            </span>
-          </li>
-        );
-      })}
+      {SOURCE_ORDER.map((key) => (
+        <SourceRow key={key} sourceKey={key} status={byName.get(key)} />
+      ))}
     </ul>
   );
 }

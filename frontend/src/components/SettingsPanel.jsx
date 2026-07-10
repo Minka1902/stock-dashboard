@@ -2,7 +2,6 @@ import { useState } from "react";
 import Icon from "./Icon";
 import { useProfile } from "../hooks/useProfile";
 import { sendTestSuggestions } from "../api";
-import SourceGuide from "./SourceGuide";
 import styles from "./SettingsPanel.module.css";
 
 const WINDOW_OPTIONS = [
@@ -45,7 +44,7 @@ function formatNextRun(iso, tz) {
   }
 }
 
-export default function SettingsPanel({ settings, setSetting, onNavigate, appSettingsApi, sources }) {
+export default function SettingsPanel({ settings, setSetting, onNavigate, appSettingsApi }) {
   const activeWindows = settings.seasonalityWindows;
   const lookback = settings.seasonalityLookback;
 
@@ -178,27 +177,17 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
           )}
         </fieldset>
 
-        {/* Source guide: every external feed and whether it last responded */}
-        <fieldset className={styles.group}>
-          <legend className={styles.legend}>Data sources</legend>
-          <p className={styles.groupHint}>
-            Every public feed this dashboard pulls, its upstream provider, and whether it last
-            responded. If a source can&apos;t be reached it shows an error here rather than inventing
-            data. The top-of-screen strip only appears when one of these fails.
-          </p>
-          <SourceGuide sources={sources} />
-        </fieldset>
-
-        {/* Onboarding: the in-app module guide + guided tours */}
+        {/* Onboarding: the in-app Info page + guided tours */}
         <fieldset className={styles.group}>
           <legend className={styles.legend}>Learn the dashboard</legend>
           <p className={styles.groupHint}>
-            New here? The module guide explains what every panel shows and how it feeds the Boom Score.
-            Each view also has a guided tour (the <strong>?</strong> button in the top bar) that runs
-            automatically on first visit.
+            New here? The <strong>Info</strong> page explains what every panel shows, how it feeds the
+            Boom Score, and lists every data source and whether it last responded. (Data sources have
+            moved to the Info page.) Each view also has a guided tour (the <strong>?</strong> button in
+            the top bar) that runs automatically on first visit.
           </p>
-          <button type="button" className={styles.primaryBtn} onClick={() => onNavigate?.("guide")}>
-            Open the module guide
+          <button type="button" className={styles.primaryBtn} onClick={() => onNavigate?.("info")}>
+            Open the Info page
           </button>{" "}
           <button
             type="button"

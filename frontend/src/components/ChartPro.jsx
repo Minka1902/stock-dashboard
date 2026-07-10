@@ -66,6 +66,7 @@ const DEFAULT_PREFS = {
   logScale: false,
   compare: false,
   overlays: true,
+  prepost: false,
 };
 
 const PREFS_KEY = "chartProPrefs";
@@ -134,13 +135,13 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   // ---- data: bars for the active timeframe (auto-refresh while intraday) ----
   const loadBars = useCallback(async () => {
     try {
-      const data = await getChart(ticker, prefs.tf);
+      const data = await getChart(ticker, prefs.tf, INTRADAY.has(prefs.tf) && prefs.prepost);
       setBars(data.bars);
       setError(null);
     } catch (e) {
       setError(e.message || "chart data unavailable");
     }
-  }, [ticker, prefs.tf]);
+  }, [ticker, prefs.tf, prefs.prepost]);
 
   useEffect(() => {
     // Intentional: reset to the loading state, kick off the fetch, then poll
@@ -488,6 +489,11 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
           <button className={styles.pill} data-active={prefs.compare ? "yes" : "no"}
                   title="Compare with SPY (percent scale)"
                   onClick={() => setPref({ compare: !prefs.compare })}>vs SPY</button>
+          {intraday && (
+            <button className={styles.pill} data-active={prefs.prepost ? "yes" : "no"}
+                    title="Include pre-market / after-hours bars"
+                    onClick={() => setPref({ prepost: !prefs.prepost })}>EXT</button>
+          )}
           {analysis && (
             <button className={styles.pill} data-active={prefs.overlays ? "yes" : "no"}
                     title="Analysis overlays: support/resistance, entry/stop/target, patterns (daily)"
