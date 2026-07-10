@@ -1,7 +1,9 @@
-import Icon from "./Icon";
+import { motion } from "motion/react";
 import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
+import EmptyState from "./EmptyState";
+import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import {
   formatCurrencyCompact,
   formatCurrencyFull,
@@ -49,13 +51,7 @@ export default function TradesPanel({ trades, loading, busy, onRefresh, compact 
       </header>
 
       {!collapsed && (showEmpty ? (
-        <div className={styles.empty}>
-          <span className={styles.emptyIcon}><Icon name="trending" size={24} /></span>
-          <p className={styles.emptyTitle}>No insider filings loaded yet</p>
-          <button className={styles.emptyBtn} onClick={onRefresh} disabled={busy}>
-            {busy ? "Refreshing…" : "Refresh now"}
-          </button>
-        </div>
+        <EmptyState icon="trending" title="No insider filings loaded yet" onRetry={onRefresh} busy={busy} />
       ) : (
         <div className={styles.tableWrap}>
           <table className={styles.table}>
@@ -69,12 +65,16 @@ export default function TradesPanel({ trades, loading, busy, onRefresh, compact 
                 <th>Date</th>
               </tr>
             </thead>
-            <tbody>
+            <motion.tbody
+              variants={loading ? undefined : staggerContainer}
+              initial={loading || prefersReducedMotion() ? false : "hidden"}
+              animate="visible"
+            >
               {loading ? (
                 <SkeletonRows />
               ) : (
                 rows.map((t) => (
-                  <tr key={t.accession}>
+                  <motion.tr key={t.accession} variants={staggerItem}>
                     <td>
                       <a
                         className={styles.ticker}
@@ -100,10 +100,10 @@ export default function TradesPanel({ trades, loading, busy, onRefresh, compact 
                       {t.value > 0 ? formatCurrencyCompact(t.value) : "—"}
                     </td>
                     <td className={styles.muted}>{formatDate(t.transaction_date)}</td>
-                  </tr>
+                  </motion.tr>
                 ))
               )}
-            </tbody>
+            </motion.tbody>
           </table>
         </div>
       ))}
