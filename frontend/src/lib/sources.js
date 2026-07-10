@@ -87,6 +87,11 @@ export const SOURCE_META = {
     provider: "Yahoo Finance",
     blurb: "Core company health metrics and next earnings date.",
   },
+  x_posts: {
+    label: "X Watch",
+    provider: "Nitter mirrors / X API",
+    blurb: "Recent posts from monitored X accounts, with detected cashtags.",
+  },
   seasonality: {
     label: "Seasonality",
     provider: "Yahoo Finance",
@@ -97,7 +102,7 @@ export const SOURCE_META = {
 // Ordered list of external sources for the Settings guide (registry order).
 export const SOURCE_ORDER = Object.keys(SOURCE_META);
 
-// Maps a Module-Guide card key (see GROUPS in GuidePanel.jsx) to either a backend
+// Maps an Info-page module card key (see GROUPS in InfoPanel.jsx) to either a backend
 // source name, or a { note } sentinel for modules with no external feed.
 export const MODULE_SOURCE = {
   "boom-score": { note: "Computed from every signal below" },
@@ -113,6 +118,7 @@ export const MODULE_SOURCE = {
   seasonality: "seasonality",
   contracts: "usaspending",
   fundamentals: "fundamentals",
+  x: "x_posts",
   watchlist: { note: "Your input" },
   portfolio: { note: "Your input" },
   suggestions: { note: "Derived" },

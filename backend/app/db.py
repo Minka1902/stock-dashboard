@@ -36,6 +36,7 @@ from app.models import (
     User,
     VixPoint,
     WatchItem,
+    XPost,
     YieldPoint,
 )
 
@@ -334,6 +335,16 @@ def init_schema(conn: sqlite3.Connection) -> None:
             windows_json  TEXT NOT NULL DEFAULT '[]',
             anchors_json  TEXT NOT NULL DEFAULT '[]'
         );
+        CREATE TABLE IF NOT EXISTS x_posts (
+            account    TEXT NOT NULL,
+            post_id    TEXT NOT NULL,
+            text       TEXT NOT NULL,
+            url        TEXT NOT NULL DEFAULT '',
+            posted_at  TEXT NOT NULL DEFAULT '',
+            tickers    TEXT NOT NULL DEFAULT '',
+            fetched_at TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (account, post_id)
+        );
         CREATE TABLE IF NOT EXISTS portfolio (
             user_id  INTEGER NOT NULL DEFAULT 0,
             ticker   TEXT NOT NULL,
@@ -473,6 +484,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
     _try_add_column(conn, "contracts", "ticker", "TEXT")
     _try_add_column(conn, "seasonality", "anchors_json", "TEXT NOT NULL DEFAULT '[]'")
+    _try_add_column(conn, "source_status", "error_detail", "TEXT")
+    _try_add_column(conn, "portfolio", "category", "TEXT")  # NULL = auto-classified
     conn.commit()
 
 
@@ -633,17 +646,22 @@ def update_source_status(
     last_refreshed_at: str | None,
     status: str,
     record_count: int,
+    error_detail: str | None = None,
 ) -> None:
+    # error_detail is explicitly written (NULL on success) so a stale traceback
+    # from a prior failure is cleared once the source recovers.
     conn.execute(
         """
-        INSERT INTO source_status (source, last_refreshed_at, status, record_count)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO source_status
+            (source, last_refreshed_at, status, record_count, error_detail)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(source) DO UPDATE SET
             last_refreshed_at=excluded.last_refreshed_at,
             status=excluded.status,
-            record_count=excluded.record_count
+            record_count=excluded.record_count,
+            error_detail=excluded.error_detail
         """,
-        (source, last_refreshed_at, status, record_count),
+        (source, last_refreshed_at, status, record_count, error_detail),
     )
     conn.commit()
 
@@ -1324,17 +1342,61 @@ def get_seasonality_for(conn: sqlite3.Connection, ticker: str) -> Seasonality | 
     return Seasonality(**dict(row)) if row else None
 
 
+# ---------- x posts ----------
+
+def upsert_x_posts(conn: sqlite3.Connection, records: list[XPost]) -> None:
+    conn.executemany(
+        """
+        INSERT OR REPLACE INTO x_posts
+            (account, post_id, text, url, posted_at, tickers, fetched_at)
+        VALUES
+            (:account, :post_id, :text, :url, :posted_at, :tickers, :fetched_at)
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+
+
+def get_x_posts(conn: sqlite3.Connection, limit: int = 100) -> list[XPost]:
+    cur = conn.execute(
+        "SELECT * FROM x_posts ORDER BY posted_at DESC, rowid DESC LIMIT ?", (limit,))
+    return [XPost(**dict(row)) for row in cur.fetchall()]
+
+
 # ---------- portfolio (user managed) ----------
 
 def upsert_holding(conn: sqlite3.Connection, user_id: int, item: Holding) -> None:
+    """Add shares to a position, merging into any existing holding.
+
+    On conflict the shares are summed and ``avg_cost`` becomes the
+    share-weighted average of the existing and incoming cost basis, so P/L
+    stays correct. ``added_at`` (first-buy date) is preserved. In SQLite's
+    ``DO UPDATE SET`` every RHS expression evaluates against the pre-update
+    row, so the ordering of the two assignments below is safe.
+    """
     conn.execute(
         """
         INSERT INTO portfolio (user_id, ticker, shares, avg_cost, added_at)
         VALUES (:user_id, :ticker, :shares, :avg_cost, :added_at)
         ON CONFLICT(user_id, ticker) DO UPDATE SET
-            shares=excluded.shares, avg_cost=excluded.avg_cost
+            avg_cost = (portfolio.shares * portfolio.avg_cost
+                        + excluded.shares * excluded.avg_cost)
+                       / (portfolio.shares + excluded.shares),
+            shares   = portfolio.shares + excluded.shares
         """,
         {"user_id": user_id, **item.model_dump()},
+    )
+    conn.commit()
+
+
+def replace_holding(
+    conn: sqlite3.Connection, user_id: int, ticker: str, shares: float, avg_cost: float
+) -> None:
+    """Overwrite an existing position outright (the edit/correct path)."""
+    conn.execute(
+        "UPDATE portfolio SET shares = ?, avg_cost = ? "
+        "WHERE user_id = ? AND ticker = ?",
+        (shares, avg_cost, user_id, ticker),
     )
     conn.commit()
 
@@ -1358,6 +1420,35 @@ def get_all_portfolio_tickers(conn: sqlite3.Connection) -> list[str]:
     """Every ticker held by any user — the ingestion pipeline's universe."""
     cur = conn.execute("SELECT DISTINCT ticker FROM portfolio ORDER BY ticker")
     return [row[0] for row in cur.fetchall()]
+
+
+def get_holding_categories(conn: sqlite3.Connection, user_id: int) -> dict[str, str]:
+    """Manual category overrides for a user: {ticker: category}. Tickers with
+    NULL category (auto) are omitted."""
+    cur = conn.execute(
+        "SELECT ticker, category FROM portfolio "
+        "WHERE user_id = ? AND category IS NOT NULL",
+        (user_id,),
+    )
+    return {row[0]: row[1] for row in cur.fetchall()}
+
+
+def set_holding_category(
+    conn: sqlite3.Connection, user_id: int, ticker: str, category: str | None
+) -> None:
+    """Set (or clear, when None) a holding's manual theme override."""
+    conn.execute(
+        "UPDATE portfolio SET category = ? WHERE user_id = ? AND ticker = ?",
+        (category, user_id, ticker),
+    )
+    conn.commit()
+
+
+def get_fundamentals_map(conn: sqlite3.Connection) -> dict[str, tuple[str | None, str | None]]:
+    """{ticker: (sector, industry)} across all stored fundamentals — the input
+    to theme classification."""
+    cur = conn.execute("SELECT ticker, sector, industry FROM fundamentals")
+    return {row[0]: (row[1], row[2]) for row in cur.fetchall()}
 
 
 # ---------- notify profile (one row per user) ----------

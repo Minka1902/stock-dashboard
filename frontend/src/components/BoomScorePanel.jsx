@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
+import { motion } from "motion/react";
 import Icon from "./Icon";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
+import AnimatedNumber from "./AnimatedNumber";
 import { getBoomScoreHistory } from "../api";
+import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import styles from "./BoomScorePanel.module.css";
 
 const COMPACT_LIMIT = 5;
@@ -89,7 +92,12 @@ export default function BoomScorePanel({ data, loading, busy, onRefresh, compact
           </button>
         </div>
       ) : (
-        <ul className={styles.list}>
+        <motion.ul
+          className={styles.list}
+          variants={staggerContainer}
+          initial={prefersReducedMotion() ? false : "hidden"}
+          animate="visible"
+        >
           {rows.map((s, idx) => {
             const components = (() => {
               try { return JSON.parse(s.components); } catch { return {}; }
@@ -99,7 +107,7 @@ export default function BoomScorePanel({ data, loading, busy, onRefresh, compact
             const barWidth = Math.max(0, Math.min(100, s.score));
 
             return (
-              <li key={s.ticker} className={styles.row}>
+              <motion.li key={s.ticker} className={styles.row} variants={staggerItem}>
                 <span className={styles.rank}>{idx + 1}</span>
 
                 <span className={styles.ticker}>
@@ -114,7 +122,7 @@ export default function BoomScorePanel({ data, loading, busy, onRefresh, compact
                 </div>
 
                 <span className={styles.scoreBadge} data-tone={tier.tone}>
-                  {s.score}
+                  <AnimatedNumber value={s.score} />
                 </span>
 
                 <span className={styles.tier} data-tone={tier.tone}>{tier.label}</span>
@@ -138,10 +146,10 @@ export default function BoomScorePanel({ data, loading, busy, onRefresh, compact
                     );
                   })}
                 </div>
-              </li>
+              </motion.li>
             );
           })}
-        </ul>
+        </motion.ul>
       ))}
     </section>
   );

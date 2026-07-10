@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, search, sentiment, suggestions
+from app import analysis, analyze, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, search, sentiment, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.security import SecurityHeadersMiddleware, rate_limit
@@ -36,6 +36,7 @@ import app.sources.fundamentals as fundamentals_source
 import app.sources.seasonality as seasonality_source
 import app.sources.boom_score as boom_score_source
 import app.sources.ohlc as ohlc_source
+import app.sources.x_posts as x_posts_source
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -78,10 +79,19 @@ def signals_fetch(conn):
 
 
 def fundamentals_fetch(conn):
-    tickers = db.get_all_watched_tickers(conn)
+    # Universe = watchlist ∪ portfolio, so held-but-unwatched tickers still get
+    # a sector/industry row for theme classification (Task 11).
+    tickers = sorted(set(db.get_all_watched_tickers(conn)) | set(db.get_all_portfolio_tickers(conn)))
     if not tickers:
         return []
     return fundamentals_source.fetch(tickers)
+
+
+def x_posts_fetch(conn):
+    """Monitor configured X accounts. known_tickers = watchlist ∪ portfolio, so
+    posts get their cashtags/matches tagged against symbols the user tracks."""
+    known = set(db.get_all_watched_tickers(conn)) | set(db.get_all_portfolio_tickers(conn))
+    return x_posts_source.fetch(config.X_ACCOUNTS, known)
 
 
 def seasonality_fetch(conn):
@@ -172,6 +182,7 @@ def build_sources(conn):
         "social":         (lambda: social_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_social_sentiment, None),
         "analyst":        (lambda: analyst_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_analyst_signals, None),
         "fundamentals":   (lambda: fundamentals_fetch(conn), db.upsert_fundamentals, None),
+        "x_posts":        (lambda: x_posts_fetch(conn), db.upsert_x_posts, config.X_MIN_INTERVAL_SECONDS),
         "seasonality":    (lambda: seasonality_fetch(conn), db.upsert_seasonality, config.SEASONALITY_MIN_INTERVAL_SECONDS),
         "boom_score":     (lambda: score_fetch(conn), db.upsert_boom_scores, None),
         "ohlc":           (lambda: ohlc_fetch(conn), db.upsert_ohlc, 3600),  # 2y history barely moves intraday
@@ -425,6 +436,11 @@ def fundamentals():
     return [f.model_dump() for f in db.get_fundamentals(conn)]
 
 
+@app.get("/api/x-posts")
+def x_posts():
+    return [p.model_dump() for p in db.get_x_posts(conn)]
+
+
 @app.get("/api/seasonality")
 def seasonality():
     return [s.model_dump() for s in db.get_seasonality(conn)]
@@ -432,7 +448,7 @@ def seasonality():
 
 # ---------- chart bars (on-demand, for the pro chart) ----------
 @app.get("/api/chart/{ticker}")
-def chart_bars(ticker: str, interval: str = "1d"):
+def chart_bars(ticker: str, interval: str = "1d", prepost: bool = False):
     if interval not in chart_data.INTERVALS:
         raise HTTPException(
             status_code=400,
@@ -440,7 +456,7 @@ def chart_bars(ticker: str, interval: str = "1d"):
         )
     t = clean_ticker(ticker)
     try:
-        return chart_data.get_bars(t, interval)
+        return chart_data.get_bars(t, interval, prepost)
     except Exception:
         logger.warning("chart data fetch failed for %s (%s)", t, interval, exc_info=True)
         raise HTTPException(status_code=502, detail="chart data unavailable")
@@ -543,9 +559,25 @@ class HoldingCreate(BaseModel):
     avg_cost: float
 
 
+def _portfolio_out(user_id: int) -> list[dict]:
+    """Portfolio holdings enriched with theme category + its source ('manual'
+    when overridden, else 'auto' from sector/industry classification)."""
+    overrides = db.get_holding_categories(conn, user_id)
+    fund_map = db.get_fundamentals_map(conn)
+    out = []
+    for h in db.get_portfolio(conn, user_id):
+        if h.ticker in overrides:
+            category, source = overrides[h.ticker], "manual"
+        else:
+            sector, industry = fund_map.get(h.ticker, (None, None))
+            category, source = themes.classify(h.ticker, sector, industry), "auto"
+        out.append({**h.model_dump(), "category": category, "category_source": source})
+    return out
+
+
 @app.get("/api/portfolio")
 def portfolio(user=Depends(auth.get_current_user)):
-    return [h.model_dump() for h in db.get_portfolio(conn, user.id)]
+    return _portfolio_out(user.id)
 
 
 @app.post("/api/portfolio")
@@ -557,13 +589,50 @@ def add_holding(item: HoldingCreate, user=Depends(auth.get_current_user)):
     db.upsert_holding(conn, user.id, Holding(
         ticker=ticker, shares=item.shares, avg_cost=item.avg_cost, added_at=now,
     ))
-    return [h.model_dump() for h in db.get_portfolio(conn, user.id)]
+    return _portfolio_out(user.id)
+
+
+class HoldingReplace(BaseModel):
+    shares: float
+    avg_cost: float
+
+
+@app.put("/api/portfolio/{ticker}")
+def edit_holding(ticker: str, item: HoldingReplace, user=Depends(auth.get_current_user)):
+    """Overwrite a held position outright (correct a mistaken entry)."""
+    t = clean_ticker(ticker)
+    if item.shares <= 0 or item.avg_cost < 0:
+        raise HTTPException(status_code=400, detail="shares must be > 0 and avg_cost >= 0")
+    held = {h.ticker for h in db.get_portfolio(conn, user.id)}
+    if t not in held:
+        raise HTTPException(status_code=404, detail="ticker not in portfolio")
+    db.replace_holding(conn, user.id, t, item.shares, item.avg_cost)
+    return _portfolio_out(user.id)
+
+
+class CategoryUpdate(BaseModel):
+    category: str | None = None  # null clears the override (back to auto)
+
+
+@app.put("/api/portfolio/{ticker}/category")
+def set_holding_category(ticker: str, item: CategoryUpdate, user=Depends(auth.get_current_user)):
+    t = clean_ticker(ticker)
+    if item.category is not None and item.category not in themes.THEMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"category must be null or one of {', '.join(themes.THEMES)}",
+        )
+    held = {h.ticker for h in db.get_portfolio(conn, user.id)}
+    if t not in held:
+        raise HTTPException(status_code=404, detail="ticker not in portfolio")
+    db.set_holding_category(conn, user.id, t, item.category)
+    return _portfolio_out(user.id)
 
 
 @app.delete("/api/portfolio/{ticker}")
 def delete_holding(ticker: str, user=Depends(auth.get_current_user)):
     db.remove_holding(conn, user.id, clean_ticker(ticker))
-    return [h.model_dump() for h in db.get_portfolio(conn, user.id)]
+    return _portfolio_out(user.id)
 
 
 # ---------- notification profile (email/phone; secrets stay in env) ----------

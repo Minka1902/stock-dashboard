@@ -79,6 +79,19 @@
 .legend em[data-tone="pos"] { color: var(--positive); }
 .legend em[data-tone="neg"] { color: var(--negative); }
 .legendCompare { color: var(--accent); }
+.overlayChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+.overlayDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
 
 /* ---- states ---- */
 .message {

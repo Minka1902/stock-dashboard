@@ -1,6 +1,9 @@
 import { useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
-import StockDetailPanel from "./StockDetailPanel";
+import ExtHoursBadge from "./ExtHoursBadge";
+import { openTickerTab } from "../lib/nav";
+import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./WatchlistPanel.module.css";
 
@@ -14,11 +17,6 @@ export default function WatchlistPanel({ watchlist, quotes = {}, onAdd, onRemove
   const [note, setNote] = useState("");
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
-  const [selected, setSelected] = useState(null);
-
-  if (selected) {
-    return <StockDetailPanel key={selected} ticker={selected} onBack={() => setSelected(null)} />;
-  }
 
   async function submit(e) {
     e.preventDefault();
@@ -74,15 +72,27 @@ export default function WatchlistPanel({ watchlist, quotes = {}, onAdd, onRemove
           <p className={styles.emptyText}>Add a ticker above to start tracking it.</p>
         </div>
       ) : (
-        <ul className={styles.list}>
+        <motion.ul
+          className={styles.list}
+          variants={staggerContainer}
+          initial={prefersReducedMotion() ? false : "hidden"}
+          animate="visible"
+        >
+          <AnimatePresence initial={false}>
           {watchlist.map((w) => {
             const q = quotes[w.ticker];
             return (
-            <li key={w.ticker} className={styles.item}>
+            <motion.li
+              key={w.ticker}
+              className={styles.item}
+              variants={staggerItem}
+              exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, x: -12 }}
+              layout={!prefersReducedMotion()}
+            >
               <button
                 className={styles.symbolBtn}
-                onClick={() => setSelected(w.ticker)}
-                title={`Open ${w.ticker} chart`}
+                onClick={() => openTickerTab(w.ticker)}
+                title={`Open ${w.ticker} analysis in a new tab`}
               >
                 <span className={styles.symbol}>{w.ticker}</span>
               </button>
@@ -94,8 +104,9 @@ export default function WatchlistPanel({ watchlist, quotes = {}, onAdd, onRemove
                   ? `${q.change_pct >= 0 ? "+" : ""}${q.change_pct.toFixed(2)}%`
                   : "—"}
               </span>
+              <ExtHoursBadge quote={q} />
               <span className={styles.state} data-state={q?.market_state ?? "none"}>
-                {q ? q.market_state : ""}
+                {q && q.market_state !== "PRE" && q.market_state !== "POST" ? q.market_state : ""}
               </span>
               <span className={styles.itemNote}>{w.note || "—"}</span>
               <span className={styles.added}>added {formatRelativeTime(w.added_at)}</span>
@@ -107,10 +118,11 @@ export default function WatchlistPanel({ watchlist, quotes = {}, onAdd, onRemove
               >
                 ×
               </button>
-            </li>
+            </motion.li>
             );
           })}
-        </ul>
+          </AnimatePresence>
+        </motion.ul>
       )}
     </section>
   );

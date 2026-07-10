@@ -44,6 +44,15 @@ export default function Sidebar({ view, onNavigate }) {
       <div className={styles.footer}>
         <button
           type="button"
+          className={`${styles.gear} ${view === "info" ? styles.active : ""}`}
+          onClick={() => onNavigate("info")}
+          aria-current={view === "info" ? "page" : undefined}
+        >
+          <Icon name="info" size={16} />
+          <span className={styles.label}>Info</span>
+        </button>
+        <button
+          type="button"
           className={`${styles.gear} ${view === "settings" ? styles.active : ""}`}
           onClick={() => onNavigate("settings")}
           aria-current={view === "settings" ? "page" : undefined}

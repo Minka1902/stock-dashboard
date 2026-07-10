@@ -95,6 +95,68 @@ def test_quotes_union_of_watchlist_and_portfolio(client, monkeypatch):
     assert all("price" in q and "market_state" in q for q in body["quotes"])
 
 
+def test_portfolio_add_twice_merges(client):
+    client.post("/api/portfolio", json={"ticker": "AAPL", "shares": 10, "avg_cost": 100})
+    body = client.post(
+        "/api/portfolio", json={"ticker": "AAPL", "shares": 10, "avg_cost": 200}).json()
+    row = next(h for h in body if h["ticker"] == "AAPL")
+    assert row["shares"] == 20
+    assert row["avg_cost"] == 150.0
+
+
+def test_portfolio_put_replaces_outright(client):
+    client.post("/api/portfolio", json={"ticker": "AAPL", "shares": 10, "avg_cost": 100})
+    body = client.put("/api/portfolio/AAPL", json={"shares": 3, "avg_cost": 500}).json()
+    row = next(h for h in body if h["ticker"] == "AAPL")
+    assert row["shares"] == 3
+    assert row["avg_cost"] == 500.0
+
+
+def test_portfolio_put_unknown_ticker_404(client):
+    resp = client.put("/api/portfolio/ZZZZ", json={"shares": 1, "avg_cost": 1})
+    assert resp.status_code == 404
+
+
+def test_portfolio_auto_category_from_fundamentals(client):
+    import app.main as main_module
+    from app.models import Fundamentals
+    db.upsert_fundamentals(main_module.conn, [Fundamentals(
+        ticker="XYZ", fetched_at="2026-07-04T00:00:00+00:00",
+        sector="Technology", industry="Semiconductors",
+        pe_ratio=None, forward_pe=None, peg_ratio=None, pb_ratio=None,
+        revenue_growth=None, profit_margin=None, market_cap=None)])
+    client.post("/api/portfolio", json={"ticker": "XYZ", "shares": 1, "avg_cost": 10})
+    body = client.get("/api/portfolio").json()
+    row = next(h for h in body if h["ticker"] == "XYZ")
+    assert row["category"] == "Semiconductors"
+    assert row["category_source"] == "auto"
+
+
+def test_portfolio_manual_category_override_persists(client):
+    client.post("/api/portfolio", json={"ticker": "XYZ", "shares": 1, "avg_cost": 10})
+    body = client.put("/api/portfolio/XYZ/category", json={"category": "AI"}).json()
+    row = next(h for h in body if h["ticker"] == "XYZ")
+    assert row["category"] == "AI"
+    assert row["category_source"] == "manual"
+    # survives a fresh read
+    row2 = next(h for h in client.get("/api/portfolio").json() if h["ticker"] == "XYZ")
+    assert row2["category"] == "AI" and row2["category_source"] == "manual"
+
+
+def test_portfolio_category_invalid_rejected(client):
+    client.post("/api/portfolio", json={"ticker": "XYZ", "shares": 1, "avg_cost": 10})
+    resp = client.put("/api/portfolio/XYZ/category", json={"category": "Nonsense"})
+    assert resp.status_code == 400
+
+
+def test_portfolio_category_null_clears_override(client):
+    client.post("/api/portfolio", json={"ticker": "XYZ", "shares": 1, "avg_cost": 10})
+    client.put("/api/portfolio/XYZ/category", json={"category": "AI"})
+    body = client.put("/api/portfolio/XYZ/category", json={"category": None}).json()
+    row = next(h for h in body if h["ticker"] == "XYZ")
+    assert row["category_source"] == "auto"
+
+
 def test_vix_aaii_put_call_endpoints_empty(client):
     assert client.get("/api/vix").json() == []
     assert client.get("/api/aaii").json() == []

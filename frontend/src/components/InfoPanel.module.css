@@ -23,11 +23,62 @@
   max-width: 72ch;
 }
 
+/* Sticky in-page section nav */
+.sectionNav {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-5);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklab, var(--surface) 92%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 6px 14px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.chip:hover,
+.chip[data-active="yes"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-weak);
+}
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .body {
   padding: var(--s-5);
   display: flex;
   flex-direction: column;
   gap: var(--s-6);
+}
+
+.section {
+  scroll-margin-top: 56px; /* clear the sticky section nav on anchor scroll */
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+.sectionTitle {
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .intro {
@@ -187,7 +238,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .card {
+  .card,
+  .chip {
     transition: none;
   }
   .card:hover {

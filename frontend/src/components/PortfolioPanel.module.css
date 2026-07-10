@@ -126,7 +126,142 @@
   font-variant-numeric: tabular-nums;
 }
 
-.row { cursor: pointer; }
+/* --- summary cards --- */
+.summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border-bottom: 1px solid var(--grid);
+}
+.card {
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cardLabel {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+}
+.cardValue {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.cardPct { font-style: normal; font-size: 13px; font-weight: 700; }
+.card[data-tone="pos"] .cardValue,
+.card[data-tone="pos"] .cardPct { color: var(--positive); }
+.card[data-tone="neg"] .cardValue,
+.card[data-tone="neg"] .cardPct { color: var(--negative); }
+
+@media (max-width: 720px) {
+  .summary { grid-template-columns: 1fr; }
+}
+
+.mergeNote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px var(--s-4);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+/* --- group headers --- */
+.groupRow td {
+  position: sticky;
+  top: 0;
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+  padding: 6px var(--s-4);
+}
+.groupName {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.symbolBtn {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.priceCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* --- category chip / override --- */
+.catWrap { display: block; margin-top: 3px; }
+.catSelect {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 4px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  cursor: pointer;
+  max-width: 130px;
+}
+.catSelect[data-source="manual"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-weak);
+}
+
+/* --- inline edit --- */
+.editInput {
+  width: 82px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--accent);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: right;
+}
+.editInput:focus { outline: none; box-shadow: 0 0 0 3px var(--accent-weak); }
+
+.actionsCol { text-align: right; white-space: nowrap; }
+.rowActions, .editActions { display: inline-flex; gap: 4px; }
+.iconAction {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.iconAction:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-weak); }
 
 .advice {
   display: inline-flex;

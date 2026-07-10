@@ -10,17 +10,19 @@
   overflow: hidden;
 }
 
+.item {
+  background: var(--surface-2);
+}
+.item:nth-child(odd) {
+  background: var(--surface);
+}
+
 .row {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: var(--s-3);
   padding: var(--s-3) var(--s-4);
-  background: var(--surface-2);
-}
-
-.row:nth-child(odd) {
-  background: var(--surface);
 }
 
 .dot {
@@ -31,12 +33,12 @@
   background: var(--text-faint);
 }
 
-.row[data-state="ok"] .dot {
+.item[data-state="ok"] .dot {
   background: var(--positive);
   box-shadow: 0 0 0 3px var(--positive-weak);
 }
 
-.row[data-state="error"] .dot {
+.item[data-state="error"] .dot {
   background: var(--negative);
   box-shadow: 0 0 0 3px var(--negative-weak);
 }
@@ -87,6 +89,81 @@
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: bottom;
+}
+
+.detailsBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--negative);
+  cursor: pointer;
+  padding: 0;
+  max-width: 34ch;
+}
+.detailsBtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.chevron {
+  flex: none;
+  color: var(--text-faint);
+  transition: transform 0.15s ease;
+}
+.chevron[data-open="yes"] {
+  transform: rotate(180deg);
+}
+
+.details {
+  overflow: hidden;
+}
+.detailsInner {
+  padding: var(--s-3) var(--s-4) var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.detailsMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.copyBtn {
+  margin-left: auto;
+  padding: 3px 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.copyBtn:hover { border-color: var(--accent); color: var(--accent); }
+
+.pre {
+  margin: 0;
+  padding: var(--s-3);
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--negative) 8%, var(--surface));
+  border: 1px solid var(--negative-weak);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron { transition: none; }
 }
 
 @media (max-width: 560px) {

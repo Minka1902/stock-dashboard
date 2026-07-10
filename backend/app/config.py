@@ -171,6 +171,33 @@ DIGEST_TZ = os.environ.get("STOCKS_DIGEST_TZ", "America/New_York")
 # How many opportunity / holding suggestions to include.
 SUGGESTIONS_COUNT = int(os.environ.get("STOCKS_SUGGESTIONS_COUNT", "5"))
 
+# --- X (Twitter) watcher ---
+# Accounts to monitor for market-moving posts / cashtags.
+X_ACCOUNTS = [
+    a.strip().lstrip("@")
+    for a in os.environ.get("STOCKS_X_ACCOUNTS", "realDonaldTrump,aistocksavvy").split(",")
+    if a.strip()
+]
+# Official X API v2 bearer token. When set we use the official API and stamp the
+# source status "ok"; when unset we fall back to unofficial Nitter-style RSS
+# mirrors and stamp the status as an error-style warning (data is still stored).
+X_BEARER: str = os.environ.get("STOCKS_X_BEARER", "")
+# Nitter-style mirror base URLs (RSS at {mirror}/{account}/rss). Comma list.
+X_MIRRORS = [
+    m.strip().rstrip("/")
+    for m in os.environ.get(
+        "STOCKS_X_MIRRORS",
+        "https://nitter.net,https://nitter.poast.org,https://nitter.privacydev.net",
+    ).split(",")
+    if m.strip()
+]
+# Max posts to keep per account per refresh.
+X_POSTS_LIMIT = int(os.environ.get("STOCKS_X_POSTS_LIMIT", "30"))
+# X posts change slowly relative to the fast cycle; refresh at most every 15 min.
+X_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_X_MIN_INTERVAL_SECONDS", "900"))
+X_TIMEOUT_SECONDS = float(os.environ.get("STOCKS_X_TIMEOUT_SECONDS", "8"))
+
+
 # --- Alerts ---
 # Boom Score level whose upward crossing fires a high-severity alert.
 ALERT_BOOM_THRESHOLD = int(os.environ.get("STOCKS_ALERT_BOOM_THRESHOLD", "60"))

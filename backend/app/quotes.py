@@ -48,12 +48,27 @@ def parse_quote(payload: dict, ticker: str, fetched_at: str) -> LiveQuote | None
 
     change_pct = round((price - prev) / prev * 100, 2) if prev is not None else None
 
+    state = normalize_market_state(meta.get("marketState"))
+    regular = meta.get("regularMarketPrice")
+    regular = round(float(regular), 4) if isinstance(regular, (int, float)) else None
+
+    # Extended-hours move: in PRE the latest price is a pre-market trade vs the
+    # previous session close; in POST it is an after-hours trade vs today's
+    # regular close. Outside extended hours there is no separate move to show.
+    extended_change_pct = None
+    if state == "PRE" and prev:
+        extended_change_pct = round((price - prev) / prev * 100, 2)
+    elif state == "POST" and regular:
+        extended_change_pct = round((price - regular) / regular * 100, 2)
+
     return LiveQuote(
         ticker=ticker.upper(),
         price=round(float(price), 4),
         change_pct=change_pct,
         previous_close=prev,
-        market_state=normalize_market_state(meta.get("marketState")),
+        market_state=state,
+        regular_price=regular,
+        extended_change_pct=extended_change_pct,
         fetched_at=fetched_at,
     )
 

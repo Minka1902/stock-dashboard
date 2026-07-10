@@ -1,7 +1,9 @@
 import Icon from "./Icon";
+import SourceGuide from "./SourceGuide";
 import GLOSSARY from "../lib/glossary";
 import { MODULE_SOURCE, SOURCE_META, sourceState } from "../lib/sources";
-import styles from "./GuidePanel.module.css";
+import { prefersReducedMotion } from "../lib/motionConfig";
+import styles from "./InfoPanel.module.css";
 
 // Resolves a module card's data source into a display line + live status dot state.
 function cardSource(key, statusByName) {
@@ -73,6 +75,12 @@ const GROUPS = [
         what: "Rising Reddit/WallStreetBets mention rank over the last day.",
         why: "Retail attention can front-run momentum and volume. A fast-rising rank is the part worth watching.",
         signal: "Rank rising sharply +10.",
+      },
+      {
+        key: "x", icon: "x", name: "X Watch",
+        what: "Recent posts from monitored X (Twitter) accounts, with detected cashtags.",
+        why: "Market-moving accounts can front-run the tape. Tagged against your tickers for quick scanning.",
+        signal: "Context only — flagged as unofficial when no X API key is set.",
       },
       {
         key: "analyst", icon: "star", name: "Analyst Ratings",
@@ -159,68 +167,105 @@ const GROUPS = [
   },
 ];
 
-export default function GuidePanel({ onNavigate, sources }) {
+const SECTIONS = [
+  { id: "info-modules", label: "Modules" },
+  { id: "info-sources", label: "Data sources" },
+  { id: "info-glossary", label: "Glossary" },
+];
+
+/**
+ * Consolidated Info page: the module guide, the live data-source directory
+ * (with expandable error diagnostics), and the glossary — with a sticky
+ * in-page section nav.
+ */
+export default function InfoPanel({ onNavigate, sources }) {
   const statusByName = new Map((sources || []).map((s) => [s.source, s]));
+
+  const jump = (id) => {
+    document.getElementById(id)?.scrollIntoView({
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      block: "start",
+    });
+  };
+
   return (
-    <section className={styles.panel} id="guide">
+    <section className={styles.panel} id="info">
       <header className={styles.head}>
         <div>
-          <h2 className={styles.title}>Module guide</h2>
+          <h2 className={styles.title}>Info</h2>
           <p className={styles.subtitle}>
-            What each panel shows and the value it adds to the Boom Score. Signals, not predictions —
-            every number on this dashboard shows its source and reasoning.
+            What each panel shows, where its data comes from, and the words behind the numbers.
+            Signals, not predictions — every value on this dashboard shows its source and reasoning.
           </p>
         </div>
       </header>
 
+      <nav className={styles.sectionNav} aria-label="Info sections">
+        {SECTIONS.map((s) => (
+          <button key={s.id} type="button" className={styles.chip} onClick={() => jump(s.id)}>
+            {s.label}
+          </button>
+        ))}
+      </nav>
+
       <div className={styles.body}>
-        <div className={styles.intro}>
-          <h3 className={styles.introTitle}>How this dashboard thinks</h3>
-          <p className={styles.introText}>
-            Each module gathers one kind of <strong>public</strong> signal. The Boom Score simply adds
-            the bullish ones up and subtracts the bearish ones, so a high score means several
-            independent sources agree right now. Nothing here is a forecast — it's a fast way to spot
-            "something is happening here," with the receipts attached. If a source can't be reached it
-            shows an error rather than inventing data.
-          </p>
+        {/* ---- Modules ---- */}
+        <div id="info-modules" className={styles.section}>
+          <div className={styles.intro}>
+            <h3 className={styles.introTitle}>How this dashboard thinks</h3>
+            <p className={styles.introText}>
+              Each module gathers one kind of <strong>public</strong> signal. The Boom Score simply adds
+              the bullish ones up and subtracts the bearish ones, so a high score means several
+              independent sources agree right now. Nothing here is a forecast — it's a fast way to spot
+              "something is happening here," with the receipts attached. If a source can't be reached it
+              shows an error rather than inventing data.
+            </p>
+          </div>
+
+          {GROUPS.map((group) => (
+            <div key={group.heading} className={styles.group}>
+              <h3 className={styles.groupTitle}>{group.heading}</h3>
+              <div className={styles.cards}>
+                {group.modules.map((m) => {
+                  const src = cardSource(m.key, statusByName);
+                  return (
+                    <button
+                      key={m.key}
+                      type="button"
+                      className={styles.card}
+                      onClick={() => onNavigate?.(m.key)}
+                      title={`Go to ${m.name}`}
+                    >
+                      <span className={styles.cardHead}>
+                        <span className={styles.cardIcon}><Icon name={m.icon} size={18} /></span>
+                        <span className={styles.cardName}>{m.name}</span>
+                      </span>
+                      <span className={styles.what}>{m.what}</span>
+                      <span className={styles.why}>{m.why}</span>
+                      <span className={styles.signal}>{m.signal}</span>
+                      {src && (
+                        <span className={styles.cardSource} data-state={src.state}>
+                          <span className={styles.sourceDot} />
+                          {src.text}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
 
-        {GROUPS.map((group) => (
-          <div key={group.heading} className={styles.group}>
-            <h3 className={styles.groupTitle}>{group.heading}</h3>
-            <div className={styles.cards}>
-              {group.modules.map((m) => {
-                const src = cardSource(m.key, statusByName);
-                return (
-                  <button
-                    key={m.key}
-                    type="button"
-                    className={styles.card}
-                    onClick={() => onNavigate?.(m.key)}
-                    title={`Go to ${m.name}`}
-                  >
-                    <span className={styles.cardHead}>
-                      <span className={styles.cardIcon}><Icon name={m.icon} size={18} /></span>
-                      <span className={styles.cardName}>{m.name}</span>
-                    </span>
-                    <span className={styles.what}>{m.what}</span>
-                    <span className={styles.why}>{m.why}</span>
-                    <span className={styles.signal}>{m.signal}</span>
-                    {src && (
-                      <span className={styles.cardSource} data-state={src.state}>
-                        <span className={styles.sourceDot} />
-                        {src.text}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+        {/* ---- Data sources ---- */}
+        <div id="info-sources" className={styles.section}>
+          <h3 className={styles.sectionTitle}>Data sources</h3>
+          <SourceGuide sources={sources} />
+        </div>
 
-        <div className={styles.group}>
-          <h3 className={styles.groupTitle}>Glossary</h3>
+        {/* ---- Glossary ---- */}
+        <div id="info-glossary" className={styles.section}>
+          <h3 className={styles.sectionTitle}>Glossary</h3>
           <dl className={styles.glossary}>
             {Object.values(GLOSSARY).map((g) => (
               <div key={g.label} className={styles.term}>

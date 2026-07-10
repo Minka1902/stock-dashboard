@@ -1,5 +1,6 @@
 import Icon from "./Icon";
 import AlertsBell from "./AlertsBell";
+import UserMenu from "./UserMenu";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./TopBar.module.css";
 
@@ -14,7 +15,7 @@ const LEAN_LABEL = {
 export default function TopBar({
   title, index, sources, busy, onRefresh, theme, onToggleTheme,
   dyslexia, onToggleDyslexia, lean, alerts = [], unreadAlerts = 0,
-  onMarkAlertsRead, onOpenCommand, user, onLogout, hasTour, onStartTour,
+  onMarkAlertsRead, onOpenCommand, user, onLogout, onNavigate, hasTour, onStartTour,
 }) {
   const refreshed = sources
     .filter((s) => s.last_refreshed_at)
@@ -96,20 +97,7 @@ export default function TopBar({
           {busy ? "Syncing" : "Refresh"}
         </button>
 
-        {user && (
-          <span className={styles.user} title={`Signed in as ${user.email}`}>
-            <span className={styles.userEmail}>{user.email}</span>
-            <button
-              type="button"
-              className={styles.iconBtn}
-              onClick={onLogout}
-              title="Sign out"
-              aria-label="Sign out"
-            >
-              <Icon name="arrowRight" size={15} />
-            </button>
-          </span>
-        )}
+        <UserMenu user={user} onLogout={onLogout} onNavigate={onNavigate} />
       </div>
     </header>
   );

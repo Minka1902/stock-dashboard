@@ -64,28 +64,31 @@ def parse_chart_bars(payload: dict, intraday: bool) -> list[dict]:
     return bars
 
 
-def fetch_bars(ticker: str, interval: str) -> list[dict]:
+def fetch_bars(ticker: str, interval: str, prepost: bool = False) -> list[dict]:
     yahoo_interval, yahoo_range, _, intraday = INTERVALS[interval]
+    # Extended-hours bars only exist for intraday resolutions.
+    include_prepost = "true" if (prepost and intraday) else "false"
     with httpx.Client(timeout=_TIMEOUT_SECONDS, headers=_HEADERS, follow_redirects=True) as client:
         resp = client.get(
             _URL.format(ticker=ticker),
             params={"interval": yahoo_interval, "range": yahoo_range,
-                    "includePrePost": "false"},
+                    "includePrePost": include_prepost},
         )
         resp.raise_for_status()
         return parse_chart_bars(resp.json(), intraday)
 
 
-# ---- TTL cache: (ticker, interval) -> (expires_at_monotonic, payload) ----
-_cache: dict[tuple[str, str], tuple[float, dict]] = {}
+# ---- TTL cache: (ticker, interval, prepost) -> (expires_at_monotonic, payload) ----
+_cache: dict[tuple[str, str, bool], tuple[float, dict]] = {}
 _lock = threading.Lock()
 
 
-def get_bars(ticker: str, interval: str) -> dict:
+def get_bars(ticker: str, interval: str, prepost: bool = False) -> dict:
     """Cached bars payload: {ticker, interval, as_of, bars}. Raises KeyError
-    for an unknown interval and httpx errors for a failed (uncached) fetch."""
+    for an unknown interval and httpx errors for a failed (uncached) fetch.
+    `prepost` includes extended-hours bars (intraday intervals only)."""
     ticker = ticker.strip().upper()
-    key = (ticker, interval)
+    key = (ticker, interval, prepost)
     ttl = INTERVALS[interval][2]
     now = time.monotonic()
 
@@ -94,7 +97,7 @@ def get_bars(ticker: str, interval: str) -> dict:
         if entry is not None and entry[0] > now:
             return entry[1]
 
-    bars = fetch_bars(ticker, interval)
+    bars = fetch_bars(ticker, interval, prepost)
     payload = {
         "ticker": ticker,
         "interval": interval,

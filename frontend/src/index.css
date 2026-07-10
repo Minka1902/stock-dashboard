@@ -192,18 +192,15 @@ button {
   line-height: 1.55;
 }
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+/* Scrolling stays fully functional (wheel/trackpad/keyboard); the bars are
+   hidden everywhere for a cleaner surface. */
+* {
+  scrollbar-width: none;              /* Firefox */
 }
-::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--r-pill);
-  border: 3px solid transparent;
-  background-clip: content-box;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
+*::-webkit-scrollbar {                /* Chromium / Safari */
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 /* ============================================================

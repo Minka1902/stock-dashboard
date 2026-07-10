@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react";
+import { motion } from "motion/react";
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
+import EmptyState from "./EmptyState";
+import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./NewsPanel.module.css";
 
@@ -81,15 +84,14 @@ export default function NewsPanel({ news, portfolio = [], loading, busy, onRefre
       )}
 
       {!collapsed && (showEmpty ? (
-        <div className={styles.empty}>
-          <span className={styles.emptyIcon}><Icon name="news" size={24} /></span>
-          <p className={styles.emptyTitle}>No news loaded yet</p>
-          <button className={styles.emptyBtn} onClick={onRefresh} disabled={busy}>
-            {busy ? "Refreshing…" : "Refresh now"}
-          </button>
-        </div>
+        <EmptyState icon="news" title="No news loaded yet" onRetry={onRefresh} busy={busy} />
       ) : (
-        <ul className={styles.list}>
+        <motion.ul
+          className={styles.list}
+          variants={loading ? undefined : staggerContainer}
+          initial={loading || prefersReducedMotion() ? false : "hidden"}
+          animate="visible"
+        >
           {loading ? (
             <SkeletonItems />
           ) : rows.length === 0 ? (
@@ -98,7 +100,7 @@ export default function NewsPanel({ news, portfolio = [], loading, busy, onRefre
             </li>
           ) : (
             rows.map((a) => (
-              <li key={a.url} className={styles.item}>
+              <motion.li key={a.url} className={styles.item} variants={staggerItem}>
                 {a.image ? (
                   <img className={styles.thumb} src={a.image} alt="" loading="lazy" />
                 ) : (
@@ -117,10 +119,10 @@ export default function NewsPanel({ news, portfolio = [], loading, busy, onRefre
                     <span>{formatRelativeTime(a.seendate)}</span>
                   </div>
                 </div>
-              </li>
+              </motion.li>
             ))
           )}
-        </ul>
+        </motion.ul>
       ))}
     </section>
   );

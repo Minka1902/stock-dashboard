@@ -1,7 +1,11 @@
 import {
   Area, AreaChart, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip,
 } from "recharts";
+import { motion } from "motion/react";
 import Skeleton from "./Skeleton";
+import AnimatedNumber from "./AnimatedNumber";
+import EmptyState from "./EmptyState";
+import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import styles from "./MarketSentimentPanel.module.css";
 
 const TOOLTIP_STYLE = {
@@ -76,7 +80,9 @@ function Gauge({ score, rating }) {
         <circle cx="150" cy="150" r="8" fill="var(--surface-3)" stroke="var(--accent)" strokeWidth="2" />
       </svg>
       <div className={styles.gaugeScore}>
-        <span className={styles.gaugeNum}>{has ? Math.round(v) : "--"}</span>
+        <span className={styles.gaugeNum}>
+          {has ? <AnimatedNumber value={Math.round(v)} duration={1100} /> : "--"}
+        </span>
         <span className={styles.gaugeRating}>{has ? (rating || "") : "no data"}</span>
       </div>
       <div className={styles.gaugeEnds}>
@@ -198,13 +204,13 @@ export default function MarketSentimentPanel({
 
   if (!hasAny) {
     return (
-      <div className={styles.empty}>
-        <p className={styles.emptyTitle}>No sentiment data loaded yet</p>
-        <p className={styles.emptyText}>Pull the market indicators to read the crowd.</p>
-        <button className={styles.emptyBtn} onClick={onRefresh} disabled={busy}>
-          {busy ? "Syncing…" : "Refresh now"}
-        </button>
-      </div>
+      <EmptyState
+        icon="gauge"
+        title="No sentiment data loaded yet"
+        text="Pull the market indicators to read the crowd."
+        onRetry={onRefresh}
+        busy={busy}
+      />
     );
   }
 
@@ -232,7 +238,13 @@ export default function MarketSentimentPanel({
         </Pane>
       </div>
 
-      <div className={styles.grid}>
+      <motion.div
+        className={styles.grid}
+        variants={staggerContainer}
+        initial={prefersReducedMotion() ? false : "hidden"}
+        animate="visible"
+      >
+       <motion.div variants={staggerItem}>
         <Indicator
           caption="VIX · Volatility"
           threshold="≥19 alert · ≥30 extreme"
@@ -244,7 +256,9 @@ export default function MarketSentimentPanel({
           <Sparkline data={vixData} dataKey="close" id="spVix"
             refs={[{ y: 19, color: "var(--text-faint)" }, { y: 30, color: "var(--negative)" }]} />
         </Indicator>
+       </motion.div>
 
+       <motion.div variants={staggerItem}>
         <Indicator
           caption="AAII · Retail survey"
           threshold="crowd bearish → buy"
@@ -265,7 +279,9 @@ export default function MarketSentimentPanel({
             </div>
           )}
         </Indicator>
+       </motion.div>
 
+       <motion.div variants={staggerItem}>
         <Indicator
           caption="Put / Call ratio"
           threshold="≥1.00 buy · ≤0.80 sell"
@@ -276,7 +292,9 @@ export default function MarketSentimentPanel({
           <Sparkline data={pcData} dataKey="ratio" id="spPc"
             refs={[{ y: 1.0, color: "var(--positive)" }, { y: 0.8, color: "var(--negative)" }]} />
         </Indicator>
+       </motion.div>
 
+       <motion.div variants={staggerItem}>
         <Indicator
           caption="Margin debt · leverage"
           threshold="≥45% sell · ≤−20% buy"
@@ -288,7 +306,8 @@ export default function MarketSentimentPanel({
           <Sparkline data={mdData} dataKey="yoy" id="spMd"
             refs={[{ y: 45, color: "var(--text-faint)" }, { y: -20, color: "var(--positive)" }]} />
         </Indicator>
-      </div>
+       </motion.div>
+      </motion.div>
     </div>
   );
 }

@@ -22,6 +22,7 @@ import {
   getFundamentals,
   getSeasonality,
   getPortfolio,
+  getXPosts,
   getSuggestions,
   getAlerts,
   getAnalyses,
@@ -30,6 +31,8 @@ import {
   addWatch as apiAddWatch,
   removeWatch as apiRemoveWatch,
   addHolding as apiAddHolding,
+  updateHolding as apiUpdateHolding,
+  setHoldingCategory as apiSetHoldingCategory,
   removeHolding as apiRemoveHolding,
 } from "../api";
 
@@ -37,7 +40,7 @@ const REFRESH_MS = 180000; // 3 minutes, matches backend default
 const EXTERNAL_SOURCES = [
   "usaspending", "gdelt", "edgar",
   "yield_curve", "econ_calendar", "technical", "fear_greed", "vix", "aaii", "put_call", "margin_debt", "congress",
-  "short_interest", "social", "analyst", "fundamentals", "seasonality", "boom_score",
+  "short_interest", "social", "analyst", "fundamentals", "x_posts", "seasonality", "boom_score",
 ];
 
 /**
@@ -68,6 +71,7 @@ export function useDashboardData() {
   const [fundamentals, setFundamentals] = useState([]);
   const [seasonality, setSeasonality] = useState([]);
   const [portfolio, setPortfolio] = useState([]);
+  const [xPosts, setXPosts] = useState([]);
   const [suggestions, setSuggestions] = useState(null);
   const [analyses, setAnalyses] = useState([]);
   const [alerts, setAlerts] = useState([]);
@@ -106,6 +110,7 @@ export function useDashboardData() {
       getAlerts(),         // 22 — special shape { alerts, unread }
       getAnalyses(),       // 23
       getEconCalendar(),   // 24
+      getXPosts(),         // 25
     ]);
 
     const setters = [
@@ -117,6 +122,7 @@ export function useDashboardData() {
       null, // alerts handled below
       setAnalyses,
       setEconCalendar,
+      setXPosts,
     ];
     results.forEach((r, i) => {
       if (r.status === "fulfilled" && setters[i]) setters[i](r.value);
@@ -174,7 +180,17 @@ export function useDashboardData() {
   }, []);
 
   const addHolding = useCallback(async (ticker, shares, avgCost) => {
-    setPortfolio(await apiAddHolding(ticker, shares, avgCost));
+    const list = await apiAddHolding(ticker, shares, avgCost);
+    setPortfolio(list);
+    return list;
+  }, []);
+
+  const updateHolding = useCallback(async (ticker, shares, avgCost) => {
+    setPortfolio(await apiUpdateHolding(ticker, shares, avgCost));
+  }, []);
+
+  const setHoldingCategory = useCallback(async (ticker, category) => {
+    setPortfolio(await apiSetHoldingCategory(ticker, category));
   }, []);
 
   const removeHolding = useCallback(async (ticker) => {
@@ -210,6 +226,7 @@ export function useDashboardData() {
     fundamentals,
     seasonality,
     portfolio,
+    xPosts,
     suggestions,
     analyses,
     alerts,
@@ -221,6 +238,8 @@ export function useDashboardData() {
     addWatch,
     removeWatch,
     addHolding,
+    updateHolding,
+    setHoldingCategory,
     removeHolding,
     markAlertsRead,
   };

@@ -66,6 +66,7 @@ export const getSocial = () => getJSON("/api/social");
 export const getAnalyst = () => getJSON("/api/analyst");
 export const getBoomScores = () => getJSON("/api/boom-scores");
 export const getFundamentals = () => getJSON("/api/fundamentals");
+export const getXPosts = () => getJSON("/api/x-posts");
 export const getSeasonality = () => getJSON("/api/seasonality");
 export const getAnalyses = () => getJSON("/api/analysis");
 export const getAnalysis = (ticker) => getJSON(`/api/analysis/${encodeURIComponent(ticker)}`);
@@ -74,8 +75,8 @@ export const getPortfolio = () => getJSON("/api/portfolio");
 export const getProfile = () => getJSON("/api/profile");
 export const getSuggestions = () => getJSON("/api/suggestions");
 export const getAppSettings = () => getJSON("/api/settings");
-export const getChart = (ticker, interval) =>
-  getJSON(`/api/chart/${encodeURIComponent(ticker)}?interval=${encodeURIComponent(interval)}`);
+export const getChart = (ticker, interval, prepost = false) =>
+  getJSON(`/api/chart/${encodeURIComponent(ticker)}?interval=${encodeURIComponent(interval)}${prepost ? "&prepost=1" : ""}`);
 export const analysisReportUrl = (ticker, { print = false } = {}) =>
   `${BASE}/api/analysis/${encodeURIComponent(ticker)}/report${print ? "?print=1" : ""}`;
 export const getSuggestionLog = () => getJSON("/api/suggestions/log");
@@ -93,6 +94,16 @@ export const saveProfile = (profile) =>
   request("/api/profile", { method: "PUT", body: profile });
 export const addHolding = (ticker, shares, avg_cost) =>
   request("/api/portfolio", { method: "POST", body: { ticker, shares, avg_cost } });
+export const updateHolding = (ticker, shares, avg_cost) =>
+  request(`/api/portfolio/${encodeURIComponent(ticker)}`, {
+    method: "PUT",
+    body: { shares, avg_cost },
+  });
+export const setHoldingCategory = (ticker, category) =>
+  request(`/api/portfolio/${encodeURIComponent(ticker)}/category`, {
+    method: "PUT",
+    body: { category },
+  });
 export const removeHolding = (ticker) =>
   request(`/api/portfolio/${encodeURIComponent(ticker)}`, { method: "DELETE" });
 export const sendTestSuggestions = () =>

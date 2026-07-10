@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import Icon from "./Icon";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
+import EmptyState from "./EmptyState";
 import { getSuggestionLog } from "../api";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./SuggestionsPanel.module.css";
@@ -78,16 +78,13 @@ export default function SuggestionsPanel({ data, loading, busy, onRefresh, compa
       {!collapsed && (loading || !data ? (
         <div className={styles.placeholder}>Loading suggestions…</div>
       ) : empty ? (
-        <div className={styles.emptyState}>
-          <span className={styles.emptyIcon}><Icon name="spark" size={24} /></span>
-          <p className={styles.emptyTitle}>No suggestions yet</p>
-          <p className={styles.emptyText}>
-            Add tickers to your watchlist and portfolio, then refresh signals.
-          </p>
-          <button className={styles.emptyBtn} onClick={onRefresh} disabled={busy}>
-            {busy ? "Refreshing…" : "Refresh now"}
-          </button>
-        </div>
+        <EmptyState
+          icon="spark"
+          title="No suggestions yet"
+          text="Add tickers to your watchlist and portfolio, then refresh signals."
+          onRetry={onRefresh}
+          busy={busy}
+        />
       ) : (
         <div className={styles.body}>
           {data.holdings_alerts.length > 0 && (

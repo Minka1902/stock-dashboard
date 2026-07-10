@@ -92,13 +92,21 @@ const PATHS = {
     <path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z" />
   ),
   arrowRight: <path d="M5 12h14M13 6l6 6-6 6" />,
+  chevronUp: <path d="M6 15l6-6 6 6" />,
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 16v-5M12 8h.01" />
+    </>
+  ),
+  x: <path d="M4 3l7 9-7 9h2.5L12 14l5.5 7H20l-7-9 7-9h-2.5L12 10 6.5 3z" />,
 };
 
 export default function Icon({ name, size = 18, strokeWidth = 1.8, ...rest }) {
   const path = PATHS[name];
   if (!path) return null;
   // 'spark' and 'star' read better filled; everything else is a clean stroke.
-  const filled = name === "spark";
+  const filled = name === "spark" || name === "x";
   return (
     <svg
       width={size}

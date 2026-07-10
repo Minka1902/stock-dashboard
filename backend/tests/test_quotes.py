@@ -43,6 +43,40 @@ def test_parse_quote_premarket_uses_last_close():
     assert q.fetched_at == FETCHED
 
 
+def test_parse_quote_premarket_sets_extended_change_and_regular_price():
+    payload = _payload(
+        meta={"regularMarketPrice": 100.0, "chartPreviousClose": 98.0, "marketState": "PRE"},
+        closes=[97.5, 101.5, None],
+    )
+    q = quotes.parse_quote(payload, "AAPL", FETCHED)
+    assert q.regular_price == 100.0
+    # PRE: extended move is vs the previous session close (same as change_pct here)
+    assert q.extended_change_pct == round((101.5 - 98.0) / 98.0 * 100, 2)
+
+
+def test_parse_quote_afterhours_extended_change_vs_regular_close():
+    payload = _payload(
+        meta={"regularMarketPrice": 100.0, "chartPreviousClose": 98.0, "marketState": "POST"},
+        closes=[100.0, 102.0],
+    )
+    q = quotes.parse_quote(payload, "AAPL", FETCHED)
+    assert q.regular_price == 100.0
+    # POST: extended move is vs today's regular close
+    assert q.extended_change_pct == round((102.0 - 100.0) / 100.0 * 100, 2)
+    # change_pct is still measured vs previous session close
+    assert q.change_pct == round((102.0 - 98.0) / 98.0 * 100, 2)
+
+
+def test_parse_quote_live_has_no_extended_change():
+    payload = _payload(
+        meta={"regularMarketPrice": 100.0, "chartPreviousClose": 98.0, "marketState": "REGULAR"},
+        closes=[99.0, 100.5],
+    )
+    q = quotes.parse_quote(payload, "AAPL", FETCHED)
+    assert q.extended_change_pct is None
+    assert q.regular_price == 100.0
+
+
 def test_parse_quote_all_none_closes_falls_back_to_regular_market_price():
     payload = _payload(
         meta={"regularMarketPrice": 100.0, "chartPreviousClose": 98.0, "marketState": "REGULAR"},
