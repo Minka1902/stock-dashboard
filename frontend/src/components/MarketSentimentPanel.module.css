@@ -1,7 +1,7 @@
 .wrap {
   display: flex;
   flex-direction: column;
-  gap: var(--s-5);
+  gap: var(--s-4);
 }
 
 /* ---- ruled pane primitive ---- */
@@ -30,7 +30,7 @@
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-  gap: var(--s-5);
+  gap: var(--s-4);
   align-items: stretch;
 }
 @media (max-width: 900px) {
@@ -42,19 +42,18 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: var(--s-4) var(--s-4) var(--s-5);
+  padding: var(--s-3) var(--s-4) var(--s-4);
   flex: 1;
   justify-content: center;
 }
 .gaugeSvg {
-  width: min(100%, 340px);
+  width: min(100%, 230px);
   height: auto;
   overflow: visible;
 }
 .needle {
   transform-box: view-box;
   transform-origin: 150px 150px;
-  transition: transform 900ms var(--ease-out-expo);
   filter: drop-shadow(0 0 6px var(--accent-glow));
 }
 .gaugeScore {
@@ -65,7 +64,7 @@
 }
 .gaugeNum {
   font-family: var(--mono);
-  font-size: 44px;
+  font-size: 28px;
   font-weight: 700;
   line-height: 1;
   color: var(--text);
@@ -82,7 +81,7 @@
 .gaugeEnds {
   display: flex;
   justify-content: space-between;
-  width: min(100%, 320px);
+  width: min(100%, 230px);
   margin-top: var(--s-3);
   font-family: var(--mono);
   font-size: 10px;
@@ -94,8 +93,9 @@
 /* ---- composite read ---- */
 .leanRow { padding: var(--s-4) var(--s-4) 0; }
 .leanWord {
+  display: inline-block;
   font-family: var(--mono);
-  font-size: 34px;
+  font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--text);
@@ -154,7 +154,7 @@
 }
 .val {
   font-family: var(--mono);
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 700;
   color: var(--text);
   font-variant-numeric: tabular-nums;
