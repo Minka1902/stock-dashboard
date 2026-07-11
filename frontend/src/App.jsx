@@ -65,16 +65,6 @@ const TITLES = {
   settings:    "Settings",
 };
 
-// Terminal module numbering for the five primary views.
-const MODULE_INDEX = {
-  sentiment: "01",
-  suggestions: "02",
-  portfolio: "03",
-  trades: "04",
-  news: "05",
-  watchlist: "06",
-};
-
 export default function App({ auth }) {
   const data = useDashboardData();
   const appSettingsApi = useAppSettings();
@@ -190,7 +180,6 @@ export default function App({ auth }) {
         <div className={styles.band}>
           <TopBar
             title={TITLES[view]}
-            index={MODULE_INDEX[view]}
             sources={sources}
             busy={busy}
             onRefresh={refresh}

@@ -73,10 +73,10 @@ export default function AnalystPanel({ data, loading, busy, onRefresh, compact =
               <tr>
                 <th>Ticker</th>
                 <th>Next Earnings</th>
-                <th>Str Buy</th>
-                <th>Buy</th>
-                <th>Hold</th>
-                <th>Sell</th>
+                <th className={styles.num}>Str Buy</th>
+                <th className={styles.num}>Buy</th>
+                <th className={styles.num}>Hold</th>
+                <th className={styles.num}>Sell</th>
                 <th>Latest</th>
                 <th>Firm</th>
                 <th>Updated</th>

@@ -53,8 +53,8 @@ export default function SocialPanel({ data, loading, busy, onRefresh, compact = 
             <thead>
               <tr>
                 <th>Ticker</th>
-                <th>Rank</th>
-                <th>Mentions</th>
+                <th className={styles.num}>Rank</th>
+                <th className={styles.num}>Mentions</th>
                 <th>Rank Change</th>
               </tr>
             </thead>

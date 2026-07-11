@@ -22,7 +22,7 @@ export default function Sidebar({ view, onNavigate }) {
       </div>
 
       <nav className={styles.nav} data-tour="nav">
-        {NAV.map((item, i) => {
+        {NAV.map((item) => {
           const active = view === item.key;
           return (
             <button
@@ -32,7 +32,6 @@ export default function Sidebar({ view, onNavigate }) {
               onClick={() => onNavigate(item.key)}
               aria-current={active ? "page" : undefined}
             >
-              <span className={styles.index}>{String(i + 1).padStart(2, "0")}</span>
               <Icon name={item.icon} size={17} />
               <span className={styles.label}>{item.label}</span>
               <span className={styles.hint}>{item.hint}</span>
@@ -42,24 +41,6 @@ export default function Sidebar({ view, onNavigate }) {
       </nav>
 
       <div className={styles.footer}>
-        <button
-          type="button"
-          className={`${styles.gear} ${view === "info" ? styles.active : ""}`}
-          onClick={() => onNavigate("info")}
-          aria-current={view === "info" ? "page" : undefined}
-        >
-          <Icon name="info" size={16} />
-          <span className={styles.label}>Info</span>
-        </button>
-        <button
-          type="button"
-          className={`${styles.gear} ${view === "settings" ? styles.active : ""}`}
-          onClick={() => onNavigate("settings")}
-          aria-current={view === "settings" ? "page" : undefined}
-        >
-          <Icon name="settings" size={16} />
-          <span className={styles.label}>Settings</span>
-        </button>
         <p className={styles.note}>Signals, not predictions.</p>
       </div>
     </aside>

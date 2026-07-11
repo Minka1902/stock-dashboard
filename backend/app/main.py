@@ -759,7 +759,9 @@ def send_test_suggestions(user=Depends(auth.get_current_user)):
 
 @app.get("/api/suggestions/log")
 def suggestions_log():
-    return [e.model_dump() for e in db.get_recent_suggestions(conn)]
+    # Fetch a wider window so the UI's per-channel view (2 email + 2 SMS) is
+    # not starved when recent rows are dominated by `alert` deliveries.
+    return [e.model_dump() for e in db.get_recent_suggestions(conn, limit=60)]
 
 
 # ---------- alerts ----------

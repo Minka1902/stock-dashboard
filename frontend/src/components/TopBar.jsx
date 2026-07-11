@@ -13,7 +13,7 @@ const LEAN_LABEL = {
 };
 
 export default function TopBar({
-  title, index, sources, busy, onRefresh, theme, onToggleTheme,
+  title, sources, busy, onRefresh, theme, onToggleTheme,
   dyslexia, onToggleDyslexia, lean, alerts = [], unreadAlerts = 0,
   onMarkAlertsRead, onOpenCommand, user, onLogout, onNavigate, hasTour, onStartTour,
 }) {
@@ -27,7 +27,6 @@ export default function TopBar({
   return (
     <header className={styles.bar}>
       <div className={styles.left}>
-        {index && <span className={styles.index}>{index}</span>}
         <h1 className={styles.title}>{title}</h1>
         <span className={styles.status} data-live={live ? "yes" : "no"}>
           <span className={styles.dot} />

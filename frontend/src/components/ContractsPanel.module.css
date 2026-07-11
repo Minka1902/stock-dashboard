@@ -36,6 +36,9 @@
   font-size: 13.5px;
 }
 
+.table thead th.amountCell {
+  text-align: right;
+}
 .table thead th {
   position: sticky;
   top: 0;
