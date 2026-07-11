@@ -36,6 +36,7 @@ import StockDetailPanel from "./components/StockDetailPanel";
 import BackToTop from "./components/BackToTop";
 import Tour from "./components/Tour";
 import { TOURS } from "./lib/tours";
+import { AnimatePresence, motion } from "motion/react";
 import { parseStockHash, openTickerTab } from "./lib/nav";
 import { prefersReducedMotion } from "./lib/motionConfig";
 import styles from "./App.module.css";
@@ -79,7 +80,17 @@ export default function App({ auth }) {
   // Any-ticker detail view is driven by the URL hash (#/stock/TICKER) so it can
   // live in its own tab (Task 13). It overlays the current view when present.
   const [detailTicker, setDetailTicker] = useState(parseStockHash);
-  const navigate = (v) => { setView(v); };
+  // Strip the #/stock/TICKER hash and drop the overlay without touching `view`.
+  const clearDetail = () => {
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    setDetailTicker(null);
+  };
+  // Nav from within a detail tab must close the overlay first, else the sidebar
+  // click would only change the (hidden) TopBar title and the overlay would stay.
+  const navigate = (v) => {
+    if (detailTicker) clearDetail();
+    setView(v);
+  };
   // Open the Info page scrolled to its data-sources section (from the failed-
   // source strip). The panel mounts on navigate, so scroll on the next frame.
   const openSourceDetails = () => {
@@ -100,12 +111,13 @@ export default function App({ auth }) {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  // Back control for the standalone tab: close it if it was script-opened,
-  // otherwise (hand-typed URL) just clear the hash to reveal the dashboard.
+  // Back control for the standalone tab: try to close it if it was script-opened
+  // (no-op for noopener tabs), otherwise clear the hash and land on the default
+  // dashboard view rather than whatever stale `view` was last selected.
   const closeDetail = () => {
     window.close();
-    window.history.replaceState(null, "", window.location.pathname + window.location.search);
-    setDetailTicker(null);
+    clearDetail();
+    setView("sentiment");
   };
 
   // Cmd/Ctrl+K toggles the command palette (palette mounts only while open).
@@ -179,7 +191,7 @@ export default function App({ auth }) {
       <main className={styles.main}>
         <div className={styles.band}>
           <TopBar
-            title={TITLES[view]}
+            title={detailTicker ? `${detailTicker} — analysis` : TITLES[view]}
             sources={sources}
             busy={busy}
             onRefresh={refresh}
@@ -211,17 +223,30 @@ export default function App({ auth }) {
 
             <SourceStatus sources={sources} onOpenDetails={openSourceDetails} />
 
-            {detailTicker && (
-              <StockDetailPanel
-                ticker={detailTicker}
-                onBack={closeDetail}
-                watchlist={watchlist}
-                onAddWatch={addWatch}
-              />
-            )}
-
-            {!detailTicker && (
-            <>
+            <AnimatePresence mode="wait" initial={false}>
+            {detailTicker ? (
+              <motion.div
+                key="detail"
+                initial={prefersReducedMotion() ? false : { opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, y: 10 }}
+                transition={prefersReducedMotion() ? { duration: 0 } : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <StockDetailPanel
+                  ticker={detailTicker}
+                  onBack={closeDetail}
+                  watchlist={watchlist}
+                  onAddWatch={addWatch}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="views"
+                initial={prefersReducedMotion() ? false : { opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, y: 10 }}
+                transition={prefersReducedMotion() ? { duration: 0 } : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+              >
             {view === "sentiment" && (
               <MarketSentimentPanel
                 sentiment={sentiment} fearGreed={fearGreed} vix={vix} aaii={aaii}
@@ -295,8 +320,9 @@ export default function App({ auth }) {
             {view === "analyst" && <AnalystPanel data={analyst} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "fundamentals" && <FundamentalsPanel data={fundamentals} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "seasonality" && <SeasonalityPanel data={seasonality} settings={settings} quotes={quotesByTicker} loading={loading} busy={busy} onRefresh={refresh} />}
-            </>
+              </motion.div>
             )}
+            </AnimatePresence>
           </div>
         </div>
 
