@@ -80,6 +80,8 @@ export const getChart = (ticker, interval, prepost = false) =>
 export const analysisReportUrl = (ticker, { print = false } = {}) =>
   `${BASE}/api/analysis/${encodeURIComponent(ticker)}/report${print ? "?print=1" : ""}`;
 export const getSuggestionLog = () => getJSON("/api/suggestions/log");
+export const getOAuthProviders = () => getJSON("/api/auth/oauth/providers");
+export const oauthStartUrl = (provider) => `${BASE}/api/auth/oauth/${provider}/start`;
 export const getAlerts = () => getJSON("/api/alerts");
 export const searchStocks = (q) =>
   getJSON(`/api/search?q=${encodeURIComponent(q)}`);

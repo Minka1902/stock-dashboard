@@ -116,6 +116,47 @@
 .primary:hover { background: var(--accent-strong); }
 .primary:disabled { opacity: 0.55; cursor: default; }
 
+/* OAuth / social login */
+.orRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin: var(--s-4) 0 var(--s-3);
+  color: var(--text-faint);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.orRow::before,
+.orRow::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.oauthBtns {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.oauthBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  width: 100%;
+  padding: var(--s-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.oauthBtn:hover { border-color: var(--accent); color: var(--accent); }
+
 .linkBtn {
   display: block;
   width: 100%;

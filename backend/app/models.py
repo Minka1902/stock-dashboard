@@ -301,6 +301,15 @@ class User(BaseModel):
         }
 
 
+class OAuthIdentity(BaseModel):
+    """Link between an external OAuth account and a local user."""
+    provider: str            # "github" | "google" | "facebook"
+    provider_user_id: str    # stable id at the provider (PK with provider)
+    user_id: int
+    email: str = ""
+    created_at: str
+
+
 class AuthSession(BaseModel):
     token_hash: str    # sha256 of the raw cookie token; raw value never stored
     user_id: int

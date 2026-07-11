@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, search, sentiment, suggestions, themes
+from app import analysis, analyze, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, routes_oauth, search, sentiment, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.security import SecurityHeadersMiddleware, rate_limit
@@ -320,6 +320,7 @@ app.add_middleware(
 )
 
 app.include_router(routes_auth.build_router(conn))
+app.include_router(routes_oauth.build_router(conn))
 
 
 @app.get("/api/health")

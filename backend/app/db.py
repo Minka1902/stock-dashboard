@@ -20,6 +20,7 @@ from app.models import (
     FearGreedSnapshot,
     Fundamentals,
     Holding,
+    OAuthIdentity,
     InsiderTrade,
     MarginDebtPoint,
     NewsArticle,
@@ -437,6 +438,14 @@ def init_schema(conn: sqlite3.Connection) -> None:
             dedup_key TEXT NOT NULL,
             read_at   TEXT NOT NULL,
             PRIMARY KEY (user_id, dedup_key)
+        );
+        CREATE TABLE IF NOT EXISTS oauth_identities (
+            provider         TEXT NOT NULL,
+            provider_user_id TEXT NOT NULL,
+            user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            email            TEXT NOT NULL DEFAULT '',
+            created_at       TEXT NOT NULL,
+            PRIMARY KEY (provider, provider_user_id)
         );
         """
     )
@@ -1773,6 +1782,28 @@ def get_user_by_email(conn: sqlite3.Connection, email: str) -> User | None:
 
 def count_users(conn: sqlite3.Connection) -> int:
     return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+
+def get_oauth_identity(
+    conn: sqlite3.Connection, provider: str, provider_user_id: str
+) -> OAuthIdentity | None:
+    row = conn.execute(
+        "SELECT * FROM oauth_identities WHERE provider = ? AND provider_user_id = ?",
+        (provider, provider_user_id),
+    ).fetchone()
+    return OAuthIdentity(**dict(row)) if row else None
+
+
+def create_oauth_identity(conn: sqlite3.Connection, identity: OAuthIdentity) -> None:
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO oauth_identities
+            (provider, provider_user_id, user_id, email, created_at)
+        VALUES (:provider, :provider_user_id, :user_id, :email, :created_at)
+        """,
+        identity.model_dump(),
+    )
+    conn.commit()
 
 
 def get_users(conn: sqlite3.Connection) -> list[User]:
