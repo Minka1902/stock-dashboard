@@ -293,7 +293,12 @@ class User(BaseModel):
 
     def public(self) -> dict:
         """The shape safe to return to the browser."""
-        return {"id": self.id, "email": self.email, "is_admin": self.is_admin}
+        return {
+            "id": self.id,
+            "email": self.email,
+            "is_admin": self.is_admin,
+            "created_at": self.created_at,
+        }
 
 
 class AuthSession(BaseModel):

@@ -1,8 +1,20 @@
 import { useState } from "react";
 import Icon from "./Icon";
 import { useProfile } from "../hooks/useProfile";
+import { initialsFor, gradientFor } from "../lib/avatar";
 import { sendTestSuggestions } from "../api";
 import styles from "./SettingsPanel.module.css";
+
+function formatMemberSince(iso) {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      year: "numeric", month: "long", day: "numeric",
+    });
+  } catch {
+    return iso;
+  }
+}
 
 const WINDOW_OPTIONS = [
   { key: "fwd_day", label: "Next Day", desc: "Move on the day around today's date" },
@@ -47,9 +59,10 @@ function formatNextRun(iso, tz) {
   }
 }
 
-export default function SettingsPanel({ settings, setSetting, onNavigate, appSettingsApi }) {
+export default function SettingsPanel({ settings, setSetting, onNavigate, appSettingsApi, user, theme, onSetTheme, themes = [] }) {
   const activeWindows = settings.seasonalityWindows;
   const lookback = settings.seasonalityLookback;
+  const memberSince = formatMemberSince(user?.created_at);
 
   const { profile, update, save } = useProfile();
   const [saveState, setSaveState] = useState(null); // null | "saving" | "saved" | error string
@@ -152,6 +165,31 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
       </header>
 
       <div className={styles.body}>
+        {/* Account: who's signed in */}
+        {user && (
+          <fieldset className={styles.group}>
+            <legend className={styles.legend}>Account</legend>
+            <div className={styles.account}>
+              <span
+                className={styles.accountAvatar}
+                style={{ background: gradientFor(user.email || "") }}
+                aria-hidden="true"
+              >
+                {initialsFor(user.email || "")}
+              </span>
+              <div className={styles.accountMeta}>
+                <div className={styles.accountEmailRow}>
+                  <span className={styles.accountEmail}>{user.email}</span>
+                  {user.is_admin && <span className={styles.adminBadge}>Admin</span>}
+                </div>
+                {memberSince && (
+                  <span className={styles.accountSince}>Member since {memberSince}</span>
+                )}
+              </div>
+            </div>
+          </fieldset>
+        )}
+
         {/* Analysis schedule + data refresh (server-side; drives the cron job) */}
         <fieldset className={styles.group}>
           <legend className={styles.legend}>Analysis schedule &amp; data refresh</legend>
@@ -466,6 +504,37 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
             ))}
           </div>
         </fieldset>
+
+        {/* Appearance: color theme */}
+        {onSetTheme && themes.length > 0 && (
+          <fieldset className={styles.group}>
+            <legend className={styles.legend}>Appearance</legend>
+            <p className={styles.groupHint}>
+              Pick a color theme. Applies instantly and is saved on this device.
+            </p>
+            <div className={styles.themeGrid} role="radiogroup" aria-label="Color theme">
+              {themes.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  role="radio"
+                  aria-checked={theme === t.key}
+                  className={styles.themeCard}
+                  data-active={theme === t.key ? "yes" : "no"}
+                  onClick={() => onSetTheme(t.key)}
+                >
+                  <span
+                    className={styles.themeCardSwatch}
+                    style={{ background: `linear-gradient(135deg, ${t.swatch[0]} 0 50%, ${t.swatch[1]} 50% 100%)` }}
+                    aria-hidden="true"
+                  />
+                  <span className={styles.themeCardLabel}>{t.label}</span>
+                  <span className={styles.themeCardHint}>{t.hint}</span>
+                </button>
+              ))}
+            </div>
+          </fieldset>
+        )}
 
         {/* Reading & focus */}
         <fieldset className={styles.group}>

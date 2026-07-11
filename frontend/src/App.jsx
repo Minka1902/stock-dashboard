@@ -72,7 +72,7 @@ export default function App({ auth }) {
   const { quotes, quotesByTicker, asOf, marketStatus } = useLiveQuotes(
     (appSettingsApi.appSettings.quotes_refresh_seconds || 30) * 1000,
   );
-  const { theme, toggle } = useTheme();
+  const { theme, setTheme, toggle, themes } = useTheme();
   const { settings, setSetting } = useSettings();
   const [view, setView] = useState("sentiment");
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -197,6 +197,8 @@ export default function App({ auth }) {
             onRefresh={refresh}
             theme={theme}
             onToggleTheme={toggle}
+            onSetTheme={setTheme}
+            themes={themes}
             dyslexia={settings.dyslexia}
             onToggleDyslexia={() => setSetting("dyslexia", !settings.dyslexia)}
             lean={sentiment?.overall?.lean}
@@ -272,7 +274,7 @@ export default function App({ auth }) {
             )}
 
             {view === "settings" && (
-              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={navigate} appSettingsApi={appSettingsApi} />
+              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={navigate} appSettingsApi={appSettingsApi} user={auth?.user} theme={theme} onSetTheme={setTheme} themes={themes} />
             )}
 
             {view === "info" && (
