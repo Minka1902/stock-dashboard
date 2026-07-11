@@ -32,6 +32,9 @@ const QUOTE_INTERVALS = [
   { value: 120, label: "2 minutes" },
 ];
 
+// X handles: 1–15 letters, digits or underscore (Twitter's own rule).
+const X_HANDLE_RE = /^[A-Za-z0-9_]{1,15}$/;
+
 function formatNextRun(iso, tz) {
   if (!iso) return null;
   try {
@@ -54,6 +57,41 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
 
   const { appSettings, update: updateApp, save: saveApp } = appSettingsApi;
   const [schedState, setSchedState] = useState(null); // null | "saving" | "saved" | error string
+
+  // X Watch monitored accounts (server-side app setting; admin-editable).
+  const xAccounts = appSettings.x_accounts || [];
+  const [xInput, setXInput] = useState("");
+  const [xState, setXState] = useState(null); // null | "saving" | "saved" | error string
+
+  function addXAccount() {
+    const handle = xInput.trim().replace(/^@/, "");
+    if (!handle) return;
+    if (!X_HANDLE_RE.test(handle)) {
+      setXState("handles are 1–15 letters, digits or _");
+      return;
+    }
+    if (xAccounts.some((a) => a.toLowerCase() === handle.toLowerCase())) {
+      setXInput("");
+      return;
+    }
+    updateApp({ x_accounts: [...xAccounts, handle] });
+    setXInput("");
+    setXState(null);
+  }
+
+  function removeXAccount(handle) {
+    updateApp({ x_accounts: xAccounts.filter((a) => a !== handle) });
+  }
+
+  async function saveXAccounts() {
+    setXState("saving");
+    try {
+      await saveApp({ x_accounts: appSettings.x_accounts });
+      setXState("saved");
+    } catch (err) {
+      setXState(err.message || "could not save");
+    }
+  }
 
   async function saveSchedule() {
     setSchedState("saving");
@@ -175,6 +213,57 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
               Next scheduled analysis run: <strong>{nextRun}</strong>
             </p>
           )}
+        </fieldset>
+
+        {/* X Watch monitored accounts (server-side; drives the x_posts source) */}
+        <fieldset className={styles.group}>
+          <legend className={styles.legend}>X Watch accounts</legend>
+          <p className={styles.groupHint}>
+            Handles the X Watch feed monitors for market-moving posts and cashtags. Applies on the
+            next refresh. (Admin-only; changes are ignored for non-admins.)
+          </p>
+          <div className={styles.tagList}>
+            {xAccounts.length === 0 && (
+              <span className={styles.tagsEmpty}>No accounts yet — the feed will be empty.</span>
+            )}
+            {xAccounts.map((h) => (
+              <span key={h} className={styles.tag}>
+                @{h}
+                <button
+                  type="button"
+                  className={styles.tagRemove}
+                  onClick={() => removeXAccount(h)}
+                  aria-label={`Remove @${h}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+          <div className={styles.contact}>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="x-handle">Add an @handle</label>
+              <input
+                id="x-handle"
+                className={styles.input}
+                type="text"
+                placeholder="realDonaldTrump"
+                value={xInput}
+                onChange={(e) => setXInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addXAccount(); } }}
+              />
+            </div>
+            <button type="button" className={styles.ghostBtn} onClick={addXAccount}>Add</button>
+          </div>
+          <div className={styles.actions}>
+            <button type="button" className={styles.primaryBtn} onClick={saveXAccounts} disabled={xState === "saving"}>
+              {xState === "saving" ? "Saving…" : "Save X accounts"}
+            </button>
+            {xState === "saved" && <span className={styles.ok}>Saved ✓</span>}
+            {xState && xState !== "saving" && xState !== "saved" && (
+              <span className={styles.err}>{xState}</span>
+            )}
+          </div>
         </fieldset>
 
         {/* Onboarding: the in-app Info page + guided tours */}

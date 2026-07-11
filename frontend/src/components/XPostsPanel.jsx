@@ -1,41 +1,10 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
-import { openTickerTab } from "../lib/nav";
-import { initialsFor, gradientFor } from "../lib/avatar";
+import XPostCard from "./XPostCard";
 import { sourceState, sourceNote } from "../lib/sources";
-import { formatRelativeTime } from "../lib/format";
 import { staggerContainer, staggerItem, prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./XPostsPanel.module.css";
-
-const CASHTAG_SPLIT_RE = /(\$[A-Za-z]{1,5})\b/g;
-const CASHTAG_TEST_RE = /^\$[A-Za-z]{1,5}$/;
-
-// Render post text with clickable $TICKER chips.
-function PostText({ text, onTicker }) {
-  const parts = text.split(CASHTAG_SPLIT_RE);
-  return (
-    <p className={styles.text}>
-      {parts.map((part, i) => {
-        if (CASHTAG_TEST_RE.test(part)) {
-          const t = part.slice(1).toUpperCase();
-          return (
-            <button
-              key={i}
-              type="button"
-              className={styles.cashtag}
-              onClick={() => onTicker(t)}
-              title={`Analyze ${t} in a new tab`}
-            >
-              {part}
-            </button>
-          );
-        }
-        return <span key={i}>{part}</span>;
-      })}
-    </p>
-  );
-}
 
 /**
  * X (Twitter) watch feed. Renders stored posts from the monitored accounts with
@@ -54,7 +23,14 @@ export default function XPostsPanel({ data = [], sources = [], loading, busy, on
     () => Array.from(new Set(data.map((p) => p.account))),
     [data],
   );
-  const posts = account === "all" ? data : data.filter((p) => p.account === account);
+  // Always sort newest-first by parsed date so "All" reads chronologically even
+  // if any stored rows predate the strict-ISO normalization (Task 19).
+  const posts = useMemo(() => {
+    const list = account === "all" ? data : data.filter((p) => p.account === account);
+    return [...list].sort(
+      (a, b) => (Date.parse(b.posted_at) || 0) - (Date.parse(a.posted_at) || 0),
+    );
+  }, [data, account]);
   const showEmpty = !loading && data.length === 0;
 
   return (
@@ -116,52 +92,10 @@ export default function XPostsPanel({ data = [], sources = [], loading, busy, on
             {posts.map((p) => (
               <motion.li
                 key={`${p.account}:${p.post_id}`}
-                className={styles.post}
                 variants={staggerItem}
                 layout={!prefersReducedMotion()}
               >
-                <span
-                  className={styles.avatar}
-                  style={{ background: gradientFor(p.account) }}
-                  aria-hidden="true"
-                >
-                  {initialsFor(p.account)}
-                </span>
-                <div className={styles.postBody}>
-                  <div className={styles.postHead}>
-                    <span className={styles.handle}>@{p.account}</span>
-                    {p.posted_at && (
-                      <span className={styles.time}>{formatRelativeTime(p.posted_at)}</span>
-                    )}
-                    {p.url && (
-                      <a
-                        className={styles.link}
-                        href={p.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Open original post"
-                      >
-                        <Icon name="arrowRight" size={13} />
-                      </a>
-                    )}
-                  </div>
-                  <PostText text={p.text} onTicker={openTickerTab} />
-                  {p.tickers && (
-                    <div className={styles.tickerRow}>
-                      {p.tickers.split(",").filter(Boolean).map((t) => (
-                        <button
-                          key={t}
-                          type="button"
-                          className={styles.tickerChip}
-                          onClick={() => openTickerTab(t)}
-                          title={`Analyze ${t} in a new tab`}
-                        >
-                          {t}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <XPostCard post={p} />
               </motion.li>
             ))}
           </AnimatePresence>

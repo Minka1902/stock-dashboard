@@ -1,5 +1,6 @@
 """FastAPI surface + scheduler wiring."""
 import logging
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -89,9 +90,12 @@ def fundamentals_fetch(conn):
 
 def x_posts_fetch(conn):
     """Monitor configured X accounts. known_tickers = watchlist ∪ portfolio, so
-    posts get their cashtags/matches tagged against symbols the user tracks."""
+    posts get their cashtags/matches tagged against symbols the user tracks.
+    Accounts come from app settings (admin-editable), falling back to the env
+    default when none are configured."""
     known = set(db.get_all_watched_tickers(conn)) | set(db.get_all_portfolio_tickers(conn))
-    return x_posts_source.fetch(config.X_ACCOUNTS, known)
+    accounts = db.get_app_settings(conn).x_accounts or config.X_ACCOUNTS
+    return x_posts_source.fetch(accounts, known)
 
 
 def seasonality_fetch(conn):
@@ -501,6 +505,7 @@ def analyze_ticker(ticker: str, user=Depends(auth.get_current_user)):
         "weekly": [b.model_dump() for b in result["weekly"]],
         "source": result["source"],
         "seasonality_anchors": analyze.get_anchors(conn, t),
+        "x_posts": [p.model_dump() for p in db.get_x_posts_for(conn, t)],
     }
 
 
@@ -692,11 +697,20 @@ class SettingsUpdate(BaseModel):
     analysis_time: str | None = None
     analysis_tz: str | None = None
     quotes_refresh_seconds: int | None = None
+    x_accounts: list[str] | None = None
+
+
+# X handles: 1–15 chars, letters/digits/underscore (Twitter's own rule).
+_X_HANDLE_RE = re.compile(r"^[A-Za-z0-9_]{1,15}$")
 
 
 def _settings_payload() -> dict:
     settings = db.get_app_settings(conn)
     payload = settings.model_dump()
+    # Show the *effective* monitored accounts: fall back to the env default when
+    # none have been configured in settings yet.
+    if not payload["x_accounts"]:
+        payload["x_accounts"] = list(config.X_ACCOUNTS)
     # Next scheduled run: prefer the live scheduler job, fall back to computing
     # from the trigger (tests run without the scheduler started).
     next_run = None
@@ -737,10 +751,23 @@ def put_settings(item: SettingsUpdate, user=Depends(auth.get_current_user)):
     quotes_refresh = item.quotes_refresh_seconds if item.quotes_refresh_seconds is not None \
         else cur.quotes_refresh_seconds
     quotes_refresh = max(10, min(300, int(quotes_refresh)))
+    if item.x_accounts is not None:
+        cleaned: list[str] = []
+        for raw in item.x_accounts:
+            handle = raw.strip().lstrip("@")
+            if not handle:
+                continue
+            if not _X_HANDLE_RE.match(handle):
+                raise HTTPException(status_code=400, detail=f"invalid X handle: {raw!r}")
+            if handle not in cleaned:
+                cleaned.append(handle)
+        x_accounts = cleaned
+    else:
+        x_accounts = cur.x_accounts
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     settings = AppSettings(
         analysis_time=analysis_time, analysis_tz=analysis_tz,
-        quotes_refresh_seconds=quotes_refresh, updated_at=now,
+        quotes_refresh_seconds=quotes_refresh, x_accounts=x_accounts, updated_at=now,
     )
     db.upsert_app_settings(conn, settings)
     # Re-arm the daily deep run at the new wall-clock time (no-op in tests,

@@ -276,6 +276,7 @@ class AppSettings(BaseModel):
     analysis_time: str = "15:30"          # "HH:MM", 24h
     analysis_tz: str = "Asia/Jerusalem"   # IANA timezone name
     quotes_refresh_seconds: int = 30      # live-quote poll cadence, clamped 10–300 in the API
+    x_accounts: list[str] = []            # monitored X handles (empty → env default)
     updated_at: str = ""
 
 

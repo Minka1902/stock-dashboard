@@ -281,6 +281,41 @@
 .ok { color: var(--positive); font-size: 13px; font-weight: 600; }
 .err { color: var(--negative); font-size: 13px; }
 
+/* X Watch account tags */
+.tagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-bottom: var(--s-3);
+}
+.tagsEmpty { color: var(--text-faint); font-size: 12.5px; }
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.tagRemove {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.tagRemove:hover { background: var(--negative-weak); color: var(--negative); }
+
 .testResults {
   list-style: none;
   margin: var(--s-3) 0 0;

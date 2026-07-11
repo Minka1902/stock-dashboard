@@ -1,8 +1,14 @@
 """Unit tests for the X (Twitter) watcher source (Task 10)."""
 import pytest
 
-from app import config
+from app import config, db
+from app.models import XPost
 from app.sources import x_posts
+
+
+def _post(account, post_id, text, posted_at, tickers=""):
+    return XPost(account=account, post_id=post_id, text=text, url="",
+                 posted_at=posted_at, tickers=tickers, fetched_at=posted_at)
 
 _RSS = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -64,6 +70,36 @@ def test_parse_rss_extracts_items():
 def test_parse_rss_second_item_has_no_tickers():
     posts = x_posts.parse_rss(_RSS, "realDonaldTrump", set())
     assert posts[1].tickers == ""
+
+
+# ---- pubDate normalization (Task 19: keep the column sortable) ----
+
+_RSS_BAD_DATE = """<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <item>
+    <title>$AAPL breakout</title>
+    <link>https://nitter.net/x/status/1810000000000000009#m</link>
+    <guid>https://nitter.net/x/status/1810000000000000009#m</guid>
+    <pubDate>not a real date</pubDate>
+  </item>
+</channel></rss>"""
+
+
+def test_iso_from_pubdate_drops_unparseable_raw_string():
+    # Never leaks the raw RFC-822 / garbage string back into the column.
+    assert x_posts._iso_from_pubdate("garbage") == ""
+    assert x_posts._iso_from_pubdate("Tue, 08 Jul 2026 14:30:00 GMT").startswith(
+        "2026-07-08T14:30:00")
+
+
+def test_parse_rss_falls_back_to_fetched_at_when_pubdate_unparseable():
+    from datetime import datetime
+
+    posts = x_posts.parse_rss(_RSS_BAD_DATE, "x", set())
+    assert len(posts) == 1
+    p = posts[0]
+    assert p.posted_at == p.fetched_at        # strict ISO, not the garbage string
+    datetime.fromisoformat(p.posted_at)        # parseable → string-sorts by date
 
 
 # ---- fetch: mirror fallback ----
@@ -143,3 +179,27 @@ def test_fetch_official_path_builds_api_urls(monkeypatch):
     assert any("users/42/tweets" in u for u in calls)
     assert result[0].tickers == "AAPL"
     assert result[0].post_id == "999"
+
+
+# ---- get_x_posts_for (Task 18: ticker-related posts for analysis) ----
+
+def test_get_x_posts_for_matches_tag_and_text(conn):
+    db.upsert_x_posts(conn, [
+        _post("a", "1", "love $TSLA today", "2026-07-08T10:00:00+00:00", tickers="TSLA"),
+        _post("a", "2", "AAPL looks strong", "2026-07-08T09:00:00+00:00"),  # untagged
+        _post("a", "3", "a new CATEGORY launches", "2026-07-08T08:00:00+00:00"),
+    ])
+    # tagged at ingest
+    assert [p.post_id for p in db.get_x_posts_for(conn, "TSLA")] == ["1"]
+    # untagged, matched by word-boundary text scan
+    assert [p.post_id for p in db.get_x_posts_for(conn, "AAPL")] == ["2"]
+    # no substring false positive: CAT must not match "CATEGORY"
+    assert db.get_x_posts_for(conn, "CAT") == []
+
+
+def test_get_x_posts_for_orders_newest_first(conn):
+    db.upsert_x_posts(conn, [
+        _post("a", "1", "$NVDA early", "2026-07-08T08:00:00+00:00", tickers="NVDA"),
+        _post("b", "2", "$NVDA later", "2026-07-08T12:00:00+00:00", tickers="NVDA"),
+    ])
+    assert [p.post_id for p in db.get_x_posts_for(conn, "NVDA")] == ["2", "1"]

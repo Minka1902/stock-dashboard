@@ -268,7 +268,7 @@ export default function App({ auth }) {
             )}
 
             {view === "news" && (
-              <NewsPanel news={news} portfolio={portfolio} loading={loading} busy={busy} onRefresh={refresh} />
+              <NewsPanel news={news} portfolio={portfolio} xPosts={xPosts} loading={loading} busy={busy} onRefresh={refresh} />
             )}
 
             {view === "settings" && (

@@ -41,14 +41,22 @@ def _clean_text(raw: str) -> str:
 
 
 def _iso_from_pubdate(pubdate: str) -> str:
-    """RFC-822 RSS pubDate → ISO 8601. Falls back to the raw string."""
+    """RFC-822 RSS pubDate → strict UTC ISO 8601, or "" when unparseable.
+
+    Never returns the raw RFC-822 string: mixing "Mon, 07 Jul 2025 ..." with
+    ISO timestamps in the same column string-sorts by weekday name, which is
+    what made the "All" feed group by account instead of by date (Task 19).
+    The caller substitutes fetched_at (also strict ISO) when this returns "".
+    """
     try:
         dt = parsedate_to_datetime(pubdate)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
     except (TypeError, ValueError):
-        return pubdate or ""
+        return ""
+    if dt is None:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
 
 
 def _post_id_from_guid(guid: str, link: str) -> str:
@@ -106,7 +114,7 @@ def parse_rss(xml_text: str, account: str, known: set[str] | None = None) -> lis
             post_id=post_id,
             text=text,
             url=link,
-            posted_at=_iso_from_pubdate(pubdate),
+            posted_at=_iso_from_pubdate(pubdate) or fetched_at,
             tickers=",".join(tickers),
             fetched_at=fetched_at,
         ))
