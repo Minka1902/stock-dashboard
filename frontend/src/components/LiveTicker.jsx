@@ -15,7 +15,7 @@ function Item({ q }) {
         <span className={styles.arrow}>{t === "pos" ? "▲" : t === "neg" ? "▼" : "•"}</span>
         {q.change_pct != null ? `${Math.abs(q.change_pct).toFixed(2)}%` : "—"}
       </span>
-      {q.market_state && q.market_state !== "REGULAR" && (
+      {(q.market_state === "PRE" || q.market_state === "POST") && (
         <span className={styles.badge}>{q.market_state}</span>
       )}
     </span>
@@ -28,9 +28,10 @@ function marketBadge(quotes) {
 }
 
 /** Scrolling tape of live quotes (incl. pre/post-market). Pauses on hover; halts under reduce-motion. */
-export default function LiveTicker({ quotes, asOf }) {
+export default function LiveTicker({ quotes, asOf, marketStatus }) {
   if (!quotes || quotes.length === 0) return null;
-  const state = marketBadge(quotes);
+  // Prefer the backend's clock-based session; fall back to per-quote state.
+  const state = marketStatus || marketBadge(quotes);
   const stamp = asOf
     ? new Date(asOf).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
     : null;

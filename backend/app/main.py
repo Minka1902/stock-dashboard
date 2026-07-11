@@ -17,7 +17,7 @@ from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.security import SecurityHeadersMiddleware, rate_limit
 from app.validation import clean_ticker
-from app.market_calendar import is_trading_day, next_trading_day
+from app.market_calendar import is_trading_day, market_status, next_trading_day
 from app.models import AppSettings, Holding, NotifyProfile, WatchItem
 from app.sources import edgar, gdelt, usaspending
 import app.sources.yield_curve as yield_curve_source
@@ -397,13 +397,20 @@ def live_quotes(user=Depends(auth.get_current_user)):
         | {h.ticker for h in db.get_portfolio(conn, user.id)}
     )
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    # Clock-based session authority so the UI flips at 9:30 ET even when quotes
+    # are cached/empty or Yahoo's per-quote marketState lags.
+    status = market_status()
     if not tickers:
-        return {"as_of": now, "quotes": []}
+        return {"as_of": now, "market_status": status, "quotes": []}
     # Cache slightly under the configured poll cadence so each client poll gets
     # at most one fresh Yahoo fetch, shared across concurrent clients.
     interval = db.get_app_settings(conn).quotes_refresh_seconds
     ttl = min(config.QUOTES_TTL_SECONDS, max(5, interval - 5))
-    return {"as_of": now, "quotes": [q.model_dump() for q in quotes.get_quotes(tickers, ttl_seconds=ttl)]}
+    return {
+        "as_of": now,
+        "market_status": status,
+        "quotes": [q.model_dump() for q in quotes.get_quotes(tickers, ttl_seconds=ttl)],
+    }
 
 
 @app.get("/api/congress-trades")

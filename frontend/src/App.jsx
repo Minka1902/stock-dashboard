@@ -68,7 +68,7 @@ const TITLES = {
 export default function App({ auth }) {
   const data = useDashboardData();
   const appSettingsApi = useAppSettings();
-  const { quotes, quotesByTicker, asOf } = useLiveQuotes(
+  const { quotes, quotesByTicker, asOf, marketStatus } = useLiveQuotes(
     (appSettingsApi.appSettings.quotes_refresh_seconds || 30) * 1000,
   );
   const { theme, toggle } = useTheme();
@@ -198,7 +198,7 @@ export default function App({ auth }) {
             hasTour={Boolean(TOURS[view]) && !detailTicker}
             onStartTour={() => setTourView(view)}
           />
-          <LiveTicker quotes={quotes} asOf={asOf} />
+          <LiveTicker quotes={quotes} asOf={asOf} marketStatus={marketStatus} />
         </div>
 
         <div className={styles.scroll} ref={scrollRef}>
@@ -283,7 +283,7 @@ export default function App({ auth }) {
               </>
             )}
             {view === "contracts" && <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "watchlist" && <WatchlistPanel watchlist={watchlist} quotes={quotesByTicker} onAdd={addWatch} onRemove={removeWatch} />}
+            {view === "watchlist" && <WatchlistPanel watchlist={watchlist} quotes={quotesByTicker} marketStatus={marketStatus} onAdd={addWatch} onRemove={removeWatch} />}
             {view === "yield-curve" && <YieldCurvePanel data={yieldCurve} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "econ-calendar" && <EconCalendarPanel data={econCalendar} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "signals" && <TechnicalPanel data={signals} loading={loading} busy={busy} onRefresh={refresh} />}
