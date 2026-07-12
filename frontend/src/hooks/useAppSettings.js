@@ -5,6 +5,7 @@ const DEFAULTS = {
   analysis_time: "15:30",
   analysis_tz: "Asia/Jerusalem",
   quotes_refresh_seconds: 30,
+  x_accounts: [],
   next_analysis_run: null,
 };
 

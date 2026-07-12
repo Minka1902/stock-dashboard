@@ -64,8 +64,8 @@ export default function ShortPanel({ data, loading, busy, onRefresh, compact = f
             <thead>
               <tr>
                 <th>Ticker</th>
-                <th>Short % Float</th>
-                <th>Days to Cover</th>
+                <th className={styles.num}>Short % Float</th>
+                <th className={styles.num}>Days to Cover</th>
                 <th>Squeeze</th>
                 <th>Updated</th>
               </tr>

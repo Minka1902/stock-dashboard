@@ -77,13 +77,13 @@ export default function FundamentalsPanel({ data, loading, busy, onRefresh, comp
               <tr>
                 <th>Ticker</th>
                 <th>Sector</th>
-                <th>P/E</th>
-                <th>Fwd P/E</th>
-                <th>PEG</th>
-                <th>P/B</th>
-                <th>Rev Growth</th>
-                <th>Margin</th>
-                <th>Mkt Cap</th>
+                <th className={styles.num}>P/E</th>
+                <th className={styles.num}>Fwd P/E</th>
+                <th className={styles.num}>PEG</th>
+                <th className={styles.num}>P/B</th>
+                <th className={styles.num}>Rev Growth</th>
+                <th className={styles.num}>Margin</th>
+                <th className={styles.num}>Mkt Cap</th>
               </tr>
             </thead>
             <tbody>

@@ -44,11 +44,12 @@
   gap: var(--s-5);
   white-space: nowrap;
   will-change: transform;
-  animation: marquee 48s linear infinite;
+  cursor: grab;
 }
-.tape:hover .track {
-  animation-play-state: paused;
-}
+.track:active { cursor: grabbing; }
+/* Static (reduced-motion) variant: no transform, natively scrollable. */
+.trackWrap[data-static="yes"] { overflow-x: auto; }
+.trackWrap[data-static="yes"] .track { cursor: auto; }
 
 .item {
   display: inline-flex;
@@ -87,19 +88,9 @@
   padding: 1px 4px;
 }
 
-@keyframes marquee {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
-}
-
-/* Reduce-motion: stop the scroll, let the user scroll manually. */
-:global(:root[data-reduced-motion="on"]) .track {
-  animation: none;
-}
-:global(:root[data-reduced-motion="on"]) .trackWrap {
-  overflow-x: auto;
-}
+/* Reduce-motion is handled in JS (LiveTicker renders a static, natively
+   scrollable variant via [data-static]); this is a defensive fallback for the
+   OS-level preference in case the JS branch is bypassed. */
 @media (prefers-reduced-motion: reduce) {
-  .track { animation: none; }
   .trackWrap { overflow-x: auto; }
 }

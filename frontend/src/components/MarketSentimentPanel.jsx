@@ -1,7 +1,7 @@
 import {
   Area, AreaChart, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip,
 } from "recharts";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import Skeleton from "./Skeleton";
 import AnimatedNumber from "./AnimatedNumber";
 import EmptyState from "./EmptyState";
@@ -72,10 +72,16 @@ function Gauge({ score, rating }) {
           return <line key={t} x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--grid)" strokeWidth="2" />;
         })}
         {has && (
-          <g className={styles.needle} style={{ transform: `rotate(${deg}deg)` }}>
+          <motion.g
+            className={styles.needle}
+            animate={{ rotate: deg }}
+            transition={prefersReducedMotion()
+              ? { duration: 0 }
+              : { type: "spring", stiffness: 55, damping: 13 }}
+          >
             <line x1="150" y1="150" x2="150" y2="42" stroke="var(--accent)" strokeWidth="3.5" strokeLinecap="round" />
             <circle cx="150" cy="42" r="4" fill="var(--accent)" />
-          </g>
+          </motion.g>
         )}
         <circle cx="150" cy="150" r="8" fill="var(--surface-3)" stroke="var(--accent)" strokeWidth="2" />
       </svg>
@@ -104,25 +110,41 @@ function Pane({ caption, right, className, children }) {
   );
 }
 
-function Sparkline({ data, dataKey, id, refs = [] }) {
+// Shared sparkline. Single-series renders a filled area; pass `lines`
+// (an array of {dataKey, color}) for a multi-series line variant so every
+// indicator pane shares identical chart geometry.
+function Sparkline({ data, dataKey, id, refs = [], lines }) {
   if (!data || data.length === 0) return <div className={styles.noData}>No data yet</div>;
   return (
     <div className={styles.spark}>
       <ResponsiveContainer width="100%" height={64}>
-        <AreaChart data={data} margin={{ top: 4, right: 2, bottom: 2, left: 2 }}>
-          <defs>
-            <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.32} />
-              <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          {refs.map((r, i) => (
-            <ReferenceLine key={i} y={r.y} stroke={r.color} strokeDasharray="3 3" strokeWidth={1} />
-          ))}
-          <Area type="monotone" dataKey={dataKey} stroke="var(--accent)" strokeWidth={1.8}
-                fill={`url(#${id})`} dot={false} isAnimationActive={false} />
-          <Tooltip contentStyle={TOOLTIP_STYLE} labelFormatter={(_l, p) => p?.[0]?.payload?.date ?? ""} />
-        </AreaChart>
+        {lines ? (
+          <LineChart data={data} margin={{ top: 4, right: 2, bottom: 2, left: 2 }}>
+            {refs.map((r, i) => (
+              <ReferenceLine key={i} y={r.y} stroke={r.color} strokeDasharray="3 3" strokeWidth={1} />
+            ))}
+            {lines.map((ln) => (
+              <Line key={ln.dataKey} type="monotone" dataKey={ln.dataKey} stroke={ln.color}
+                    strokeWidth={1.6} dot={false} isAnimationActive={false} />
+            ))}
+            <Tooltip contentStyle={TOOLTIP_STYLE} labelFormatter={(_l, p) => p?.[0]?.payload?.date ?? ""} />
+          </LineChart>
+        ) : (
+          <AreaChart data={data} margin={{ top: 4, right: 2, bottom: 2, left: 2 }}>
+            <defs>
+              <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.32} />
+                <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            {refs.map((r, i) => (
+              <ReferenceLine key={i} y={r.y} stroke={r.color} strokeDasharray="3 3" strokeWidth={1} />
+            ))}
+            <Area type="monotone" dataKey={dataKey} stroke="var(--accent)" strokeWidth={1.8}
+                  fill={`url(#${id})`} dot={false} isAnimationActive={false} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} labelFormatter={(_l, p) => p?.[0]?.payload?.date ?? ""} />
+          </AreaChart>
+        )}
       </ResponsiveContainer>
     </div>
   );
@@ -223,7 +245,19 @@ export default function MarketSentimentPanel({
 
         <Pane caption="Composite read" right={<Chip signal={lean === "GREEDY" || lean === "RISK_OFF" ? "SELL" : lean === "FEARFUL" || lean === "RISK_ON" ? "BUY" : "NEUTRAL"} />}>
           <div className={styles.leanRow}>
-            <span className={styles.leanWord} data-lean={lean}>{LEAN_LABEL[lean] || lean}</span>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={lean}
+                className={styles.leanWord}
+                data-lean={lean}
+                initial={prefersReducedMotion() ? false : { opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, y: -8 }}
+                transition={prefersReducedMotion() ? { duration: 0 } : { duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              >
+                {LEAN_LABEL[lean] || lean}
+              </motion.span>
+            </AnimatePresence>
           </div>
           <p className={styles.leanRead}>{LEAN_READ[lean] || ""}</p>
           <ul className={styles.ledger}>
@@ -267,17 +301,10 @@ export default function MarketSentimentPanel({
           sub={ind.aaii?.value ? `bearish · ${Math.round(ind.aaii.value.bullish)}% bull` : "weekly"}
           stale={aaiiStale}
         >
-          {aaiiData.length === 0 ? <div className={styles.noData}>No data yet</div> : (
-            <div className={styles.spark}>
-              <ResponsiveContainer width="100%" height={64}>
-                <LineChart data={aaiiData} margin={{ top: 4, right: 2, bottom: 2, left: 2 }}>
-                  <Line type="monotone" dataKey="bullish" stroke="var(--positive)" strokeWidth={1.6} dot={false} isAnimationActive={false} />
-                  <Line type="monotone" dataKey="bearish" stroke="var(--negative)" strokeWidth={1.6} dot={false} isAnimationActive={false} />
-                  <Tooltip contentStyle={TOOLTIP_STYLE} labelFormatter={(_l, p) => p?.[0]?.payload?.date ?? ""} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+          <Sparkline data={aaiiData} id="spAaii" lines={[
+            { dataKey: "bullish", color: "var(--positive)" },
+            { dataKey: "bearish", color: "var(--negative)" },
+          ]} />
         </Indicator>
        </motion.div>
 

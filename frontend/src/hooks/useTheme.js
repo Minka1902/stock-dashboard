@@ -2,20 +2,32 @@ import { useCallback, useEffect, useState } from "react";
 
 const STORAGE_KEY = "theme";
 
+// The full theme set. `swatch` colors are plain hex previews for the picker
+// (CSS custom properties aren't resolvable in an inline swatch out of context).
+export const THEMES = [
+  { key: "dark", label: "Dark", hint: "Iris Dusk", swatch: ["#1b1a17", "#f0b429"] },
+  { key: "light", label: "Light", hint: "Daylight", swatch: ["#f4f1ec", "#c1861f"] },
+  { key: "retro", label: "Retro", hint: "Green phosphor", swatch: ["#0f1a12", "#57f08a"] },
+  { key: "warm", label: "Warm", hint: "Amber paper", swatch: ["#f3ece0", "#c06a2e"] },
+];
+
+const VALID = new Set(THEMES.map((t) => t.key));
+
 function initialTheme() {
   if (typeof localStorage !== "undefined") {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === "dark" || saved === "light") return saved;
+    if (saved && VALID.has(saved)) return saved;
   }
   return "dark"; // dark by default
 }
 
 /**
  * Theme state persisted to localStorage and applied to <html data-theme>.
- * Returns { theme, toggle }.
+ * Returns { theme, setTheme, toggle, themes } — `setTheme` validates against
+ * the known set; `toggle` flips dark↔light (used by the command palette).
  */
 export function useTheme() {
-  const [theme, setTheme] = useState(initialTheme);
+  const [theme, setThemeState] = useState(initialTheme);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -26,9 +38,13 @@ export function useTheme() {
     }
   }, [theme]);
 
-  const toggle = useCallback(() => {
-    setTheme((t) => (t === "dark" ? "light" : "dark"));
+  const setTheme = useCallback((t) => {
+    if (VALID.has(t)) setThemeState(t);
   }, []);
 
-  return { theme, toggle };
+  const toggle = useCallback(() => {
+    setThemeState((t) => (t === "light" ? "dark" : "light"));
+  }, []);
+
+  return { theme, setTheme, toggle, themes: THEMES };
 }

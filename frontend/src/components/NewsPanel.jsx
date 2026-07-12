@@ -5,6 +5,7 @@ import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import EmptyState from "./EmptyState";
+import XPostCard from "./XPostCard";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./NewsPanel.module.css";
@@ -22,7 +23,7 @@ function SkeletonItems({ rows = 6 }) {
   ));
 }
 
-export default function NewsPanel({ news, portfolio = [], loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
+export default function NewsPanel({ news, portfolio = [], xPosts = [], loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const held = useMemo(() => new Set(portfolio.map((h) => h.ticker)), [portfolio]);
   const tickers = useMemo(
     () => [...new Set(news.filter((a) => a.ticker).map((a) => a.ticker))].sort(),
@@ -44,6 +45,15 @@ export default function NewsPanel({ news, portfolio = [], loading, busy, onRefre
 
   const showEmpty = !loading && news.length === 0;
   const rows = compact ? filtered.slice(0, COMPACT_LIMIT) : filtered;
+
+  // X tab: date-sorted posts from the monitored accounts (Task 1).
+  const isX = active === "x";
+  const xRows = useMemo(
+    () => [...xPosts].sort(
+      (a, b) => (Date.parse(b.posted_at) || 0) - (Date.parse(a.posted_at) || 0),
+    ),
+    [xPosts],
+  );
 
   return (
     <section className={styles.panel} id="news">
@@ -74,6 +84,12 @@ export default function NewsPanel({ news, portfolio = [], loading, busy, onRefre
                   data-active={active === "macro" ? "yes" : "no"} onClick={() => setFilter("macro")}>
             Macro
           </button>
+          {xPosts.length > 0 && (
+            <button className={styles.tab} role="tab" aria-selected={active === "x"}
+                    data-active={active === "x" ? "yes" : "no"} onClick={() => setFilter("x")}>
+              X
+            </button>
+          )}
           {tickers.map((t) => (
             <button key={t} className={styles.tab} role="tab" aria-selected={active === t}
                     data-active={active === t ? "yes" : "no"} onClick={() => setFilter(t)}>
@@ -83,7 +99,7 @@ export default function NewsPanel({ news, portfolio = [], loading, busy, onRefre
         </div>
       )}
 
-      {!collapsed && (showEmpty ? (
+      {!collapsed && (showEmpty && !isX ? (
         <EmptyState icon="news" title="No news loaded yet" onRetry={onRefresh} busy={busy} />
       ) : (
         <motion.ul
@@ -92,7 +108,19 @@ export default function NewsPanel({ news, portfolio = [], loading, busy, onRefre
           initial={loading || prefersReducedMotion() ? false : "hidden"}
           animate="visible"
         >
-          {loading ? (
+          {isX ? (
+            xRows.length === 0 ? (
+              <li className={styles.noMatch}>
+                No X posts loaded yet — they arrive with the next refresh.
+              </li>
+            ) : (
+              xRows.map((p) => (
+                <motion.li key={`${p.account}:${p.post_id}`} variants={staggerItem}>
+                  <XPostCard post={p} compact />
+                </motion.li>
+              ))
+            )
+          ) : loading ? (
             <SkeletonItems />
           ) : rows.length === 0 ? (
             <li className={styles.noMatch}>

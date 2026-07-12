@@ -12,17 +12,30 @@ function statusTone(status) {
   return "muted"; // skipped: ...
 }
 
+// Newest 2 email + newest 2 SMS deliveries; `alert` rows are excluded here.
+function recentDeliveries(log) {
+  const byChannel = (ch) =>
+    log
+      .filter((e) => e.channel === ch)
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+      .slice(0, 2);
+  return [...byChannel("email"), ...byChannel("sms")].sort((a, b) =>
+    a.created_at < b.created_at ? 1 : -1,
+  );
+}
+
 function DeliveryLog() {
   const [log, setLog] = useState([]);
   useEffect(() => {
     getSuggestionLog().then(setLog).catch(() => {});
   }, []);
-  if (log.length === 0) return null;
+  const rows = recentDeliveries(log);
+  if (rows.length === 0) return null;
   return (
     <div className={styles.section}>
       <h3 className={styles.sectionTitle}>Recent deliveries</h3>
       <ul className={styles.log}>
-        {log.map((e, i) => (
+        {rows.map((e, i) => (
           <li key={i} className={styles.logRow}>
             <span className={styles.logTime}>{formatRelativeTime(e.created_at)}</span>
             <span className={styles.logFor}>for {e.for_date}</span>

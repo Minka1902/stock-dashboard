@@ -95,6 +95,9 @@
   font-variant-numeric: tabular-nums;
 }
 
+.table thead th.numCol {
+  text-align: right;
+}
 .table thead th {
   text-align: left;
   font-size: 10px;

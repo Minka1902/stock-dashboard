@@ -41,20 +41,46 @@
 .pill:disabled { opacity: 0.35; cursor: not-allowed; }
 .pill:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-.select {
-  appearance: none;
-  background: var(--surface-2);
-  color: var(--text-muted);
+/* chart-type segmented control with an animated active thumb */
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
   border: 1px solid var(--grid);
   border-radius: var(--r-s);
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  padding: 5px 9px;
+  background: var(--surface-2);
+}
+.segBtn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--r-xs);
   cursor: pointer;
 }
-.select:hover { color: var(--text); }
-.select:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.segBtn:hover { color: var(--text); }
+.segBtn[data-active="yes"] { color: var(--accent); }
+.segBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.segThumb {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-xs);
+  background: var(--accent-weak);
+  z-index: 0;
+}
+.segGlyph {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+}
+
+.volExact { color: var(--text-faint); }
 
 /* ---- crosshair legend ---- */
 .legend {

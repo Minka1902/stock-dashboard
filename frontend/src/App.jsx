@@ -36,6 +36,7 @@ import StockDetailPanel from "./components/StockDetailPanel";
 import BackToTop from "./components/BackToTop";
 import Tour from "./components/Tour";
 import { TOURS } from "./lib/tours";
+import { AnimatePresence, motion } from "motion/react";
 import { parseStockHash, openTickerTab } from "./lib/nav";
 import { prefersReducedMotion } from "./lib/motionConfig";
 import styles from "./App.module.css";
@@ -65,23 +66,13 @@ const TITLES = {
   settings:    "Settings",
 };
 
-// Terminal module numbering for the five primary views.
-const MODULE_INDEX = {
-  sentiment: "01",
-  suggestions: "02",
-  portfolio: "03",
-  trades: "04",
-  news: "05",
-  watchlist: "06",
-};
-
 export default function App({ auth }) {
   const data = useDashboardData();
   const appSettingsApi = useAppSettings();
-  const { quotes, quotesByTicker, asOf } = useLiveQuotes(
+  const { quotes, quotesByTicker, asOf, marketStatus } = useLiveQuotes(
     (appSettingsApi.appSettings.quotes_refresh_seconds || 30) * 1000,
   );
-  const { theme, toggle } = useTheme();
+  const { theme, setTheme, toggle, themes } = useTheme();
   const { settings, setSetting } = useSettings();
   const [view, setView] = useState("sentiment");
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -89,7 +80,17 @@ export default function App({ auth }) {
   // Any-ticker detail view is driven by the URL hash (#/stock/TICKER) so it can
   // live in its own tab (Task 13). It overlays the current view when present.
   const [detailTicker, setDetailTicker] = useState(parseStockHash);
-  const navigate = (v) => { setView(v); };
+  // Strip the #/stock/TICKER hash and drop the overlay without touching `view`.
+  const clearDetail = () => {
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    setDetailTicker(null);
+  };
+  // Nav from within a detail tab must close the overlay first, else the sidebar
+  // click would only change the (hidden) TopBar title and the overlay would stay.
+  const navigate = (v) => {
+    if (detailTicker) clearDetail();
+    setView(v);
+  };
   // Open the Info page scrolled to its data-sources section (from the failed-
   // source strip). The panel mounts on navigate, so scroll on the next frame.
   const openSourceDetails = () => {
@@ -110,12 +111,13 @@ export default function App({ auth }) {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  // Back control for the standalone tab: close it if it was script-opened,
-  // otherwise (hand-typed URL) just clear the hash to reveal the dashboard.
+  // Back control for the standalone tab: try to close it if it was script-opened
+  // (no-op for noopener tabs), otherwise clear the hash and land on the default
+  // dashboard view rather than whatever stale `view` was last selected.
   const closeDetail = () => {
     window.close();
-    window.history.replaceState(null, "", window.location.pathname + window.location.search);
-    setDetailTicker(null);
+    clearDetail();
+    setView("sentiment");
   };
 
   // Cmd/Ctrl+K toggles the command palette (palette mounts only while open).
@@ -189,13 +191,14 @@ export default function App({ auth }) {
       <main className={styles.main}>
         <div className={styles.band}>
           <TopBar
-            title={TITLES[view]}
-            index={MODULE_INDEX[view]}
+            title={detailTicker ? `${detailTicker} — analysis` : TITLES[view]}
             sources={sources}
             busy={busy}
             onRefresh={refresh}
             theme={theme}
             onToggleTheme={toggle}
+            onSetTheme={setTheme}
+            themes={themes}
             dyslexia={settings.dyslexia}
             onToggleDyslexia={() => setSetting("dyslexia", !settings.dyslexia)}
             lean={sentiment?.overall?.lean}
@@ -209,7 +212,7 @@ export default function App({ auth }) {
             hasTour={Boolean(TOURS[view]) && !detailTicker}
             onStartTour={() => setTourView(view)}
           />
-          <LiveTicker quotes={quotes} asOf={asOf} />
+          <LiveTicker quotes={quotes} asOf={asOf} marketStatus={marketStatus} />
         </div>
 
         <div className={styles.scroll} ref={scrollRef}>
@@ -222,17 +225,30 @@ export default function App({ auth }) {
 
             <SourceStatus sources={sources} onOpenDetails={openSourceDetails} />
 
-            {detailTicker && (
-              <StockDetailPanel
-                ticker={detailTicker}
-                onBack={closeDetail}
-                watchlist={watchlist}
-                onAddWatch={addWatch}
-              />
-            )}
-
-            {!detailTicker && (
-            <>
+            <AnimatePresence mode="wait" initial={false}>
+            {detailTicker ? (
+              <motion.div
+                key="detail"
+                initial={prefersReducedMotion() ? false : { opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, y: 10 }}
+                transition={prefersReducedMotion() ? { duration: 0 } : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <StockDetailPanel
+                  ticker={detailTicker}
+                  onBack={closeDetail}
+                  watchlist={watchlist}
+                  onAddWatch={addWatch}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="views"
+                initial={prefersReducedMotion() ? false : { opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, y: 10 }}
+                transition={prefersReducedMotion() ? { duration: 0 } : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+              >
             {view === "sentiment" && (
               <MarketSentimentPanel
                 sentiment={sentiment} fearGreed={fearGreed} vix={vix} aaii={aaii}
@@ -254,11 +270,11 @@ export default function App({ auth }) {
             )}
 
             {view === "news" && (
-              <NewsPanel news={news} portfolio={portfolio} loading={loading} busy={busy} onRefresh={refresh} />
+              <NewsPanel news={news} portfolio={portfolio} xPosts={xPosts} loading={loading} busy={busy} onRefresh={refresh} />
             )}
 
             {view === "settings" && (
-              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={navigate} appSettingsApi={appSettingsApi} />
+              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={navigate} appSettingsApi={appSettingsApi} user={auth?.user} theme={theme} onSetTheme={setTheme} themes={themes} />
             )}
 
             {view === "info" && (
@@ -294,7 +310,7 @@ export default function App({ auth }) {
               </>
             )}
             {view === "contracts" && <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "watchlist" && <WatchlistPanel watchlist={watchlist} quotes={quotesByTicker} onAdd={addWatch} onRemove={removeWatch} />}
+            {view === "watchlist" && <WatchlistPanel watchlist={watchlist} quotes={quotesByTicker} marketStatus={marketStatus} onAdd={addWatch} onRemove={removeWatch} />}
             {view === "yield-curve" && <YieldCurvePanel data={yieldCurve} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "econ-calendar" && <EconCalendarPanel data={econCalendar} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "signals" && <TechnicalPanel data={signals} loading={loading} busy={busy} onRefresh={refresh} />}
@@ -306,8 +322,9 @@ export default function App({ auth }) {
             {view === "analyst" && <AnalystPanel data={analyst} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "fundamentals" && <FundamentalsPanel data={fundamentals} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "seasonality" && <SeasonalityPanel data={seasonality} settings={settings} quotes={quotesByTicker} loading={loading} busy={busy} onRefresh={refresh} />}
-            </>
+              </motion.div>
             )}
+            </AnimatePresence>
           </div>
         </div>
 

@@ -14,12 +14,14 @@ const DEFAULT_REFRESH_MS = 30000;
 export function useLiveQuotes(refreshMs = DEFAULT_REFRESH_MS) {
   const [quotes, setQuotes] = useState([]);
   const [asOf, setAsOf] = useState(null);
+  const [marketStatus, setMarketStatus] = useState(null);
 
   const load = useCallback(async () => {
     try {
       const data = await getQuotes();
       setQuotes(data.quotes);
       setAsOf(data.as_of);
+      setMarketStatus(data.market_status ?? null);
     } catch {
       // keep showing the last good quotes; next tick retries
     }
@@ -30,7 +32,14 @@ export function useLiveQuotes(refreshMs = DEFAULT_REFRESH_MS) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
     const id = setInterval(load, Math.max(10000, refreshMs || DEFAULT_REFRESH_MS));
-    return () => clearInterval(id);
+    // Refetch immediately when the tab regains focus so a backgrounded tab
+    // isn't showing minutes-old prices / a stale session badge.
+    const onVisible = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [load, refreshMs]);
 
   const quotesByTicker = useMemo(
@@ -38,5 +47,5 @@ export function useLiveQuotes(refreshMs = DEFAULT_REFRESH_MS) {
     [quotes],
   );
 
-  return { quotes, quotesByTicker, asOf };
+  return { quotes, quotesByTicker, asOf, marketStatus };
 }

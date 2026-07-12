@@ -1,5 +1,6 @@
 """FastAPI surface + scheduler wiring."""
 import logging
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -12,12 +13,12 @@ from pydantic import BaseModel
 
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, search, sentiment, suggestions, themes
+from app import analysis, analyze, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, routes_oauth, search, sentiment, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.security import SecurityHeadersMiddleware, rate_limit
 from app.validation import clean_ticker
-from app.market_calendar import is_trading_day, next_trading_day
+from app.market_calendar import is_trading_day, market_status, next_trading_day
 from app.models import AppSettings, Holding, NotifyProfile, WatchItem
 from app.sources import edgar, gdelt, usaspending
 import app.sources.yield_curve as yield_curve_source
@@ -89,9 +90,12 @@ def fundamentals_fetch(conn):
 
 def x_posts_fetch(conn):
     """Monitor configured X accounts. known_tickers = watchlist ∪ portfolio, so
-    posts get their cashtags/matches tagged against symbols the user tracks."""
+    posts get their cashtags/matches tagged against symbols the user tracks.
+    Accounts come from app settings (admin-editable), falling back to the env
+    default when none are configured."""
     known = set(db.get_all_watched_tickers(conn)) | set(db.get_all_portfolio_tickers(conn))
-    return x_posts_source.fetch(config.X_ACCOUNTS, known)
+    accounts = db.get_app_settings(conn).x_accounts or config.X_ACCOUNTS
+    return x_posts_source.fetch(accounts, known)
 
 
 def seasonality_fetch(conn):
@@ -316,6 +320,7 @@ app.add_middleware(
 )
 
 app.include_router(routes_auth.build_router(conn))
+app.include_router(routes_oauth.build_router(conn))
 
 
 @app.get("/api/health")
@@ -397,13 +402,20 @@ def live_quotes(user=Depends(auth.get_current_user)):
         | {h.ticker for h in db.get_portfolio(conn, user.id)}
     )
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    # Clock-based session authority so the UI flips at 9:30 ET even when quotes
+    # are cached/empty or Yahoo's per-quote marketState lags.
+    status = market_status()
     if not tickers:
-        return {"as_of": now, "quotes": []}
+        return {"as_of": now, "market_status": status, "quotes": []}
     # Cache slightly under the configured poll cadence so each client poll gets
     # at most one fresh Yahoo fetch, shared across concurrent clients.
     interval = db.get_app_settings(conn).quotes_refresh_seconds
     ttl = min(config.QUOTES_TTL_SECONDS, max(5, interval - 5))
-    return {"as_of": now, "quotes": [q.model_dump() for q in quotes.get_quotes(tickers, ttl_seconds=ttl)]}
+    return {
+        "as_of": now,
+        "market_status": status,
+        "quotes": [q.model_dump() for q in quotes.get_quotes(tickers, ttl_seconds=ttl)],
+    }
 
 
 @app.get("/api/congress-trades")
@@ -494,6 +506,7 @@ def analyze_ticker(ticker: str, user=Depends(auth.get_current_user)):
         "weekly": [b.model_dump() for b in result["weekly"]],
         "source": result["source"],
         "seasonality_anchors": analyze.get_anchors(conn, t),
+        "x_posts": [p.model_dump() for p in db.get_x_posts_for(conn, t)],
     }
 
 
@@ -685,11 +698,20 @@ class SettingsUpdate(BaseModel):
     analysis_time: str | None = None
     analysis_tz: str | None = None
     quotes_refresh_seconds: int | None = None
+    x_accounts: list[str] | None = None
+
+
+# X handles: 1–15 chars, letters/digits/underscore (Twitter's own rule).
+_X_HANDLE_RE = re.compile(r"^[A-Za-z0-9_]{1,15}$")
 
 
 def _settings_payload() -> dict:
     settings = db.get_app_settings(conn)
     payload = settings.model_dump()
+    # Show the *effective* monitored accounts: fall back to the env default when
+    # none have been configured in settings yet.
+    if not payload["x_accounts"]:
+        payload["x_accounts"] = list(config.X_ACCOUNTS)
     # Next scheduled run: prefer the live scheduler job, fall back to computing
     # from the trigger (tests run without the scheduler started).
     next_run = None
@@ -730,10 +752,23 @@ def put_settings(item: SettingsUpdate, user=Depends(auth.get_current_user)):
     quotes_refresh = item.quotes_refresh_seconds if item.quotes_refresh_seconds is not None \
         else cur.quotes_refresh_seconds
     quotes_refresh = max(10, min(300, int(quotes_refresh)))
+    if item.x_accounts is not None:
+        cleaned: list[str] = []
+        for raw in item.x_accounts:
+            handle = raw.strip().lstrip("@")
+            if not handle:
+                continue
+            if not _X_HANDLE_RE.match(handle):
+                raise HTTPException(status_code=400, detail=f"invalid X handle: {raw!r}")
+            if handle not in cleaned:
+                cleaned.append(handle)
+        x_accounts = cleaned
+    else:
+        x_accounts = cur.x_accounts
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     settings = AppSettings(
         analysis_time=analysis_time, analysis_tz=analysis_tz,
-        quotes_refresh_seconds=quotes_refresh, updated_at=now,
+        quotes_refresh_seconds=quotes_refresh, x_accounts=x_accounts, updated_at=now,
     )
     db.upsert_app_settings(conn, settings)
     # Re-arm the daily deep run at the new wall-clock time (no-op in tests,
@@ -759,7 +794,9 @@ def send_test_suggestions(user=Depends(auth.get_current_user)):
 
 @app.get("/api/suggestions/log")
 def suggestions_log():
-    return [e.model_dump() for e in db.get_recent_suggestions(conn)]
+    # Fetch a wider window so the UI's per-channel view (2 email + 2 SMS) is
+    # not starved when recent rows are dominated by `alert` deliveries.
+    return [e.model_dump() for e in db.get_recent_suggestions(conn, limit=60)]
 
 
 # ---------- alerts ----------

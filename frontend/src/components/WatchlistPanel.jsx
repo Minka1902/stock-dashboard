@@ -12,7 +12,7 @@ function changeTone(pct) {
   return pct >= 0 ? "pos" : "neg";
 }
 
-export default function WatchlistPanel({ watchlist, quotes = {}, onAdd, onRemove }) {
+export default function WatchlistPanel({ watchlist, quotes = {}, marketStatus = null, onAdd, onRemove }) {
   const [ticker, setTicker] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState(null);
@@ -105,8 +105,11 @@ export default function WatchlistPanel({ watchlist, quotes = {}, onAdd, onRemove
                   : "—"}
               </span>
               <ExtHoursBadge quote={q} />
-              <span className={styles.state} data-state={q?.market_state ?? "none"}>
-                {q && q.market_state !== "PRE" && q.market_state !== "POST" ? q.market_state : ""}
+              <span className={styles.state} data-state={(marketStatus || q?.market_state) ?? "none"}>
+                {(() => {
+                  const eff = marketStatus || q?.market_state;
+                  return eff && eff !== "PRE" && eff !== "POST" ? eff : "";
+                })()}
               </span>
               <span className={styles.itemNote}>{w.note || "—"}</span>
               <span className={styles.added}>added {formatRelativeTime(w.added_at)}</span>

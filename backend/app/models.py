@@ -276,6 +276,7 @@ class AppSettings(BaseModel):
     analysis_time: str = "15:30"          # "HH:MM", 24h
     analysis_tz: str = "Asia/Jerusalem"   # IANA timezone name
     quotes_refresh_seconds: int = 30      # live-quote poll cadence, clamped 10–300 in the API
+    x_accounts: list[str] = []            # monitored X handles (empty → env default)
     updated_at: str = ""
 
 
@@ -292,7 +293,21 @@ class User(BaseModel):
 
     def public(self) -> dict:
         """The shape safe to return to the browser."""
-        return {"id": self.id, "email": self.email, "is_admin": self.is_admin}
+        return {
+            "id": self.id,
+            "email": self.email,
+            "is_admin": self.is_admin,
+            "created_at": self.created_at,
+        }
+
+
+class OAuthIdentity(BaseModel):
+    """Link between an external OAuth account and a local user."""
+    provider: str            # "github" | "google" | "facebook"
+    provider_user_id: str    # stable id at the provider (PK with provider)
+    user_id: int
+    email: str = ""
+    created_at: str
 
 
 class AuthSession(BaseModel):

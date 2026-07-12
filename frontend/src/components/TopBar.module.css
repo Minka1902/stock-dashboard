@@ -14,14 +14,6 @@
   min-width: 0;
 }
 
-.index {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--accent);
-  letter-spacing: 0.1em;
-}
-
 .title {
   font-family: var(--mono);
   font-size: 18px;
@@ -125,6 +117,54 @@
 }
 .iconBtn:hover { color: var(--text); border-color: var(--border-strong); }
 .iconBtn[data-active="yes"] { color: var(--accent); border-color: var(--accent-weak); }
+
+/* theme switcher popover */
+.themeWrap { position: relative; }
+.themeMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: 214px;
+  padding: var(--s-1);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow);
+}
+.themeItem {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 7px 8px;
+  border: none;
+  background: transparent;
+  border-radius: var(--r-sm);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.themeItem:hover { background: var(--surface-2); }
+.themeItem[data-active="yes"] { background: var(--accent-weak); }
+.themeSwatch {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+}
+.themeItemText { display: flex; flex-direction: column; line-height: 1.25; }
+.themeItemLabel { font-size: 13px; font-weight: 600; }
+.themeItemHint {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 
 .refresh {
   display: inline-flex;

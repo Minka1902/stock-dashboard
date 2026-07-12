@@ -40,6 +40,9 @@
   font-variant-numeric: tabular-nums;
 }
 
+.table thead th.num {
+  text-align: right;
+}
 .table thead th {
   position: sticky;
   top: 0;

@@ -2,6 +2,7 @@
 import functools
 import inspect
 import json
+import re
 import sqlite3
 import sys
 import threading
@@ -19,6 +20,7 @@ from app.models import (
     FearGreedSnapshot,
     Fundamentals,
     Holding,
+    OAuthIdentity,
     InsiderTrade,
     MarginDebtPoint,
     NewsArticle,
@@ -437,6 +439,14 @@ def init_schema(conn: sqlite3.Connection) -> None:
             read_at   TEXT NOT NULL,
             PRIMARY KEY (user_id, dedup_key)
         );
+        CREATE TABLE IF NOT EXISTS oauth_identities (
+            provider         TEXT NOT NULL,
+            provider_user_id TEXT NOT NULL,
+            user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            email            TEXT NOT NULL DEFAULT '',
+            created_at       TEXT NOT NULL,
+            PRIMARY KEY (provider, provider_user_id)
+        );
         """
     )
     conn.commit()
@@ -486,6 +496,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _try_add_column(conn, "seasonality", "anchors_json", "TEXT NOT NULL DEFAULT '[]'")
     _try_add_column(conn, "source_status", "error_detail", "TEXT")
     _try_add_column(conn, "portfolio", "category", "TEXT")  # NULL = auto-classified
+    _try_add_column(conn, "app_settings", "x_accounts", "TEXT")  # comma list; NULL = env default
     conn.commit()
 
 
@@ -1363,6 +1374,36 @@ def get_x_posts(conn: sqlite3.Connection, limit: int = 100) -> list[XPost]:
     return [XPost(**dict(row)) for row in cur.fetchall()]
 
 
+def get_x_posts_for(conn: sqlite3.Connection, ticker: str, limit: int = 20) -> list[XPost]:
+    """Posts relevant to `ticker`: those tagged with it at ingest (comma-joined
+    `tickers` column) plus a word-boundary text match for posts where the symbol
+    appears but wasn't tagged. Newest first, de-duplicated by (account, post_id)."""
+    t = ticker.upper()
+    cur = conn.execute(
+        "SELECT * FROM x_posts "
+        "WHERE (',' || UPPER(tickers) || ',') LIKE ? "
+        "ORDER BY posted_at DESC, rowid DESC LIMIT ?",
+        (f"%,{t},%", limit),
+    )
+    posts = [XPost(**dict(row)) for row in cur.fetchall()]
+    seen = {(p.account, p.post_id) for p in posts}
+
+    # Word-boundary scan over a bounded recent window for untagged mentions.
+    pat = re.compile(rf"\b{re.escape(t)}\b", re.IGNORECASE)
+    recent = conn.execute(
+        "SELECT * FROM x_posts ORDER BY posted_at DESC, rowid DESC LIMIT 300")
+    for row in recent.fetchall():
+        p = XPost(**dict(row))
+        if (p.account, p.post_id) in seen:
+            continue
+        if pat.search(p.text):
+            posts.append(p)
+            seen.add((p.account, p.post_id))
+
+    posts.sort(key=lambda p: p.posted_at, reverse=True)
+    return posts[:limit]
+
+
 # ---------- portfolio (user managed) ----------
 
 def upsert_holding(conn: sqlite3.Connection, user_id: int, item: Holding) -> None:
@@ -1504,10 +1545,14 @@ def get_app_settings(conn: sqlite3.Connection) -> AppSettings:
     if row is None:
         return AppSettings()
     d = dict(row)
+    raw_accounts = d.get("x_accounts")
+    x_accounts = [a.strip().lstrip("@") for a in raw_accounts.split(",")] if raw_accounts else []
+    x_accounts = [a for a in x_accounts if a]
     return AppSettings(
         analysis_time=d.get("analysis_time") or "15:30",
         analysis_tz=d.get("analysis_tz") or "Asia/Jerusalem",
         quotes_refresh_seconds=d.get("quotes_refresh_seconds") or 30,
+        x_accounts=x_accounts,
         updated_at=d.get("updated_at") or "",
     )
 
@@ -1515,17 +1560,19 @@ def get_app_settings(conn: sqlite3.Connection) -> AppSettings:
 def upsert_app_settings(conn: sqlite3.Connection, settings: AppSettings) -> None:
     conn.execute(
         """
-        INSERT INTO app_settings (id, analysis_time, analysis_tz, quotes_refresh_seconds, updated_at)
-        VALUES (1, :analysis_time, :analysis_tz, :quotes_refresh_seconds, :updated_at)
+        INSERT INTO app_settings (id, analysis_time, analysis_tz, quotes_refresh_seconds, x_accounts, updated_at)
+        VALUES (1, :analysis_time, :analysis_tz, :quotes_refresh_seconds, :x_accounts, :updated_at)
         ON CONFLICT(id) DO UPDATE SET
             analysis_time=excluded.analysis_time, analysis_tz=excluded.analysis_tz,
             quotes_refresh_seconds=excluded.quotes_refresh_seconds,
+            x_accounts=excluded.x_accounts,
             updated_at=excluded.updated_at
         """,
         {
             "analysis_time": settings.analysis_time,
             "analysis_tz": settings.analysis_tz,
             "quotes_refresh_seconds": settings.quotes_refresh_seconds,
+            "x_accounts": ",".join(settings.x_accounts),
             "updated_at": settings.updated_at,
         },
     )
@@ -1735,6 +1782,28 @@ def get_user_by_email(conn: sqlite3.Connection, email: str) -> User | None:
 
 def count_users(conn: sqlite3.Connection) -> int:
     return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+
+def get_oauth_identity(
+    conn: sqlite3.Connection, provider: str, provider_user_id: str
+) -> OAuthIdentity | None:
+    row = conn.execute(
+        "SELECT * FROM oauth_identities WHERE provider = ? AND provider_user_id = ?",
+        (provider, provider_user_id),
+    ).fetchone()
+    return OAuthIdentity(**dict(row)) if row else None
+
+
+def create_oauth_identity(conn: sqlite3.Connection, identity: OAuthIdentity) -> None:
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO oauth_identities
+            (provider, provider_user_id, user_id, email, created_at)
+        VALUES (:provider, :provider_user_id, :user_id, :email, :created_at)
+        """,
+        identity.model_dump(),
+    )
+    conn.commit()
 
 
 def get_users(conn: sqlite3.Connection) -> list[User]:

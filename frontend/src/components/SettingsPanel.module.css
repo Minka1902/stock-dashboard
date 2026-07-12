@@ -281,6 +281,133 @@
 .ok { color: var(--positive); font-size: 13px; font-weight: 600; }
 .err { color: var(--negative); font-size: 13px; }
 
+/* Appearance theme picker */
+.themeGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--s-3);
+}
+.themeCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--dur-1) var(--ease-out-quart);
+}
+.themeCard:hover { border-color: var(--border-strong); }
+.themeCard[data-active="yes"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.themeCardSwatch {
+  width: 100%;
+  height: 34px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-strong);
+}
+.themeCardLabel { font-size: 13px; font-weight: 600; color: var(--text); }
+.themeCardHint {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Account fieldset */
+.account {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.accountAvatar {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #10131a;
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+}
+.accountMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.accountEmailRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.accountEmail {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  word-break: break-all;
+}
+.adminBadge {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--accent-weak);
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.accountSince {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+/* X Watch account tags */
+.tagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-bottom: var(--s-3);
+}
+.tagsEmpty { color: var(--text-faint); font-size: 12.5px; }
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.tagRemove {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.tagRemove:hover { background: var(--negative-weak); color: var(--negative); }
+
 .testResults {
   list-style: none;
   margin: var(--s-3) 0 0;

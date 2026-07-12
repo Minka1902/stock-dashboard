@@ -1,6 +1,29 @@
 import { useEffect, useRef, useState } from "react";
-import { totpSetup } from "../api";
+import { totpSetup, getOAuthProviders, oauthStartUrl } from "../api";
 import styles from "./AuthGate.module.css";
+
+const PROVIDER_LABEL = { github: "GitHub", google: "Google", facebook: "Facebook" };
+
+// Compact monochrome brand glyphs (currentColor).
+const PROVIDER_ICON = {
+  github: (
+    <path d="M12 1.5a10.5 10.5 0 0 0-3.32 20.46c.52.1.71-.23.71-.5v-1.76c-2.9.63-3.52-1.4-3.52-1.4-.47-1.2-1.16-1.52-1.16-1.52-.95-.65.07-.64.07-.64 1.05.07 1.6 1.08 1.6 1.08.93 1.6 2.45 1.14 3.05.87.09-.68.36-1.14.66-1.4-2.32-.26-4.76-1.16-4.76-5.16 0-1.14.4-2.07 1.07-2.8-.1-.26-.46-1.32.1-2.75 0 0 .88-.28 2.88 1.07a10 10 0 0 1 5.24 0c2-1.35 2.87-1.07 2.87-1.07.57 1.43.21 2.49.1 2.75.67.73 1.07 1.66 1.07 2.8 0 4.01-2.45 4.9-4.78 5.16.38.32.71.95.71 1.92v2.85c0 .28.19.61.72.5A10.5 10.5 0 0 0 12 1.5Z" />
+  ),
+  google: (
+    <path d="M21.35 11.1H12v2.98h5.35c-.23 1.4-1.6 4.1-5.35 4.1a5.98 5.98 0 0 1 0-11.96c1.87 0 3.13.8 3.85 1.48l2.62-2.53C16.9 3.6 14.66 2.6 12 2.6A9.4 9.4 0 1 0 12 21.4c5.42 0 9-3.8 9-9.16 0-.62-.07-1.09-.15-1.14Z" />
+  ),
+  facebook: (
+    <path d="M22 12a10 10 0 1 0-11.56 9.88v-6.99H7.9V12h2.54V9.8c0-2.5 1.49-3.89 3.78-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56V12h2.78l-.44 2.89h-2.34v6.99A10 10 0 0 0 22 12Z" />
+  ),
+};
+
+function ProviderIcon({ provider }) {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+      {PROVIDER_ICON[provider]}
+    </svg>
+  );
+}
 
 function Field({ label, ...props }) {
   return (
@@ -31,6 +54,11 @@ function LoginRegister({ auth, busy, run }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [providers, setProviders] = useState([]);
+
+  useEffect(() => {
+    getOAuthProviders().then((d) => setProviders(d.providers || [])).catch(() => {});
+  }, []);
 
   const submit = (e) => {
     e.preventDefault();
@@ -67,6 +95,24 @@ function LoginRegister({ auth, busy, run }) {
       <button className={styles.primary} disabled={busy}>
         {mode === "login" ? "Continue" : "Create account"}
       </button>
+
+      {providers.length > 0 && (
+        <>
+          <div className={styles.orRow}><span>or</span></div>
+          <div className={styles.oauthBtns}>
+            {providers.map((p) => (
+              <a key={p} className={styles.oauthBtn} href={oauthStartUrl(p)}>
+                <ProviderIcon provider={p} />
+                Continue with {PROVIDER_LABEL[p] || p}
+              </a>
+            ))}
+          </div>
+          <p className={styles.hint}>
+            Social login still requires two-factor authentication on the next step.
+          </p>
+        </>
+      )}
+
       {mode === "register" && (
         <p className={styles.hint}>
           Two-factor authentication is required — have Google or Microsoft

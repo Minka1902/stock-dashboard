@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Icon from "./Icon";
 import ChartPro from "./ChartPro";
 import Skeleton from "./Skeleton";
+import XPostCard from "./XPostCard";
 import { getAnalyze, analysisReportUrl } from "../api";
 import styles from "./StockDetailPanel.module.css";
 
@@ -53,6 +54,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   const data = result?.data;
   const a = data?.analysis;
   const anchors = data?.seasonality_anchors || [];
+  const xPosts = data?.x_posts || [];
   const lastClose = data?.daily?.length ? data.daily[data.daily.length - 1].close : null;
   const refPrice = a?.price ?? lastClose;
   const watched = watchlist?.some((w) => w.ticker === ticker);
@@ -146,6 +148,17 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
                     </div>
                   );
                 })}
+              </div>
+            </Pane>
+          )}
+
+          {xPosts.length > 0 && (
+            <Pane caption="X Watch"
+                  right={<span className={styles.muted}>tracked-account posts mentioning {ticker}</span>}>
+              <div className={styles.xFeed}>
+                {xPosts.map((p) => (
+                  <XPostCard key={`${p.account}:${p.post_id}`} post={p} compact />
+                ))}
               </div>
             </Pane>
           )}

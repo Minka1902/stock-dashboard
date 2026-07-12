@@ -202,6 +202,18 @@ X_TIMEOUT_SECONDS = float(os.environ.get("STOCKS_X_TIMEOUT_SECONDS", "8"))
 # Boom Score level whose upward crossing fires a high-severity alert.
 ALERT_BOOM_THRESHOLD = int(os.environ.get("STOCKS_ALERT_BOOM_THRESHOLD", "60"))
 
+# --- OAuth social login (optional; each provider no-ops when unset) ---
+# Base URL the provider redirects back to (the backend origin). The callback is
+# f"{OAUTH_REDIRECT_BASE}/api/auth/oauth/{provider}/callback".
+OAUTH_REDIRECT_BASE = os.environ.get("STOCKS_OAUTH_REDIRECT_BASE", "http://localhost:8000")
+OAUTH_GITHUB_CLIENT_ID = os.environ.get("STOCKS_OAUTH_GITHUB_CLIENT_ID", "")
+OAUTH_GITHUB_CLIENT_SECRET = os.environ.get("STOCKS_OAUTH_GITHUB_CLIENT_SECRET", "")
+OAUTH_GOOGLE_CLIENT_ID = os.environ.get("STOCKS_OAUTH_GOOGLE_CLIENT_ID", "")
+OAUTH_GOOGLE_CLIENT_SECRET = os.environ.get("STOCKS_OAUTH_GOOGLE_CLIENT_SECRET", "")
+OAUTH_FACEBOOK_CLIENT_ID = os.environ.get("STOCKS_OAUTH_FACEBOOK_CLIENT_ID", "")
+OAUTH_FACEBOOK_CLIENT_SECRET = os.environ.get("STOCKS_OAUTH_FACEBOOK_CLIENT_SECRET", "")
+OAUTH_TIMEOUT_SECONDS = float(os.environ.get("STOCKS_OAUTH_TIMEOUT_SECONDS", "10"))
+
 
 def contracts_date_window() -> tuple[str, str]:
     """Return (start_date, end_date) ISO strings for the lookback window."""

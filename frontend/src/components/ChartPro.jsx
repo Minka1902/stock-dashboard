@@ -3,11 +3,13 @@ import {
   createChart, CandlestickSeries, BarSeries, HistogramSeries, LineSeries,
   AreaSeries, BaselineSeries, LineStyle, PriceScaleMode, createSeriesMarkers,
 } from "lightweight-charts";
+import { motion } from "motion/react";
 import { getChart } from "../api";
 import {
   smaSeries, emaSeries, bollingerSeries, rsiSeries, macdSeries, vwapSeries,
   heikinAshi,
 } from "../lib/indicators";
+import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./ChartPro.module.css";
 
 // lightweight-charts renders to canvas and cannot parse oklch(), so the chart
@@ -42,6 +44,59 @@ const CHART_TYPES = [
   { key: "area", label: "Area" },
   { key: "baseline", label: "Baseline" },
 ];
+
+// Compact per-type glyphs for the chart-type segmented control (18x18,
+// currentColor). Filled marks use `fill`, outlines use `stroke`.
+const TYPE_ICONS = {
+  candles: (
+    <g fill="currentColor" stroke="currentColor" strokeWidth="1.3">
+      <line x1="5.5" y1="2.5" x2="5.5" y2="15.5" /><rect x="3.5" y="5" width="4" height="6.5" />
+      <line x1="12.5" y1="4" x2="12.5" y2="14" /><rect x="10.5" y="7" width="4" height="5" />
+    </g>
+  ),
+  hollow: (
+    <g fill="none" stroke="currentColor" strokeWidth="1.3">
+      <line x1="5.5" y1="2.5" x2="5.5" y2="15.5" /><rect x="3.5" y="5" width="4" height="6.5" />
+      <line x1="12.5" y1="4" x2="12.5" y2="14" /><rect x="10.5" y="7" width="4" height="5" />
+    </g>
+  ),
+  heikin: (
+    <g stroke="currentColor" strokeWidth="1.3">
+      <line x1="9" y1="2" x2="9" y2="16" fill="none" />
+      <rect x="5.5" y="5.5" width="7" height="6" fill="currentColor" />
+    </g>
+  ),
+  bars: (
+    <g fill="none" stroke="currentColor" strokeWidth="1.3">
+      <line x1="5.5" y1="3" x2="5.5" y2="15" /><line x1="2.5" y1="6" x2="5.5" y2="6" /><line x1="5.5" y1="11" x2="8.5" y2="11" />
+      <line x1="12.5" y1="4" x2="12.5" y2="14" /><line x1="9.5" y1="9" x2="12.5" y2="9" /><line x1="12.5" y1="12" x2="15.5" y2="12" />
+    </g>
+  ),
+  line: (
+    <polyline points="2,13 6,8 9,11 16,4" fill="none" stroke="currentColor"
+              strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  ),
+  area: (
+    <g stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 13 L6 8 L9 11 L16 4 L16 16 L2 16 Z" fill="currentColor" fillOpacity="0.25" stroke="none" />
+      <polyline points="2,13 6,8 9,11 16,4" fill="none" />
+    </g>
+  ),
+  baseline: (
+    <g stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="2" y1="9" x2="16" y2="9" strokeDasharray="2 2" strokeWidth="1" opacity="0.6" />
+      <polyline points="2,12 6,10 9,6 16,4" fill="none" />
+    </g>
+  ),
+};
+
+function TypeIcon({ type }) {
+  return (
+    <svg viewBox="0 0 18 18" width="15" height="15" aria-hidden="true">
+      {TYPE_ICONS[type]}
+    </svg>
+  );
+}
 
 const MA_DEFS = [
   { n: 20, key: "info" }, { n: 50, key: "accent" },
@@ -107,6 +162,10 @@ function fmtVol(v) {
 export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   const elRef = useRef(null);
   const [prefs, setPrefs] = useState(loadPrefs);
+  // Viewport-aware chart height: fill the space below the toolbar/legend down
+  // to the bottom of the viewport, clamped to [280, `height`] so the chart +
+  // toolbar + legend fit one screen without page scroll (Task 9).
+  const [chartHeight, setChartHeight] = useState(height);
   const [bars, setBars] = useState(null);      // null = loading, [] = no data
   const [compareBars, setCompareBars] = useState(null);
   const [error, setError] = useState(null);
@@ -177,7 +236,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     if (!el) return undefined;
 
     const chart = createChart(el, {
-      height,
+      height: chartHeight,
       width: el.clientWidth,
       layout: {
         background: { color: "transparent" },
@@ -234,7 +293,23 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   }, []);
 
   // ---- height changes: just resize, never rebuild ----
-  useEffect(() => { chartRef.current?.applyOptions({ height }); }, [height]);
+  useEffect(() => { chartRef.current?.applyOptions({ height: chartHeight }); }, [chartHeight]);
+
+  // ---- viewport-aware sizing: measure the space under the canvas and clamp ----
+  const hasData = !!(bars && bars.length);
+  useEffect(() => {
+    const measure = () => {
+      const el = elRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const reserve = 48; // legend/key footer breathing room below the canvas
+      const avail = window.innerHeight - top - reserve;
+      setChartHeight(Math.max(280, Math.min(height, Math.round(avail))));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [height, hasData]);
 
   // ---- options-only changes: price-scale mode/margins + intraday time axis ----
   useEffect(() => {
@@ -455,14 +530,35 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
           ))}
         </div>
 
-        <select
-          className={styles.select}
-          value={prefs.type}
-          onChange={(e) => setPref({ type: e.target.value })}
-          aria-label="Chart type"
-        >
-          {CHART_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-        </select>
+        <div className={styles.segmented} role="group" aria-label="Chart type">
+          {CHART_TYPES.map((t) => {
+            const active = prefs.type === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                className={styles.segBtn}
+                data-active={active ? "yes" : "no"}
+                onClick={() => setPref({ type: t.key })}
+                title={t.label}
+                aria-label={t.label}
+                aria-pressed={active}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="chartTypeThumb"
+                    className={styles.segThumb}
+                    transition={prefersReducedMotion()
+                      ? { duration: 0 }
+                      : { type: "spring", stiffness: 520, damping: 40 }}
+                    aria-hidden="true"
+                  />
+                )}
+                <span className={styles.segGlyph}><TypeIcon type={t.key} /></span>
+              </button>
+            );
+          })}
+        </div>
 
         <div className={styles.group} role="group" aria-label="Indicators">
           {IND_DEFS.map((d) => {
@@ -514,7 +610,11 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
               {legend.changePct >= 0 ? "+" : ""}{legend.changePct.toFixed(2)}%
             </em></span>
           )}
-          <span>Vol <em>{fmtVol(legend.volume)}</em></span>
+          <span>Vol <em>{fmtVol(legend.volume)}</em>
+            {legend.volume != null && (
+              <span className={styles.volExact}> ({legend.volume.toLocaleString()})</span>
+            )}
+          </span>
           {prefs.compare && <span className={styles.legendCompare}>vs SPY (%)</span>}
           {legend.overlays?.map((o) => (
             <span key={o.label} className={styles.overlayChip}>
