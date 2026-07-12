@@ -1,4 +1,7 @@
-const BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+// Same-origin by default (single-port: the backend serves the built frontend).
+// Set VITE_API_BASE to talk to a cross-origin backend (e.g. the Vite dev server
+// proxies "" → :8000; see vite.config.js).
+const BASE = import.meta.env.VITE_API_BASE || "";
 // Cap every request so a stalled backend surfaces as a clean, predictable error
 // (and drives the "Backend unreachable" banner) instead of hanging forever.
 const REQUEST_TIMEOUT_MS = 20000;

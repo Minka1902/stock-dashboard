@@ -193,10 +193,28 @@ X_MIRRORS = [
 ]
 # Max posts to keep per account per refresh.
 X_POSTS_LIMIT = int(os.environ.get("STOCKS_X_POSTS_LIMIT", "30"))
-# X posts change slowly relative to the fast cycle; refresh at most every 15 min.
-X_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_X_MIN_INTERVAL_SECONDS", "900"))
+# X posts change slowly relative to the fast cycle; the 180s cycle still calls
+# x_posts, but this min-interval gate spaces real fetches to at most hourly (the
+# daily force-run bypasses it). Hourly keeps us polite with the mirrors/API.
+X_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_X_MIN_INTERVAL_SECONDS", "3600"))
 X_TIMEOUT_SECONDS = float(os.environ.get("STOCKS_X_TIMEOUT_SECONDS", "8"))
 
+
+# --- Background technical analysis (OHLC + analysis over the full universe) ---
+# The analysis universe is portfolio ∪ watchlist ∪ signal-source candidates. OHLC
+# and analysis both run hourly (the 180s cycle calls them; these gates space the
+# real work). OHLC_MAX_TICKERS bounds the Yahoo fan-out per run — larger universes
+# rotate stalest-first across successive hourly runs. OPPORTUNITY_CANDIDATES caps
+# how many recent signal-source tickers get pulled into the universe.
+OHLC_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_OHLC_MIN_INTERVAL_SECONDS", "3600"))
+ANALYSIS_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_ANALYSIS_MIN_INTERVAL_SECONDS", "3600"))
+OHLC_MAX_TICKERS = int(os.environ.get("STOCKS_OHLC_MAX_TICKERS", "60"))
+OPPORTUNITY_CANDIDATES = int(os.environ.get("STOCKS_OPPORTUNITY_CANDIDATES", "20"))
+
+# Optional override for the built frontend directory the backend serves (single
+# port). Empty → default to <repo>/frontend/dist. Used by tests to point at a
+# temp dist. See app/main.py static-serving block.
+STATIC_DIR = os.environ.get("STOCKS_STATIC_DIR", "") or None
 
 # --- Alerts ---
 # Boom Score level whose upward crossing fires a high-severity alert.

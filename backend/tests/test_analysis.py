@@ -78,11 +78,12 @@ def test_support_resistance_clusters_and_splits():
 # ---------- stop selection (tighter of ATR & structure) ----------
 
 def test_compute_stop_prefers_tighter_structure():
-    support = [SRLevel(price=96.0, kind="support", touches=3, last_touch="2025-01-01")]
+    # Structure buffer is now a full 1 ATR below support (stop-hunt protection, B4).
+    support = [SRLevel(price=98.0, kind="support", touches=3, last_touch="2025-01-01")]
     stop, s_atr, s_struct, basis = analysis.compute_stop(100.0, atr_val=4.0, support=support)
     assert s_atr == 92.0                       # 100 - 2*4
-    assert s_struct == 95.0                    # 96 - 0.25*4 buffer
-    assert stop == 95.0 and basis == "structure"   # higher stop = tighter risk
+    assert s_struct == 94.0                    # 98 - 1.0*4 buffer
+    assert stop == 94.0 and basis == "structure"   # higher stop = tighter risk
 
 
 def test_compute_stop_atr_when_no_support():

@@ -41,10 +41,16 @@ npm run dev      # Vite dev server on :5173
 npm run build
 npm run lint     # eslint
 ```
-The frontend talks to `http://localhost:8000` (override with `VITE_API_BASE`, see
-`frontend/.env.example`); the backend CORS allowlist defaults to `http://localhost:5173`
-(override with `STOCKS_CORS_ORIGINS`; wildcard rejected because requests carry the session
-cookie). Both must run together.
+**Two run modes:**
+- **Single port (prod-like):** `cd frontend && npm run build`, then run uvicorn — the backend
+  serves the built `frontend/dist/` on `:8000` (SPA catch-all in `app/main.py::_mount_spa`, only
+  active when a build exists). Open `http://localhost:8000`. Override the dist path with
+  `STOCKS_STATIC_DIR`.
+- **Dev (hot reload):** run both — Vite on `:5173` proxies `/api` → `:8000` (see
+  `vite.config.js`), so `src/api.js` uses a same-origin relative base (`VITE_API_BASE` defaults to
+  `""`; set it only for a cross-origin backend). The backend CORS allowlist defaults to
+  `http://localhost:5173` (override with `STOCKS_CORS_ORIGINS`; wildcard rejected because requests
+  carry the session cookie).
 
 **Run exactly one uvicorn worker.** The scheduler, TTL caches, rate limiter and the shared
 SQLite connection are all in-process — see `docs/scaling-roadmap.md` before scaling out.

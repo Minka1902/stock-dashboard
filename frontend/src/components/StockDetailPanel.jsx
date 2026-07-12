@@ -9,7 +9,12 @@ import styles from "./StockDetailPanel.module.css";
 const DIRECTIVE_TONE = {
   Accumulate: "buy", Hold: "hold", Reduce: "warn", Avoid: "sell",
 };
+const RECO_TONE = { buy: "buy", hold: "hold", sell: "sell" };
 const FEAS_TONE = { base: "base", likely: "buy", possible: "hold", unlikely: "muted" };
+const SIGNAL_TONE = { bullish: "pos", bearish: "neg", neutral: "" };
+const BREAKOUT_TONE = {
+  confirmed: "pos", approaching: "hold", broke_unconfirmed: "hold", failed: "neg",
+};
 
 function n(v, d = 2) {
   return v == null ? "—" : Number(v).toFixed(d);
@@ -74,7 +79,12 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
           <Icon name="arrowRight" size={14} /> <span>Back</span>
         </button>
         <h2 className={styles.ticker}>{ticker}</h2>
-        {a && <span className={styles.directive} data-tone={DIRECTIVE_TONE[a.directive]}>{a.directive}</span>}
+        {a && a.recommendation && (
+          <span className={styles.directive} data-tone={RECO_TONE[a.recommendation]}
+                title="Buy / Sell / Hold — the headline call">{a.recommendation.toUpperCase()}</span>
+        )}
+        {a && <span className={styles.directive} data-tone={DIRECTIVE_TONE[a.directive]}
+                    title="Finer-grained directive">{a.directive}</span>}
         {a && (
           <span className={styles.conviction}>
             <span className={styles.convLabel}>conviction</span>
@@ -178,7 +188,12 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
         <>
 
           <div className={styles.grid}>
-            <Pane caption="Trade plan" right={a.rr != null && <span className={styles.rr}>{a.rr}:1</span>}>
+            <Pane caption="Trade plan" right={a.rr != null && (
+              <span className={styles.rr} data-tone={a.rr_pass ? "pos" : "neg"}
+                    title={a.rr_pass ? "Meets the 3:1 professional threshold" : "Below 3:1 — a known skip"}>
+                {a.rr}:1 {a.rr_pass ? "✓" : "✗ <3"}
+              </span>
+            )}>
               {a.stop == null ? (
                 <p className={styles.muted}>No valid stop below price yet — plan pending.</p>
               ) : (
@@ -209,6 +224,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
                       Sized to {a.risk_pct}% of ${Number(a.account_size).toLocaleString()} account.
                     </p>
                   )}
+                  {a.staging_note && <p className={styles.sizeNote}>{a.staging_note}</p>}
                 </>
               )}
             </Pane>
@@ -217,7 +233,11 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
               <div className={styles.stats}>
                 <Stat label="Trend" value={a.trend} tone={a.trend === "up" ? "pos" : a.trend === "down" ? "neg" : ""} />
                 <Stat label="MA stack" value={a.ma_alignment.replace("stacked_", "")} />
+                <Stat label="MA state" value={(a.ma_state || "mixed").replace(/_/g, " ")}
+                      tone={a.ma_state === "healthy_uptrend" || a.ma_state === "reclaiming" ? "pos"
+                            : a.ma_state === "topping" || a.ma_state === "breaking_down" ? "neg" : ""} />
                 <Stat label="ATR(14)" value={`$${n(a.atr14)}${a.atr_pct ? ` (${n(a.atr_pct)}%)` : ""}`} />
+                <Stat label="Ext (ATR from MA20)" value={a.ma_extension_atr != null ? `${n(a.ma_extension_atr)}×` : "—"} />
                 <Stat label="MA20 / 50" value={`${n(a.ma20)} / ${n(a.ma50)}`} />
                 <Stat label="MA150 / 200" value={`${n(a.ma150)} / ${n(a.ma200)}`} />
               </div>
@@ -268,9 +288,63 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
               )}
             </Pane>
 
+            <Pane caption="Breakout / breakdown"
+                  right={a.breakout && <span className={styles.rr} data-tone={BREAKOUT_TONE[a.breakout.status]}>{a.breakout.status.replace(/_/g, " ")}</span>}>
+              {a.breakout ? (
+                <>
+                  <div className={styles.stats}>
+                    <Stat label="Direction" value={a.breakout.direction}
+                          tone={a.breakout.direction === "up" ? "pos" : "neg"} />
+                    <Stat label="Level" value={`$${n(a.breakout.level)}`} />
+                    <Stat label="From" value={a.breakout.level_source} />
+                    <Stat label="Volume" value={a.breakout.volume_confirmed ? "confirmed" : "unconfirmed"}
+                          tone={a.breakout.volume_confirmed ? "pos" : ""} />
+                  </div>
+                  <p className={styles.muted}>{a.breakout.note}</p>
+                </>
+              ) : (
+                <p className={styles.muted}>No level in play within striking distance right now.</p>
+              )}
+            </Pane>
+
+            <Pane caption="Candles & volume">
+              {a.volume ? (
+                <div className={styles.stats}>
+                  <Stat label="Vol vs 20d" value={`${n(a.volume.ratio)}×`}
+                        tone={a.volume.ratio >= 1.3 ? "pos" : ""} />
+                  <Stat label="Close streak" value={a.volume.streak}
+                        tone={a.volume.streak > 0 ? "pos" : a.volume.streak < 0 ? "neg" : ""} />
+                  <Stat label="Volume state" value={a.volume.state} />
+                </div>
+              ) : (
+                <p className={styles.muted}>No real volume in the data for this ticker.</p>
+              )}
+              {a.candles && a.candles.length > 0 ? (
+                <ul className={styles.patterns}>
+                  {a.candles.slice(-4).reverse().map((c, i) => (
+                    <li key={i} className={styles.pattern}>
+                      <span className={styles.patName}>{c.label}</span>
+                      <span className={styles.patDir} data-tone={SIGNAL_TONE[c.direction]}>{c.direction}</span>
+                      <span className={styles.patConf}>{c.date}</span>
+                      <span className={styles.patNote}>{c.note}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className={styles.muted}>No notable candlestick signals recently.</p>
+              )}
+            </Pane>
+
             <Pane caption="Why — the read">
               <ul className={styles.reasons}>
-                {a.reasons.map((r, i) => <li key={i}>{r}</li>)}
+                {(a.evidence && a.evidence.length
+                  ? a.evidence
+                  : a.reasons.map((r) => ({ detail: r, component: "", signal: "neutral" }))
+                ).map((e, i) => (
+                  <li key={i} data-tone={SIGNAL_TONE[e.signal]}>
+                    {e.component && <strong className={styles.evComp}>{e.component}</strong>} {e.detail}
+                  </li>
+                ))}
               </ul>
               <p className={styles.disclaimer}>{a.disclaimer}</p>
             </Pane>

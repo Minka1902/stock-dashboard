@@ -4,8 +4,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app import alerts, db
-from app.models import AnalystSignal, BoomScore, CongressTrade, WatchItem
+from app import alerts, db, notify
+from app.models import (
+    AnalystSignal, BoomScore, BreakoutState, CongressTrade, Evidence,
+    StockAnalysis, WatchItem,
+)
 
 
 @pytest.fixture
@@ -101,6 +104,75 @@ def test_small_congress_purchase_ignored(conn):
         filed_at=today, chamber="house",
     )])
     assert [a for a in alerts.detect(conn) if a.type == "congress_buy"] == []
+
+
+# ---------- TA transition alerts (Phase 3) ----------
+
+def _ta_analysis(ticker="AAPL", recommendation="hold", breakout_status=None,
+                 direction="up", ma_state="mixed", conviction=0, level=100.0):
+    bo = (BreakoutState(direction=direction, level=level, level_source="horizontal",
+                        status=breakout_status) if breakout_status else None)
+    return StockAnalysis(
+        ticker=ticker, computed_at="t", price=100.0, recommendation=recommendation,
+        ma_state=ma_state, conviction=conviction, breakout=bo,
+        entry=100.0, stop=95.0, target=115.0, rr=3.0,
+        evidence=[Evidence(component="pattern", signal="bullish", weight=10,
+                           detail="Cup & Handle detected — bullish.")],
+    )
+
+
+def test_ta_first_run_seeds_without_firing(conn):
+    _watch(conn, "AAPL")
+    db.upsert_analyses(conn, [_ta_analysis(recommendation="buy",
+                                           breakout_status="confirmed")])
+    # No prior TA snapshot → the first pass only records state.
+    assert alerts.detect(conn) == []
+    state = db.get_alert_state(conn, "AAPL")
+    assert state["ta_recommendation"] == "buy"
+    assert state["ta_breakout_status"] == "confirmed"
+
+
+def test_ta_recommendation_change_fires_once(conn):
+    _watch(conn, "AAPL")
+    db.upsert_analyses(conn, [_ta_analysis(recommendation="hold")])
+    alerts.detect(conn)                                    # seed
+    db.upsert_analyses(conn, [_ta_analysis(recommendation="buy")])
+    fired = alerts.detect(conn)
+    assert [f.type for f in fired] == ["recommendation_change"]
+    assert fired[0].severity == "high"                     # buy → high
+    db.upsert_alerts(conn, fired)
+    assert alerts.detect(conn) == []                       # transition gone + dedup
+
+
+def test_ta_breakout_confirmed_transition(conn):
+    _watch(conn, "AAPL")
+    db.upsert_analyses(conn, [_ta_analysis(breakout_status="approaching", direction="up")])
+    alerts.detect(conn)                                    # seed
+    db.upsert_analyses(conn, [_ta_analysis(breakout_status="confirmed", direction="up")])
+    fired = [f.type for f in alerts.detect(conn)]
+    assert "breakout_confirmed" in fired
+
+
+def test_ta_breakdown_warning_is_high_and_pushed(conn, monkeypatch):
+    _watch(conn, "AAPL")
+    db.upsert_analyses(conn, [_ta_analysis(breakout_status=None)])
+    alerts.detect(conn)                                    # seed
+    db.upsert_analyses(conn, [_ta_analysis(breakout_status="approaching",
+                                           direction="down", level=90.0)])
+    pushed = []
+    monkeypatch.setattr(notify, "push_alert", lambda c, al: pushed.append(al))
+    fired = alerts.detect(conn)
+    assert any(f.type == "breakdown_warning" and f.severity == "high" for f in fired)
+    assert any(al.type == "breakdown_warning" for al in pushed)
+
+
+def test_ta_topping_formation_transition(conn):
+    _watch(conn, "AAPL")
+    db.upsert_analyses(conn, [_ta_analysis(ma_state="healthy_uptrend")])
+    alerts.detect(conn)                                    # seed
+    db.upsert_analyses(conn, [_ta_analysis(ma_state="topping")])
+    fired = [f.type for f in alerts.detect(conn)]
+    assert "topping_formation" in fired
 
 
 def test_mark_read_and_unread_count(conn):

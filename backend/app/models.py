@@ -352,6 +352,7 @@ class SRLevel(BaseModel):
     kind: str              # "support" | "resistance"
     touches: int
     last_touch: str        # date
+    source: str = "pivot"  # "pivot" | "round" | "gap" | "ma"
 
 
 class GapEvent(BaseModel):
@@ -361,6 +362,56 @@ class GapEvent(BaseModel):
     pct: float
     kind: str              # "up" | "down"
     filled: bool
+    role: str = "common"           # "breakaway" | "runaway" | "exhaustion" | "common"
+    acts_as: str | None = None     # "support" | "resistance" | None (when filled/overhead)
+    note: str = ""                 # carries the ~90%-fill heuristic wording
+
+
+class Evidence(BaseModel):
+    """One explainable signal contributing to the read. A component with
+    insufficient data is omitted entirely, never invented."""
+    component: str         # methodology tag, e.g. "ma_structure", "breakout"
+    signal: str            # "bullish" | "bearish" | "neutral"
+    weight: int            # signed contribution to conviction
+    detail: str            # the human sentence shown to the user
+    data: dict = {}        # structured backup (levels, ratios, dates)
+
+
+class CandleSignal(BaseModel):
+    name: str              # hammer | shooting_star | doji | bullish_harami | bearish_harami
+    label: str
+    date: str
+    direction: str         # "bullish" | "bearish" | "neutral"
+    confidence: float      # 0..1
+    note: str = ""
+
+
+class TrendlineLevel(BaseModel):
+    kind: str              # "support" | "resistance"
+    touches: int
+    confidence: float      # 0..1
+    slope_per_bar: float
+    pivots: list[dict]     # [{date, price, role}] — exactly two+ points for a line series
+    current_value: float   # projected line value at the latest bar
+    broken: bool = False
+
+
+class VolumeRead(BaseModel):
+    avg20: float
+    last: float
+    ratio: float           # last / avg20
+    streak: int            # signed count of consecutive same-direction volume days
+    state: str             # "expanding" | "contracting" | "flat"
+    note: str = ""
+
+
+class BreakoutState(BaseModel):
+    direction: str         # "up" | "down"
+    level: float
+    level_source: str      # "horizontal" | "trendline" | "round" | "gap"
+    status: str            # "approaching" | "broke_unconfirmed" | "confirmed" | "failed"
+    volume_confirmed: bool = False
+    note: str = ""
 
 
 class TargetRung(BaseModel):
@@ -388,22 +439,34 @@ class StockAnalysis(BaseModel):
     resistance: list[SRLevel] = []
     gaps: list[GapEvent] = []
     patterns: list[PatternHit] = []
+    trendlines: list[TrendlineLevel] = []
+    candles: list[CandleSignal] = []
+    volume: VolumeRead | None = None      # None when bars carry no real volume
+    # MA structure read (methodology A7/A8/A9)
+    ma_state: str = "mixed"       # healthy_uptrend | topping | reclaiming | breaking_down | mixed
+    ma_extension_atr: float | None = None  # (price − ma20) / ATR; mean-reversion magnet
+    breakout: BreakoutState | None = None
     # trade plan
-    directive: str = "Hold"       # "Accumulate" | "Hold" | "Reduce" | "Avoid"
+    recommendation: str = "hold"  # "buy" | "sell" | "hold" — headline label
+    directive: str = "Hold"       # "Accumulate" | "Hold" | "Reduce" | "Avoid" (secondary detail)
     conviction: int = 0           # −100..+100
     entry: float | None = None
     stop: float | None = None
-    stop_basis: str = ""          # "structure" | "atr"
+    stop_basis: str = ""          # "structure" | "atr" | "trendline"
     stop_atr: float | None = None
     stop_structure: float | None = None
     risk_per_share: float | None = None
     target: float | None = None   # 3R base target
     reward_per_share: float | None = None
     rr: float | None = None       # base reward:risk
+    rr_threshold: float = 3.0     # professional R/R gate
+    rr_pass: bool = False         # rr >= rr_threshold
     targets: list[TargetRung] = []
+    staging_note: str = ""        # staged-entry guidance (methodology B3)
     suggested_shares: int | None = None
     account_size: float | None = None
     risk_pct: float | None = None
+    evidence: list[Evidence] = []
     reasons: list[str] = []
     disclaimer: str = "Rule-based technical read, not a prediction. Verify before trading."
 
@@ -420,6 +483,8 @@ class Alert(BaseModel):
     created_at: str
     ticker: str
     type: str               # boom_cross | golden_cross | insider_cluster | earnings_soon | congress_buy
+                            # | breakdown_warning | breakout_setup | breakout_confirmed
+                            # | false_breakout | topping_formation | recommendation_change
     severity: str           # "high" | "medium"
     title: str
     message: str

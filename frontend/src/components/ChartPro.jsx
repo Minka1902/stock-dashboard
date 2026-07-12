@@ -466,13 +466,35 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
 
     // analysis overlays (daily view only; hidden in percent-compare mode)
     if (showOverlays) {
+      // Horizontal S/R — round-number levels get a distinct dotted/muted style.
       for (const l of (analysis.support || [])) {
-        main.createPriceLine({ price: l.price, color: COLORS.up, lineWidth: 1,
-          lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: `S ${l.touches}x` });
+        const round = l.source === "round";
+        main.createPriceLine({ price: l.price, color: round ? COLORS.muted : COLORS.up, lineWidth: 1,
+          lineStyle: round ? LineStyle.Dotted : LineStyle.Dashed, axisLabelVisible: true,
+          title: round ? `S ⌾ ${l.price}` : `S ${l.touches}x` });
       }
       for (const l of (analysis.resistance || [])) {
-        main.createPriceLine({ price: l.price, color: COLORS.down, lineWidth: 1,
-          lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: `R ${l.touches}x` });
+        const round = l.source === "round";
+        main.createPriceLine({ price: l.price, color: round ? COLORS.muted : COLORS.down, lineWidth: 1,
+          lineStyle: round ? LineStyle.Dotted : LineStyle.Dashed, axisLabelVisible: true,
+          title: round ? `R ⌾ ${l.price}` : `R ${l.touches}x` });
+      }
+      // Diagonal trendlines as two-point line series (dashed when broken).
+      const lastBar = displayBars[displayBars.length - 1];
+      for (const tl of (analysis.trendlines || [])) {
+        const pts = (tl.pivots || []).map((pv) => ({ time: pv.date, value: pv.price }));
+        if (pts.length && lastBar && lastBar.time > pts[pts.length - 1].time) {
+          pts.push({ time: lastBar.time, value: tl.current_value });
+        }
+        if (pts.length >= 2) {
+          const tlS = track(chart.addSeries(LineSeries, {
+            color: tl.kind === "support" ? COLORS.up : COLORS.down,
+            lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+            crosshairMarkerVisible: false,
+            lineStyle: tl.broken ? LineStyle.Dashed : LineStyle.Solid,
+          }));
+          tlS.setData(pts);
+        }
       }
       if (analysis.entry) main.createPriceLine({ price: analysis.entry, color: COLORS.accent, lineWidth: 1, title: "entry" });
       if (analysis.stop) main.createPriceLine({ price: analysis.stop, color: COLORS.down, lineWidth: 2, title: "stop" });
@@ -645,7 +667,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
         {prefs.inds.vwap && intraday && <span data-c="cmp">VWAP</span>}
         {prefs.compare && <span data-c="cmp">SPY</span>}
         {prefs.overlays && prefs.tf === "1d" && analysis && !prefs.compare && (
-          <span className={styles.keyNote}>dashed = support/resistance · dots = pattern pivots · arrows = unfilled gaps</span>
+          <span className={styles.keyNote}>dashed = support/resistance · dotted = round numbers · diagonals = trendlines · dots = pattern pivots · arrows = unfilled gaps</span>
         )}
       </p>
     </div>

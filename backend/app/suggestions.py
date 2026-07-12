@@ -104,6 +104,14 @@ def _seasonality_signal(season, primary=_PRIMARY_WINDOW):
     return stats["avg"], stats["win_rate"], stats["n"], win.get("label", primary)
 
 
+def _opportunity_universe(conn, user_id: int, held: set) -> list[str]:
+    """New-opportunity candidates = (user watchlist ∪ signal-source candidates)
+    minus what the user already holds. Single pluggable source of names."""
+    watch = {w.ticker for w in db.get_watchlist(conn, user_id)}
+    candidates = set(db.get_signal_candidate_tickers(conn, config.OPPORTUNITY_CANDIDATES))
+    return sorted((watch | candidates) - set(held))
+
+
 def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
     """Digest scoped to one user's holdings + watchlist (market data is shared)."""
     if for_date is None:
@@ -172,6 +180,17 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
         else:
             action = "Hold"
 
+        # Background TA answer for held names: a TA "sell" overrides the action
+        # string; otherwise the Boom/earnings logic above stands as the fallback.
+        sa = db.get_analysis(conn, h.ticker)
+        ta_reco = sa.recommendation if sa else None
+        ta_conv = sa.conviction if sa else None
+        if ta_reco == "sell":
+            top = next((e.detail for e in sa.evidence if e.signal == "bearish"), None)
+            action = f"Reduce — TA breakdown: {top}" if top else "Reduce — TA turned bearish"
+            if top and top not in reasons:
+                reasons.append(top)
+
         holdings_alerts.append({
             "ticker": h.ticker,
             "action": action,
@@ -181,24 +200,50 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
             "shares": h.shares,
             "avg_cost": h.avg_cost,
             "price": price,
+            "ta_recommendation": ta_reco,
+            "ta_conviction": ta_conv,
         })
     # Surface the most actionable holdings first (risk before hold).
     holdings_alerts.sort(key=lambda x: (x["score"] if x["score"] is not None else 0))
 
-    # --- New opportunities (watchlist, not held) ---
+    # --- New opportunities (TA-driven; Boom demoted to secondary evidence) ---
+    universe = _opportunity_universe(conn, user_id, held)
+    stored = {t: db.get_analysis(conn, t) for t in universe}
+    stored = {t: a for t, a in stored.items() if a is not None}
     opportunities = []
-    candidates = sorted(
-        (boom[t] for t in watchlist if t in boom and t not in held),
-        key=lambda b: b.score, reverse=True,
-    )
-    for b in candidates[: config.SUGGESTIONS_COUNT]:
-        if b.score <= 0:
-            continue
-        opportunities.append({
-            "ticker": b.ticker,
-            "score": b.score,
-            "signals": _fired(b, _BULLISH_LABELS),
-        })
+    if stored:
+        buys = [(t, a) for t, a in stored.items() if a.recommendation == "buy" and a.rr_pass]
+        buys.sort(key=lambda ta: (ta[1].conviction, ta[1].rr or 0), reverse=True)
+        for t, a in buys[: config.SUGGESTIONS_COUNT]:
+            b = boom.get(t)
+            opportunities.append({
+                "ticker": t,
+                "score": b.score if b else None,             # Boom = secondary evidence now
+                "signals": _fired(b, _BULLISH_LABELS) if b else [],
+                "recommendation": a.recommendation,
+                "conviction": a.conviction,
+                "rr": a.rr,
+                "entry": a.entry,
+                "stop": a.stop,
+                "target": a.target,
+                "evidence": [e.detail for e in a.evidence if e.signal != "neutral"][:3],
+            })
+    else:
+        # Fresh deploy: no candidate has a stored analysis yet. Fall back to Boom
+        # ranking, flagged ta_pending — explicit absence, never fabricated TA.
+        candidates = sorted(
+            (boom[t] for t in universe if t in boom),
+            key=lambda b: b.score, reverse=True,
+        )
+        for b in candidates[: config.SUGGESTIONS_COUNT]:
+            if b.score <= 0:
+                continue
+            opportunities.append({
+                "ticker": b.ticker,
+                "score": b.score,
+                "signals": _fired(b, _BULLISH_LABELS),
+                "ta_pending": True,
+            })
 
     # --- Seasonality tailwinds / headwinds ---
     seasonality = []
@@ -248,6 +293,17 @@ def _alert_line(a: dict) -> str:
     return " ".join(parts)
 
 
+def _opportunity_line(o: dict) -> str:
+    """Lead with the TA recommendation; fall back to Boom when TA is pending."""
+    if o.get("ta_pending"):
+        sig = f" — {', '.join(o['signals'])}" if o["signals"] else ""
+        return f"{o['ticker']} · Boom {o['score']}{sig} (TA pending)"
+    rr = f", R/R {o['rr']}" if o.get("rr") is not None else ""
+    plan = (f" — entry {o['entry']} / stop {o['stop']} / target {o['target']}"
+            if o.get("entry") is not None else "")
+    return f"{o['ticker']} · {o['recommendation'].upper()} (conv {o['conviction']}{rr}){plan}"
+
+
 def render_email(digest: dict) -> tuple[str, str, str]:
     """Returns (subject, text, html)."""
     d = digest
@@ -259,10 +315,9 @@ def render_email(digest: dict) -> tuple[str, str, str]:
         lines += [f"  • {_alert_line(a)}" for a in d["holdings_alerts"]]
         lines.append("")
     if d["opportunities"]:
-        lines.append("NEW OPPORTUNITIES (watchlist)")
+        lines.append("NEW OPPORTUNITIES")
         for o in d["opportunities"]:
-            sig = f" — {', '.join(o['signals'])}" if o["signals"] else ""
-            lines.append(f"  • {o['ticker']} · Boom {o['score']}{sig}")
+            lines.append("  • " + _opportunity_line(o))
         lines.append("")
     if d["seasonality"]:
         lines.append("SEASONAL EDGE (this time of year)")
@@ -290,8 +345,18 @@ def render_email(digest: dict) -> tuple[str, str, str]:
     if d["opportunities"]:
         html_parts.append("<h3>New opportunities</h3><ul>")
         for o in d["opportunities"]:
-            sig = f" — {esc(', '.join(o['signals']))}" if o["signals"] else ""
-            html_parts.append(f"<li><b>{esc(o['ticker'])}</b> · Boom {o['score']}{sig}</li>")
+            if o.get("ta_pending"):
+                sig = f" — {esc(', '.join(o['signals']))}" if o["signals"] else ""
+                html_parts.append(
+                    f"<li><b>{esc(o['ticker'])}</b> · Boom {o['score']}{sig} "
+                    f"<i>(TA pending)</i></li>")
+            else:
+                rr = f", R/R {o['rr']}" if o.get("rr") is not None else ""
+                plan = (f" — entry {o['entry']} / stop {o['stop']} / target {o['target']}"
+                        if o.get("entry") is not None else "")
+                html_parts.append(
+                    f"<li><b>{esc(o['ticker'])}</b> · {esc(o['recommendation'].upper())} "
+                    f"(conv {o['conviction']}{rr}){esc(plan)}</li>")
         html_parts.append("</ul>")
     if d["seasonality"]:
         html_parts.append("<h3>Seasonal edge</h3><ul>")
@@ -319,8 +384,12 @@ def render_sms(digest: dict, max_len: int = 320) -> str:
         bits.append(f"⚠ {a['ticker']}→{short}.")
     if d["opportunities"]:
         o = d["opportunities"][0]
-        sig = f" {o['signals'][0]}" if o["signals"] else ""
-        bits.append(f"💡 {o['ticker']} Boom {o['score']}{sig}.")
+        if o.get("ta_pending"):
+            sig = f" {o['signals'][0]}" if o["signals"] else ""
+            bits.append(f"💡 {o['ticker']} Boom {o['score']}{sig}.")
+        else:
+            rr = f" R/R {o['rr']}" if o.get("rr") is not None else ""
+            bits.append(f"💡 {o['ticker']} {o['recommendation'].upper()} conv {o['conviction']}{rr}.")
     bits.append("Full digest in app.")
     msg = " ".join(bits)
     return msg if len(msg) <= max_len else msg[: max_len - 1] + "…"

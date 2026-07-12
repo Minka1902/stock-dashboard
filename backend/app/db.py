@@ -497,6 +497,14 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _try_add_column(conn, "source_status", "error_detail", "TEXT")
     _try_add_column(conn, "portfolio", "category", "TEXT")  # NULL = auto-classified
     _try_add_column(conn, "app_settings", "x_accounts", "TEXT")  # comma list; NULL = env default
+    # TA transition snapshot on alert_state (Phase 3 — warn before falls/breakouts).
+    for col, col_def in [
+        ("ta_recommendation",  "TEXT"),
+        ("ta_breakout_status", "TEXT"),
+        ("ta_ma_state",        "TEXT"),
+        ("ta_conviction",      "INTEGER"),
+    ]:
+        _try_add_column(conn, "alert_state", col, col_def)
     conn.commit()
 
 
@@ -1463,6 +1471,67 @@ def get_all_portfolio_tickers(conn: sqlite3.Connection) -> list[str]:
     return [row[0] for row in cur.fetchall()]
 
 
+# ---------- background analysis universe (portfolio ∪ watchlist ∪ signals) ----------
+
+def get_signal_candidate_tickers(conn: sqlite3.Connection, limit: int = 20) -> list[str]:
+    """Recent, distinct tickers flowing through the other signal sources — congress
+    purchases, insider buys, analyst upgrades, social spikes and major federal
+    contracts — most-recent first, capped at `limit`. Feeds the opportunities
+    universe so the TA engine (and Suggestions) can surface new names, without a
+    full-index scan."""
+    rows: list[tuple[str, str]] = []
+    queries = [
+        "SELECT ticker, MAX(transaction_date) FROM congress_trades "
+        "WHERE transaction_type='Purchase' AND ticker != '' GROUP BY ticker",
+        "SELECT ticker, MAX(transaction_date) FROM insider_trades "
+        "WHERE transaction_type='Buy' AND ticker != '' GROUP BY ticker",
+        "SELECT ticker, fetched_at FROM analyst_signals "
+        "WHERE recent_upgrades > 0 AND ticker != ''",
+        "SELECT ticker, fetched_at FROM social_sentiment "
+        "WHERE rank_change >= 5 AND ticker != ''",
+        "SELECT ticker, MAX(start_date) FROM contracts "
+        "WHERE ticker IS NOT NULL AND ticker != '' GROUP BY ticker",
+    ]
+    for sql in queries:
+        for row in conn.execute(sql).fetchall():
+            if row[0]:
+                rows.append((row[0].upper(), row[1] or ""))
+    best: dict[str, str] = {}
+    for ticker, when in rows:
+        if ticker not in best or when > best[ticker]:
+            best[ticker] = when
+    ordered = sorted(best.items(), key=lambda kv: kv[1], reverse=True)
+    return [t for t, _ in ordered[:limit]]
+
+
+def get_analysis_universe(conn: sqlite3.Connection, candidate_limit: int = 20) -> list[str]:
+    """Portfolio ∪ watchlist ∪ capped signal candidates — the set of tickers the
+    background technical-analysis engine covers."""
+    universe = set(get_all_portfolio_tickers(conn)) | set(get_all_watched_tickers(conn))
+    universe |= set(get_signal_candidate_tickers(conn, candidate_limit))
+    return sorted(universe)
+
+
+def get_ohlc_fetched_at(conn: sqlite3.Connection, interval: str = "daily") -> dict[str, str]:
+    """{ticker: fetched_at} for the stored OHLC series — drives stalest-first
+    rotation so a large universe spreads its Yahoo fan-out across hourly runs."""
+    cur = conn.execute(
+        "SELECT ticker, fetched_at FROM ohlc_series WHERE interval = ?", (interval,))
+    return {row[0]: row[1] for row in cur.fetchall()}
+
+
+def prune_analyses(conn: sqlite3.Connection, keep: list[str]) -> int:
+    """Drop stored analyses for tickers no longer in the universe. Returns the
+    number of rows removed."""
+    keep_up = {t.upper() for t in keep}
+    existing = [row[0] for row in conn.execute("SELECT ticker FROM stock_analysis").fetchall()]
+    drop = [t for t in existing if t.upper() not in keep_up]
+    if drop:
+        conn.executemany("DELETE FROM stock_analysis WHERE ticker = ?", [(t,) for t in drop])
+        conn.commit()
+    return len(drop)
+
+
 def get_holding_categories(conn: sqlite3.Connection, user_id: int) -> dict[str, str]:
     """Manual category overrides for a user: {ticker: category}. Tickers with
     NULL category (auto) are omitted."""
@@ -1744,17 +1813,25 @@ def get_alert_state(conn: sqlite3.Connection, ticker: str) -> dict | None:
 def upsert_alert_state(
     conn: sqlite3.Connection, ticker: str, score: int | None,
     golden_cross: bool | None, insider_cluster_buy: bool | None, updated_at: str,
+    *, ta_recommendation: str | None = None, ta_breakout_status: str | None = None,
+    ta_ma_state: str | None = None, ta_conviction: int | None = None,
 ) -> None:
     conn.execute(
         """
-        INSERT INTO alert_state (ticker, score, golden_cross, insider_cluster_buy, updated_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO alert_state
+            (ticker, score, golden_cross, insider_cluster_buy, updated_at,
+             ta_recommendation, ta_breakout_status, ta_ma_state, ta_conviction)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(ticker) DO UPDATE SET
             score=excluded.score, golden_cross=excluded.golden_cross,
-            insider_cluster_buy=excluded.insider_cluster_buy, updated_at=excluded.updated_at
+            insider_cluster_buy=excluded.insider_cluster_buy, updated_at=excluded.updated_at,
+            ta_recommendation=excluded.ta_recommendation,
+            ta_breakout_status=excluded.ta_breakout_status,
+            ta_ma_state=excluded.ta_ma_state, ta_conviction=excluded.ta_conviction
         """,
         (ticker, score, int(golden_cross) if golden_cross is not None else None,
-         int(insider_cluster_buy) if insider_cluster_buy is not None else None, updated_at),
+         int(insider_cluster_buy) if insider_cluster_buy is not None else None, updated_at,
+         ta_recommendation, ta_breakout_status, ta_ma_state, ta_conviction),
     )
     conn.commit()
 
