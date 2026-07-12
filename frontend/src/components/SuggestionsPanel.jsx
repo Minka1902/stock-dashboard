@@ -69,6 +69,38 @@ function AlertRow({ a }) {
   );
 }
 
+function OpportunityRow({ o }) {
+  // Fresh deploy: TA not computed yet — fall back to the Boom read, flagged.
+  if (o.ta_pending) {
+    return (
+      <li className={styles.alert}>
+        <span className={styles.symbol}>{o.ticker}</span>
+        <span className={styles.score}>Boom {o.score}</span>
+        <span className={styles.reasons}>
+          {o.signals.map((s) => <span key={s} className={styles.chip} data-tone="bull">{s}</span>)}
+          <span className={styles.chip} data-tone="muted">TA pending</span>
+        </span>
+      </li>
+    );
+  }
+  const tone = o.recommendation === "buy" ? "bull" : o.recommendation === "sell" ? "bear" : "muted";
+  return (
+    <li className={styles.alert}>
+      <span className={styles.symbol}>{o.ticker}</span>
+      <span className={styles.chip} data-tone={tone}>{(o.recommendation || "hold").toUpperCase()}</span>
+      <span className={styles.action} data-risk="no">
+        conv {o.conviction}
+        {o.rr != null ? ` · R/R ${o.rr}` : ""}
+        {o.entry != null ? ` · entry ${o.entry} / stop ${o.stop}` : ""}
+      </span>
+      <span className={styles.reasons}>
+        {(o.evidence || []).map((e) => <span key={e} className={styles.chip}>{e}</span>)}
+        {o.score != null && <span className={styles.chip} data-tone="muted">Boom {o.score}</span>}
+      </span>
+    </li>
+  );
+}
+
 export default function SuggestionsPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const empty = !loading && data
     && data.holdings_alerts.length === 0
@@ -113,15 +145,7 @@ export default function SuggestionsPanel({ data, loading, busy, onRefresh, compa
             <div className={styles.section}>
               <h3 className={styles.sectionTitle}>New opportunities</h3>
               <ul className={styles.list}>
-                {data.opportunities.map((o) => (
-                  <li key={o.ticker} className={styles.alert}>
-                    <span className={styles.symbol}>{o.ticker}</span>
-                    <span className={styles.score}>Boom {o.score}</span>
-                    <span className={styles.reasons}>
-                      {o.signals.map((s) => <span key={s} className={styles.chip} data-tone="bull">{s}</span>)}
-                    </span>
-                  </li>
-                ))}
+                {data.opportunities.map((o) => <OpportunityRow key={o.ticker} o={o} />)}
               </ul>
             </div>
           )}

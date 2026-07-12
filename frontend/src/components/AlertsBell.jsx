@@ -3,6 +3,22 @@ import Icon from "./Icon";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./AlertsBell.module.css";
 
+// Per-type glyph (falls back to the bell). Covers the Boom Score events and the
+// technical-analysis transition alerts (warn before falls/breakouts).
+const TYPE_ICON = {
+  boom_cross: "spark",
+  golden_cross: "trending",
+  insider_cluster: "trending",
+  earnings_soon: "calendar",
+  congress_buy: "layers",
+  breakout_setup: "trending",
+  breakout_confirmed: "spark",
+  breakdown_warning: "gauge",
+  false_breakout: "x",
+  topping_formation: "gauge",
+  recommendation_change: "star",
+};
+
 /** Passive unread indicator + popover of recent alerts. No full page. */
 export default function AlertsBell({ alerts = [], unread = 0, onMarkRead }) {
   const [open, setOpen] = useState(false);
@@ -58,6 +74,7 @@ export default function AlertsBell({ alerts = [], unread = 0, onMarkRead }) {
                   <div className={styles.body}>
                     <div className={styles.line1}>
                       <span className={styles.symbol}>{a.ticker}</span>
+                      <Icon name={TYPE_ICON[a.type] || "bell"} size={13} />
                       <span className={styles.title}>{a.title}</span>
                       <span className={styles.time}>{formatRelativeTime(a.created_at)}</span>
                     </div>

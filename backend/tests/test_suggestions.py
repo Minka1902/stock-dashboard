@@ -7,7 +7,7 @@ import pytest
 
 from app import db
 from app.models import (
-    BoomScore, Holding, Seasonality, TechnicalSignal, WatchItem,
+    BoomScore, Evidence, Holding, Seasonality, StockAnalysis, TechnicalSignal, WatchItem,
 )
 from app import suggestions
 
@@ -132,3 +132,66 @@ def test_empty_state_builds_without_error(conn):
     assert d["holdings_alerts"] == []
     assert d["opportunities"] == []
     assert d["seasonality"] == []
+
+
+# ---------- TA-driven suggestions (Phase 4) ----------
+
+def _seed_analysis(conn, ticker, reco, conviction=0, rr=3.5, rr_pass=True, evidence=None):
+    db.upsert_analyses(conn, [StockAnalysis(
+        ticker=ticker, computed_at="t", price=100.0, recommendation=reco,
+        conviction=conviction, rr=rr, rr_pass=rr_pass,
+        entry=100.0, stop=95.0, target=115.0, evidence=evidence or [])])
+
+
+def test_opportunities_ta_ranked_by_conviction_and_rr(conn):
+    for t in ("PLTR", "NVDA", "SNOW"):
+        db.add_watch(conn, 0, WatchItem(ticker=t, note="", added_at="t"))
+    db.upsert_boom_scores(conn, [_boom("PLTR", 55, golden_cross=True)])
+    _seed_analysis(conn, "PLTR", "buy", conviction=60, rr=3.5)
+    _seed_analysis(conn, "NVDA", "buy", conviction=40, rr=4.0)
+    _seed_analysis(conn, "SNOW", "sell", conviction=-30, rr=None, rr_pass=False)
+    d = suggestions.build_digest(conn, "2026-06-29")
+    tickers = [o["ticker"] for o in d["opportunities"]]
+    assert tickers[:2] == ["PLTR", "NVDA"]      # ranked by conviction desc
+    assert "SNOW" not in tickers                 # not a Buy → not an opportunity
+    top = d["opportunities"][0]
+    assert top["recommendation"] == "buy" and top["rr"] == 3.5
+    assert "ta_pending" not in top
+    assert "golden cross" in top["signals"]      # Boom demoted to secondary evidence
+
+
+def test_opportunities_rr_gate_excludes_failing_buy(conn):
+    db.add_watch(conn, 0, WatchItem(ticker="PLTR", note="", added_at="t"))
+    _seed_analysis(conn, "PLTR", "buy", conviction=60, rr=2.0, rr_pass=False)
+    d = suggestions.build_digest(conn, "2026-06-29")
+    assert d["opportunities"] == []              # buy but rr_pass False → skipped
+
+
+def test_opportunities_ta_pending_fallback(conn):
+    db.add_watch(conn, 0, WatchItem(ticker="PLTR", note="", added_at="t"))
+    db.upsert_boom_scores(conn, [_boom("PLTR", 70, golden_cross=True)])
+    d = suggestions.build_digest(conn, "2026-06-29")   # no stored analysis yet
+    assert d["opportunities"][0]["ticker"] == "PLTR"
+    assert d["opportunities"][0]["ta_pending"] is True
+
+
+def test_holdings_ta_sell_overrides_action(conn):
+    db.upsert_holding(conn, 0, Holding(ticker="AAPL", shares=10, avg_cost=100.0, added_at="t"))
+    _seed_analysis(conn, "AAPL", "sell", conviction=-40, rr_pass=False,
+                   evidence=[Evidence(component="ma_structure", signal="bearish",
+                                      weight=-15, detail="Topping formation — trim/exit.")])
+    d = suggestions.build_digest(conn, "2026-06-29")
+    aapl = next(a for a in d["holdings_alerts"] if a["ticker"] == "AAPL")
+    assert aapl["action"].startswith("Reduce — TA breakdown")
+    assert aapl["ta_recommendation"] == "sell"
+
+
+def test_render_leads_with_ta(conn):
+    db.add_watch(conn, 0, WatchItem(ticker="PLTR", note="", added_at="t"))
+    _seed_analysis(conn, "PLTR", "buy", conviction=62, rr=3.4)
+    d = suggestions.build_digest(conn, "2026-06-29")
+    subject, text, html = suggestions.render_email(d)
+    assert "BUY" in text and "PLTR" in text
+    assert "BUY" in html
+    sms = suggestions.render_sms(d)
+    assert len(sms) <= 320 and "PLTR" in sms

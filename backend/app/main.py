@@ -3,15 +3,17 @@ import logging
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from app import analysis, analyze, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, routes_oauth, search, sentiment, suggestions, themes
 from app import alerts as alerts_source
@@ -124,18 +126,25 @@ def econ_calendar_fetch(conn):
 
 
 def ohlc_fetch(conn):
-    tickers = db.get_all_portfolio_tickers(conn)
-    if not tickers:
+    """Pull OHLC history for the whole analysis universe (portfolio ∪ watchlist ∪
+    signal candidates), stalest-first and capped at OHLC_MAX_TICKERS so the Yahoo
+    fan-out stays bounded on the single worker — large universes rotate across
+    successive hourly runs."""
+    universe = db.get_analysis_universe(conn, config.OPPORTUNITY_CANDIDATES)
+    if not universe:
         return []
-    return ohlc_source.fetch(tickers)
+    fetched = db.get_ohlc_fetched_at(conn)
+    universe.sort(key=lambda t: fetched.get(t, ""))  # "" (never fetched) sorts first
+    return ohlc_source.fetch(universe[: config.OHLC_MAX_TICKERS])
 
 
 def analysis_fetch(conn):
-    """Per-holding technical analysis from stored OHLC + live price.
+    """Background technical analysis over the whole universe from stored OHLC +
+    live price. Produces a Buy/Sell/Hold recommendation per ticker.
 
     Computed once per ticker across all users and stored UNSIZED; each user's
     account size / risk % is applied at read time (analysis.apply_sizing)."""
-    tickers = db.get_all_portfolio_tickers(conn)
+    tickers = db.get_analysis_universe(conn, config.OPPORTUNITY_CANDIDATES)
     if not tickers:
         return []
     quote_map = {q.ticker: q.price for q in quotes.get_quotes(tickers)}
@@ -146,6 +155,8 @@ def analysis_fetch(conn):
             continue  # not enough history yet; skip rather than fabricate
         price = quote_map.get(t) or daily[-1].close
         out.append(analysis.build(t, daily, price, None, None))
+    # Drop analyses for tickers that have dropped out of the universe entirely.
+    db.prune_analyses(conn, tickers)
     return out
 
 
@@ -189,8 +200,8 @@ def build_sources(conn):
         "x_posts":        (lambda: x_posts_fetch(conn), db.upsert_x_posts, config.X_MIN_INTERVAL_SECONDS),
         "seasonality":    (lambda: seasonality_fetch(conn), db.upsert_seasonality, config.SEASONALITY_MIN_INTERVAL_SECONDS),
         "boom_score":     (lambda: score_fetch(conn), db.upsert_boom_scores, None),
-        "ohlc":           (lambda: ohlc_fetch(conn), db.upsert_ohlc, 3600),  # 2y history barely moves intraday
-        "analysis":       (lambda: analysis_fetch(conn), db.upsert_analyses, None),  # after ohlc; cheap DB+quote read
+        "ohlc":           (lambda: ohlc_fetch(conn), db.upsert_ohlc, config.OHLC_MIN_INTERVAL_SECONDS),  # 2y history barely moves intraday
+        "analysis":       (lambda: analysis_fetch(conn), db.upsert_analyses, config.ANALYSIS_MIN_INTERVAL_SECONDS),  # after ohlc; cheap DB+quote read
         "alerts":         (lambda: alerts_source.detect(conn), db.upsert_alerts, None),  # must be last (diffs boom_score)
     }
 
@@ -869,3 +880,40 @@ def refresh(source_name: str):
     ingest.run_source(refresh_conn, source_name, fetch, store, min_interval_seconds=min_interval)
     statuses = {s.source: s for s in db.get_source_statuses(refresh_conn)}
     return statuses[source_name].model_dump()
+
+
+# ---------- single-port static serving (serve the built frontend `dist/`) ----------
+def _mount_spa(app: FastAPI, dist: Path) -> bool:
+    """Serve a built Vite frontend from `dist` on the same port as the API.
+
+    No-op (returns False) when there is no build, so the dev 2-process flow and
+    the test suite are unaffected. The catch-all MUST be the last route
+    registered so it never shadows an API route; unknown `/api/*` paths 404
+    rather than silently returning index.html. The auth middleware already
+    guards only `/api*`, and hash routing needs nothing more here.
+    """
+    index = dist / "index.html"
+    if not index.is_file():
+        return False
+    assets = dist / "assets"
+    if assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
+    dist_root = str(dist.resolve())
+
+    @app.get("/{path:path}")
+    def spa(path: str):
+        if path.startswith("api"):
+            raise HTTPException(status_code=404, detail="not found")
+        if path:
+            candidate = (dist / path).resolve()
+            # real file inside dist → serve it; guard against path traversal
+            if candidate.is_file() and str(candidate).startswith(dist_root):
+                return FileResponse(str(candidate))
+        return FileResponse(str(index), headers={"Cache-Control": "no-cache"})
+
+    return True
+
+
+_DIST = (Path(config.STATIC_DIR) if config.STATIC_DIR
+         else Path(__file__).resolve().parents[2] / "frontend" / "dist")
+_mount_spa(app, _DIST)
