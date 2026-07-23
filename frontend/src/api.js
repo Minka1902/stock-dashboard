@@ -133,4 +133,6 @@ export const totpVerify = (code) =>
   request("/api/auth/totp/verify", { method: "POST", body: { code } });
 export const useRecoveryCode = (code) =>
   request("/api/auth/recovery", { method: "POST", body: { code } });
+export const markOnboarded = () =>
+  request("/api/auth/onboarded", { method: "POST" });
 export const logout = () => request("/api/auth/logout", { method: "POST" });

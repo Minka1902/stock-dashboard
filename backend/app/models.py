@@ -290,6 +290,7 @@ class User(BaseModel):
     totp_enabled: bool = False
     is_admin: bool = False
     created_at: str = ""
+    onboarded: bool = False  # has this account seen the guided app tour?
 
     def public(self) -> dict:
         """The shape safe to return to the browser."""
@@ -298,6 +299,7 @@ class User(BaseModel):
             "email": self.email,
             "is_admin": self.is_admin,
             "created_at": self.created_at,
+            "onboarded": self.onboarded,
         }
 
 
