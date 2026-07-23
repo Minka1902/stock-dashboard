@@ -4,10 +4,12 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
+import { motion } from "motion/react";
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
+import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./FearGreedPanel.module.css";
 
 const TOOLTIP_STYLE = {
@@ -73,22 +75,32 @@ export default function FearGreedPanel({ data, loading, busy, onRefresh, compact
             </div>
           )}
 
-          <div className={styles.scaleRow}>
-            <span className={styles.scaleLabel}>Extreme Fear</span>
+          <div className={styles.scale}>
+            {/* Full-width bar so the marker's left% maps 1:1 to the visible
+                scale (the end labels live on their own row below). */}
             <div className={styles.scaleBar}>
+              <span className={styles.tick} style={{ left: "50%" }} aria-hidden="true" />
               {latest && (
-                <div
+                <motion.div
                   className={styles.scaleThumb}
-                  style={{ left: `${Math.min(Math.max(latest.score, 2), 98)}%` }}
                   data-tone={tone}
+                  initial={false}
+                  animate={{ left: `${Math.min(Math.max(latest.score, 2), 98)}%` }}
+                  transition={prefersReducedMotion()
+                    ? { duration: 0 }
+                    : { type: "spring", stiffness: 380, damping: 32 }}
                 />
               )}
             </div>
-            <span className={styles.scaleLabel}>Extreme Greed</span>
+            <div className={styles.scaleEnds}>
+              <span className={styles.scaleLabel}>Extreme Fear</span>
+              <span className={styles.scaleLabel}>Neutral</span>
+              <span className={styles.scaleLabel}>Extreme Greed</span>
+            </div>
           </div>
 
           <div className={styles.chartWrap}>
-            <ResponsiveContainer width="100%" height={64}>
+            <ResponsiveContainer width="100%" height={44}>
               <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
                 <defs>
                   <linearGradient id="fgGrad" x1="0" y1="0" x2="0" y2="1">

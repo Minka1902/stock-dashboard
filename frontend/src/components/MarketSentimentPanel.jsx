@@ -55,10 +55,12 @@ function Gauge({ score, rating }) {
       <svg viewBox="0 0 300 168" className={styles.gaugeSvg} role="img"
            aria-label={has ? `Fear and Greed ${Math.round(v)}, ${rating || ""}` : "Fear and Greed, no data"}>
         <defs>
+          {/* Fear (left) → Greed (right): red → amber → green, matching the
+              score tone and the horizontal Fear & Greed bar. */}
           <linearGradient id="fgArc" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="var(--positive)" />
+            <stop offset="0%" stopColor="var(--negative)" />
             <stop offset="50%" stopColor="var(--accent)" />
-            <stop offset="100%" stopColor="var(--negative)" />
+            <stop offset="100%" stopColor="var(--positive)" />
           </linearGradient>
         </defs>
         <path d="M 30 150 A 120 120 0 0 1 270 150" fill="none" stroke="var(--surface-3)" strokeWidth="16" strokeLinecap="round" />
