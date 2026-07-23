@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
 import XPostCard from "./XPostCard";
 import { sourceState, sourceNote } from "../lib/sources";
+import { formatRelativeTime } from "../lib/format";
 import { staggerContainer, staggerItem, prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./XPostsPanel.module.css";
 
@@ -40,6 +41,9 @@ export default function XPostsPanel({ data = [], sources = [], loading, busy, on
           <h2 className={styles.title}>X Watch</h2>
           <p className={styles.subtitle}>
             Recent posts from monitored accounts, with detected cashtags. Signals, not predictions.
+          </p>
+          <p className={styles.cadence}>
+            Checked hourly{status?.last_refreshed_at ? ` · updated ${formatRelativeTime(status.last_refreshed_at)}` : ""}
           </p>
         </div>
         <button className={styles.refresh} onClick={onRefresh} disabled={busy} title="Refresh">
