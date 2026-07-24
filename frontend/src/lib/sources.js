@@ -136,3 +136,14 @@ export function sourceNote(status) {
   if (!status || !status.startsWith("ok (")) return null;
   return status.slice(3).replace(/^\(|\)$/g, "");
 }
+
+// A source counts as "not responding" when it errored or hasn't successfully
+// refreshed within `maxAgeHours`. Reads the clock, so it lives here (out of
+// component render-purity checks). `status` is a GET /api/sources entry.
+export function sourceStale(status, maxAgeHours = 24) {
+  if (!status) return false; // unknown → don't suppress
+  if (sourceState(status.status) === "error") return true;
+  if (!status.last_refreshed_at) return true;
+  const ageH = (Date.now() - Date.parse(status.last_refreshed_at)) / 3600000;
+  return Number.isFinite(ageH) && ageH > maxAgeHours;
+}
