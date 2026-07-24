@@ -3,6 +3,8 @@ import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import EmptyState from "./EmptyState";
+import SortHeader from "./SortHeader";
+import { useSortableRows } from "../hooks/useSortableRows";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import {
   formatCurrencyCompact,
@@ -13,6 +15,16 @@ import {
 import styles from "./TradesPanel.module.css";
 
 const COMPACT_LIMIT = 5;
+
+// Stable accessor map for the sortable headers (numbers/dates sort numerically).
+const COLUMNS = {
+  ticker: (t) => t.ticker,
+  action: (t) => t.transaction_type,
+  insider: (t) => t.owner,
+  shares: (t) => t.shares,
+  value: (t) => t.value,
+  date: (t) => Date.parse(t.transaction_date) || 0,
+};
 
 function typeTone(type) {
   if (type === "Buy") return "buy";
@@ -35,7 +47,8 @@ function SkeletonRows({ rows = 8 }) {
 
 export default function TradesPanel({ trades, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && trades.length === 0;
-  const rows = compact ? trades.slice(0, COMPACT_LIMIT) : trades;
+  const { sorted, sortProps } = useSortableRows(trades, COLUMNS);
+  const rows = compact ? sorted.slice(0, COMPACT_LIMIT) : sorted;
 
   return (
     <section className={styles.panel} id="trades">
@@ -57,12 +70,12 @@ export default function TradesPanel({ trades, loading, busy, onRefresh, compact 
           <table className={styles.table}>
             <thead>
               <tr>
-                <th>Ticker</th>
-                <th>Action</th>
-                <th>Insider</th>
-                <th className={styles.num}>Shares</th>
-                <th className={styles.num}>Value</th>
-                <th>Date</th>
+                <SortHeader label="Ticker" {...sortProps("ticker")} />
+                <SortHeader label="Action" {...sortProps("action")} />
+                <SortHeader label="Insider" {...sortProps("insider")} />
+                <SortHeader label="Shares" className={styles.num} {...sortProps("shares")} />
+                <SortHeader label="Value" className={styles.num} {...sortProps("value")} />
+                <SortHeader label="Date" {...sortProps("date")} />
               </tr>
             </thead>
             <motion.tbody

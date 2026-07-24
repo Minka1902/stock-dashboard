@@ -2,10 +2,26 @@ import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
+import SortHeader from "./SortHeader";
+import { useSortableRows } from "../hooks/useSortableRows";
 import { formatDate } from "../lib/format";
 import styles from "./CongressPanel.module.css";
 
 const COMPACT_LIMIT = 5;
+
+// Amount is a bucket string ("$1,001 - $15,000"); sort by its lower bound.
+const AMOUNT_RE = /[\d,]+/;
+const COLUMNS = {
+  representative: (t) => t.representative,
+  party: (t) => t.party,
+  ticker: (t) => t.ticker,
+  type: (t) => t.transaction_type,
+  amount: (t) => {
+    const m = (t.amount_range || "").match(AMOUNT_RE);
+    return m ? Number(m[0].replace(/,/g, "")) : null;
+  },
+  date: (t) => Date.parse(t.transaction_date) || 0,
+};
 
 function partyTone(party) {
   if (party === "D") return "dem";
@@ -34,7 +50,8 @@ function SkeletonRows({ rows = 8 }) {
 
 export default function CongressPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
-  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data;
+  const { sorted, sortProps } = useSortableRows(data, COLUMNS);
+  const rows = compact ? sorted.slice(0, COMPACT_LIMIT) : sorted;
 
   return (
     <section className={styles.panel} id="congress">
@@ -62,12 +79,12 @@ export default function CongressPanel({ data, loading, busy, onRefresh, compact 
           <table className={styles.table}>
             <thead>
               <tr>
-                <th>Representative</th>
-                <th>Party</th>
-                <th>Ticker</th>
-                <th>Type</th>
-                <th>Amount</th>
-                <th>Date</th>
+                <SortHeader label="Representative" {...sortProps("representative")} />
+                <SortHeader label="Party" {...sortProps("party")} />
+                <SortHeader label="Ticker" {...sortProps("ticker")} />
+                <SortHeader label="Type" {...sortProps("type")} />
+                <SortHeader label="Amount" {...sortProps("amount")} />
+                <SortHeader label="Date" {...sortProps("date")} />
               </tr>
             </thead>
             <tbody>
