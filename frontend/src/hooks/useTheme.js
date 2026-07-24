@@ -7,7 +7,7 @@ const STORAGE_KEY = "theme";
 export const THEMES = [
   { key: "dark", label: "Dark", hint: "Iris Dusk", swatch: ["#1b1a17", "#f0b429"] },
   { key: "light", label: "Light", hint: "Daylight", swatch: ["#f4f1ec", "#c1861f"] },
-  { key: "retro", label: "Retro", hint: "Green phosphor", swatch: ["#0f1a12", "#57f08a"] },
+  { key: "retro", label: "Ultraviolet", hint: "Purple phosphor", swatch: ["#160f1a", "#c07af0"] },
   { key: "warm", label: "Warm", hint: "Amber paper", swatch: ["#f3ece0", "#c06a2e"] },
 ];
 

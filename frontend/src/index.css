@@ -146,34 +146,34 @@ body {
   --shadow: 0 1px 2px oklch(0.6 0.02 80 / 0.18), 0 12px 30px oklch(0.6 0.02 80 / 0.16);
 }
 
-/* ---------- Retro theme (green-phosphor terminal) ----------
-   Near-black CRT green with a bright phosphor accent; up/down stay distinct
-   (mint vs. amber) so signals never blur into one green wash. */
+/* ---------- Retro theme (purple-phosphor terminal) ----------
+   Near-black CRT violet with a bright phosphor-purple accent; up/down stay
+   distinct (mint vs. amber) so signals never blur into one purple wash. */
 :root[data-theme="retro"] {
   color-scheme: dark;
-  --bg: oklch(0.15 0.028 150);
-  --bg-grad: radial-gradient(1200px 600px at 78% -18%, oklch(0.85 0.20 150 / 0.07), transparent 60%);
-  --surface: oklch(0.185 0.030 150);
-  --surface-2: oklch(0.225 0.034 150);
-  --surface-hover: oklch(0.25 0.036 150);
-  --surface-3: oklch(0.275 0.038 150);
-  --grid: oklch(0.85 0.20 150 / 0.08);
-  --border: oklch(0.85 0.18 150 / 0.16);
-  --border-strong: oklch(0.85 0.18 150 / 0.30);
-  --text: oklch(0.93 0.09 150);
-  --text-muted: oklch(0.76 0.10 150);
-  --text-faint: oklch(0.60 0.09 150);
-  --accent: oklch(0.88 0.20 150);
-  --accent-strong: oklch(0.82 0.22 150);
-  --accent-weak: oklch(0.88 0.20 150 / 0.16);
-  --accent-glow: oklch(0.88 0.22 150 / 0.40);
+  --bg: oklch(0.15 0.032 300);
+  --bg-grad: radial-gradient(1200px 600px at 78% -18%, oklch(0.72 0.19 300 / 0.09), transparent 60%);
+  --surface: oklch(0.185 0.034 300);
+  --surface-2: oklch(0.225 0.038 300);
+  --surface-hover: oklch(0.25 0.040 300);
+  --surface-3: oklch(0.275 0.042 300);
+  --grid: oklch(0.72 0.19 300 / 0.10);
+  --border: oklch(0.72 0.17 300 / 0.18);
+  --border-strong: oklch(0.72 0.17 300 / 0.32);
+  --text: oklch(0.93 0.045 300);
+  --text-muted: oklch(0.77 0.06 300);
+  --text-faint: oklch(0.62 0.07 300);
+  --accent: oklch(0.74 0.17 300);
+  --accent-strong: oklch(0.68 0.20 300);
+  --accent-weak: oklch(0.74 0.17 300 / 0.18);
+  --accent-glow: oklch(0.74 0.19 300 / 0.42);
   --positive: oklch(0.88 0.20 158);
   --positive-weak: oklch(0.88 0.20 158 / 0.16);
   --negative: oklch(0.78 0.17 70);
   --negative-weak: oklch(0.78 0.17 70 / 0.18);
   --info: oklch(0.82 0.13 200);
   --info-weak: oklch(0.82 0.13 200 / 0.16);
-  --shadow: 0 1px 0 oklch(0.88 0.2 150 / 0.06) inset, 0 12px 34px oklch(0 0.02 150 / 0.55);
+  --shadow: 0 1px 0 oklch(0.74 0.18 300 / 0.06) inset, 0 12px 34px oklch(0 0.02 300 / 0.55);
 }
 
 /* ---------- Warm theme (cream / amber paper) ---------- */
