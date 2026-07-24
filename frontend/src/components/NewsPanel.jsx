@@ -6,6 +6,7 @@ import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import EmptyState from "./EmptyState";
 import XPostCard from "./XPostCard";
+import { sourceStale } from "../lib/sources";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./NewsPanel.module.css";
@@ -23,7 +24,7 @@ function SkeletonItems({ rows = 6 }) {
   ));
 }
 
-export default function NewsPanel({ news, portfolio = [], xPosts = [], loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
+export default function NewsPanel({ news, portfolio = [], xPosts = [], sources = [], loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const held = useMemo(() => new Set(portfolio.map((h) => h.ticker)), [portfolio]);
   const tickers = useMemo(
     () => [...new Set(news.filter((a) => a.ticker).map((a) => a.ticker))].sort(),
@@ -36,6 +37,13 @@ export default function NewsPanel({ news, portfolio = [], xPosts = [], loading, 
   const [filter, setFilter] = useState(null); // null = auto
   const active = filter ?? (hasTagged && held.size > 0 ? "portfolio" : "all");
 
+  // If the GDELT news source hasn't responded in the last 24h (errored, or its
+  // last refresh is stale), discard the now-stale articles and fall back to the
+  // X Watch feed — the only live option. Signals, not stale data.
+  const newsStatus = useMemo(() => sources.find((s) => s.source === "gdelt"), [sources]);
+  const newsStale = sourceStale(newsStatus, 24);
+  const effectiveActive = newsStale ? "x" : active;
+
   const filtered = useMemo(() => {
     if (active === "all") return news;
     if (active === "macro") return news.filter((a) => !a.ticker);
@@ -47,7 +55,7 @@ export default function NewsPanel({ news, portfolio = [], xPosts = [], loading, 
   const rows = compact ? filtered.slice(0, COMPACT_LIMIT) : filtered;
 
   // X tab: date-sorted posts from the monitored accounts (Task 1).
-  const isX = active === "x";
+  const isX = effectiveActive === "x";
   const xRows = useMemo(
     () => [...xPosts].sort(
       (a, b) => (Date.parse(b.posted_at) || 0) - (Date.parse(a.posted_at) || 0),
@@ -68,7 +76,13 @@ export default function NewsPanel({ news, portfolio = [], xPosts = [], loading, 
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
 
-      {!collapsed && !compact && !showEmpty && (
+      {!collapsed && newsStale && (
+        <p className={styles.staleNote}>
+          <Icon name="info" size={13} /> News hasn’t responded in the last 24h — showing X&nbsp;Watch only.
+        </p>
+      )}
+
+      {!collapsed && !compact && !showEmpty && !newsStale && (
         <div className={styles.tabs} role="tablist" aria-label="News filter">
           <button className={styles.tab} role="tab" aria-selected={active === "all"}
                   data-active={active === "all" ? "yes" : "no"} onClick={() => setFilter("all")}>
