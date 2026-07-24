@@ -331,10 +331,12 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       : prefs.logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal;
     chart.priceScale("right").applyOptions({
       mode: priceMode,
-      scaleMargins: { top: 0.08, bottom: prefs.inds.vol ? 0.26 : 0.08 },
+      // Volume now lives in its own pane (Task 11), so the price pane keeps a
+      // symmetric margin instead of reserving the bottom for the overlay.
+      scaleMargins: { top: 0.08, bottom: 0.08 },
     });
     chart.timeScale().applyOptions({ timeVisible: intraday });
-  }, [prefs.compare, prefs.logScale, prefs.inds.vol, intraday]);
+  }, [prefs.compare, prefs.logScale, intraday]);
 
   // ---- series (re)build: tears down only series, preserves the view ----
   const { ma, ema, bb, vwap, vol, rsi, macd } = prefs.inds;
@@ -399,19 +401,6 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       main.setData(ohlcData);
     }
 
-    // volume histogram (overlay scale at the bottom of the main pane)
-    if (vol) {
-      const volS = track(chart.addSeries(HistogramSeries, {
-        priceScaleId: "vol", priceFormat: { type: "volume" }, priceLineVisible: false,
-        lastValueVisible: false,
-      }));
-      volS.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-      volS.setData(displayBars.map((b) => ({
-        time: b.time, value: b.volume,
-        color: (b.close >= b.open ? COLORS.up : COLORS.down) + "55",
-      })));
-    }
-
     // A tracked line series; `label` (if given) registers it for the crosshair legend.
     const addLine = (data, color, label, width = 1, style) => {
       if (data.length < 2) return;
@@ -443,17 +432,31 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       cmp.setData(compareBars.map((b) => ({ time: b.time, value: b.close })));
     }
 
-    // sub-panes
+    // sub-panes — each indicator gets its OWN pane + visible price scale, and
+    // shows its current value as an axis label ("tell the data", Task 11).
     let paneIndex = 0;
+    if (vol) {
+      paneIndex += 1;
+      const volS = track(chart.addSeries(HistogramSeries, {
+        priceFormat: { type: "volume" }, priceLineVisible: false,
+        lastValueVisible: true, title: "Vol",
+      }, paneIndex));
+      volS.setData(displayBars.map((b) => ({
+        time: b.time, value: b.volume,
+        color: (b.close >= b.open ? COLORS.up : COLORS.down) + "88",
+      })));
+      chart.panes()[paneIndex]?.setHeight?.(88);
+    }
     if (rsi) {
       paneIndex += 1;
       const rsiS = track(chart.addSeries(LineSeries, {
-        color: COLORS.info, lineWidth: 2, priceLineVisible: false, title: "RSI 14",
+        color: COLORS.info, lineWidth: 2, priceLineVisible: false,
+        lastValueVisible: true, title: "RSI 14",
       }, paneIndex));
       rsiS.setData(rsiSeries(bars));
-      rsiS.createPriceLine({ price: 70, color: COLORS.down, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
-      rsiS.createPriceLine({ price: 30, color: COLORS.up, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
-      chart.panes()[paneIndex]?.setHeight?.(96);
+      rsiS.createPriceLine({ price: 70, color: COLORS.down, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true });
+      rsiS.createPriceLine({ price: 30, color: COLORS.up, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true });
+      chart.panes()[paneIndex]?.setHeight?.(100);
     }
     if (macd) {
       paneIndex += 1;
@@ -465,14 +468,16 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
         ...p, color: (p.value >= 0 ? COLORS.up : COLORS.down) + "88",
       })));
       const macdLine = track(chart.addSeries(LineSeries, {
-        color: COLORS.accent, lineWidth: 2, priceLineVisible: false, title: "MACD",
+        color: COLORS.accent, lineWidth: 2, priceLineVisible: false,
+        lastValueVisible: true, title: "MACD",
       }, paneIndex));
       macdLine.setData(macdData);
       const sigLine = track(chart.addSeries(LineSeries, {
         color: COLORS.info, lineWidth: 1, priceLineVisible: false,
+        lastValueVisible: true, title: "Signal",
       }, paneIndex));
       sigLine.setData(signal);
-      chart.panes()[paneIndex]?.setHeight?.(110);
+      chart.panes()[paneIndex]?.setHeight?.(112);
     }
 
     // analysis overlays (daily view only; hidden in percent-compare mode)
