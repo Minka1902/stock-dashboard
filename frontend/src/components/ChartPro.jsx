@@ -3,7 +3,7 @@ import {
   createChart, CandlestickSeries, BarSeries, HistogramSeries, LineSeries,
   AreaSeries, BaselineSeries, LineStyle, PriceScaleMode, createSeriesMarkers,
 } from "lightweight-charts";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { getChart } from "../api";
 import {
   smaSeries, emaSeries, bollingerSeries, rsiSeries, macdSeries, vwapSeries,
@@ -170,6 +170,8 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   const [compareBars, setCompareBars] = useState(null);
   const [error, setError] = useState(null);
   const [legend, setLegend] = useState(null);
+  // Brief overlay shown while a toolbar change re-renders the chart (Task 5).
+  const [updating, setUpdating] = useState(false);
 
   // Persistent chart handles: the chart is created once (see the mount effect)
   // and only its *series* are torn down/rebuilt on data/indicator changes, so
@@ -182,12 +184,21 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   const legendMapsRef = useRef({ bars: [], byTime: new Map(), idx: new Map() });
 
   const setPref = useCallback((patch) => {
+    setUpdating(true); // show the loader for the duration of the change (Task 5)
     setPrefs((p) => {
       const next = { ...p, ...patch, inds: { ...p.inds, ...(patch.inds || {}) } };
       try { localStorage.setItem(PREFS_KEY, JSON.stringify(next)); } catch { /* private mode */ }
       return next;
     });
   }, []);
+
+  // The series rebuild is synchronous, so hold the loader a beat after a pref
+  // change so the transition is perceptible rather than a jarring instant swap.
+  useEffect(() => {
+    if (!updating) return undefined;
+    const id = setTimeout(() => setUpdating(false), 320);
+    return () => clearTimeout(id);
+  }, [updating]);
 
   const intraday = INTRADAY.has(prefs.tf);
 
@@ -652,13 +663,28 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
           <p>Chart data unavailable: {error}</p>
           <button className={styles.retry} onClick={loadBars}>Retry</button>
         </div>
-      ) : bars === null ? (
-        <div className={styles.message}><p>Loading {prefs.tf} bars…</p></div>
-      ) : bars.length === 0 ? (
+      ) : bars && bars.length === 0 ? (
         <div className={styles.message}><p>No {prefs.tf} price history for {ticker}.</p></div>
       ) : null}
 
-      <div ref={elRef} className={styles.canvas} style={{ width: "100%" }} />
+      <div className={styles.canvasWrap}>
+        <div ref={elRef} className={styles.canvas} style={{ width: "100%" }} />
+        <AnimatePresence>
+          {(updating || bars === null) && !error && (
+            <motion.div
+              key="chart-loader"
+              className={styles.loader}
+              initial={prefersReducedMotion() ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: prefersReducedMotion() ? 0 : 0.18 }}
+            >
+              <span className={styles.spinner} aria-hidden="true" />
+              <span>{bars === null ? `Loading ${prefs.tf} bars…` : "Updating…"}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       <p className={styles.key}>
         {prefs.inds.ma && <><span data-c="info">MA20</span><span data-c="accent">MA50</span><span data-c="muted">MA150</span><span data-c="neg">MA200</span></>}
