@@ -27,6 +27,15 @@
   max-width: 64ch;
 }
 
+.cadence {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
 .refresh {
   flex: none;
   display: inline-flex;

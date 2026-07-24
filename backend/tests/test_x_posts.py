@@ -1,7 +1,7 @@
 """Unit tests for the X (Twitter) watcher source (Task 10)."""
 import pytest
 
-from app import config, db
+from app import config, db, ingest
 from app.models import XPost
 from app.sources import x_posts
 
@@ -203,3 +203,40 @@ def test_get_x_posts_for_orders_newest_first(conn):
         _post("b", "2", "$NVDA later", "2026-07-08T12:00:00+00:00", tickers="NVDA"),
     ])
     assert [p.post_id for p in db.get_x_posts_for(conn, "NVDA")] == ["2", "1"]
+
+
+# ---- hourly refresh guarantee (Task: X accounts checked once per hour) ----
+
+def test_x_min_interval_is_one_hour():
+    assert config.X_MIN_INTERVAL_SECONDS == 3600
+
+
+def test_x_posts_registered_with_hourly_interval():
+    """The SOURCES registry wires x_posts to the hourly gate + the x_posts store,
+    so a stray edit can't silently make it poll every 180s refresh cycle."""
+    from app import main as main_module
+
+    sources = main_module.build_sources(main_module.conn)
+    assert "x_posts" in sources
+    _fetch, store_fn, min_interval = sources["x_posts"]
+    assert min_interval == 3600
+    assert store_fn is db.upsert_x_posts
+
+
+def test_x_posts_refresh_skipped_within_the_hour(conn):
+    """A second refresh inside the hourly window must not re-fetch the accounts."""
+    calls = 0
+
+    def fetch():
+        nonlocal calls
+        calls += 1
+        return [_post("realDonaldTrump", "1", "$AAPL run", "2026-07-23T00:00:00+00:00", tickers="AAPL")]
+
+    ingest.run_source(conn, "x_posts", fetch, db.upsert_x_posts,
+                      min_interval_seconds=config.X_MIN_INTERVAL_SECONDS)
+    assert calls == 1
+    assert len(db.get_x_posts(conn)) == 1
+
+    ingest.run_source(conn, "x_posts", fetch, db.upsert_x_posts,
+                      min_interval_seconds=config.X_MIN_INTERVAL_SECONDS)
+    assert calls == 1  # gate skipped the fetch; still only one call
