@@ -26,6 +26,70 @@
   font-size: 12.5px;
 }
 
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-5);
+  border-bottom: 1px solid var(--border);
+}
+.tabWrap {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+}
+.tabWrap[data-active="yes"] {
+  border-color: var(--accent);
+  background: var(--accent-weak);
+}
+.tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.tabWrap[data-active="yes"] .tab { color: var(--accent); font-weight: 600; }
+.tabIcon {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 6px 4px 0;
+  line-height: 1;
+}
+.tabIcon:hover { color: var(--text); }
+.newTab {
+  appearance: none;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+}
+.newTab:hover { color: var(--accent); border-color: var(--accent); }
+.tabInput {
+  border: 1px solid var(--accent);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 12px;
+  width: 140px;
+}
+
 .form {
   display: flex;
   gap: var(--s-2);

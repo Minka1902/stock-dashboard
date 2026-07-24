@@ -38,6 +38,7 @@ from app.models import (
     User,
     VixPoint,
     WatchItem,
+    WatchlistMeta,
     XPost,
     YieldPoint,
 )
@@ -73,6 +74,42 @@ def _try_add_column(conn: sqlite3.Connection, table: str, col: str, col_def: str
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}")
     except Exception:
         pass  # column already exists
+
+
+def _migrate_watchlists(conn: sqlite3.Connection) -> None:
+    """Move the flat per-user watchlist to named lists (Task 13). Runs once:
+    if the watchlist table predates `watchlist_id`, rebuild it and fold each
+    user's existing rows into an auto-created default "My Watchlist"."""
+    from datetime import datetime, timezone
+
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()}
+    if not cols or "watchlist_id" in cols:
+        return  # fresh DB (already new shape) or already migrated
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    conn.execute(
+        """CREATE TABLE watchlist_v2 (
+            user_id      INTEGER NOT NULL DEFAULT 0,
+            watchlist_id INTEGER NOT NULL,
+            ticker       TEXT NOT NULL,
+            note         TEXT NOT NULL,
+            added_at     TEXT NOT NULL,
+            PRIMARY KEY (watchlist_id, ticker)
+        )"""
+    )
+    users = [r[0] for r in conn.execute("SELECT DISTINCT user_id FROM watchlist").fetchall()]
+    for uid in users:
+        cur = conn.execute(
+            "INSERT INTO watchlists (user_id, name, created_at, sort_order) VALUES (?, ?, ?, 0)",
+            (uid, "My Watchlist", now),
+        )
+        conn.execute(
+            "INSERT INTO watchlist_v2 (user_id, watchlist_id, ticker, note, added_at) "
+            "SELECT user_id, ?, ticker, note, added_at FROM watchlist WHERE user_id = ?",
+            (cur.lastrowid, uid),
+        )
+    conn.execute("DROP TABLE watchlist")
+    conn.execute("ALTER TABLE watchlist_v2 RENAME TO watchlist")
+    conn.commit()
 
 
 def _migrate_per_user_tables(conn: sqlite3.Connection) -> None:
@@ -181,12 +218,20 @@ def init_schema(conn: sqlite3.Connection) -> None:
             filing_url       TEXT NOT NULL,
             filed_at         TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS watchlists (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL,
+            name       TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0
+        );
         CREATE TABLE IF NOT EXISTS watchlist (
-            user_id  INTEGER NOT NULL DEFAULT 0,
-            ticker   TEXT NOT NULL,
-            note     TEXT NOT NULL,
-            added_at TEXT NOT NULL,
-            PRIMARY KEY (user_id, ticker)
+            user_id      INTEGER NOT NULL DEFAULT 0,
+            watchlist_id INTEGER NOT NULL,
+            ticker       TEXT NOT NULL,
+            note         TEXT NOT NULL,
+            added_at     TEXT NOT NULL,
+            PRIMARY KEY (watchlist_id, ticker)
         );
         CREATE TABLE IF NOT EXISTS source_status (
             source            TEXT PRIMARY KEY,
@@ -455,6 +500,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _try_add_column(conn, "notify_profile", "account_size", "REAL")
     _try_add_column(conn, "notify_profile", "risk_pct", "REAL NOT NULL DEFAULT 1.0")
     _migrate_per_user_tables(conn)
+    _migrate_watchlists(conn)
     _try_add_column(conn, "news", "ticker", "TEXT NOT NULL DEFAULT ''")
 
     # Migrate existing tables: add new columns (safe on pre-existing databases).
@@ -625,31 +671,116 @@ def get_trades(conn: sqlite3.Connection, limit: int = 60) -> list[InsiderTrade]:
 
 
 # ---------- watchlist (user managed, per-user) ----------
-def add_watch(conn: sqlite3.Connection, user_id: int, item: WatchItem) -> None:
-    conn.execute(
-        """
-        INSERT INTO watchlist (user_id, ticker, note, added_at)
-        VALUES (:user_id, :ticker, :note, :added_at)
-        ON CONFLICT(user_id, ticker) DO UPDATE SET note=excluded.note
-        """,
-        {"user_id": user_id, **item.model_dump()},
+# ---- named watchlists (Task 13) ----
+def _ensure_default_watchlist(conn: sqlite3.Connection, user_id: int) -> int:
+    """Return the user's first list id, creating a default "My Watchlist" if
+    they have none yet. Every watchlist operation resolves through here."""
+    row = conn.execute(
+        "SELECT id FROM watchlists WHERE user_id = ? ORDER BY sort_order, id LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    if row:
+        return row[0]
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    cur = conn.execute(
+        "INSERT INTO watchlists (user_id, name, created_at, sort_order) VALUES (?, 'My Watchlist', ?, 0)",
+        (user_id, now),
     )
     conn.commit()
+    return cur.lastrowid
 
 
-def remove_watch(conn: sqlite3.Connection, user_id: int, ticker: str) -> None:
-    conn.execute(
-        "DELETE FROM watchlist WHERE user_id = ? AND ticker = ?", (user_id, ticker))
-    conn.commit()
-
-
-def get_watchlist(conn: sqlite3.Connection, user_id: int) -> list[WatchItem]:
+def get_watchlists(conn: sqlite3.Connection, user_id: int) -> list[WatchlistMeta]:
+    _ensure_default_watchlist(conn, user_id)
     cur = conn.execute(
-        "SELECT ticker, note, added_at FROM watchlist WHERE user_id = ? "
-        "ORDER BY added_at DESC",
+        "SELECT id, name, created_at, sort_order FROM watchlists WHERE user_id = ? "
+        "ORDER BY sort_order, id",
         (user_id,),
     )
+    return [WatchlistMeta(**dict(row)) for row in cur.fetchall()]
+
+
+def create_watchlist(conn: sqlite3.Connection, user_id: int, name: str, created_at: str) -> WatchlistMeta:
+    clean = (name or "").strip()[:60] or "Watchlist"
+    order = conn.execute(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM watchlists WHERE user_id = ?", (user_id,),
+    ).fetchone()[0]
+    cur = conn.execute(
+        "INSERT INTO watchlists (user_id, name, created_at, sort_order) VALUES (?, ?, ?, ?)",
+        (user_id, clean, created_at, order),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT id, name, created_at, sort_order FROM watchlists WHERE id = ?", (cur.lastrowid,),
+    ).fetchone()
+    return WatchlistMeta(**dict(row))
+
+
+def rename_watchlist(conn: sqlite3.Connection, user_id: int, list_id: int, name: str) -> bool:
+    clean = (name or "").strip()[:60]
+    if not clean:
+        return False
+    cur = conn.execute(
+        "UPDATE watchlists SET name = ? WHERE id = ? AND user_id = ?", (clean, list_id, user_id))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def delete_watchlist(conn: sqlite3.Connection, user_id: int, list_id: int) -> bool:
+    """Delete a list and its tickers. Refuses to remove a user's only list."""
+    count = conn.execute("SELECT COUNT(*) FROM watchlists WHERE user_id = ?", (user_id,)).fetchone()[0]
+    if count <= 1:
+        return False
+    owns = conn.execute(
+        "SELECT 1 FROM watchlists WHERE id = ? AND user_id = ?", (list_id, user_id)).fetchone()
+    if not owns:
+        return False
+    conn.execute("DELETE FROM watchlist WHERE watchlist_id = ?", (list_id,))
+    conn.execute("DELETE FROM watchlists WHERE id = ? AND user_id = ?", (list_id, user_id))
+    conn.commit()
+    return True
+
+
+def add_watch(conn: sqlite3.Connection, user_id: int, item: WatchItem, list_id: int | None = None) -> None:
+    lid = list_id if list_id is not None else _ensure_default_watchlist(conn, user_id)
+    conn.execute(
+        """
+        INSERT INTO watchlist (user_id, watchlist_id, ticker, note, added_at)
+        VALUES (:user_id, :wid, :ticker, :note, :added_at)
+        ON CONFLICT(watchlist_id, ticker) DO UPDATE SET note=excluded.note
+        """,
+        {"user_id": user_id, "wid": lid, **item.model_dump()},
+    )
+    conn.commit()
+
+
+def remove_watch(conn: sqlite3.Connection, user_id: int, ticker: str, list_id: int | None = None) -> None:
+    if list_id is not None:
+        conn.execute(
+            "DELETE FROM watchlist WHERE watchlist_id = ? AND ticker = ?", (list_id, ticker))
+    else:
+        # Legacy callers (no list): drop the ticker from all of the user's lists.
+        conn.execute(
+            "DELETE FROM watchlist WHERE user_id = ? AND ticker = ?", (user_id, ticker))
+    conn.commit()
+
+
+def get_watchlist(conn: sqlite3.Connection, user_id: int, list_id: int | None = None) -> list[WatchItem]:
+    lid = list_id if list_id is not None else _ensure_default_watchlist(conn, user_id)
+    cur = conn.execute(
+        "SELECT ticker, note, added_at FROM watchlist WHERE watchlist_id = ? "
+        "ORDER BY added_at DESC",
+        (lid,),
+    )
     return [WatchItem(**dict(row)) for row in cur.fetchall()]
+
+
+def get_watched_tickers_for_user(conn: sqlite3.Connection, user_id: int) -> list[str]:
+    """Distinct tickers across all of this user's watchlists (for their quotes)."""
+    cur = conn.execute(
+        "SELECT DISTINCT ticker FROM watchlist WHERE user_id = ? ORDER BY ticker", (user_id,))
+    return [row[0] for row in cur.fetchall()]
 
 
 def get_all_watched_tickers(conn: sqlite3.Connection) -> list[str]:
@@ -1973,7 +2104,7 @@ def claim_legacy_rows(conn: sqlite3.Connection, user_id: int) -> None:
     Called when the first account registers, so an existing single-user DB
     migrates to its owner. No-op on tables that predate the user_id column.
     """
-    for table in ("watchlist", "portfolio", "notify_profile"):
+    for table in ("watchlist", "watchlists", "portfolio", "notify_profile"):
         if _has_column(conn, table, "user_id"):
             conn.execute(f"UPDATE {table} SET user_id = ? WHERE user_id = 0", (user_id,))
     conn.commit()

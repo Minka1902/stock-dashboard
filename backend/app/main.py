@@ -409,7 +409,7 @@ def market_sentiment():
 @app.get("/api/quotes")
 def live_quotes(user=Depends(auth.get_current_user)):
     tickers = sorted(
-        {w.ticker for w in db.get_watchlist(conn, user.id)}
+        set(db.get_watched_tickers_for_user(conn, user.id))
         | {h.ticker for h in db.get_portfolio(conn, user.id)}
     )
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -858,29 +858,64 @@ def boom_score_history(ticker: str):
     return db.get_boom_score_history(conn, clean_ticker(ticker))
 
 
-# ---------- watchlist (user managed, no external source) ----------
+# ---------- watchlists (multiple named lists, user managed) ----------
 class WatchCreate(BaseModel):
     ticker: str
     note: str = ""
+    list_id: int | None = None
+
+
+class WatchlistCreate(BaseModel):
+    name: str = ""
+
+
+class WatchlistRename(BaseModel):
+    name: str
+
+
+@app.get("/api/watchlists")
+def watchlists(user=Depends(auth.get_current_user)):
+    return [w.model_dump() for w in db.get_watchlists(conn, user.id)]
+
+
+@app.post("/api/watchlists")
+def create_watchlist(body: WatchlistCreate, user=Depends(auth.get_current_user)):
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    db.create_watchlist(conn, user.id, body.name, now)
+    return [w.model_dump() for w in db.get_watchlists(conn, user.id)]
+
+
+@app.patch("/api/watchlists/{list_id}")
+def rename_watchlist(list_id: int, body: WatchlistRename, user=Depends(auth.get_current_user)):
+    if not db.rename_watchlist(conn, user.id, list_id, body.name):
+        raise HTTPException(status_code=400, detail="invalid name or watchlist")
+    return [w.model_dump() for w in db.get_watchlists(conn, user.id)]
+
+
+@app.delete("/api/watchlists/{list_id}")
+def delete_watchlist(list_id: int, user=Depends(auth.get_current_user)):
+    if not db.delete_watchlist(conn, user.id, list_id):
+        raise HTTPException(status_code=409, detail="cannot delete your only watchlist")
+    return [w.model_dump() for w in db.get_watchlists(conn, user.id)]
 
 
 @app.get("/api/watchlist")
-def watchlist(user=Depends(auth.get_current_user)):
-    return [w.model_dump() for w in db.get_watchlist(conn, user.id)]
+def watchlist(list_id: int | None = None, user=Depends(auth.get_current_user)):
+    return [w.model_dump() for w in db.get_watchlist(conn, user.id, list_id)]
 
 
 @app.post("/api/watchlist")
 def add_watch(item: WatchCreate, user=Depends(auth.get_current_user)):
     ticker = clean_ticker(item.ticker)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    db.add_watch(conn, user.id, WatchItem(ticker=ticker, note=item.note.strip(), added_at=now))
-    return [w.model_dump() for w in db.get_watchlist(conn, user.id)]
+    db.add_watch(conn, user.id, WatchItem(ticker=ticker, note=item.note.strip(), added_at=now), item.list_id)
+    return [w.model_dump() for w in db.get_watchlist(conn, user.id, item.list_id)]
 
 
 @app.delete("/api/watchlist/{ticker}")
-def delete_watch(ticker: str, user=Depends(auth.get_current_user)):
-    db.remove_watch(conn, user.id, clean_ticker(ticker))
-    return [w.model_dump() for w in db.get_watchlist(conn, user.id)]
+def delete_watch(ticker: str, list_id: int | None = None, user=Depends(auth.get_current_user)):
+    db.remove_watch(conn, user.id, clean_ticker(ticker), list_id)
+    return [w.model_dump() for w in db.get_watchlist(conn, user.id, list_id)]
 
 
 @app.get("/api/sources")

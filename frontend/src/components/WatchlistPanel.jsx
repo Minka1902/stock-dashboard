@@ -4,6 +4,7 @@ import Icon from "./Icon";
 import ExtHoursBadge from "./ExtHoursBadge";
 import Sparkline from "./Sparkline";
 import SparkRange from "./SparkRange";
+import { useWatchlists } from "../hooks/useWatchlists";
 import { useSparklines } from "../hooks/useSparklines";
 import { openTickerTab } from "../lib/nav";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
@@ -15,13 +16,24 @@ function changeTone(pct) {
   return pct >= 0 ? "pos" : "neg";
 }
 
-export default function WatchlistPanel({ watchlist, quotes = {}, marketStatus = null, onAdd, onRemove }) {
+export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
+  const {
+    lists, activeId, items, selectList,
+    addTicker, removeTicker, createList, renameList, deleteList,
+  } = useWatchlists();
+
   const [ticker, setTicker] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
   const [range, setRange] = useState("1m");
-  const { series: sparks } = useSparklines(watchlist.map((w) => w.ticker), range);
+  const { series: sparks } = useSparklines(items.map((w) => w.ticker), range);
+
+  // List tab editing state.
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameDraft, setRenameDraft] = useState("");
 
   async function submit(e) {
     e.preventDefault();
@@ -29,7 +41,7 @@ export default function WatchlistPanel({ watchlist, quotes = {}, marketStatus = 
     if (!t) return;
     setPending(true);
     try {
-      await onAdd(t, note.trim());
+      await addTicker(t, note.trim());
       setTicker("");
       setNote("");
       setError(null);
@@ -40,15 +52,82 @@ export default function WatchlistPanel({ watchlist, quotes = {}, marketStatus = 
     }
   }
 
+  const commitCreate = () => {
+    const n = newName.trim();
+    setCreating(false);
+    if (n) createList(n).catch(() => {});
+  };
+  const commitRename = () => {
+    const n = renameDraft.trim();
+    const id = renamingId;
+    setRenamingId(null);
+    if (n && id != null) renameList(id, n).catch(() => {});
+  };
+
   return (
     <section className={styles.panel} id="watchlist">
       <header className={styles.head}>
         <div>
-          <h2 className={styles.title}>Watchlist</h2>
-          <p className={styles.subtitle}>Tickers you want to keep an eye on</p>
+          <h2 className={styles.title}>Watchlists</h2>
+          <p className={styles.subtitle}>Group the tickers you want to keep an eye on</p>
         </div>
-        {watchlist.length > 0 && <SparkRange value={range} onChange={setRange} />}
+        {items.length > 0 && <SparkRange value={range} onChange={setRange} />}
       </header>
+
+      {/* list selector */}
+      <div className={styles.tabs} role="tablist" aria-label="Watchlists">
+        {lists.map((l) => (
+          renamingId === l.id ? (
+            <input
+              key={l.id}
+              className={styles.tabInput}
+              value={renameDraft}
+              autoFocus
+              maxLength={60}
+              onChange={(e) => setRenameDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setRenamingId(null); }}
+              onBlur={() => setRenamingId(null)}
+            />
+          ) : (
+            <span key={l.id} className={styles.tabWrap} data-active={l.id === activeId ? "yes" : "no"}>
+              <button
+                className={styles.tab}
+                role="tab"
+                aria-selected={l.id === activeId}
+                onClick={() => selectList(l.id)}
+              >
+                {l.name}
+              </button>
+              {l.id === activeId && (
+                <>
+                  <button className={styles.tabIcon} title="Rename list" aria-label={`Rename ${l.name}`}
+                          onClick={() => { setRenameDraft(l.name); setRenamingId(l.id); }}>✎</button>
+                  {lists.length > 1 && (
+                    <button className={styles.tabIcon} title="Delete list" aria-label={`Delete ${l.name}`}
+                            onClick={() => deleteList(l.id)}>×</button>
+                  )}
+                </>
+              )}
+            </span>
+          )
+        ))}
+        {creating ? (
+          <input
+            className={styles.tabInput}
+            value={newName}
+            autoFocus
+            maxLength={60}
+            placeholder="List name"
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") commitCreate(); if (e.key === "Escape") setCreating(false); }}
+            onBlur={() => setCreating(false)}
+          />
+        ) : (
+          <button className={styles.newTab} onClick={() => { setNewName(""); setCreating(true); }}>
+            + New list
+          </button>
+        )}
+      </div>
 
       <form className={styles.form} onSubmit={submit} data-tour="add-form">
         <input
@@ -71,10 +150,10 @@ export default function WatchlistPanel({ watchlist, quotes = {}, marketStatus = 
       </form>
       {error && <p className={styles.error}>{error}</p>}
 
-      {watchlist.length === 0 ? (
+      {items.length === 0 ? (
         <div className={styles.empty}>
           <span className={styles.emptyIcon}><Icon name="star" size={24} /></span>
-          <p className={styles.emptyTitle}>Your watchlist is empty</p>
+          <p className={styles.emptyTitle}>This watchlist is empty</p>
           <p className={styles.emptyText}>Add a ticker above to start tracking it.</p>
         </div>
       ) : (
@@ -85,7 +164,7 @@ export default function WatchlistPanel({ watchlist, quotes = {}, marketStatus = 
           animate="visible"
         >
           <AnimatePresence initial={false}>
-          {watchlist.map((w) => {
+          {items.map((w) => {
             const q = quotes[w.ticker];
             return (
             <motion.li
@@ -128,7 +207,7 @@ export default function WatchlistPanel({ watchlist, quotes = {}, marketStatus = 
               <span className={styles.added}>added {formatRelativeTime(w.added_at)}</span>
               <button
                 className={styles.remove}
-                onClick={() => onRemove(w.ticker)}
+                onClick={() => removeTicker(w.ticker)}
                 title={`Remove ${w.ticker}`}
                 aria-label={`Remove ${w.ticker}`}
               >

@@ -301,6 +301,14 @@ class User(BaseModel):
         }
 
 
+class WatchlistMeta(BaseModel):
+    """A named watchlist a user owns (its tickers live in the watchlist table)."""
+    id: int
+    name: str
+    created_at: str = ""
+    sort_order: int = 0
+
+
 class OAuthIdentity(BaseModel):
     """Link between an external OAuth account and a local user."""
     provider: str            # "github" | "google" | "facebook"

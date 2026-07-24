@@ -149,7 +149,7 @@ export default function App({ auth }) {
     yieldCurve, econCalendar, signals, fearGreed, vix, aaii, putCall, marginDebt, sentiment, congressTrades,
     shortInterest, social, analyst, boomScores, fundamentals, seasonality,
     portfolio, xPosts, suggestions, analyses, alerts, unreadAlerts,
-    loading, busy, error, refresh, addWatch, removeWatch, addHolding, updateHolding,
+    loading, busy, error, refresh, addWatch, addHolding, updateHolding,
     setHoldingCategory, removeHolding,
     markAlertsRead,
   } = data;
@@ -310,7 +310,7 @@ export default function App({ auth }) {
               </>
             )}
             {view === "contracts" && <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "watchlist" && <WatchlistPanel watchlist={watchlist} quotes={quotesByTicker} marketStatus={marketStatus} onAdd={addWatch} onRemove={removeWatch} />}
+            {view === "watchlist" && <WatchlistPanel quotes={quotesByTicker} marketStatus={marketStatus} />}
             {view === "yield-curve" && <YieldCurvePanel data={yieldCurve} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "econ-calendar" && <EconCalendarPanel data={econCalendar} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "signals" && <TechnicalPanel data={signals} loading={loading} busy={busy} onRefresh={refresh} />}
