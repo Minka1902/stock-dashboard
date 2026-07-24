@@ -8,6 +8,7 @@ lightweight-charts expects for each resolution.
 """
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import httpx
@@ -110,3 +111,41 @@ def get_bars(ticker: str, interval: str, prepost: bool = False) -> dict:
         with _lock:
             _cache[key] = (time.monotonic() + ttl, payload)
     return payload
+
+
+# ---- sparklines: tiny close-only series for the watchlist/portfolio tables ----
+# range key -> (reused bar interval, number of trailing bars to keep)
+SPARK_RANGES: dict[str, tuple[str, int]] = {
+    "1d": ("5m", 78),    # ~1 trading session of 5-minute bars
+    "3d": ("15m", 78),   # ~3 sessions of 15-minute bars
+    "1w": ("1h", 40),    # ~1 week of hourly bars
+    "1m": ("1d", 22),    # ~1 month of daily bars
+}
+
+
+def get_sparkline(ticker: str, rng: str) -> dict:
+    """Trailing close-only series for `rng` ("1d"/"3d"/"1w"/"1m"), reusing the
+    TTL-cached bar fetch. Never fabricates — an empty series means no data."""
+    interval, tail = SPARK_RANGES[rng]
+    bars = get_bars(ticker, interval)["bars"][-tail:]
+    closes = [b["close"] for b in bars]
+    change_pct = None
+    if len(closes) >= 2 and closes[0]:
+        change_pct = round((closes[-1] - closes[0]) / closes[0] * 100, 2)
+    return {"closes": closes, "change_pct": change_pct}
+
+
+def get_sparklines(tickers: list[str], rng: str) -> dict:
+    """Trailing series for many tickers, fetched concurrently. A per-ticker
+    failure surfaces as an `error` flag rather than blanking the whole batch."""
+    if not tickers:
+        return {}
+
+    def one(t: str) -> tuple[str, dict]:
+        try:
+            return t, get_sparkline(t, rng)
+        except Exception:
+            return t, {"closes": [], "change_pct": None, "error": True}
+
+    with ThreadPoolExecutor(max_workers=min(6, len(tickers))) as ex:
+        return dict(ex.map(one, tickers))

@@ -52,7 +52,8 @@ export const getContracts = () => getJSON("/api/contracts");
 export const getSources = () => getJSON("/api/sources");
 export const getNews = () => getJSON("/api/news");
 export const getTrades = () => getJSON("/api/trades");
-export const getWatchlist = () => getJSON("/api/watchlist");
+export const getWatchlist = (listId) =>
+  getJSON(`/api/watchlist${listId != null ? `?list_id=${encodeURIComponent(listId)}` : ""}`);
 export const getYieldCurve = () => getJSON("/api/yield-curve");
 export const getEconCalendar = () => getJSON("/api/econ-calendar");
 export const getSignals = () => getJSON("/api/signals");
@@ -80,6 +81,8 @@ export const getSuggestions = () => getJSON("/api/suggestions");
 export const getAppSettings = () => getJSON("/api/settings");
 export const getChart = (ticker, interval, prepost = false) =>
   getJSON(`/api/chart/${encodeURIComponent(ticker)}?interval=${encodeURIComponent(interval)}${prepost ? "&prepost=1" : ""}`);
+export const getSparklines = (tickers, range) =>
+  getJSON(`/api/sparklines?tickers=${encodeURIComponent((tickers || []).join(","))}&range=${encodeURIComponent(range)}`);
 export const analysisReportUrl = (ticker, { print = false } = {}) =>
   `${BASE}/api/analysis/${encodeURIComponent(ticker)}/report${print ? "?print=1" : ""}`;
 export const getSuggestionLog = () => getJSON("/api/suggestions/log");
@@ -115,10 +118,18 @@ export const sendTestSuggestions = () =>
   request("/api/suggestions/send-test", { method: "POST" });
 export const refreshSource = (name) =>
   request(`/api/refresh/${encodeURIComponent(name)}`, { method: "POST" });
-export const addWatch = (ticker, note) =>
-  request("/api/watchlist", { method: "POST", body: { ticker, note } });
-export const removeWatch = (ticker) =>
-  request(`/api/watchlist/${encodeURIComponent(ticker)}`, { method: "DELETE" });
+export const addWatch = (ticker, note, listId) =>
+  request("/api/watchlist", { method: "POST", body: { ticker, note, ...(listId != null ? { list_id: listId } : {}) } });
+export const removeWatch = (ticker, listId) =>
+  request(`/api/watchlist/${encodeURIComponent(ticker)}${listId != null ? `?list_id=${encodeURIComponent(listId)}` : ""}`, { method: "DELETE" });
+// Multiple named watchlists (Task 13).
+export const getWatchlists = () => getJSON("/api/watchlists");
+export const createWatchlist = (name) =>
+  request("/api/watchlists", { method: "POST", body: { name } });
+export const renameWatchlist = (id, name) =>
+  request(`/api/watchlists/${encodeURIComponent(id)}`, { method: "PATCH", body: { name } });
+export const deleteWatchlist = (id) =>
+  request(`/api/watchlists/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 // ---------- auth ----------
 export const getMe = () => getJSON("/api/auth/me");

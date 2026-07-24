@@ -3,6 +3,9 @@ import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
 import AnimatedNumber from "./AnimatedNumber";
 import ExtHoursBadge from "./ExtHoursBadge";
+import Sparkline from "./Sparkline";
+import SparkRange from "./SparkRange";
+import { useSparklines } from "../hooks/useSparklines";
 import { openTickerTab } from "../lib/nav";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import { formatCurrencyCompact } from "../lib/format";
@@ -35,6 +38,8 @@ export default function PortfolioPanel({
   const [editing, setEditing] = useState(null);
   const [editShares, setEditShares] = useState("");
   const [editCost, setEditCost] = useState("");
+  const [range, setRange] = useState("1m");
+  const { series: sparks } = useSparklines(portfolio.map((h) => h.ticker), range);
 
   const analysisByTicker = Object.fromEntries(analyses.map((a) => [a.ticker, a]));
 
@@ -145,6 +150,7 @@ export default function PortfolioPanel({
             (incl. pre/post-market) when available, otherwise the latest signal price.
           </p>
         </div>
+        {!showEmpty && <SparkRange value={range} onChange={setRange} />}
       </header>
 
       {!showEmpty && (
@@ -198,6 +204,7 @@ export default function PortfolioPanel({
                 <th className={styles.numCol}>Mkt Value</th>
                 <th className={styles.numCol}>P/L</th>
                 <th>Advice</th>
+                <th className={styles.numCol}>Trend</th>
                 <th></th>
               </tr>
             </thead>
@@ -216,7 +223,7 @@ export default function PortfolioPanel({
                       <span className={styles.pl} data-tone={g.plPct >= 0 ? "pos" : "neg"}>{signedPct(g.plPct)}</span>
                     )}
                   </td>
-                  <td colSpan={2}></td>
+                  <td colSpan={3}></td>
                 </tr>
                 <AnimatePresence initial={false}>
                   {g.rows.map((h) => {
@@ -297,6 +304,16 @@ export default function PortfolioPanel({
                             <span className={styles.advicePending}>analyzing…</span>
                           )}
                         </td>
+                        <td className={styles.numCol}>
+                          <Sparkline
+                            closes={sparks[h.ticker]?.closes}
+                            changePct={sparks[h.ticker]?.change_pct}
+                            error={sparks[h.ticker]?.error}
+                            loading={!sparks[h.ticker]}
+                            range={range}
+                            width={80}
+                          />
+                        </td>
                         <td className={styles.actionsCol}>
                           {isEditing ? (
                             <span className={styles.editActions}>
@@ -337,6 +354,7 @@ export default function PortfolioPanel({
                     <span className={styles.pl} data-tone={totalPl >= 0 ? "pos" : "neg"}>{signedPct(totalPl)}</span>
                   ) : "—"}
                 </td>
+                <td></td>
                 <td></td>
                 <td></td>
               </tr>
