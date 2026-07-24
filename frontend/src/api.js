@@ -80,6 +80,8 @@ export const getSuggestions = () => getJSON("/api/suggestions");
 export const getAppSettings = () => getJSON("/api/settings");
 export const getChart = (ticker, interval, prepost = false) =>
   getJSON(`/api/chart/${encodeURIComponent(ticker)}?interval=${encodeURIComponent(interval)}${prepost ? "&prepost=1" : ""}`);
+export const getSparklines = (tickers, range) =>
+  getJSON(`/api/sparklines?tickers=${encodeURIComponent((tickers || []).join(","))}&range=${encodeURIComponent(range)}`);
 export const analysisReportUrl = (ticker, { print = false } = {}) =>
   `${BASE}/api/analysis/${encodeURIComponent(ticker)}/report${print ? "?print=1" : ""}`;
 export const getSuggestionLog = () => getJSON("/api/suggestions/log");

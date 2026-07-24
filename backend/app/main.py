@@ -485,6 +485,24 @@ def chart_bars(ticker: str, interval: str = "1d", prepost: bool = False):
         raise HTTPException(status_code=502, detail="chart data unavailable")
 
 
+@app.get("/api/sparklines")
+def sparklines(tickers: str = "", range: str = "1m"):
+    """Batch trailing close-series for the watchlist/portfolio row sparklines.
+    `range` is one of 1d/3d/1w/1m; invalid tickers are skipped, not fatal."""
+    rng = range if range in chart_data.SPARK_RANGES else "1m"
+    syms: list[str] = []
+    for raw in tickers.split(","):
+        try:
+            t = clean_ticker(raw)
+        except HTTPException:
+            continue  # skip malformed symbols rather than failing the batch
+        if t and t not in syms:
+            syms.append(t)
+        if len(syms) >= 60:
+            break
+    return {"range": rng, "series": chart_data.get_sparklines(syms, rng)}
+
+
 # ---------- search & on-demand analysis (any ticker) ----------
 @app.get("/api/search", dependencies=[Depends(rate_limit("search", 30, 60))])
 def search_stocks(q: str = ""):

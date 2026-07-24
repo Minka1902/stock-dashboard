@@ -2,6 +2,9 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
 import ExtHoursBadge from "./ExtHoursBadge";
+import Sparkline from "./Sparkline";
+import SparkRange from "./SparkRange";
+import { useSparklines } from "../hooks/useSparklines";
 import { openTickerTab } from "../lib/nav";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import { formatRelativeTime } from "../lib/format";
@@ -17,6 +20,8 @@ export default function WatchlistPanel({ watchlist, quotes = {}, marketStatus = 
   const [note, setNote] = useState("");
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
+  const [range, setRange] = useState("1m");
+  const { series: sparks } = useSparklines(watchlist.map((w) => w.ticker), range);
 
   async function submit(e) {
     e.preventDefault();
@@ -42,6 +47,7 @@ export default function WatchlistPanel({ watchlist, quotes = {}, marketStatus = 
           <h2 className={styles.title}>Watchlist</h2>
           <p className={styles.subtitle}>Tickers you want to keep an eye on</p>
         </div>
+        {watchlist.length > 0 && <SparkRange value={range} onChange={setRange} />}
       </header>
 
       <form className={styles.form} onSubmit={submit} data-tour="add-form">
@@ -111,6 +117,13 @@ export default function WatchlistPanel({ watchlist, quotes = {}, marketStatus = 
                   return eff && eff !== "PRE" && eff !== "POST" ? eff : "";
                 })()}
               </span>
+              <Sparkline
+                closes={sparks[w.ticker]?.closes}
+                changePct={sparks[w.ticker]?.change_pct}
+                error={sparks[w.ticker]?.error}
+                loading={!sparks[w.ticker]}
+                range={range}
+              />
               <span className={styles.itemNote}>{w.note || "—"}</span>
               <span className={styles.added}>added {formatRelativeTime(w.added_at)}</span>
               <button
