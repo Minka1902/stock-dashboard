@@ -141,7 +141,35 @@
 }
 .retry:hover { color: var(--text); background: var(--surface-hover); }
 
+.canvasWrap { position: relative; min-height: 0; }
 .canvas { min-height: 0; }
+
+/* ---- transition loader (Task 5) ---- */
+.loader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-3);
+  background: color-mix(in oklab, var(--bg) 55%, transparent);
+  backdrop-filter: blur(1.5px);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  z-index: 3;
+  pointer-events: none;
+}
+.spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  animation: chartspin 0.7s linear infinite;
+}
+@keyframes chartspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.6s; } }
 
 /* ---- indicator key ---- */
 .key {

@@ -3,7 +3,7 @@ import {
   createChart, CandlestickSeries, BarSeries, HistogramSeries, LineSeries,
   AreaSeries, BaselineSeries, LineStyle, PriceScaleMode, createSeriesMarkers,
 } from "lightweight-charts";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { getChart } from "../api";
 import {
   smaSeries, emaSeries, bollingerSeries, rsiSeries, macdSeries, vwapSeries,
@@ -170,6 +170,8 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   const [compareBars, setCompareBars] = useState(null);
   const [error, setError] = useState(null);
   const [legend, setLegend] = useState(null);
+  // Brief overlay shown while a toolbar change re-renders the chart (Task 5).
+  const [updating, setUpdating] = useState(false);
 
   // Persistent chart handles: the chart is created once (see the mount effect)
   // and only its *series* are torn down/rebuilt on data/indicator changes, so
@@ -182,12 +184,21 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   const legendMapsRef = useRef({ bars: [], byTime: new Map(), idx: new Map() });
 
   const setPref = useCallback((patch) => {
+    setUpdating(true); // show the loader for the duration of the change (Task 5)
     setPrefs((p) => {
       const next = { ...p, ...patch, inds: { ...p.inds, ...(patch.inds || {}) } };
       try { localStorage.setItem(PREFS_KEY, JSON.stringify(next)); } catch { /* private mode */ }
       return next;
     });
   }, []);
+
+  // The series rebuild is synchronous, so hold the loader a beat after a pref
+  // change so the transition is perceptible rather than a jarring instant swap.
+  useEffect(() => {
+    if (!updating) return undefined;
+    const id = setTimeout(() => setUpdating(false), 320);
+    return () => clearTimeout(id);
+  }, [updating]);
 
   const intraday = INTRADAY.has(prefs.tf);
 
@@ -279,7 +290,33 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     const ro = new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth }));
     ro.observe(el);
 
+    // Wheel over the right price axis scales the price axis (Task 7). The
+    // library's own wheel handler always zooms the *time* scale regardless of
+    // cursor position, so we intercept in the capture phase when the cursor is
+    // over the axis, zoom the price range via setVisibleRange, and stop the
+    // event before it reaches the chart. Over the plot body we do nothing, so
+    // the built-in time-zoom (and axis drag-scale) still work.
+    const onAxisWheel = (event) => {
+      const ps = chart.priceScale("right");
+      const rect = el.getBoundingClientRect();
+      const axisW = ps.width() || 60; // nominal fallback before the axis is measured
+      if (event.clientX < rect.right - axisW) return; // not over the axis → let the chart zoom time
+      // Over the axis: always intercept so the built-in time-zoom never fires here.
+      event.preventDefault();
+      event.stopPropagation();
+      // Lock the scale so getVisibleRange() is populated (it's null under auto-scale).
+      ps.setAutoScale(false);
+      const range = ps.getVisibleRange();
+      if (!range || range.to === range.from) return;
+      const factor = event.deltaY < 0 ? 0.85 : 1 / 0.85; // wheel up = zoom in
+      const mid = (range.from + range.to) / 2;
+      const half = ((range.to - range.from) / 2) * factor;
+      if (half > 0) ps.setVisibleRange({ from: mid - half, to: mid + half });
+    };
+    el.addEventListener("wheel", onAxisWheel, { capture: true, passive: false });
+
     return () => {
+      el.removeEventListener("wheel", onAxisWheel, { capture: true });
       chart.unsubscribeCrosshairMove(onMove);
       ro.disconnect();
       chart.remove();
@@ -320,10 +357,12 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       : prefs.logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal;
     chart.priceScale("right").applyOptions({
       mode: priceMode,
-      scaleMargins: { top: 0.08, bottom: prefs.inds.vol ? 0.26 : 0.08 },
+      // Volume now lives in its own pane (Task 11), so the price pane keeps a
+      // symmetric margin instead of reserving the bottom for the overlay.
+      scaleMargins: { top: 0.08, bottom: 0.08 },
     });
     chart.timeScale().applyOptions({ timeVisible: intraday });
-  }, [prefs.compare, prefs.logScale, prefs.inds.vol, intraday]);
+  }, [prefs.compare, prefs.logScale, intraday]);
 
   // ---- series (re)build: tears down only series, preserves the view ----
   const { ma, ema, bb, vwap, vol, rsi, macd } = prefs.inds;
@@ -388,19 +427,6 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       main.setData(ohlcData);
     }
 
-    // volume histogram (overlay scale at the bottom of the main pane)
-    if (vol) {
-      const volS = track(chart.addSeries(HistogramSeries, {
-        priceScaleId: "vol", priceFormat: { type: "volume" }, priceLineVisible: false,
-        lastValueVisible: false,
-      }));
-      volS.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-      volS.setData(displayBars.map((b) => ({
-        time: b.time, value: b.volume,
-        color: (b.close >= b.open ? COLORS.up : COLORS.down) + "55",
-      })));
-    }
-
     // A tracked line series; `label` (if given) registers it for the crosshair legend.
     const addLine = (data, color, label, width = 1, style) => {
       if (data.length < 2) return;
@@ -432,17 +458,31 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       cmp.setData(compareBars.map((b) => ({ time: b.time, value: b.close })));
     }
 
-    // sub-panes
+    // sub-panes — each indicator gets its OWN pane + visible price scale, and
+    // shows its current value as an axis label ("tell the data", Task 11).
     let paneIndex = 0;
+    if (vol) {
+      paneIndex += 1;
+      const volS = track(chart.addSeries(HistogramSeries, {
+        priceFormat: { type: "volume" }, priceLineVisible: false,
+        lastValueVisible: true, title: "Vol",
+      }, paneIndex));
+      volS.setData(displayBars.map((b) => ({
+        time: b.time, value: b.volume,
+        color: (b.close >= b.open ? COLORS.up : COLORS.down) + "88",
+      })));
+      chart.panes()[paneIndex]?.setHeight?.(88);
+    }
     if (rsi) {
       paneIndex += 1;
       const rsiS = track(chart.addSeries(LineSeries, {
-        color: COLORS.info, lineWidth: 2, priceLineVisible: false, title: "RSI 14",
+        color: COLORS.info, lineWidth: 2, priceLineVisible: false,
+        lastValueVisible: true, title: "RSI 14",
       }, paneIndex));
       rsiS.setData(rsiSeries(bars));
-      rsiS.createPriceLine({ price: 70, color: COLORS.down, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
-      rsiS.createPriceLine({ price: 30, color: COLORS.up, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
-      chart.panes()[paneIndex]?.setHeight?.(96);
+      rsiS.createPriceLine({ price: 70, color: COLORS.down, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true });
+      rsiS.createPriceLine({ price: 30, color: COLORS.up, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true });
+      chart.panes()[paneIndex]?.setHeight?.(100);
     }
     if (macd) {
       paneIndex += 1;
@@ -454,14 +494,16 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
         ...p, color: (p.value >= 0 ? COLORS.up : COLORS.down) + "88",
       })));
       const macdLine = track(chart.addSeries(LineSeries, {
-        color: COLORS.accent, lineWidth: 2, priceLineVisible: false, title: "MACD",
+        color: COLORS.accent, lineWidth: 2, priceLineVisible: false,
+        lastValueVisible: true, title: "MACD",
       }, paneIndex));
       macdLine.setData(macdData);
       const sigLine = track(chart.addSeries(LineSeries, {
         color: COLORS.info, lineWidth: 1, priceLineVisible: false,
+        lastValueVisible: true, title: "Signal",
       }, paneIndex));
       sigLine.setData(signal);
-      chart.panes()[paneIndex]?.setHeight?.(110);
+      chart.panes()[paneIndex]?.setHeight?.(112);
     }
 
     // analysis overlays (daily view only; hidden in percent-compare mode)
@@ -530,6 +572,9 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     // view preservation: refit only for a genuinely new dataset (ticker/timeframe)
     if (isNewDataset) {
       chart.timeScale().fitContent();
+      // Re-enable price auto-scale so a prior manual wheel-zoom (Task 7) doesn't
+      // freeze the axis at a stale range when the ticker/timeframe changes.
+      chart.priceScale("right").setAutoScale(true);
       datasetKeyRef.current = datasetKey;
     } else if (savedRange) {
       const wasAtEdge = savedRange.to >= prevLen - 1.5;
@@ -652,13 +697,28 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
           <p>Chart data unavailable: {error}</p>
           <button className={styles.retry} onClick={loadBars}>Retry</button>
         </div>
-      ) : bars === null ? (
-        <div className={styles.message}><p>Loading {prefs.tf} bars…</p></div>
-      ) : bars.length === 0 ? (
+      ) : bars && bars.length === 0 ? (
         <div className={styles.message}><p>No {prefs.tf} price history for {ticker}.</p></div>
       ) : null}
 
-      <div ref={elRef} className={styles.canvas} style={{ width: "100%" }} />
+      <div className={styles.canvasWrap}>
+        <div ref={elRef} className={styles.canvas} style={{ width: "100%" }} />
+        <AnimatePresence>
+          {(updating || bars === null) && !error && (
+            <motion.div
+              key="chart-loader"
+              className={styles.loader}
+              initial={prefersReducedMotion() ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: prefersReducedMotion() ? 0 : 0.18 }}
+            >
+              <span className={styles.spinner} aria-hidden="true" />
+              <span>{bars === null ? `Loading ${prefs.tf} bars…` : "Updating…"}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       <p className={styles.key}>
         {prefs.inds.ma && <><span data-c="info">MA20</span><span data-c="accent">MA50</span><span data-c="muted">MA150</span><span data-c="neg">MA200</span></>}
