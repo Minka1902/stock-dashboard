@@ -169,4 +169,14 @@ def build_router(conn) -> APIRouter:
             raise HTTPException(status_code=401, detail="not authenticated")
         return user.public()
 
+    @router.post("/onboarded")
+    def mark_onboarded(request: Request):
+        """Record that this account has seen the guided tour, so it is never
+        auto-started again on any device."""
+        user = auth.resolve_user(conn, request)
+        if user is None:
+            raise HTTPException(status_code=401, detail="not authenticated")
+        db.set_onboarded(conn, user.id)
+        return db.get_user(conn, user.id).public()
+
     return router

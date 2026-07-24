@@ -184,3 +184,50 @@ def test_login_rate_limited(client, monkeypatch):
     r = client.post("/api/auth/login", json={"email": EMAIL, "password": PASSWORD})
     assert r.status_code == 429
     assert r.headers.get("Retry-After") == "42"
+
+
+# ---------- onboarding flag (gates the auto-tour for returning users) ----------
+
+def test_new_user_starts_not_onboarded(client):
+    authenticate(client)
+    assert client.get("/api/auth/me").json()["onboarded"] is False
+
+
+def test_mark_onboarded_persists(client):
+    authenticate(client)
+    r = client.post("/api/auth/onboarded")
+    assert r.status_code == 200
+    assert r.json()["onboarded"] is True
+    # persists on subsequent reads (would suppress the tour on any device)
+    assert client.get("/api/auth/me").json()["onboarded"] is True
+
+
+def test_mark_onboarded_requires_auth(client):
+    assert client.post("/api/auth/onboarded").status_code == 401
+
+
+def test_onboarded_migration_backfills_existing_users(tmp_path):
+    """Pre-existing accounts (from before the column) are returning users and
+    must be backfilled to onboarded=1; accounts created after start at 0."""
+    from app import db
+
+    conn = db.connect(str(tmp_path / "old.db"))
+    # A users table shaped like the pre-onboarded schema.
+    conn.execute(
+        """CREATE TABLE users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            password_hash TEXT NOT NULL, totp_secret TEXT,
+            totp_enabled INTEGER NOT NULL DEFAULT 0,
+            is_admin INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)"""
+    )
+    conn.execute(
+        "INSERT INTO users (email, password_hash, created_at) VALUES ('old@b.co','h','2026-01-01')")
+    conn.commit()
+
+    db.init_schema(conn)  # runs _migrate_users_onboarded
+
+    assert db.get_user_by_email(conn, "old@b.co").onboarded is True
+    fresh = db.create_user(conn, "new@b.co", "h", "2026-02-02")
+    assert db.get_user(conn, fresh.id).onboarded is False
+    conn.close()

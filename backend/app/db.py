@@ -75,6 +75,18 @@ def _try_add_column(conn: sqlite3.Connection, table: str, col: str, col_def: str
         pass  # column already exists
 
 
+def _migrate_users_onboarded(conn: sqlite3.Connection) -> None:
+    """Add users.onboarded once, backfilling every pre-existing account to 1.
+
+    Existing accounts are returning users and must never be re-shown the guided
+    app tour; only brand-new registrations start at 0 (and get the tour). Runs
+    exactly once — subsequent startups see the column and skip the backfill."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if "onboarded" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN onboarded INTEGER NOT NULL DEFAULT 0")
+        conn.execute("UPDATE users SET onboarded = 1")
+
+
 def _migrate_per_user_tables(conn: sqlite3.Connection) -> None:
     """One-time rebuild of pre-auth single-user tables to per-user shape.
 
@@ -417,7 +429,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
             totp_secret   TEXT,
             totp_enabled  INTEGER NOT NULL DEFAULT 0,
             is_admin      INTEGER NOT NULL DEFAULT 0,
-            created_at    TEXT NOT NULL
+            created_at    TEXT NOT NULL,
+            onboarded     INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS sessions (
             token_hash   TEXT PRIMARY KEY,
@@ -455,6 +468,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _try_add_column(conn, "notify_profile", "account_size", "REAL")
     _try_add_column(conn, "notify_profile", "risk_pct", "REAL NOT NULL DEFAULT 1.0")
     _migrate_per_user_tables(conn)
+    _migrate_users_onboarded(conn)
     _try_add_column(conn, "news", "ticker", "TEXT NOT NULL DEFAULT ''")
 
     # Migrate existing tables: add new columns (safe on pre-existing databases).
@@ -1859,6 +1873,12 @@ def get_user_by_email(conn: sqlite3.Connection, email: str) -> User | None:
 
 def count_users(conn: sqlite3.Connection) -> int:
     return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+
+def set_onboarded(conn: sqlite3.Connection, user_id: int) -> None:
+    """Mark that the account has seen the guided tour (persists across devices)."""
+    conn.execute("UPDATE users SET onboarded = 1 WHERE id = ?", (user_id,))
+    conn.commit()
 
 
 def get_oauth_identity(

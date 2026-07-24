@@ -154,17 +154,27 @@ export default function App({ auth }) {
     markAlertsRead,
   } = data;
 
+  // Only auto-run tours for a genuinely first-time account. Captured once at
+  // mount (App mounts only when authed, so auth.user is present) so the value
+  // is stable for the session even after we flip the server flag on first close.
+  const [tourAllowed] = useState(() => !auth?.user?.onboarded);
+
   // Auto-run each view's tour the first time it's visited (marked seen on close).
+  // Returning users (onboarded) are never auto-toured.
   useEffect(() => {
-    if (loading || detailTicker || !TOURS[view] || settings.toursSeen[view]) {
+    if (!tourAllowed || loading || detailTicker || !TOURS[view] || settings.toursSeen[view]) {
       return undefined;
     }
     const id = setTimeout(() => setTourView(view), 450); // let the panel render first
     return () => clearTimeout(id);
-  }, [view, loading, detailTicker, settings.toursSeen]);
+  }, [tourAllowed, view, loading, detailTicker, settings.toursSeen]);
 
   const closeTour = () => {
-    if (tourView) setSetting("toursSeen", { ...settings.toursSeen, [tourView]: true });
+    if (tourView) {
+      setSetting("toursSeen", { ...settings.toursSeen, [tourView]: true });
+      // First tour closed → persist onboarding so no device auto-tours again.
+      if (auth?.user && !auth.user.onboarded) auth.markOnboarded?.();
+    }
     setTourView(null);
   };
 

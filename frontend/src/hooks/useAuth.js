@@ -71,8 +71,18 @@ export default function useAuth() {
 
   const cancel = useCallback(() => setStatus("anon"), []);
 
+  // Persist that this account has seen the guided tour (never auto-tour again,
+  // on any device). Non-fatal if it fails — the tour just won't be suppressed.
+  const markOnboarded = useCallback(async () => {
+    try {
+      const u = await api.markOnboarded();
+      setUser(u);
+    } catch { /* non-fatal */ }
+  }, []);
+
   return {
     status, user,
     login, register, verifyTotp, enableTotp, finishSetup, useRecovery, logout, cancel,
+    markOnboarded,
   };
 }
