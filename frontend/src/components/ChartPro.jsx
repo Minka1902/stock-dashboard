@@ -290,7 +290,33 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     const ro = new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth }));
     ro.observe(el);
 
+    // Wheel over the right price axis scales the price axis (Task 7). The
+    // library's own wheel handler always zooms the *time* scale regardless of
+    // cursor position, so we intercept in the capture phase when the cursor is
+    // over the axis, zoom the price range via setVisibleRange, and stop the
+    // event before it reaches the chart. Over the plot body we do nothing, so
+    // the built-in time-zoom (and axis drag-scale) still work.
+    const onAxisWheel = (event) => {
+      const ps = chart.priceScale("right");
+      const rect = el.getBoundingClientRect();
+      const axisW = ps.width() || 60; // nominal fallback before the axis is measured
+      if (event.clientX < rect.right - axisW) return; // not over the axis → let the chart zoom time
+      // Over the axis: always intercept so the built-in time-zoom never fires here.
+      event.preventDefault();
+      event.stopPropagation();
+      // Lock the scale so getVisibleRange() is populated (it's null under auto-scale).
+      ps.setAutoScale(false);
+      const range = ps.getVisibleRange();
+      if (!range || range.to === range.from) return;
+      const factor = event.deltaY < 0 ? 0.85 : 1 / 0.85; // wheel up = zoom in
+      const mid = (range.from + range.to) / 2;
+      const half = ((range.to - range.from) / 2) * factor;
+      if (half > 0) ps.setVisibleRange({ from: mid - half, to: mid + half });
+    };
+    el.addEventListener("wheel", onAxisWheel, { capture: true, passive: false });
+
     return () => {
+      el.removeEventListener("wheel", onAxisWheel, { capture: true });
       chart.unsubscribeCrosshairMove(onMove);
       ro.disconnect();
       chart.remove();
@@ -546,6 +572,9 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     // view preservation: refit only for a genuinely new dataset (ticker/timeframe)
     if (isNewDataset) {
       chart.timeScale().fitContent();
+      // Re-enable price auto-scale so a prior manual wheel-zoom (Task 7) doesn't
+      // freeze the axis at a stale range when the ticker/timeframe changes.
+      chart.priceScale("right").setAutoScale(true);
       datasetKeyRef.current = datasetKey;
     } else if (savedRange) {
       const wasAtEdge = savedRange.to >= prevLen - 1.5;
