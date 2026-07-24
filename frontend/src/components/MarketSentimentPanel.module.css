@@ -29,9 +29,9 @@
 /* ---- hero: gauge + composite read ---- */
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
   gap: var(--s-4);
-  align-items: stretch;
+  align-items: start;
 }
 @media (max-width: 900px) {
   .hero { grid-template-columns: 1fr; }
@@ -42,12 +42,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: var(--s-3) var(--s-4) var(--s-4);
+  padding: var(--s-2) var(--s-4) var(--s-3);
   flex: 1;
   justify-content: center;
 }
 .gaugeSvg {
-  width: min(100%, 230px);
+  width: min(100%, 176px);
   height: auto;
   overflow: visible;
 }
@@ -81,8 +81,8 @@
 .gaugeEnds {
   display: flex;
   justify-content: space-between;
-  width: min(100%, 230px);
-  margin-top: var(--s-3);
+  width: min(100%, 176px);
+  margin-top: var(--s-2);
   font-family: var(--mono);
   font-size: 10px;
   text-transform: uppercase;

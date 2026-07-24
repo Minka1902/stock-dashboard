@@ -29,7 +29,7 @@
   padding: var(--s-4) var(--s-5);
   display: flex;
   flex-direction: column;
-  gap: var(--s-4);
+  gap: var(--s-3);
 }
 
 .scoreRow {
@@ -39,7 +39,7 @@
 }
 
 .score {
-  font-size: 56px;
+  font-size: 38px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -67,24 +67,28 @@
   color: var(--text-muted);
 }
 
-.scaleRow {
+.scale {
   display: flex;
-  align-items: center;
-  gap: var(--s-3);
-}
-
-.scaleLabel {
-  font-size: 10.5px;
-  color: var(--text-faint);
-  white-space: nowrap;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .scaleBar {
-  flex: 1;
+  position: relative;
+  width: 100%;
   height: 6px;
   border-radius: var(--r-pill);
   background: linear-gradient(to right, var(--negative), oklch(0.70 0.12 60), var(--positive));
-  position: relative;
+}
+
+/* Center reference tick so the marker's position reads against a scale. */
+.tick {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--border-strong);
 }
 
 .scaleThumb {
@@ -100,6 +104,17 @@
 }
 .scaleThumb[data-tone="fear"] { background: var(--negative); }
 .scaleThumb[data-tone="greed"] { background: var(--positive); }
+
+.scaleEnds {
+  display: flex;
+  justify-content: space-between;
+}
+
+.scaleLabel {
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
 
 .chartWrap {
   border-top: 1px solid var(--border);
