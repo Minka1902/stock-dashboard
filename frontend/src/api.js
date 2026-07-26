@@ -93,6 +93,9 @@ export const searchStocks = (q) =>
   getJSON(`/api/search?q=${encodeURIComponent(q)}`);
 export const getAnalyze = (ticker) =>
   getJSON(`/api/analyze/${encodeURIComponent(ticker)}`);
+export const getCompany = (ticker) =>
+  getJSON(`/api/company/${encodeURIComponent(ticker)}`);
+export const getCompanyNames = () => getJSON("/api/company-names");
 
 export const markAlertsRead = (payload = { all: true }) =>
   request("/api/alerts/read", { method: "POST", body: payload });

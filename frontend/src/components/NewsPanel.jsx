@@ -6,6 +6,7 @@ import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import EmptyState from "./EmptyState";
 import XPostCard from "./XPostCard";
+import TickerLabel from "./TickerLabel";
 import { sourceStale } from "../lib/sources";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import { formatRelativeTime } from "../lib/format";
@@ -153,7 +154,7 @@ export default function NewsPanel({ news, portfolio = [], xPosts = [], sources =
                     {a.title}
                   </a>
                   <div className={styles.meta}>
-                    {a.ticker && <span className={styles.tickerBadge}>{a.ticker}</span>}
+                    {a.ticker && <TickerLabel ticker={a.ticker} className={styles.tickerBadge} />}
                     <span className={styles.domain}>{a.domain}</span>
                     {a.sourcecountry && <span className={styles.sep}>·</span>}
                     {a.sourcecountry && <span>{a.sourcecountry}</span>}

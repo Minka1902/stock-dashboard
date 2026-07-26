@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useDashboardData } from "./hooks/useDashboardData";
 import { useLiveQuotes } from "./hooks/useLiveQuotes";
 import { useTheme } from "./hooks/useTheme";
-import { useSettings } from "./hooks/useSettings";
+import { useSettingsContext } from "./hooks/useSettingsContext";
 import { useAppSettings } from "./hooks/useAppSettings";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
@@ -73,7 +73,7 @@ export default function App({ auth }) {
     (appSettingsApi.appSettings.quotes_refresh_seconds || 30) * 1000,
   );
   const { theme, setTheme, toggle, themes } = useTheme();
-  const { settings, setSetting } = useSettings();
+  const { settings, setSetting } = useSettingsContext();
   const [view, setView] = useState("sentiment");
   const [cmdOpen, setCmdOpen] = useState(false);
   const scrollRef = useRef(null);

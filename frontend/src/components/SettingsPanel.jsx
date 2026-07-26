@@ -24,6 +24,11 @@ const WINDOW_OPTIONS = [
   { key: "cal_month", label: "This Calendar Month", desc: "Move during this calendar month" },
 ];
 
+const NAME_DISPLAY_OPTIONS = [
+  { value: "ticker", label: "Symbols (NVDA)" },
+  { value: "company", label: "Company names (NVIDIA Corporation)" },
+];
+
 // Sections of the analysis page's company block, in render order.
 const COMPANY_SECTIONS = [
   { key: "profile", label: "Profile", desc: "Name, sector, business summary, HQ, headcount, market cap." },
@@ -549,6 +554,30 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
         )}
 
         {/* Reading & focus */}
+        <fieldset className={styles.group}>
+          <legend className={styles.legend}>Ticker labels</legend>
+          <p className={styles.groupHint}>
+            How stocks are named across the dashboard. Company names come from the
+            fundamentals and SEC filing data already stored — a ticker with no
+            recorded name keeps showing its symbol.
+          </p>
+          <div className={styles.segmented} role="radiogroup" aria-label="Ticker labels">
+            {NAME_DISPLAY_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                role="radio"
+                aria-checked={settings.nameDisplay === o.value}
+                className={styles.segment}
+                data-active={settings.nameDisplay === o.value ? "yes" : "no"}
+                onClick={() => setSetting("nameDisplay", o.value)}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
         <fieldset className={styles.group}>
           <legend className={styles.legend}>Company information</legend>
           <p className={styles.groupHint}>

@@ -579,6 +579,13 @@ def company(ticker: str, user=Depends(auth.get_current_user)):
     return _company_payload(clean_ticker(ticker))
 
 
+@app.get("/api/company-names")
+def company_names(user=Depends(auth.get_current_user)):
+    """ticker -> company name, for the "show names instead of symbols" setting.
+    Tickers we have no name for are absent; the UI falls back to the symbol."""
+    return db.get_all_company_names(conn)
+
+
 # ---------- per-holding technical analysis ----------
 @app.get("/api/analysis")
 def analyses(user=Depends(auth.get_current_user)):

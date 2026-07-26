@@ -5,6 +5,7 @@ import Icon from "./Icon";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import AnimatedNumber from "./AnimatedNumber";
+import TickerLabel from "./TickerLabel";
 import { getBoomScoreHistory } from "../api";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import styles from "./BoomScorePanel.module.css";
@@ -111,7 +112,7 @@ export default function BoomScorePanel({ data, loading, busy, onRefresh, compact
                 <span className={styles.rank}>{idx + 1}</span>
 
                 <span className={styles.ticker}>
-                  {s.ticker}
+                  <TickerLabel ticker={s.ticker} />
                   {s.earnings_soon && (
                     <span className={styles.earningsWarn} title="Earnings within 7 days — high event risk">⚠</span>
                   )}

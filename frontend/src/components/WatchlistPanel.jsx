@@ -4,6 +4,7 @@ import Icon from "./Icon";
 import ExtHoursBadge from "./ExtHoursBadge";
 import Sparkline from "./Sparkline";
 import SparkRange from "./SparkRange";
+import TickerLabel from "./TickerLabel";
 import { useWatchlists } from "../hooks/useWatchlists";
 import { useSparklines } from "../hooks/useSparklines";
 import { openTickerTab } from "../lib/nav";
@@ -179,7 +180,7 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
                 onClick={() => openTickerTab(w.ticker)}
                 title={`Open ${w.ticker} analysis in a new tab`}
               >
-                <span className={styles.symbol}>{w.ticker}</span>
+                <TickerLabel ticker={w.ticker} className={styles.symbol} />
               </button>
               <span className={styles.price}>
                 {q && q.price != null ? q.price.toFixed(2) : "—"}
