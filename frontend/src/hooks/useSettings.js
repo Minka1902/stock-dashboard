@@ -19,6 +19,10 @@ const DEFAULTS = {
   collapsed: {},
   // Map of view key -> true once its guided tour has run (auto-runs once per view).
   toursSeen: {},
+  // Which company sections the analysis page shows (Task 11).
+  companyInfo: {
+    profile: true, valuation: true, officers: true, holders: true, insiders: true,
+  },
 };
 
 function initialSettings() {

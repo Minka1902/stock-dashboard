@@ -14,6 +14,7 @@ from app.models import (
     AppSettings,
     AuthSession,
     BoomScore,
+    CompanyHolder,
     CongressTrade,
     ContractRecord,
     EconEvent,
@@ -380,6 +381,16 @@ def init_schema(conn: sqlite3.Connection) -> None:
             profit_margin  REAL,
             market_cap     REAL
         );
+        CREATE TABLE IF NOT EXISTS company_holders (
+            ticker      TEXT NOT NULL,
+            kind        TEXT NOT NULL DEFAULT 'institution',
+            holder      TEXT NOT NULL,
+            pct_held    REAL,
+            shares      REAL,
+            value       REAL,
+            reported_at TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (ticker, kind, holder)
+        );
         CREATE TABLE IF NOT EXISTS boom_score_history (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             ticker      TEXT NOT NULL,
@@ -516,6 +527,21 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _migrate_users_onboarded(conn)
     _migrate_watchlists(conn)
     _try_add_column(conn, "news", "ticker", "TEXT NOT NULL DEFAULT ''")
+
+    # Company profile fields, parsed from the same Yahoo quoteSummary call that
+    # already backed sector/industry (Task 11).
+    for col, col_def in [
+        ("name",            "TEXT"),
+        ("website",         "TEXT"),
+        ("country",         "TEXT"),
+        ("city",            "TEXT"),
+        ("employees",       "INTEGER"),
+        ("summary",         "TEXT"),
+        ("officers_json",   "TEXT NOT NULL DEFAULT ''"),
+        ("insider_pct",     "REAL"),
+        ("institution_pct", "REAL"),
+    ]:
+        _try_add_column(conn, "fundamentals", col, col_def)
 
     # Migrate existing tables: add new columns (safe on pre-existing databases).
     for col, col_def in [
@@ -680,6 +706,17 @@ def get_trades(conn: sqlite3.Connection, limit: int = 60) -> list[InsiderTrade]:
     cur = conn.execute(
         "SELECT * FROM insider_trades ORDER BY filed_at DESC, value DESC LIMIT ?",
         (limit,),
+    )
+    return [InsiderTrade(**dict(row)) for row in cur.fetchall()]
+
+
+def get_trades_for(conn: sqlite3.Connection, ticker: str, limit: int = 25) -> list[InsiderTrade]:
+    """This ticker's Form 4 filings, newest first. get_trades() is global and
+    capped, so filtering it client-side would silently miss older filings."""
+    cur = conn.execute(
+        "SELECT * FROM insider_trades WHERE ticker = ? "
+        "ORDER BY filed_at DESC, value DESC LIMIT ?",
+        (ticker, limit),
     )
     return [InsiderTrade(**dict(row)) for row in cur.fetchall()]
 
@@ -1426,16 +1463,24 @@ def upsert_fundamentals(conn: sqlite3.Connection, records: list[Fundamentals]) -
         """
         INSERT INTO fundamentals
             (ticker, fetched_at, sector, industry, pe_ratio, forward_pe,
-             peg_ratio, pb_ratio, revenue_growth, profit_margin, market_cap)
+             peg_ratio, pb_ratio, revenue_growth, profit_margin, market_cap,
+             name, website, country, city, employees, summary, officers_json,
+             insider_pct, institution_pct)
         VALUES
             (:ticker, :fetched_at, :sector, :industry, :pe_ratio, :forward_pe,
-             :peg_ratio, :pb_ratio, :revenue_growth, :profit_margin, :market_cap)
+             :peg_ratio, :pb_ratio, :revenue_growth, :profit_margin, :market_cap,
+             :name, :website, :country, :city, :employees, :summary, :officers_json,
+             :insider_pct, :institution_pct)
         ON CONFLICT(ticker) DO UPDATE SET
             fetched_at=excluded.fetched_at, sector=excluded.sector,
             industry=excluded.industry, pe_ratio=excluded.pe_ratio,
             forward_pe=excluded.forward_pe, peg_ratio=excluded.peg_ratio,
             pb_ratio=excluded.pb_ratio, revenue_growth=excluded.revenue_growth,
-            profit_margin=excluded.profit_margin, market_cap=excluded.market_cap
+            profit_margin=excluded.profit_margin, market_cap=excluded.market_cap,
+            name=excluded.name, website=excluded.website, country=excluded.country,
+            city=excluded.city, employees=excluded.employees, summary=excluded.summary,
+            officers_json=excluded.officers_json, insider_pct=excluded.insider_pct,
+            institution_pct=excluded.institution_pct
         """,
         [r.model_dump() for r in records],
     )
@@ -1445,6 +1490,33 @@ def upsert_fundamentals(conn: sqlite3.Connection, records: list[Fundamentals]) -
 def get_fundamentals(conn: sqlite3.Connection) -> list[Fundamentals]:
     cur = conn.execute("SELECT * FROM fundamentals ORDER BY ticker ASC")
     return [Fundamentals(**dict(row)) for row in cur.fetchall()]
+
+
+def upsert_company_holders(conn: sqlite3.Connection, records: list[CompanyHolder]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO company_holders
+            (ticker, kind, holder, pct_held, shares, value, reported_at)
+        VALUES (:ticker, :kind, :holder, :pct_held, :shares, :value, :reported_at)
+        ON CONFLICT(ticker, kind, holder) DO UPDATE SET
+            pct_held=excluded.pct_held, shares=excluded.shares,
+            value=excluded.value, reported_at=excluded.reported_at
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+
+
+def get_company_holders_for(
+    conn: sqlite3.Connection, ticker: str, limit: int = 10,
+) -> list[CompanyHolder]:
+    cur = conn.execute(
+        "SELECT ticker, kind, holder, pct_held, shares, value, reported_at "
+        "FROM company_holders WHERE ticker = ? "
+        "ORDER BY pct_held DESC NULLS LAST, holder ASC LIMIT ?",
+        (ticker, limit),
+    )
+    return [CompanyHolder(**dict(row)) for row in cur.fetchall()]
 
 
 def get_fundamentals_for(conn: sqlite3.Connection, ticker: str) -> "Fundamentals | None":

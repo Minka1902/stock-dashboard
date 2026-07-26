@@ -1,4 +1,5 @@
 """FastAPI surface + scheduler wiring."""
+import json
 import logging
 import re
 from contextlib import asynccontextmanager
@@ -88,6 +89,15 @@ def fundamentals_fetch(conn):
     if not tickers:
         return []
     return fundamentals_source.fetch(tickers)
+
+
+def _store_fundamentals(conn, records) -> None:
+    """Persist the valuation/profile rows plus the institutional holders that
+    rode along on the same responses (see sources/fundamentals.fetch)."""
+    db.upsert_fundamentals(conn, records)
+    holders = getattr(records, "holders", None)
+    if holders:
+        db.upsert_company_holders(conn, holders)
 
 
 def x_posts_fetch(conn):
@@ -196,7 +206,7 @@ def build_sources(conn):
         "short_interest": (lambda: short_interest_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_short_interest, None),
         "social":         (lambda: social_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_social_sentiment, None),
         "analyst":        (lambda: analyst_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_analyst_signals, None),
-        "fundamentals":   (lambda: fundamentals_fetch(conn), db.upsert_fundamentals, None),
+        "fundamentals":   (lambda: fundamentals_fetch(conn), _store_fundamentals, None),
         "x_posts":        (lambda: x_posts_fetch(conn), db.upsert_x_posts, config.X_MIN_INTERVAL_SECONDS),
         "seasonality":    (lambda: seasonality_fetch(conn), db.upsert_seasonality, config.SEASONALITY_MIN_INTERVAL_SECONDS),
         "boom_score":     (lambda: score_fetch(conn), db.upsert_boom_scores, None),
@@ -536,7 +546,37 @@ def analyze_ticker(ticker: str, user=Depends(auth.get_current_user)):
         "source": result["source"],
         "seasonality_anchors": analyze.get_anchors(conn, t),
         "x_posts": [p.model_dump() for p in db.get_x_posts_for(conn, t)],
+        # Company identity + who's trading it. Both come from getters that
+        # already exist, so the analysis page stays one round trip.
+        "company": _company_payload(t),
+        "insider_trades": [tr.model_dump() for tr in db.get_trades_for(conn, t)],
     }
+
+
+def _company_payload(ticker: str) -> dict:
+    """Profile + ownership for a ticker. Absent data stays absent — a ticker
+    with no fundamentals row returns nulls rather than invented values."""
+    f = db.get_fundamentals_for(conn, ticker)
+    officers = []
+    if f and f.officers_json:
+        try:
+            officers = json.loads(f.officers_json)
+        except ValueError:
+            officers = []
+    # The company name may exist from a Form 4 filing even when Yahoo
+    # fundamentals haven't been fetched for this ticker yet.
+    fallback_name = db.get_company_names(conn, [ticker]).get(ticker)
+    return {
+        "profile": f.model_dump() if f else None,
+        "name": (f.name if f and f.name else None) or fallback_name,
+        "officers": officers,
+        "holders": [h.model_dump() for h in db.get_company_holders_for(conn, ticker)],
+    }
+
+
+@app.get("/api/company/{ticker}")
+def company(ticker: str, user=Depends(auth.get_current_user)):
+    return _company_payload(clean_ticker(ticker))
 
 
 # ---------- per-holding technical analysis ----------

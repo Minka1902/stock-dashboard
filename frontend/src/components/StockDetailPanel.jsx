@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import Icon from "./Icon";
 import ChartPro from "./ChartPro";
+import CompanyInfo from "./CompanyInfo";
+import InsiderTrades from "./InsiderTrades";
 import Skeleton from "./Skeleton";
 import XPostCard from "./XPostCard";
 import { getAnalyze, analysisReportUrl } from "../api";
+import { useSettings } from "../hooks/useSettings";
 import styles from "./StockDetailPanel.module.css";
 
 const DIRECTIVE_TONE = {
@@ -46,6 +49,9 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   // shows the skeleton again without any synchronous setState in the effect.
   const [result, setResult] = useState(null);
   const [watchBusy, setWatchBusy] = useState(false);
+  // This page opens in its own tab, so reading the stored prefs at mount gives
+  // the current values without needing them threaded down from App.
+  const { settings } = useSettings();
 
   useEffect(() => {
     let alive = true;
@@ -60,6 +66,9 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   const a = data?.analysis;
   const anchors = data?.seasonality_anchors || [];
   const xPosts = data?.x_posts || [];
+  const company = data?.company || null;
+  const insiderTrades = data?.insider_trades || [];
+  const companyInfo = settings.companyInfo || {};
   const lastClose = data?.daily?.length ? data.daily[data.daily.length - 1].close : null;
   const refPrice = a?.price ?? lastClose;
   const watched = watchlist?.some((w) => w.ticker === ticker);
@@ -135,6 +144,20 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
           <Pane caption="Chart">
             <ChartPro ticker={ticker} analysis={a} />
           </Pane>
+
+          {companyInfo.profile !== false && (
+            <Pane caption="Company"
+                  right={<span className={styles.muted}>who this is · who owns it</span>}>
+              <CompanyInfo company={company} ticker={ticker} show={companyInfo} />
+            </Pane>
+          )}
+
+          {companyInfo.insiders !== false && (
+            <Pane caption="Insider trades"
+                  right={<span className={styles.muted}>SEC Form 4 · newest first</span>}>
+              <InsiderTrades trades={insiderTrades} ticker={ticker} />
+            </Pane>
+          )}
 
           {anchors.length > 0 && (
             <Pane caption="This day in history"
