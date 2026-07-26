@@ -72,6 +72,13 @@
 }
 .paneBody { padding: var(--s-4); }
 
+/* The chart carries its own toolbar and legend, so it gets the pane surface
+   without a caption head — the ticker is already the page heading. */
+.chartPane {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-md); overflow: hidden; padding: var(--s-4);
+}
+
 .tf { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
 .tfBtn {
   padding: 4px 12px; border: none; background: var(--surface-2); color: var(--text-muted);

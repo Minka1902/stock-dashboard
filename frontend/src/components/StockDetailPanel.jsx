@@ -132,9 +132,9 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
         <Skeleton w="100%" h="460px" />
       ) : (
         <>
-          <Pane caption="Chart">
+          <section className={styles.chartPane}>
             <ChartPro ticker={ticker} analysis={a} />
-          </Pane>
+          </section>
 
           {anchors.length > 0 && (
             <Pane caption="This day in history"
