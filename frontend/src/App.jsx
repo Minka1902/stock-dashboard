@@ -268,7 +268,7 @@ export default function App({ auth }) {
             )}
 
             {view === "suggestions" && (
-              <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} />
+              <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} onAddWatch={addWatch} />
             )}
 
             {view === "portfolio" && (
@@ -299,7 +299,7 @@ export default function App({ auth }) {
             {view === "overview" && (
               <>
                 <BoomScorePanel data={boomScores} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("boom-score")} collapsible collapsed={isCollapsed("boom-score")} onToggleCollapse={() => toggleCollapsed("boom-score")} />
-                <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("suggestions")} collapsible collapsed={isCollapsed("suggestions")} onToggleCollapse={() => toggleCollapsed("suggestions")} />
+                <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} onAddWatch={addWatch} compact onViewAll={() => setView("suggestions")} collapsible collapsed={isCollapsed("suggestions")} onToggleCollapse={() => toggleCollapsed("suggestions")} />
                 <StatGrid contracts={contracts} sources={sources} loading={loading} />
                 <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("contracts")} collapsible collapsed={isCollapsed("contracts")} onToggleCollapse={() => toggleCollapsed("contracts")} />
                 <div className={styles.twoCol}>

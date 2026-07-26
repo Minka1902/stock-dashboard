@@ -105,11 +105,54 @@ def _seasonality_signal(season, primary=_PRIMARY_WINDOW):
 
 
 def _opportunity_universe(conn, user_id: int, held: set) -> list[str]:
-    """New-opportunity candidates = (user watchlist ∪ signal-source candidates)
-    minus what the user already holds. Single pluggable source of names."""
-    watch = {w.ticker for w in db.get_watchlist(conn, user_id)}
+    """New-opportunity candidates = (every watchlist the user owns ∪ signal-source
+    candidates) minus what the user already holds. Single pluggable source of
+    names."""
+    watch = set(db.get_watched_tickers_for_user(conn, user_id))
     candidates = set(db.get_signal_candidate_tickers(conn, config.OPPORTUNITY_CANDIDATES))
     return sorted((watch | candidates) - set(held))
+
+
+def _rank_opportunities(tickers, stored, boom, limit: int) -> list[dict]:
+    """Top TA "buy" names among `tickers`, ranked by conviction then R/R.
+
+    Falls back to Boom ranking (flagged ta_pending) when none of them has a
+    stored analysis yet — explicit absence, never fabricated TA.
+    """
+    have = {t: stored[t] for t in tickers if t in stored}
+    if have:
+        buys = [(t, a) for t, a in have.items() if a.recommendation == "buy" and a.rr_pass]
+        buys.sort(key=lambda ta: (ta[1].conviction, ta[1].rr or 0), reverse=True)
+        out = []
+        for t, a in buys[:limit]:
+            b = boom.get(t)
+            out.append({
+                "ticker": t,
+                "score": b.score if b else None,         # Boom = secondary evidence now
+                "signals": _fired(b, _BULLISH_LABELS) if b else [],
+                "recommendation": a.recommendation,
+                "conviction": a.conviction,
+                "rr": a.rr,
+                "entry": a.entry,
+                "stop": a.stop,
+                "target": a.target,
+                "evidence": [e.detail for e in a.evidence if e.signal != "neutral"][:3],
+            })
+        return out
+
+    candidates = sorted(
+        (boom[t] for t in tickers if t in boom),
+        key=lambda b: b.score, reverse=True,
+    )
+    return [
+        {
+            "ticker": b.ticker,
+            "score": b.score,
+            "signals": _fired(b, _BULLISH_LABELS),
+            "ta_pending": True,
+        }
+        for b in candidates[:limit] if b.score > 0
+    ]
 
 
 def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
@@ -123,7 +166,9 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
     analyst = {a.ticker: a for a in db.get_analyst_signals(conn)}
     portfolio = db.get_portfolio(conn, user_id)
     held = {h.ticker for h in portfolio}
-    watchlist = [w.ticker for w in db.get_watchlist(conn, user_id)]
+    # Every list the user owns, not just their first one.
+    watchlist = db.get_watched_tickers_for_user(conn, user_id)
+    list_map = db.get_watchlist_map(conn, user_id)
 
     fg_score = db.get_latest_fear_greed_score(conn)
     uninversion = db.has_yield_uninversion(conn)
@@ -193,6 +238,7 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
 
         holdings_alerts.append({
             "ticker": h.ticker,
+            "lists": list_map.get(h.ticker, []),
             "action": action,
             "reasons": reasons,
             "pl_pct": pl_pct,
@@ -206,44 +252,26 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
     # Surface the most actionable holdings first (risk before hold).
     holdings_alerts.sort(key=lambda x: (x["score"] if x["score"] is not None else 0))
 
-    # --- New opportunities (TA-driven; Boom demoted to secondary evidence) ---
+    # --- Opportunities (TA-driven; Boom demoted to secondary evidence) ---
+    # Split so names you already track can't crowd out genuinely new ideas, and
+    # vice versa: each pool is ranked and capped on its own.
     universe = _opportunity_universe(conn, user_id, held)
     stored = {t: db.get_analysis(conn, t) for t in universe}
     stored = {t: a for t, a in stored.items() if a is not None}
-    opportunities = []
-    if stored:
-        buys = [(t, a) for t, a in stored.items() if a.recommendation == "buy" and a.rr_pass]
-        buys.sort(key=lambda ta: (ta[1].conviction, ta[1].rr or 0), reverse=True)
-        for t, a in buys[: config.SUGGESTIONS_COUNT]:
-            b = boom.get(t)
-            opportunities.append({
-                "ticker": t,
-                "score": b.score if b else None,             # Boom = secondary evidence now
-                "signals": _fired(b, _BULLISH_LABELS) if b else [],
-                "recommendation": a.recommendation,
-                "conviction": a.conviction,
-                "rr": a.rr,
-                "entry": a.entry,
-                "stop": a.stop,
-                "target": a.target,
-                "evidence": [e.detail for e in a.evidence if e.signal != "neutral"][:3],
-            })
-    else:
-        # Fresh deploy: no candidate has a stored analysis yet. Fall back to Boom
-        # ranking, flagged ta_pending — explicit absence, never fabricated TA.
-        candidates = sorted(
-            (boom[t] for t in universe if t in boom),
-            key=lambda b: b.score, reverse=True,
-        )
-        for b in candidates[: config.SUGGESTIONS_COUNT]:
-            if b.score <= 0:
-                continue
-            opportunities.append({
-                "ticker": b.ticker,
-                "score": b.score,
-                "signals": _fired(b, _BULLISH_LABELS),
-                "ta_pending": True,
-            })
+    watch_set = set(watchlist)
+
+    tracked = [t for t in universe if t in watch_set]
+    fresh = [t for t in universe if t not in watch_set]
+
+    opportunities = _rank_opportunities(tracked, stored, boom, config.SUGGESTIONS_COUNT)
+    for o in opportunities:
+        o["lists"] = list_map.get(o["ticker"], [])
+
+    new_ideas = _rank_opportunities(fresh, stored, boom, config.SUGGESTIONS_COUNT)
+    for o in new_ideas:
+        # Why this name surfaced at all — a congress buy, insider cluster,
+        # upgrade, social spike or a large contract.
+        o["watched"] = False
 
     # --- Seasonality tailwinds / headwinds ---
     seasonality = []
@@ -260,6 +288,7 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
         if tailwind or (headwind and is_held):
             seasonality.append({
                 "ticker": t,
+                "lists": list_map.get(t, []),
                 "window_label": label,
                 "avg_pct": round(avg * 100, 1),
                 "win_rate": round(win_rate, 2),
@@ -277,6 +306,7 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
         "market_context": market_context,
         "holdings_alerts": holdings_alerts,
         "opportunities": opportunities,
+        "new_ideas": new_ideas,
         "seasonality": seasonality,
     }
 
@@ -315,8 +345,13 @@ def render_email(digest: dict) -> tuple[str, str, str]:
         lines += [f"  • {_alert_line(a)}" for a in d["holdings_alerts"]]
         lines.append("")
     if d["opportunities"]:
-        lines.append("NEW OPPORTUNITIES")
+        lines.append("ON YOUR WATCHLISTS")
         for o in d["opportunities"]:
+            lines.append("  • " + _opportunity_line(o))
+        lines.append("")
+    if d.get("new_ideas"):
+        lines.append("NEW IDEAS (not yet tracked)")
+        for o in d["new_ideas"]:
             lines.append("  • " + _opportunity_line(o))
         lines.append("")
     if d["seasonality"]:
@@ -342,9 +377,8 @@ def render_email(digest: dict) -> tuple[str, str, str]:
         html_parts.append("<h3>Your holdings</h3><ul>")
         html_parts += [f"<li>{esc(_alert_line(a))}</li>" for a in d["holdings_alerts"]]
         html_parts.append("</ul>")
-    if d["opportunities"]:
-        html_parts.append("<h3>New opportunities</h3><ul>")
-        for o in d["opportunities"]:
+    def _opportunity_items(rows):
+        for o in rows:
             if o.get("ta_pending"):
                 sig = f" — {esc(', '.join(o['signals']))}" if o["signals"] else ""
                 html_parts.append(
@@ -357,6 +391,14 @@ def render_email(digest: dict) -> tuple[str, str, str]:
                 html_parts.append(
                     f"<li><b>{esc(o['ticker'])}</b> · {esc(o['recommendation'].upper())} "
                     f"(conv {o['conviction']}{rr}){esc(plan)}</li>")
+
+    if d["opportunities"]:
+        html_parts.append("<h3>On your watchlists</h3><ul>")
+        _opportunity_items(d["opportunities"])
+        html_parts.append("</ul>")
+    if d.get("new_ideas"):
+        html_parts.append("<h3>New ideas (not yet tracked)</h3><ul>")
+        _opportunity_items(d["new_ideas"])
         html_parts.append("</ul>")
     if d["seasonality"]:
         html_parts.append("<h3>Seasonal edge</h3><ul>")
@@ -382,8 +424,9 @@ def render_sms(digest: dict, max_len: int = 320) -> str:
         a = d["holdings_alerts"][0]
         short = a["action"].split(" —")[0].split(" -")[0]
         bits.append(f"⚠ {a['ticker']}→{short}.")
-    if d["opportunities"]:
-        o = d["opportunities"][0]
+    top_idea = (d["opportunities"] or d.get("new_ideas") or [None])[0]
+    if top_idea:
+        o = top_idea
         if o.get("ta_pending"):
             sig = f" {o['signals'][0]}" if o["signals"] else ""
             bits.append(f"💡 {o['ticker']} Boom {o['score']}{sig}.")
