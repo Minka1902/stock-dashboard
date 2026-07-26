@@ -29,6 +29,7 @@ import FundamentalsPanel from "./components/FundamentalsPanel";
 import SeasonalityPanel from "./components/SeasonalityPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import SuggestionsPanel from "./components/SuggestionsPanel";
+import SuggestionHistoryPanel from "./components/SuggestionHistoryPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
 import XPostsPanel from "./components/XPostsPanel";
 import InfoPanel from "./components/InfoPanel";
@@ -60,6 +61,7 @@ const TITLES = {
   fundamentals: "Fundamentals",
   seasonality: "Seasonality",
   suggestions: "Suggestions",
+  "suggestion-history": "Suggestion History",
   portfolio:   "Portfolio",
   x:           "X Watch",
   info:        "Info",
@@ -283,6 +285,7 @@ export default function App({ auth }) {
               <NewsPanel news={news} portfolio={portfolio} xPosts={xPosts} sources={sources} loading={loading} busy={busy} onRefresh={refresh} />
             )}
 
+            {view === "suggestion-history" && <SuggestionHistoryPanel />}
             {view === "settings" && (
               <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={navigate} appSettingsApi={appSettingsApi} user={auth?.user} theme={theme} onSetTheme={setTheme} themes={themes} />
             )}
