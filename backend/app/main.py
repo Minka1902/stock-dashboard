@@ -613,6 +613,29 @@ def company(ticker: str, user=Depends(auth.get_current_user)):
     return _company_payload(clean_ticker(ticker))
 
 
+class DrawingsUpdate(BaseModel):
+    shapes: list[dict] = []
+
+
+# A drawing is a handful of points; this bounds a pathological payload without
+# getting in the way of real annotation.
+_MAX_SHAPES = 200
+
+
+@app.get("/api/drawings/{ticker}")
+def get_drawings(ticker: str, user=Depends(auth.get_current_user)):
+    return db.get_drawings(conn, user.id, clean_ticker(ticker))
+
+
+@app.put("/api/drawings/{ticker}")
+def put_drawings(ticker: str, body: DrawingsUpdate, user=Depends(auth.get_current_user)):
+    if len(body.shapes) > _MAX_SHAPES:
+        raise HTTPException(status_code=400, detail=f"at most {_MAX_SHAPES} drawings per ticker")
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    db.save_drawings(conn, user.id, clean_ticker(ticker), body.shapes, now)
+    return {"shapes": body.shapes, "updated_at": now}
+
+
 @app.get("/api/company-names")
 def company_names(user=Depends(auth.get_current_user)):
     """ticker -> company name, for the "show names instead of symbols" setting.

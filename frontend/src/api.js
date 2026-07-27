@@ -103,6 +103,11 @@ export const getAnalyze = (ticker) =>
 export const getCompany = (ticker) =>
   getJSON(`/api/company/${encodeURIComponent(ticker)}`);
 export const getCompanyNames = () => getJSON("/api/company-names");
+// Chart annotations, per user + ticker.
+export const getDrawings = (ticker) =>
+  getJSON(`/api/drawings/${encodeURIComponent(ticker)}`);
+export const saveDrawings = (ticker, shapes) =>
+  request(`/api/drawings/${encodeURIComponent(ticker)}`, { method: "PUT", body: { shapes } });
 
 export const markAlertsRead = (payload = { all: true }) =>
   request("/api/alerts/read", { method: "POST", body: payload });
