@@ -162,6 +162,22 @@ function fmtVol(v) {
   return String(Math.round(v));
 }
 
+// Sub-pane heights in px. Deliberately compact: the indicators are a glance
+// check, not the subject — every pixel here comes out of the price pane, which
+// is capped by the viewport clamp below.
+const PANE_HEIGHTS = { vol: 56, rsi: 64, macd: 72 };
+
+// IPaneApi.priceScale() throws when the id isn't present on that pane, which
+// can happen transiently while series are being rebuilt. Callers just want to
+// skip the pane in that case.
+function rightScaleOf(pane) {
+  try {
+    return pane.priceScale("right");
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Pro chart workspace (TradingView lightweight-charts v5): chart types,
  * intraday-to-monthly timeframes, indicator menu with RSI/MACD sub-panes,
@@ -304,20 +320,45 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     const ro = new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth }));
     ro.observe(el);
 
-    // Wheel over the right price axis scales the price axis (Task 7). The
-    // library's own wheel handler always zooms the *time* scale regardless of
-    // cursor position, so we intercept in the capture phase when the cursor is
-    // over the axis, zoom the price range via setVisibleRange, and stop the
+    // Resolve the pane under a pointer event, so axis gestures act on the pane
+    // you are actually pointing at (VOL/RSI/MACD each own a price scale) rather
+    // than always on the main price pane. Panes stack top-to-bottom; the
+    // separators between them are a couple of px we don't bother modelling.
+    const paneAt = (event) => {
+      const panes = chart.panes();
+      if (!panes.length) return null;
+      const y = event.clientY - el.getBoundingClientRect().top;
+      let acc = 0;
+      for (const pane of panes) {
+        acc += pane.getHeight();
+        if (y <= acc) return pane;
+      }
+      return panes[panes.length - 1];
+    };
+
+    // True when the pointer is over the right-hand price axis rather than the
+    // plot body. The axis width is shared by every pane.
+    const overAxis = (event) => {
+      const rect = el.getBoundingClientRect();
+      const axisW = chart.priceScale("right").width() || 60; // fallback pre-measure
+      return event.clientX >= rect.right - axisW;
+    };
+
+    // Wheel over a price axis scales THAT pane's price axis. The library's own
+    // wheel handler always zooms the *time* scale regardless of cursor
+    // position, so we intercept in the capture phase when the cursor is over an
+    // axis, zoom that pane's price range via setVisibleRange, and stop the
     // event before it reaches the chart. Over the plot body we do nothing, so
     // the built-in time-zoom (and axis drag-scale) still work.
     const onAxisWheel = (event) => {
-      const ps = chart.priceScale("right");
-      const rect = el.getBoundingClientRect();
-      const axisW = ps.width() || 60; // nominal fallback before the axis is measured
-      if (event.clientX < rect.right - axisW) return; // not over the axis → let the chart zoom time
+      if (!overAxis(event)) return; // not over the axis → let the chart zoom time
+      const pane = paneAt(event);
+      if (!pane) return;
       // Over the axis: always intercept so the built-in time-zoom never fires here.
       event.preventDefault();
       event.stopPropagation();
+      const ps = rightScaleOf(pane);
+      if (!ps) return;
       // Lock the scale so getVisibleRange() is populated (it's null under auto-scale).
       ps.setAutoScale(false);
       const range = ps.getVisibleRange();
@@ -329,8 +370,21 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     };
     el.addEventListener("wheel", onAxisWheel, { capture: true, passive: false });
 
+    // Double-click an axis to hand it back to auto-scale — the escape hatch
+    // from a manual zoom, matching the convention in every charting package.
+    const onAxisDblClick = (event) => {
+      if (!overAxis(event)) return;
+      const pane = paneAt(event);
+      if (!pane) return;
+      event.preventDefault();
+      event.stopPropagation();
+      rightScaleOf(pane)?.setAutoScale(true);
+    };
+    el.addEventListener("dblclick", onAxisDblClick, { capture: true });
+
     return () => {
       el.removeEventListener("wheel", onAxisWheel, { capture: true });
+      el.removeEventListener("dblclick", onAxisDblClick, { capture: true });
       chart.unsubscribeCrosshairMove(onMove);
       ro.disconnect();
       chart.remove();
@@ -488,7 +542,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
         time: b.time, value: b.volume,
         color: (b.close >= b.open ? COLORS.up : COLORS.down) + "88",
       })));
-      chart.panes()[paneIndex]?.setHeight?.(88);
+      chart.panes()[paneIndex]?.setHeight?.(PANE_HEIGHTS.vol);
     }
     if (rsi) {
       paneIndex += 1;
@@ -499,7 +553,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       rsiS.setData(rsiSeries(bars));
       rsiS.createPriceLine({ price: 70, color: COLORS.down, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true });
       rsiS.createPriceLine({ price: 30, color: COLORS.up, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true });
-      chart.panes()[paneIndex]?.setHeight?.(100);
+      chart.panes()[paneIndex]?.setHeight?.(PANE_HEIGHTS.rsi);
     }
     if (macd) {
       paneIndex += 1;
@@ -520,7 +574,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
         lastValueVisible: true, title: "Signal",
       }, paneIndex));
       sigLine.setData(signal);
-      chart.panes()[paneIndex]?.setHeight?.(112);
+      chart.panes()[paneIndex]?.setHeight?.(PANE_HEIGHTS.macd);
     }
 
     // analysis overlays (daily view only; hidden in percent-compare mode)
@@ -589,9 +643,9 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     // view preservation: refit only for a genuinely new dataset (ticker/timeframe)
     if (isNewDataset) {
       chart.timeScale().fitContent();
-      // Re-enable price auto-scale so a prior manual wheel-zoom (Task 7) doesn't
-      // freeze the axis at a stale range when the ticker/timeframe changes.
-      chart.priceScale("right").setAutoScale(true);
+      // Re-enable auto-scale on EVERY pane so a prior manual wheel-zoom doesn't
+      // freeze an axis at a stale range when the ticker/timeframe changes.
+      for (const pane of chart.panes()) rightScaleOf(pane)?.setAutoScale(true);
       datasetKeyRef.current = datasetKey;
     } else if (savedRange) {
       const wasAtEdge = savedRange.to >= prevLen - 1.5;
