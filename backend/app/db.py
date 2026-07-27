@@ -675,6 +675,27 @@ def get_company_names(conn: sqlite3.Connection, tickers: list[str]) -> dict[str,
     return {row["ticker"]: row["company"] for row in cur.fetchall()}
 
 
+def get_all_company_names(conn: sqlite3.Connection) -> dict[str, str]:
+    """ticker -> company name for every ticker we have one for.
+
+    Prefers the fundamentals profile name (properly cased, e.g. "NVIDIA
+    Corporation") and falls back to the SEC filing issuer name, which is
+    all-caps but exists for tickers Yahoo hasn't been asked about. Tickers with
+    neither are simply absent — callers fall back to the symbol.
+    """
+    names: dict[str, str] = {}
+    for row in conn.execute(
+        "SELECT ticker, company FROM insider_trades WHERE company != '' "
+        "GROUP BY ticker HAVING MAX(filed_at)"
+    ):
+        names[row["ticker"]] = row["company"]
+    for row in conn.execute(
+        "SELECT ticker, name FROM fundamentals WHERE name IS NOT NULL AND name != ''"
+    ):
+        names[row["ticker"]] = row["name"]
+    return names
+
+
 # ---------- insider trades ----------
 def upsert_trades(conn: sqlite3.Connection, records: list[InsiderTrade]) -> None:
     conn.executemany(

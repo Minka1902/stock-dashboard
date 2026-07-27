@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import EmptyState from "./EmptyState";
+import TickerLabel from "./TickerLabel";
 import { getSuggestionLog } from "../api";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./SuggestionsPanel.module.css";
@@ -53,7 +54,7 @@ function AlertRow({ a }) {
   const risky = /trim|watch|earnings|hedg/i.test(a.action);
   return (
     <li className={styles.alert}>
-      <span className={styles.symbol}>{a.ticker}</span>
+      <TickerLabel ticker={a.ticker} className={styles.symbol} />
       {a.pl_pct != null && (
         <span className={styles.pl} data-tone={tone}>
           {a.pl_pct >= 0 ? "+" : ""}{a.pl_pct.toFixed(1)}%
@@ -74,7 +75,7 @@ function OpportunityRow({ o }) {
   if (o.ta_pending) {
     return (
       <li className={styles.alert}>
-        <span className={styles.symbol}>{o.ticker}</span>
+        <TickerLabel ticker={o.ticker} className={styles.symbol} />
         <span className={styles.score}>Boom {o.score}</span>
         <span className={styles.reasons}>
           {o.signals.map((s) => <span key={s} className={styles.chip} data-tone="bull">{s}</span>)}
@@ -86,7 +87,7 @@ function OpportunityRow({ o }) {
   const tone = o.recommendation === "buy" ? "bull" : o.recommendation === "sell" ? "bear" : "muted";
   return (
     <li className={styles.alert}>
-      <span className={styles.symbol}>{o.ticker}</span>
+      <TickerLabel ticker={o.ticker} className={styles.symbol} />
       <span className={styles.chip} data-tone={tone}>{(o.recommendation || "hold").toUpperCase()}</span>
       <span className={styles.action} data-risk="no">
         conv {o.conviction}
@@ -156,7 +157,7 @@ export default function SuggestionsPanel({ data, loading, busy, onRefresh, compa
               <ul className={styles.list}>
                 {data.seasonality.map((s) => (
                   <li key={s.ticker} className={styles.alert}>
-                    <span className={styles.symbol}>{s.ticker}</span>
+                    <TickerLabel ticker={s.ticker} className={styles.symbol} />
                     <span className={styles.action} data-risk={s.kind === "headwind" ? "yes" : "no"}>
                       {s.window_label}: avg {s.avg_pct >= 0 ? "+" : ""}{s.avg_pct}%, win {Math.round(s.win_rate * 100)}% / {s.n}y
                     </span>

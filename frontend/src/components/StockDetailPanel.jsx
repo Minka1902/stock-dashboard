@@ -4,9 +4,10 @@ import ChartPro from "./ChartPro";
 import CompanyInfo from "./CompanyInfo";
 import InsiderTrades from "./InsiderTrades";
 import Skeleton from "./Skeleton";
+import TickerLabel from "./TickerLabel";
 import XPostCard from "./XPostCard";
 import { getAnalyze, analysisReportUrl } from "../api";
-import { useSettings } from "../hooks/useSettings";
+import { useSettingsContext } from "../hooks/useSettingsContext";
 import styles from "./StockDetailPanel.module.css";
 
 const DIRECTIVE_TONE = {
@@ -49,9 +50,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   // shows the skeleton again without any synchronous setState in the effect.
   const [result, setResult] = useState(null);
   const [watchBusy, setWatchBusy] = useState(false);
-  // This page opens in its own tab, so reading the stored prefs at mount gives
-  // the current values without needing them threaded down from App.
-  const { settings } = useSettings();
+  const { settings } = useSettingsContext();
 
   useEffect(() => {
     let alive = true;
@@ -87,7 +86,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
         <button className={styles.back} onClick={onBack}>
           <Icon name="arrowRight" size={14} /> <span>Back</span>
         </button>
-        <h2 className={styles.ticker}>{ticker}</h2>
+        <TickerLabel ticker={ticker} className={styles.ticker} as="h2" />
         {a && a.recommendation && (
           <span className={styles.directive} data-tone={RECO_TONE[a.recommendation]}
                 title="Buy / Sell / Hold — the headline call">{a.recommendation.toUpperCase()}</span>

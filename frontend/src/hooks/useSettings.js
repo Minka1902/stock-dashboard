@@ -19,6 +19,9 @@ const DEFAULTS = {
   collapsed: {},
   // Map of view key -> true once its guided tour has run (auto-runs once per view).
   toursSeen: {},
+  // Label tickers by symbol ("NVDA") or company name ("NVIDIA Corporation").
+  // Falls back to the symbol wherever no name is stored.
+  nameDisplay: "ticker",
   // Which company sections the analysis page shows (Task 11).
   companyInfo: {
     profile: true, valuation: true, officers: true, holders: true, insiders: true,

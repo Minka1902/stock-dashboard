@@ -264,6 +264,21 @@ def test_get_crumb_raises_on_an_html_response():
         fundamentals_source.get_crumb(_HtmlClient())
 
 
+def test_company_names_prefer_the_profile_over_the_filing_name(conn):
+    db.upsert_trades(conn, [InsiderTrade(
+        accession="a1", ticker="NVDA", company="NVIDIA CORP", owner="O", role="CEO",
+        transaction_date="2026-07-01", transaction_type="Buy", shares=1.0, value=1.0,
+        filing_url="u", filed_at="2026-07-01",
+    )])
+    # only a filing name so far
+    assert db.get_all_company_names(conn) == {"NVDA": "NVIDIA CORP"}
+    # the properly-cased profile name wins once fundamentals has one
+    db.upsert_fundamentals(conn, [_fundamentals(name="NVIDIA Corporation")])
+    assert db.get_all_company_names(conn)["NVDA"] == "NVIDIA Corporation"
+    # a ticker with neither is simply absent, so callers fall back to the symbol
+    assert "TSLA" not in db.get_all_company_names(conn)
+
+
 def test_get_trades_for_filters_by_ticker(conn):
     def trade(acc, ticker, filed):
         return InsiderTrade(

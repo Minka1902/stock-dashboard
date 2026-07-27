@@ -2,6 +2,7 @@ import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
+import TickerLabel from "./TickerLabel";
 import { formatDate, formatRelativeTime, freshnessTone } from "../lib/format";
 import styles from "./AnalystPanel.module.css";
 
@@ -88,7 +89,7 @@ export default function AnalystPanel({ data, loading, busy, onRefresh, compact =
               ) : (
                 rows.map((s) => (
                   <tr key={s.ticker}>
-                    <td><span className={styles.ticker}>{s.ticker}</span></td>
+                    <td><TickerLabel ticker={s.ticker} className={styles.ticker} /></td>
                     <td className={styles.muted}>{s.next_earnings ? formatDate(s.next_earnings) : "—"}</td>
                     <td className={styles.num}>{s.rec_strong_buy ?? "—"}</td>
                     <td className={styles.num}>{s.rec_buy ?? "—"}</td>

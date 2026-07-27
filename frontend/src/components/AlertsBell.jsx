@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
+import TickerLabel from "./TickerLabel";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./AlertsBell.module.css";
 
@@ -73,7 +74,7 @@ export default function AlertsBell({ alerts = [], unread = 0, onMarkRead }) {
                   <span className={styles.dot} data-sev={a.severity} />
                   <div className={styles.body}>
                     <div className={styles.line1}>
-                      <span className={styles.symbol}>{a.ticker}</span>
+                      <TickerLabel ticker={a.ticker} className={styles.symbol} />
                       <Icon name={TYPE_ICON[a.type] || "bell"} size={13} />
                       <span className={styles.title}>{a.title}</span>
                       <span className={styles.time}>{formatRelativeTime(a.created_at)}</span>

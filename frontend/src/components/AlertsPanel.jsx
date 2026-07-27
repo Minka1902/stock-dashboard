@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import Icon from "./Icon";
+import TickerLabel from "./TickerLabel";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./AlertsPanel.module.css";
 
@@ -46,7 +47,7 @@ export default function AlertsPanel({ alerts, onMarkRead }) {
               </span>
               <div className={styles.text}>
                 <div className={styles.line1}>
-                  <span className={styles.symbol}>{a.ticker}</span>
+                  <TickerLabel ticker={a.ticker} className={styles.symbol} />
                   <span className={styles.alertTitle}>{a.title}</span>
                   <span className={styles.sev} data-sev={a.severity}>{a.severity}</span>
                 </div>

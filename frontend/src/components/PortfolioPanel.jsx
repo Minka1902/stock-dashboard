@@ -5,6 +5,7 @@ import AnimatedNumber from "./AnimatedNumber";
 import ExtHoursBadge from "./ExtHoursBadge";
 import Sparkline from "./Sparkline";
 import SparkRange from "./SparkRange";
+import TickerLabel from "./TickerLabel";
 import { useSparklines } from "../hooks/useSparklines";
 import { openTickerTab } from "../lib/nav";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
@@ -248,7 +249,7 @@ export default function PortfolioPanel({
                         <td>
                           <button className={styles.symbolBtn} onClick={() => openTickerTab(h.ticker)}
                                   title={`Analyze ${h.ticker} in a new tab`}>
-                            <span className={styles.symbol}>{h.ticker}</span>
+                            <TickerLabel ticker={h.ticker} className={styles.symbol} />
                           </button>
                           <CategorySelect
                             ticker={h.ticker}
