@@ -780,6 +780,69 @@ def remove_watch(conn: sqlite3.Connection, user_id: int, ticker: str, list_id: i
     conn.commit()
 
 
+def update_watch(
+    conn: sqlite3.Connection,
+    user_id: int,
+    ticker: str,
+    from_list_id: int,
+    to_list_id: int | None = None,
+    note: str | None = None,
+) -> bool:
+    """Move a ticker to another list and/or replace its note.
+
+    Returns False when either list isn't the caller's or the ticker isn't on
+    the source list. `note=None` keeps the existing note, so a pure move never
+    loses it — the reason a client-side copy-then-delete is not good enough.
+    Moving onto a list that already holds the ticker keeps the destination row
+    and drops the source one, because (watchlist_id, ticker) is unique.
+    """
+    def owns(list_id: int) -> bool:
+        return conn.execute(
+            "SELECT 1 FROM watchlists WHERE id = ? AND user_id = ?", (list_id, user_id),
+        ).fetchone() is not None
+
+    if not owns(from_list_id):
+        return False
+    row = conn.execute(
+        "SELECT note FROM watchlist WHERE watchlist_id = ? AND ticker = ?",
+        (from_list_id, ticker),
+    ).fetchone()
+    if row is None:
+        return False
+
+    new_note = row[0] if note is None else note.strip()
+    dest = from_list_id if to_list_id is None else to_list_id
+
+    if dest == from_list_id:
+        conn.execute(
+            "UPDATE watchlist SET note = ? WHERE watchlist_id = ? AND ticker = ?",
+            (new_note, from_list_id, ticker),
+        )
+    else:
+        if not owns(dest):
+            return False
+        clash = conn.execute(
+            "SELECT 1 FROM watchlist WHERE watchlist_id = ? AND ticker = ?", (dest, ticker),
+        ).fetchone()
+        if clash:
+            conn.execute(
+                "UPDATE watchlist SET note = ? WHERE watchlist_id = ? AND ticker = ?",
+                (new_note, dest, ticker),
+            )
+            conn.execute(
+                "DELETE FROM watchlist WHERE watchlist_id = ? AND ticker = ?",
+                (from_list_id, ticker),
+            )
+        else:
+            conn.execute(
+                "UPDATE watchlist SET watchlist_id = ?, note = ? "
+                "WHERE watchlist_id = ? AND ticker = ?",
+                (dest, new_note, from_list_id, ticker),
+            )
+    conn.commit()
+    return True
+
+
 def get_watchlist(conn: sqlite3.Connection, user_id: int, list_id: int | None = None) -> list[WatchItem]:
     lid = list_id if list_id is not None else _ensure_default_watchlist(conn, user_id)
     cur = conn.execute(

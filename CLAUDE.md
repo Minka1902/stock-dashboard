@@ -65,7 +65,9 @@ SQLite connection are all in-process — see `docs/scaling-roadmap.md` before sc
 - An ASGI middleware in `app/main.py` resolves the cookie once per request into
   `request.state.user` and 401s everything under `/api` except `/api/health` and `/api/auth/*`.
   Routes needing the user take `Depends(auth.get_current_user)`.
-- **Per-user tables**: `watchlist`, `portfolio` (PK `(user_id, ticker)`), `notify_profile`
+- **Per-user tables**: `watchlists` (named lists, PK `id`), `watchlist` (items, PK
+  `(watchlist_id, ticker)` — `user_id` is denormalized onto each row), `portfolio` (PK
+  `(user_id, ticker)`), `notify_profile`
   (PK `user_id`), `alert_reads`. **Shared**: all market-data tables, `stock_analysis` (stored
   *unsized*; `analysis.apply_sizing` personalizes at read time), `app_settings` (PUT is
   admin-only). The first registered account becomes admin and claims legacy `user_id=0` rows
