@@ -3,8 +3,11 @@ import {
 } from "recharts";
 import { AnimatePresence, motion } from "motion/react";
 import Skeleton from "./Skeleton";
-import AnimatedNumber from "./AnimatedNumber";
 import EmptyState from "./EmptyState";
+import SentimentGauge from "./SentimentGauge";
+import TickerLabel from "./TickerLabel";
+import { LEAN_READ, leanLabel, leanTone } from "../lib/lean";
+import { openTickerTab } from "../lib/nav";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import styles from "./MarketSentimentPanel.module.css";
 
@@ -22,18 +25,6 @@ const SIGNAL_LABEL = {
   BUY: "Buy", SELL: "Sell", ALERT: "Alert", EXTREME: "Extreme",
   NEUTRAL: "Neutral", NO_DATA: "No data",
 };
-const LEAN_LABEL = {
-  GREEDY: "Greedy", FEARFUL: "Fearful", NEUTRAL: "Neutral",
-  RISK_ON: "Risk on", RISK_OFF: "Risk off",
-};
-// A one-line, plain-language read per composite lean.
-const LEAN_READ = {
-  GREEDY: "Crowd is greedy. Historically a time to trim, not chase.",
-  FEARFUL: "Crowd is fearful. Historically where opportunities hide.",
-  NEUTRAL: "No strong crowd extreme. Nothing forcing a move today.",
-  RISK_ON: "Risk appetite is on. Momentum has the tailwind.",
-  RISK_OFF: "Risk is coming off. Defense over offense.",
-};
 
 function Chip({ signal }) {
   const s = signal || "NO_DATA";
@@ -45,58 +36,29 @@ function formatBalance(millions) {
   return millions >= 1_000_000 ? `$${(millions / 1_000_000).toFixed(2)}T` : `$${Math.round(millions / 1000)}B`;
 }
 
-/* --- Fear & Greed gauge: custom SVG semicircle + animated amber needle --- */
-function Gauge({ score, rating }) {
-  const has = score != null;
-  const v = has ? Math.max(0, Math.min(100, score)) : 50;
-  const deg = (v - 50) * 1.8; // -90 (fear) .. +90 (greed)
+/** Compact positioning table: crowded shorts / social attention by ticker. */
+function PositioningList({ rows, empty, columns }) {
+  if (!rows.length) return <p className={styles.noData}>{empty}</p>;
   return (
-    <div className={styles.gauge}>
-      <svg viewBox="0 0 300 168" className={styles.gaugeSvg} role="img"
-           aria-label={has ? `Fear and Greed ${Math.round(v)}, ${rating || ""}` : "Fear and Greed, no data"}>
-        <defs>
-          {/* Fear (left) → Greed (right): red → amber → green, matching the
-              score tone and the horizontal Fear & Greed bar. */}
-          <linearGradient id="fgArc" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="var(--negative)" />
-            <stop offset="50%" stopColor="var(--accent)" />
-            <stop offset="100%" stopColor="var(--positive)" />
-          </linearGradient>
-        </defs>
-        <path d="M 30 150 A 120 120 0 0 1 270 150" fill="none" stroke="var(--surface-3)" strokeWidth="16" strokeLinecap="round" />
-        <path d="M 30 150 A 120 120 0 0 1 270 150" fill="none" stroke="url(#fgArc)" strokeWidth="14"
-              strokeLinecap="round" opacity={has ? 1 : 0.28} />
-        {/* ticks */}
-        {[0, 25, 50, 75, 100].map((t) => {
-          const a = (Math.PI * (100 - t)) / 100;
-          const x1 = 150 + Math.cos(a) * 132, y1 = 150 - Math.sin(a) * 132;
-          const x2 = 150 + Math.cos(a) * 120, y2 = 150 - Math.sin(a) * 120;
-          return <line key={t} x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--grid)" strokeWidth="2" />;
-        })}
-        {has && (
-          <motion.g
-            className={styles.needle}
-            animate={{ rotate: deg }}
-            transition={prefersReducedMotion()
-              ? { duration: 0 }
-              : { type: "spring", stiffness: 55, damping: 13 }}
+    <ul className={styles.posList}>
+      {rows.map((r) => (
+        <li key={r.ticker} className={styles.posRow}>
+          <button
+            type="button"
+            className={styles.posSymbolBtn}
+            onClick={() => openTickerTab(r.ticker)}
+            title={`Open ${r.ticker} analysis in a new tab`}
           >
-            <line x1="150" y1="150" x2="150" y2="42" stroke="var(--accent)" strokeWidth="3.5" strokeLinecap="round" />
-            <circle cx="150" cy="42" r="4" fill="var(--accent)" />
-          </motion.g>
-        )}
-        <circle cx="150" cy="150" r="8" fill="var(--surface-3)" stroke="var(--accent)" strokeWidth="2" />
-      </svg>
-      <div className={styles.gaugeScore}>
-        <span className={styles.gaugeNum}>
-          {has ? <AnimatedNumber value={Math.round(v)} duration={1100} /> : "--"}
-        </span>
-        <span className={styles.gaugeRating}>{has ? (rating || "") : "no data"}</span>
-      </div>
-      <div className={styles.gaugeEnds}>
-        <span>Extreme fear</span><span>Extreme greed</span>
-      </div>
-    </div>
+            <TickerLabel ticker={r.ticker} className={styles.posSymbol} />
+          </button>
+          {columns.map((c) => (
+            <span key={c.key} className={styles.posVal} data-tone={c.tone?.(r) || ""}>
+              {c.render(r)}
+            </span>
+          ))}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -185,11 +147,25 @@ function staleness(latestIso, { warnDays, label }) {
 }
 
 export default function MarketSentimentPanel({
-  sentiment, fearGreed, vix, aaii, putCall, marginDebt, loading, busy, onRefresh,
+  sentiment, fearGreed, vix, aaii, putCall, marginDebt,
+  shortInterest = [], social = [], loading, busy, onRefresh,
 }) {
   const ind = sentiment?.indicators || {};
   const lean = sentiment?.overall?.lean || "NEUTRAL";
+  const buyCount = sentiment?.overall?.buy_count ?? 0;
+  const sellCount = sentiment?.overall?.sell_count ?? 0;
   const hasAny = fearGreed.length + vix.length + aaii.length + putCall.length + marginDebt.length > 0;
+
+  // Positioning: the two per-ticker crowd measures the app already collects but
+  // that had no route into the navigation at all.
+  const squeezes = [...shortInterest]
+    .filter((s) => s.short_pct_float != null)
+    .sort((a, b) => b.short_pct_float - a.short_pct_float)
+    .slice(0, 6);
+  const buzz = [...social]
+    .filter((s) => s.mentions != null)
+    .sort((a, b) => b.mentions - a.mentions)
+    .slice(0, 6);
 
   const fgScore = ind.fear_greed?.value != null ? Math.round(ind.fear_greed.value) : null;
 
@@ -240,28 +216,49 @@ export default function MarketSentimentPanel({
 
   return (
     <div className={styles.wrap} id="sentiment">
+      {/* 1 — the headline read, before any instrument. What is the market
+             doing, in one word and one sentence. */}
+      <section className={styles.headline} data-tone={leanTone(lean)}>
+        <div className={styles.headlineMain}>
+          <span className={styles.headlineCap}>The read</span>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.h2
+              key={lean}
+              className={styles.leanWord}
+              data-tone={leanTone(lean)}
+              initial={prefersReducedMotion() ? false : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, y: -10 }}
+              transition={prefersReducedMotion() ? { duration: 0 } : { duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            >
+              {leanLabel(lean)}
+            </motion.h2>
+          </AnimatePresence>
+          <p className={styles.leanRead}>{LEAN_READ[lean] || ""}</p>
+        </div>
+        <div className={styles.tally}>
+          <span className={styles.tallyItem} data-tone="pos">
+            <span className={styles.tallyNum}>{buyCount}</span>
+            <span className={styles.tallyLabel}>say buy</span>
+          </span>
+          <span className={styles.tallyItem} data-tone="neg">
+            <span className={styles.tallyNum}>{sellCount}</span>
+            <span className={styles.tallyLabel}>say sell</span>
+          </span>
+          <span className={styles.tallyItem}>
+            <span className={styles.tallyNum}>{ledger.length - buyCount - sellCount}</span>
+            <span className={styles.tallyLabel}>neutral</span>
+          </span>
+        </div>
+      </section>
+
+      {/* 2 — the gauge and the evidence behind the read, side by side. */}
       <div className={styles.hero} data-tour="sentiment-hero">
         <Pane caption="Fear & Greed Index" right={<span className={styles.paneMeta}>CNN composite</span>} className={styles.gaugePane}>
-          <Gauge score={fgScore} rating={ind.fear_greed?.rating} />
+          <SentimentGauge score={fgScore} rating={ind.fear_greed?.rating} />
         </Pane>
 
-        <Pane caption="Composite read" right={<Chip signal={lean === "GREEDY" || lean === "RISK_OFF" ? "SELL" : lean === "FEARFUL" || lean === "RISK_ON" ? "BUY" : "NEUTRAL"} />}>
-          <div className={styles.leanRow}>
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.span
-                key={lean}
-                className={styles.leanWord}
-                data-lean={lean}
-                initial={prefersReducedMotion() ? false : { opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, y: -8 }}
-                transition={prefersReducedMotion() ? { duration: 0 } : { duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-              >
-                {LEAN_LABEL[lean] || lean}
-              </motion.span>
-            </AnimatePresence>
-          </div>
-          <p className={styles.leanRead}>{LEAN_READ[lean] || ""}</p>
+        <Pane caption="What's behind it" right={<span className={styles.paneMeta}>five indicators</span>}>
           <ul className={styles.ledger}>
             {ledger.map((row) => (
               <li key={row.key} className={styles.ledgerRow}>
@@ -336,6 +333,45 @@ export default function MarketSentimentPanel({
             refs={[{ y: 45, color: "var(--text-faint)" }, { y: -20, color: "var(--positive)" }]} />
         </Indicator>
        </motion.div>
+      </motion.div>
+
+      {/* 4 — positioning: where the crowd actually is, per ticker. Both of
+             these were collected but had no route into the navigation. */}
+      <motion.div
+        className={styles.positioning}
+        variants={staggerContainer}
+        initial={prefersReducedMotion() ? false : "hidden"}
+        animate="visible"
+      >
+        <motion.div variants={staggerItem}>
+          <Pane caption="Crowded shorts" right={<span className={styles.paneMeta}>% of float · days to cover</span>}>
+            <PositioningList
+              rows={squeezes}
+              empty="No short interest stored yet."
+              columns={[
+                {
+                  key: "pct",
+                  tone: (r) => (r.squeeze_flag ? "pos" : ""),
+                  render: (r) => `${(r.short_pct_float * 100).toFixed(1)}%`,
+                },
+                { key: "dtc", render: (r) => (r.days_to_cover != null ? `${r.days_to_cover.toFixed(1)}d` : "—") },
+              ]}
+            />
+          </Pane>
+        </motion.div>
+
+        <motion.div variants={staggerItem}>
+          <Pane caption="Retail attention" right={<span className={styles.paneMeta}>WSB mentions</span>}>
+            <PositioningList
+              rows={buzz}
+              empty="No social data stored yet."
+              columns={[
+                { key: "mentions", render: (r) => r.mentions.toLocaleString() },
+                { key: "rank", render: (r) => (r.rank != null ? `#${r.rank}` : "—") },
+              ]}
+            />
+          </Pane>
+        </motion.div>
       </motion.div>
     </div>
   );

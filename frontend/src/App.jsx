@@ -280,7 +280,8 @@ export default function App({ auth }) {
             {view === "sentiment" && (
               <MarketSentimentPanel
                 sentiment={sentiment} fearGreed={fearGreed} vix={vix} aaii={aaii}
-                putCall={putCall} marginDebt={marginDebt} quotes={quotesByTicker}
+                putCall={putCall} marginDebt={marginDebt}
+                shortInterest={shortInterest} social={social}
                 loading={loading} busy={busy} onRefresh={refresh}
               />
             )}
