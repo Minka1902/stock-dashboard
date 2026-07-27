@@ -166,6 +166,8 @@ function fmtVol(v) {
 // check, not the subject — every pixel here comes out of the price pane, which
 // is capped by the viewport clamp below.
 const PANE_HEIGHTS = { vol: 56, rsi: 64, macd: 72 };
+const TIME_AXIS_PX = 28;        // the date strip below the panes
+const MIN_PRICE_PANE_PX = 180;  // the price pane never collapses below this
 
 // IPaneApi.priceScale() throws when the id isn't present on that pane, which
 // can happen transiently while series are being rebuilt. Callers just want to
@@ -531,6 +533,12 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
 
     // sub-panes — each indicator gets its OWN pane + visible price scale, and
     // shows its current value as an axis label ("tell the data", Task 11).
+    //
+    // Heights are collected and applied in one pass *after* every pane exists
+    // (see applyPaneHeights below): setting them inline, pane by pane, makes
+    // each call re-proportion the panes added after it, and the requested
+    // 56/64/72 came out as 27/27/66.
+    const wantedHeights = [];
     let paneIndex = 0;
     if (vol) {
       paneIndex += 1;
@@ -542,7 +550,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
         time: b.time, value: b.volume,
         color: (b.close >= b.open ? COLORS.up : COLORS.down) + "88",
       })));
-      chart.panes()[paneIndex]?.setHeight?.(PANE_HEIGHTS.vol);
+      wantedHeights.push([paneIndex, PANE_HEIGHTS.vol]);
     }
     if (rsi) {
       paneIndex += 1;
@@ -553,7 +561,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       rsiS.setData(rsiSeries(bars));
       rsiS.createPriceLine({ price: 70, color: COLORS.down, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true });
       rsiS.createPriceLine({ price: 30, color: COLORS.up, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true });
-      chart.panes()[paneIndex]?.setHeight?.(PANE_HEIGHTS.rsi);
+      wantedHeights.push([paneIndex, PANE_HEIGHTS.rsi]);
     }
     if (macd) {
       paneIndex += 1;
@@ -574,7 +582,26 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
         lastValueVisible: true, title: "Signal",
       }, paneIndex));
       sigLine.setData(signal);
-      chart.panes()[paneIndex]?.setHeight?.(PANE_HEIGHTS.macd);
+      wantedHeights.push([paneIndex, PANE_HEIGHTS.macd]);
+    }
+
+    // Sizing goes through stretch factors, not setHeight. Panes are laid out
+    // proportionally, so setHeight on one pane silently re-proportions the
+    // rest — applied per-pane it produced 27/27/66 for a requested 56/64/72.
+    // Stretch factors are relative, so feeding the pixel targets in directly
+    // gets the intended ratio in a single pass, and it survives a resize.
+    if (wantedHeights.length) {
+      const panes = chart.panes();
+      const subTotal = wantedHeights.reduce((sum, [, px]) => sum + px, 0);
+      // Read the live height off the chart rather than the state variable:
+      // this effect must not depend on chartHeight, or every resize would tear
+      // down and rebuild every series instead of just resizing.
+      const currentHeight = chart.options?.().height ?? 0;
+      const plotPx = Math.max(160, currentHeight - TIME_AXIS_PX);
+      // The price pane keeps whatever the indicators don't take, with a floor
+      // so a stack of indicators can never squeeze it out entirely.
+      panes[0]?.setStretchFactor?.(Math.max(MIN_PRICE_PANE_PX, plotPx - subTotal));
+      for (const [idx, px] of wantedHeights) panes[idx]?.setStretchFactor?.(px);
     }
 
     // analysis overlays (daily view only; hidden in percent-compare mode)

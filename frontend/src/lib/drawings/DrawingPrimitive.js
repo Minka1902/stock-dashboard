@@ -46,9 +46,15 @@ export class DrawingPrimitive {
     this._chart = chart;
     this._series = series;
     this._requestUpdate = requestUpdate;
+    this._dead = false;
   }
 
   detached() {
+    // Everything below bails on this flag. ChartPro rebuilds its series on any
+    // pref change, and lightweight-charts throws "Object is disposed" the
+    // moment a removed chart or series is touched — including from a render
+    // pass still in flight when the teardown happens.
+    this._dead = true;
     this._chart = null;
     this._series = null;
     this._requestUpdate = null;
@@ -62,15 +68,25 @@ export class DrawingPrimitive {
   setShapes(shapes) { this._shapes = shapes || []; this.redraw(); }
   setSelected(id) { this._selectedId = id; this.redraw(); }
   setDraft(shape) { this._draft = shape; this.redraw(); }
-  redraw() { this._requestUpdate?.(); }
+  redraw() {
+    if (this._dead) return;
+    try { this._requestUpdate?.(); } catch { this._dead = true; }
+  }
 
-  /** (time, price) -> screen px. Returns null when the point is off-data. */
+  /** Called by the host when it tears down a series we may still be bound to. */
+  kill() { this._dead = true; }
+
+  /** (time, price) -> screen px. Null when off-data, or after disposal. */
   toScreen(pt) {
-    if (!this._chart || !this._series) return null;
-    const x = this._chart.timeScale().timeToCoordinate(pt.time);
-    const y = this._series.priceToCoordinate(pt.price);
-    if (x == null || y == null) return null;
-    return { x, y };
+    if (this._dead || !this._chart || !this._series) return null;
+    try {
+      const x = this._chart.timeScale().timeToCoordinate(pt.time);
+      const y = this._series.priceToCoordinate(pt.price);
+      if (x == null || y == null) return null;
+      return { x, y };
+    } catch {
+      return null; // chart or series disposed mid-flight
+    }
   }
 
   /**
@@ -78,6 +94,7 @@ export class DrawingPrimitive {
    * which endpoint was hit (for dragging).
    */
   hitTest(x, y) {
+    if (this._dead) return null;
     const p = { x, y };
     for (let i = this._shapes.length - 1; i >= 0; i -= 1) {
       const shape = this._shapes[i];
@@ -115,6 +132,7 @@ export class DrawingPrimitive {
 
   // --- rendering ---
   _draw(target) {
+    if (this._dead) return;
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       const all = this._draft ? [...this._shapes, this._draft] : this._shapes;
       for (const shape of all) {
