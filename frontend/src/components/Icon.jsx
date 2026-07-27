@@ -100,6 +100,30 @@ const PATHS = {
     </>
   ),
   x: <path d="M4 3l7 9-7 9h2.5L12 14l5.5 7H20l-7-9 7-9h-2.5L12 10 6.5 3z" />,
+  edit: (
+    <>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
+      <path d="M10 11v6M14 11v6" />
+    </>
+  ),
+  move: (
+    <>
+      <path d="M3 7h10a4 4 0 0 1 4 4v6" />
+      <path d="M14 14l3 3 3-3" />
+    </>
+  ),
+  note: (
+    <>
+      <path d="M4 4h16v11l-5 5H4z" />
+      <path d="M20 15h-5v5M8 9h8M8 13h4" />
+    </>
+  ),
 };
 
 export default function Icon({ name, size = 18, strokeWidth = 1.8, ...rest }) {

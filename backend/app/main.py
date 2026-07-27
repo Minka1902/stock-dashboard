@@ -1,4 +1,5 @@
 """FastAPI surface + scheduler wiring."""
+import json
 import logging
 import re
 from contextlib import asynccontextmanager
@@ -15,7 +16,7 @@ from pydantic import BaseModel
 
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, routes_oauth, search, sentiment, suggestions, themes
+from app import analysis, analyze, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, routes_oauth, search, sentiment, suggestion_history, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.security import SecurityHeadersMiddleware, rate_limit
@@ -88,6 +89,15 @@ def fundamentals_fetch(conn):
     if not tickers:
         return []
     return fundamentals_source.fetch(tickers)
+
+
+def _store_fundamentals(conn, records) -> None:
+    """Persist the valuation/profile rows plus the institutional holders that
+    rode along on the same responses (see sources/fundamentals.fetch)."""
+    db.upsert_fundamentals(conn, records)
+    holders = getattr(records, "holders", None)
+    if holders:
+        db.upsert_company_holders(conn, holders)
 
 
 def x_posts_fetch(conn):
@@ -196,7 +206,7 @@ def build_sources(conn):
         "short_interest": (lambda: short_interest_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_short_interest, None),
         "social":         (lambda: social_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_social_sentiment, None),
         "analyst":        (lambda: analyst_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_analyst_signals, None),
-        "fundamentals":   (lambda: fundamentals_fetch(conn), db.upsert_fundamentals, None),
+        "fundamentals":   (lambda: fundamentals_fetch(conn), _store_fundamentals, None),
         "x_posts":        (lambda: x_posts_fetch(conn), db.upsert_x_posts, config.X_MIN_INTERVAL_SECONDS),
         "seasonality":    (lambda: seasonality_fetch(conn), db.upsert_seasonality, config.SEASONALITY_MIN_INTERVAL_SECONDS),
         "boom_score":     (lambda: score_fetch(conn), db.upsert_boom_scores, None),
@@ -218,11 +228,23 @@ def _refresh_all():
         ingest.run_source(refresh_conn, name, fetch, store, min_interval_seconds=min_interval)
 
 
+def _snapshot_suggestion_history(for_date: str) -> None:
+    """Record every user's suggestions for `for_date`, so the history calendar
+    has a row per trading day whether or not anyone opened the app."""
+    for user in db.get_users(refresh_conn):
+        try:
+            digest = suggestions.build_digest(refresh_conn, for_date, user_id=user.id)
+            suggestion_history.record(refresh_conn, digest, user.id)
+        except Exception:
+            logger.exception("suggestion history snapshot failed for user %s", user.id)
+
+
 def _send_daily_digest():
     """Scheduled pre-market: deliver the next trading day's suggestions."""
     target = next_trading_day()
     if not is_trading_day(target):
         return
+    _snapshot_suggestion_history(target.isoformat())
     try:
         notify.send_digest(refresh_conn, target.isoformat())
     except Exception:
@@ -261,6 +283,7 @@ def _run_daily_analysis():
     try:
         today = datetime.now(ZoneInfo(settings.analysis_tz)).date()
         target = today if is_trading_day(today) else next_trading_day(today)
+        _snapshot_suggestion_history(target.isoformat())
         notify.send_digest(refresh_conn, target.isoformat())
     except Exception:
         # Delivery is already resilient; never let the job crash the scheduler.
@@ -536,7 +559,44 @@ def analyze_ticker(ticker: str, user=Depends(auth.get_current_user)):
         "source": result["source"],
         "seasonality_anchors": analyze.get_anchors(conn, t),
         "x_posts": [p.model_dump() for p in db.get_x_posts_for(conn, t)],
+        # Company identity + who's trading it. Both come from getters that
+        # already exist, so the analysis page stays one round trip.
+        "company": _company_payload(t),
+        "insider_trades": [tr.model_dump() for tr in db.get_trades_for(conn, t)],
     }
+
+
+def _company_payload(ticker: str) -> dict:
+    """Profile + ownership for a ticker. Absent data stays absent — a ticker
+    with no fundamentals row returns nulls rather than invented values."""
+    f = db.get_fundamentals_for(conn, ticker)
+    officers = []
+    if f and f.officers_json:
+        try:
+            officers = json.loads(f.officers_json)
+        except ValueError:
+            officers = []
+    # The company name may exist from a Form 4 filing even when Yahoo
+    # fundamentals haven't been fetched for this ticker yet.
+    fallback_name = db.get_company_names(conn, [ticker]).get(ticker)
+    return {
+        "profile": f.model_dump() if f else None,
+        "name": (f.name if f and f.name else None) or fallback_name,
+        "officers": officers,
+        "holders": [h.model_dump() for h in db.get_company_holders_for(conn, ticker)],
+    }
+
+
+@app.get("/api/company/{ticker}")
+def company(ticker: str, user=Depends(auth.get_current_user)):
+    return _company_payload(clean_ticker(ticker))
+
+
+@app.get("/api/company-names")
+def company_names(user=Depends(auth.get_current_user)):
+    """ticker -> company name, for the "show names instead of symbols" setting.
+    Tickers we have no name for are absent; the UI falls back to the symbol."""
+    return db.get_all_company_names(conn)
 
 
 # ---------- per-holding technical analysis ----------
@@ -813,7 +873,31 @@ def put_settings(item: SettingsUpdate, user=Depends(auth.get_current_user)):
 # ---------- suggestions (digest preview + delivery) ----------
 @app.get("/api/suggestions")
 def get_suggestions(user=Depends(auth.get_current_user)):
-    return suggestions.build_digest(conn, next_trading_day().isoformat(), user_id=user.id)
+    digest = suggestions.build_digest(conn, next_trading_day().isoformat(), user_id=user.id)
+    # Snapshot as a safety net so a day is never lost if the scheduled job
+    # didn't run; the first write for a (user, ticker, day) wins.
+    try:
+        suggestion_history.record(conn, digest, user.id)
+    except Exception:
+        logger.exception("suggestion history snapshot failed")
+    return digest
+
+
+@app.get("/api/suggestions/history")
+def suggestions_history(
+    ticker: str | None = None,
+    months: int = 6,
+    user=Depends(auth.get_current_user),
+):
+    """Past suggestions for watched/held tickers, with the realised move at
+    each horizon computed from stored bars."""
+    months = max(1, min(24, months))
+    clean = clean_ticker(ticker) if ticker else None
+    rows = db.get_suggestion_history(conn, user.id, clean, months)
+    return {
+        "entries": suggestion_history.with_outcomes(conn, rows),
+        "horizons": list(suggestion_history.HORIZONS),
+    }
 
 
 @app.post("/api/suggestions/send-test")
@@ -854,7 +938,7 @@ def alerts_read(body: AlertsRead, user=Depends(auth.get_current_user)):
 
 
 @app.get("/api/boom-scores/history/{ticker}")
-def boom_score_history(ticker: str):
+def boom_score_history(ticker: str, user=Depends(auth.get_current_user)):
     return db.get_boom_score_history(conn, clean_ticker(ticker))
 
 
@@ -863,6 +947,17 @@ class WatchCreate(BaseModel):
     ticker: str
     note: str = ""
     list_id: int | None = None
+
+
+class WatchUpdate(BaseModel):
+    """Move a watched ticker between lists and/or edit its note.
+
+    `to_list_id=None` edits in place; `note=None` keeps the stored note, so a
+    move never silently drops it.
+    """
+    from_list_id: int
+    to_list_id: int | None = None
+    note: str | None = None
 
 
 class WatchlistCreate(BaseModel):
@@ -910,6 +1005,17 @@ def add_watch(item: WatchCreate, user=Depends(auth.get_current_user)):
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     db.add_watch(conn, user.id, WatchItem(ticker=ticker, note=item.note.strip(), added_at=now), item.list_id)
     return [w.model_dump() for w in db.get_watchlist(conn, user.id, item.list_id)]
+
+
+@app.patch("/api/watchlist/{ticker}")
+def patch_watch(ticker: str, body: WatchUpdate, user=Depends(auth.get_current_user)):
+    ok = db.update_watch(
+        conn, user.id, clean_ticker(ticker),
+        body.from_list_id, body.to_list_id, body.note,
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail="ticker or watchlist not found")
+    return [w.model_dump() for w in db.get_watchlist(conn, user.id, body.from_list_id)]
 
 
 @app.delete("/api/watchlist/{ticker}")

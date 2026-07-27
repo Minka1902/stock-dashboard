@@ -14,6 +14,7 @@ from app.models import (
     AppSettings,
     AuthSession,
     BoomScore,
+    CompanyHolder,
     CongressTrade,
     ContractRecord,
     EconEvent,
@@ -31,6 +32,7 @@ from app.models import (
     StockAnalysis,
     Seasonality,
     ShortInterest,
+    SuggestionHistoryEntry,
     SocialSentiment,
     SourceStatus,
     SuggestionLogEntry,
@@ -380,6 +382,30 @@ def init_schema(conn: sqlite3.Connection) -> None:
             profit_margin  REAL,
             market_cap     REAL
         );
+        -- One row per suggested ticker per trading day, for watchlisted and
+        -- held names only. Deliberately lean: outcomes ("+7d it went up 12%")
+        -- are derived at read time from stored bars, never stored, so they
+        -- can't go stale.
+        CREATE TABLE IF NOT EXISTS suggestion_history (
+            user_id    INTEGER NOT NULL,
+            ticker     TEXT NOT NULL,
+            for_date   TEXT NOT NULL,
+            kind       TEXT NOT NULL,   -- 'holding' | 'watchlist'
+            action     TEXT NOT NULL,
+            price      REAL,            -- reference price when suggested
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, ticker, for_date)
+        );
+        CREATE TABLE IF NOT EXISTS company_holders (
+            ticker      TEXT NOT NULL,
+            kind        TEXT NOT NULL DEFAULT 'institution',
+            holder      TEXT NOT NULL,
+            pct_held    REAL,
+            shares      REAL,
+            value       REAL,
+            reported_at TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (ticker, kind, holder)
+        );
         CREATE TABLE IF NOT EXISTS boom_score_history (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             ticker      TEXT NOT NULL,
@@ -517,6 +543,21 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _migrate_watchlists(conn)
     _try_add_column(conn, "news", "ticker", "TEXT NOT NULL DEFAULT ''")
 
+    # Company profile fields, parsed from the same Yahoo quoteSummary call that
+    # already backed sector/industry (Task 11).
+    for col, col_def in [
+        ("name",            "TEXT"),
+        ("website",         "TEXT"),
+        ("country",         "TEXT"),
+        ("city",            "TEXT"),
+        ("employees",       "INTEGER"),
+        ("summary",         "TEXT"),
+        ("officers_json",   "TEXT NOT NULL DEFAULT ''"),
+        ("insider_pct",     "REAL"),
+        ("institution_pct", "REAL"),
+    ]:
+        _try_add_column(conn, "fundamentals", col, col_def)
+
     # Migrate existing tables: add new columns (safe on pre-existing databases).
     for col, col_def in [
         ("macd",           "REAL"),
@@ -649,6 +690,27 @@ def get_company_names(conn: sqlite3.Connection, tickers: list[str]) -> dict[str,
     return {row["ticker"]: row["company"] for row in cur.fetchall()}
 
 
+def get_all_company_names(conn: sqlite3.Connection) -> dict[str, str]:
+    """ticker -> company name for every ticker we have one for.
+
+    Prefers the fundamentals profile name (properly cased, e.g. "NVIDIA
+    Corporation") and falls back to the SEC filing issuer name, which is
+    all-caps but exists for tickers Yahoo hasn't been asked about. Tickers with
+    neither are simply absent — callers fall back to the symbol.
+    """
+    names: dict[str, str] = {}
+    for row in conn.execute(
+        "SELECT ticker, company FROM insider_trades WHERE company != '' "
+        "GROUP BY ticker HAVING MAX(filed_at)"
+    ):
+        names[row["ticker"]] = row["company"]
+    for row in conn.execute(
+        "SELECT ticker, name FROM fundamentals WHERE name IS NOT NULL AND name != ''"
+    ):
+        names[row["ticker"]] = row["name"]
+    return names
+
+
 # ---------- insider trades ----------
 def upsert_trades(conn: sqlite3.Connection, records: list[InsiderTrade]) -> None:
     conn.executemany(
@@ -680,6 +742,17 @@ def get_trades(conn: sqlite3.Connection, limit: int = 60) -> list[InsiderTrade]:
     cur = conn.execute(
         "SELECT * FROM insider_trades ORDER BY filed_at DESC, value DESC LIMIT ?",
         (limit,),
+    )
+    return [InsiderTrade(**dict(row)) for row in cur.fetchall()]
+
+
+def get_trades_for(conn: sqlite3.Connection, ticker: str, limit: int = 25) -> list[InsiderTrade]:
+    """This ticker's Form 4 filings, newest first. get_trades() is global and
+    capped, so filtering it client-side would silently miss older filings."""
+    cur = conn.execute(
+        "SELECT * FROM insider_trades WHERE ticker = ? "
+        "ORDER BY filed_at DESC, value DESC LIMIT ?",
+        (ticker, limit),
     )
     return [InsiderTrade(**dict(row)) for row in cur.fetchall()]
 
@@ -780,6 +853,69 @@ def remove_watch(conn: sqlite3.Connection, user_id: int, ticker: str, list_id: i
     conn.commit()
 
 
+def update_watch(
+    conn: sqlite3.Connection,
+    user_id: int,
+    ticker: str,
+    from_list_id: int,
+    to_list_id: int | None = None,
+    note: str | None = None,
+) -> bool:
+    """Move a ticker to another list and/or replace its note.
+
+    Returns False when either list isn't the caller's or the ticker isn't on
+    the source list. `note=None` keeps the existing note, so a pure move never
+    loses it — the reason a client-side copy-then-delete is not good enough.
+    Moving onto a list that already holds the ticker keeps the destination row
+    and drops the source one, because (watchlist_id, ticker) is unique.
+    """
+    def owns(list_id: int) -> bool:
+        return conn.execute(
+            "SELECT 1 FROM watchlists WHERE id = ? AND user_id = ?", (list_id, user_id),
+        ).fetchone() is not None
+
+    if not owns(from_list_id):
+        return False
+    row = conn.execute(
+        "SELECT note FROM watchlist WHERE watchlist_id = ? AND ticker = ?",
+        (from_list_id, ticker),
+    ).fetchone()
+    if row is None:
+        return False
+
+    new_note = row[0] if note is None else note.strip()
+    dest = from_list_id if to_list_id is None else to_list_id
+
+    if dest == from_list_id:
+        conn.execute(
+            "UPDATE watchlist SET note = ? WHERE watchlist_id = ? AND ticker = ?",
+            (new_note, from_list_id, ticker),
+        )
+    else:
+        if not owns(dest):
+            return False
+        clash = conn.execute(
+            "SELECT 1 FROM watchlist WHERE watchlist_id = ? AND ticker = ?", (dest, ticker),
+        ).fetchone()
+        if clash:
+            conn.execute(
+                "UPDATE watchlist SET note = ? WHERE watchlist_id = ? AND ticker = ?",
+                (new_note, dest, ticker),
+            )
+            conn.execute(
+                "DELETE FROM watchlist WHERE watchlist_id = ? AND ticker = ?",
+                (from_list_id, ticker),
+            )
+        else:
+            conn.execute(
+                "UPDATE watchlist SET watchlist_id = ?, note = ? "
+                "WHERE watchlist_id = ? AND ticker = ?",
+                (dest, new_note, from_list_id, ticker),
+            )
+    conn.commit()
+    return True
+
+
 def get_watchlist(conn: sqlite3.Connection, user_id: int, list_id: int | None = None) -> list[WatchItem]:
     lid = list_id if list_id is not None else _ensure_default_watchlist(conn, user_id)
     cur = conn.execute(
@@ -788,6 +924,20 @@ def get_watchlist(conn: sqlite3.Connection, user_id: int, list_id: int | None = 
         (lid,),
     )
     return [WatchItem(**dict(row)) for row in cur.fetchall()]
+
+
+def get_watchlist_map(conn: sqlite3.Connection, user_id: int) -> dict[str, list[str]]:
+    """ticker -> names of this user's lists holding it (a ticker may be on several)."""
+    cur = conn.execute(
+        "SELECT w.ticker, l.name FROM watchlist w "
+        "JOIN watchlists l ON l.id = w.watchlist_id "
+        "WHERE l.user_id = ? ORDER BY l.sort_order, l.id",
+        (user_id,),
+    )
+    out: dict[str, list[str]] = {}
+    for row in cur.fetchall():
+        out.setdefault(row["ticker"], []).append(row["name"])
+    return out
 
 
 def get_watched_tickers_for_user(conn: sqlite3.Connection, user_id: int) -> list[str]:
@@ -1426,16 +1576,24 @@ def upsert_fundamentals(conn: sqlite3.Connection, records: list[Fundamentals]) -
         """
         INSERT INTO fundamentals
             (ticker, fetched_at, sector, industry, pe_ratio, forward_pe,
-             peg_ratio, pb_ratio, revenue_growth, profit_margin, market_cap)
+             peg_ratio, pb_ratio, revenue_growth, profit_margin, market_cap,
+             name, website, country, city, employees, summary, officers_json,
+             insider_pct, institution_pct)
         VALUES
             (:ticker, :fetched_at, :sector, :industry, :pe_ratio, :forward_pe,
-             :peg_ratio, :pb_ratio, :revenue_growth, :profit_margin, :market_cap)
+             :peg_ratio, :pb_ratio, :revenue_growth, :profit_margin, :market_cap,
+             :name, :website, :country, :city, :employees, :summary, :officers_json,
+             :insider_pct, :institution_pct)
         ON CONFLICT(ticker) DO UPDATE SET
             fetched_at=excluded.fetched_at, sector=excluded.sector,
             industry=excluded.industry, pe_ratio=excluded.pe_ratio,
             forward_pe=excluded.forward_pe, peg_ratio=excluded.peg_ratio,
             pb_ratio=excluded.pb_ratio, revenue_growth=excluded.revenue_growth,
-            profit_margin=excluded.profit_margin, market_cap=excluded.market_cap
+            profit_margin=excluded.profit_margin, market_cap=excluded.market_cap,
+            name=excluded.name, website=excluded.website, country=excluded.country,
+            city=excluded.city, employees=excluded.employees, summary=excluded.summary,
+            officers_json=excluded.officers_json, insider_pct=excluded.insider_pct,
+            institution_pct=excluded.institution_pct
         """,
         [r.model_dump() for r in records],
     )
@@ -1445,6 +1603,74 @@ def upsert_fundamentals(conn: sqlite3.Connection, records: list[Fundamentals]) -
 def get_fundamentals(conn: sqlite3.Connection) -> list[Fundamentals]:
     cur = conn.execute("SELECT * FROM fundamentals ORDER BY ticker ASC")
     return [Fundamentals(**dict(row)) for row in cur.fetchall()]
+
+
+def record_suggestion_history(
+    conn: sqlite3.Connection, records: list[SuggestionHistoryEntry],
+) -> int:
+    """Snapshot suggestions for a day. First write for a (user, ticker, date)
+    wins, so the recorded price is the one at the time the call was first made
+    — re-opening the page later never rewrites history."""
+    if not records:
+        return 0
+    cur = conn.executemany(
+        """
+        INSERT INTO suggestion_history
+            (user_id, ticker, for_date, kind, action, price, created_at)
+        VALUES (:user_id, :ticker, :for_date, :kind, :action, :price, :created_at)
+        ON CONFLICT(user_id, ticker, for_date) DO NOTHING
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def get_suggestion_history(
+    conn: sqlite3.Connection,
+    user_id: int,
+    ticker: str | None = None,
+    months: int = 6,
+) -> list[SuggestionHistoryEntry]:
+    sql = (
+        "SELECT user_id, ticker, for_date, kind, action, price, created_at "
+        "FROM suggestion_history WHERE user_id = ? "
+        f"AND for_date >= date('now', '-{int(months)} months')"
+    )
+    params: list = [user_id]
+    if ticker:
+        sql += " AND ticker = ?"
+        params.append(ticker.upper())
+    sql += " ORDER BY for_date DESC, ticker ASC"
+    cur = conn.execute(sql, params)
+    return [SuggestionHistoryEntry(**dict(row)) for row in cur.fetchall()]
+
+
+def upsert_company_holders(conn: sqlite3.Connection, records: list[CompanyHolder]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO company_holders
+            (ticker, kind, holder, pct_held, shares, value, reported_at)
+        VALUES (:ticker, :kind, :holder, :pct_held, :shares, :value, :reported_at)
+        ON CONFLICT(ticker, kind, holder) DO UPDATE SET
+            pct_held=excluded.pct_held, shares=excluded.shares,
+            value=excluded.value, reported_at=excluded.reported_at
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+
+
+def get_company_holders_for(
+    conn: sqlite3.Connection, ticker: str, limit: int = 10,
+) -> list[CompanyHolder]:
+    cur = conn.execute(
+        "SELECT ticker, kind, holder, pct_held, shares, value, reported_at "
+        "FROM company_holders WHERE ticker = ? "
+        "ORDER BY pct_held DESC NULLS LAST, holder ASC LIMIT ?",
+        (ticker, limit),
+    )
+    return [CompanyHolder(**dict(row)) for row in cur.fetchall()]
 
 
 def get_fundamentals_for(conn: sqlite3.Connection, ticker: str) -> "Fundamentals | None":

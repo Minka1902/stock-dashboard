@@ -24,6 +24,23 @@ const WINDOW_OPTIONS = [
   { key: "cal_month", label: "This Calendar Month", desc: "Move during this calendar month" },
 ];
 
+const NAME_DISPLAY_OPTIONS = [
+  { value: "ticker", label: "Symbols (NVDA)" },
+  { value: "company", label: "Company names (NVIDIA Corporation)" },
+];
+
+// Sections of the analysis page's company block, in render order.
+const COMPANY_SECTIONS = [
+  { key: "profile", label: "Profile", desc: "Name, sector, business summary, HQ, headcount, market cap." },
+  { key: "valuation", label: "Valuation", desc: "P/E, forward P/E, PEG, price-to-book, growth and margin." },
+  { key: "holders", label: "Ownership", desc: "Insider and institutional stakes, plus the largest holders." },
+  { key: "officers", label: "Leadership", desc: "The officers the company reports, with title and pay." },
+  { key: "insiders", label: "Insider trades", desc: "SEC Form 4 filings for this ticker." },
+];
+const DEFAULT_COMPANY_SECTIONS = Object.fromEntries(
+  COMPANY_SECTIONS.map((s) => [s.key, true]),
+);
+
 const LOOKBACK_OPTIONS = [
   { value: 5, label: "5 years" },
   { value: 10, label: "10 years" },
@@ -537,6 +554,63 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
         )}
 
         {/* Reading & focus */}
+        <fieldset className={styles.group}>
+          <legend className={styles.legend}>Ticker labels</legend>
+          <p className={styles.groupHint}>
+            How stocks are named across the dashboard. Company names come from the
+            fundamentals and SEC filing data already stored — a ticker with no
+            recorded name keeps showing its symbol.
+          </p>
+          <div className={styles.segmented} role="radiogroup" aria-label="Ticker labels">
+            {NAME_DISPLAY_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                role="radio"
+                aria-checked={settings.nameDisplay === o.value}
+                className={styles.segment}
+                data-active={settings.nameDisplay === o.value ? "yes" : "no"}
+                onClick={() => setSetting("nameDisplay", o.value)}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
+        <fieldset className={styles.group}>
+          <legend className={styles.legend}>Company information</legend>
+          <p className={styles.groupHint}>
+            Which sections the analysis page shows for a stock. Anything a data source
+            hasn&apos;t returned still reads as &ldquo;—&rdquo; rather than being filled in.
+          </p>
+          {COMPANY_SECTIONS.map((s) => {
+            const on = settings.companyInfo?.[s.key] !== false;
+            return (
+              <label key={s.key} className={styles.switchRow}>
+                <span className={styles.switchText}>
+                  <span className={styles.checkLabel}>{s.label}</span>
+                  <span className={styles.checkDesc}>{s.desc}</span>
+                </span>
+                <button
+                  type="button"
+                  className={styles.switch}
+                  role="switch"
+                  aria-checked={on}
+                  data-on={on ? "yes" : "no"}
+                  onClick={() => setSetting("companyInfo", {
+                    ...DEFAULT_COMPANY_SECTIONS,
+                    ...(settings.companyInfo || {}),
+                    [s.key]: !on,
+                  })}
+                >
+                  <span className={styles.knob} />
+                </button>
+              </label>
+            );
+          })}
+        </fieldset>
+
         <fieldset className={styles.group}>
           <legend className={styles.legend}>Reading &amp; focus</legend>
           <label className={styles.switchRow}>

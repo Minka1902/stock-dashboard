@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useDashboardData } from "./hooks/useDashboardData";
 import { useLiveQuotes } from "./hooks/useLiveQuotes";
 import { useTheme } from "./hooks/useTheme";
-import { useSettings } from "./hooks/useSettings";
+import { useSettingsContext } from "./hooks/useSettingsContext";
 import { useAppSettings } from "./hooks/useAppSettings";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
@@ -29,6 +29,7 @@ import FundamentalsPanel from "./components/FundamentalsPanel";
 import SeasonalityPanel from "./components/SeasonalityPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import SuggestionsPanel from "./components/SuggestionsPanel";
+import SuggestionHistoryPanel from "./components/SuggestionHistoryPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
 import XPostsPanel from "./components/XPostsPanel";
 import InfoPanel from "./components/InfoPanel";
@@ -60,6 +61,7 @@ const TITLES = {
   fundamentals: "Fundamentals",
   seasonality: "Seasonality",
   suggestions: "Suggestions",
+  "suggestion-history": "Suggestion History",
   portfolio:   "Portfolio",
   x:           "X Watch",
   info:        "Info",
@@ -73,7 +75,7 @@ export default function App({ auth }) {
     (appSettingsApi.appSettings.quotes_refresh_seconds || 30) * 1000,
   );
   const { theme, setTheme, toggle, themes } = useTheme();
-  const { settings, setSetting } = useSettings();
+  const { settings, setSetting } = useSettingsContext();
   const [view, setView] = useState("sentiment");
   const [cmdOpen, setCmdOpen] = useState(false);
   const scrollRef = useRef(null);
@@ -268,7 +270,7 @@ export default function App({ auth }) {
             )}
 
             {view === "suggestions" && (
-              <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} />
+              <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} onAddWatch={addWatch} />
             )}
 
             {view === "portfolio" && (
@@ -283,6 +285,7 @@ export default function App({ auth }) {
               <NewsPanel news={news} portfolio={portfolio} xPosts={xPosts} sources={sources} loading={loading} busy={busy} onRefresh={refresh} />
             )}
 
+            {view === "suggestion-history" && <SuggestionHistoryPanel />}
             {view === "settings" && (
               <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={navigate} appSettingsApi={appSettingsApi} user={auth?.user} theme={theme} onSetTheme={setTheme} themes={themes} />
             )}
@@ -299,7 +302,7 @@ export default function App({ auth }) {
             {view === "overview" && (
               <>
                 <BoomScorePanel data={boomScores} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("boom-score")} collapsible collapsed={isCollapsed("boom-score")} onToggleCollapse={() => toggleCollapsed("boom-score")} />
-                <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("suggestions")} collapsible collapsed={isCollapsed("suggestions")} onToggleCollapse={() => toggleCollapsed("suggestions")} />
+                <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} onAddWatch={addWatch} compact onViewAll={() => setView("suggestions")} collapsible collapsed={isCollapsed("suggestions")} onToggleCollapse={() => toggleCollapsed("suggestions")} />
                 <StatGrid contracts={contracts} sources={sources} loading={loading} />
                 <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("contracts")} collapsible collapsed={isCollapsed("contracts")} onToggleCollapse={() => toggleCollapsed("contracts")} />
                 <div className={styles.twoCol}>

@@ -2,6 +2,7 @@ import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
+import TickerLabel from "./TickerLabel";
 import { formatRelativeTime, freshnessTone } from "../lib/format";
 import styles from "./ShortPanel.module.css";
 
@@ -76,7 +77,7 @@ export default function ShortPanel({ data, loading, busy, onRefresh, compact = f
               ) : (
                 rows.map((s) => (
                   <tr key={s.ticker}>
-                    <td><span className={styles.ticker}>{s.ticker}</span></td>
+                    <td><TickerLabel ticker={s.ticker} className={styles.ticker} /></td>
                     <td className={styles.num}>{fmtPct(s.short_pct_float)}</td>
                     <td className={styles.num}>{fmtCover(s.days_to_cover)}</td>
                     <td>

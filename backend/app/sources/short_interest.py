@@ -1,12 +1,11 @@
 """Short interest data from Yahoo Finance quoteSummary."""
 from datetime import datetime, timezone
 
-import httpx
-
 from app.models import ShortInterest
+from app.sources import yahoo
 
 _YF_URL = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=defaultKeyStatistics"
-_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; stock-dashboard/1.0)"}
+_HEADERS = yahoo.HEADERS
 
 
 def _now_iso() -> str:
@@ -46,14 +45,18 @@ def parse_response(payload: dict, ticker: str, fetched_at: str) -> ShortInterest
 def fetch(tickers: list[str]) -> list[ShortInterest]:
     fetched_at = _now_iso()
     results: list[ShortInterest] = []
-    with httpx.Client(headers=_HEADERS, timeout=15) as client:
+    with yahoo.client(timeout=15) as client:
+        crumb = yahoo.get_crumb(client)
         for ticker in tickers:
             try:
-                resp = client.get(_YF_URL.format(ticker=ticker))
+                resp = client.get(yahoo.with_crumb(_YF_URL.format(ticker=ticker), crumb))
                 resp.raise_for_status()
                 record = parse_response(resp.json(), ticker, fetched_at)
                 if record is not None:
                     results.append(record)
             except Exception:
                 continue
+    # Every ticker failing is a broken source, not a successful empty run.
+    if tickers and not results:
+        raise RuntimeError(f"no short interest returned for any of {len(tickers)} tickers")
     return results

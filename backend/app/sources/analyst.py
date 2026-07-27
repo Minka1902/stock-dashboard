@@ -1,15 +1,14 @@
 """Analyst ratings and earnings dates from Yahoo Finance quoteSummary."""
 from datetime import datetime, timezone
 
-import httpx
-
 from app.models import AnalystSignal
+from app.sources import yahoo
 
 _YF_URL = (
     "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
     "?modules=calendarEvents,upgradeDowngradeHistory,recommendationTrend"
 )
-_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; stock-dashboard/1.0)"}
+_HEADERS = yahoo.HEADERS
 _UPGRADE_ACTIONS = {"up", "init", "reit"}  # positive analyst actions
 _DOWNGRADE_ACTIONS = {"down"}
 
@@ -108,14 +107,18 @@ def parse_response(payload: dict, ticker: str, fetched_at: str) -> AnalystSignal
 def fetch(tickers: list[str]) -> list[AnalystSignal]:
     fetched_at = _now_iso()
     results: list[AnalystSignal] = []
-    with httpx.Client(headers=_HEADERS, timeout=15) as client:
+    with yahoo.client(timeout=15) as client:
+        crumb = yahoo.get_crumb(client)
         for ticker in tickers:
             try:
-                resp = client.get(_YF_URL.format(ticker=ticker))
+                resp = client.get(yahoo.with_crumb(_YF_URL.format(ticker=ticker), crumb))
                 resp.raise_for_status()
                 record = parse_response(resp.json(), ticker, fetched_at)
                 if record is not None:
                     results.append(record)
             except Exception:
                 continue
+    # Every ticker failing is a broken source, not a successful empty run.
+    if tickers and not results:
+        raise RuntimeError(f"no analyst signals returned for any of {len(tickers)} tickers")
     return results

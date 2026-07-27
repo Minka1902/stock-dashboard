@@ -2,6 +2,7 @@ import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
+import TickerLabel from "./TickerLabel";
 import styles from "./SocialPanel.module.css";
 
 const COMPACT_LIMIT = 5;
@@ -64,7 +65,7 @@ export default function SocialPanel({ data, loading, busy, onRefresh, compact = 
               ) : (
                 rows.map((s) => (
                   <tr key={s.ticker}>
-                    <td><span className={styles.ticker}>{s.ticker}</span></td>
+                    <td><TickerLabel ticker={s.ticker} className={styles.ticker} /></td>
                     <td className={styles.num}>{s.rank ?? "—"}</td>
                     <td className={styles.num}>{s.mentions != null ? s.mentions.toLocaleString() : "—"}</td>
                     <td><RankChange change={s.rank_change} /></td>

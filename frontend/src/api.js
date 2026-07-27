@@ -86,6 +86,13 @@ export const getSparklines = (tickers, range) =>
 export const analysisReportUrl = (ticker, { print = false } = {}) =>
   `${BASE}/api/analysis/${encodeURIComponent(ticker)}/report${print ? "?print=1" : ""}`;
 export const getSuggestionLog = () => getJSON("/api/suggestions/log");
+export const getSuggestionHistory = ({ ticker, months } = {}) => {
+  const q = new URLSearchParams();
+  if (ticker) q.set("ticker", ticker);
+  if (months) q.set("months", months);
+  const qs = q.toString();
+  return getJSON(`/api/suggestions/history${qs ? `?${qs}` : ""}`);
+};
 export const getOAuthProviders = () => getJSON("/api/auth/oauth/providers");
 export const oauthStartUrl = (provider) => `${BASE}/api/auth/oauth/${provider}/start`;
 export const getAlerts = () => getJSON("/api/alerts");
@@ -93,6 +100,9 @@ export const searchStocks = (q) =>
   getJSON(`/api/search?q=${encodeURIComponent(q)}`);
 export const getAnalyze = (ticker) =>
   getJSON(`/api/analyze/${encodeURIComponent(ticker)}`);
+export const getCompany = (ticker) =>
+  getJSON(`/api/company/${encodeURIComponent(ticker)}`);
+export const getCompanyNames = () => getJSON("/api/company-names");
 
 export const markAlertsRead = (payload = { all: true }) =>
   request("/api/alerts/read", { method: "POST", body: payload });
@@ -122,6 +132,17 @@ export const addWatch = (ticker, note, listId) =>
   request("/api/watchlist", { method: "POST", body: { ticker, note, ...(listId != null ? { list_id: listId } : {}) } });
 export const removeWatch = (ticker, listId) =>
   request(`/api/watchlist/${encodeURIComponent(ticker)}${listId != null ? `?list_id=${encodeURIComponent(listId)}` : ""}`, { method: "DELETE" });
+// Move a ticker to another list and/or edit its note. Omit `toListId` to edit
+// in place; omit `note` to keep the stored one. Returns the source list's items.
+export const updateWatch = (ticker, { fromListId, toListId, note }) =>
+  request(`/api/watchlist/${encodeURIComponent(ticker)}`, {
+    method: "PATCH",
+    body: {
+      from_list_id: fromListId,
+      ...(toListId != null ? { to_list_id: toListId } : {}),
+      ...(note != null ? { note } : {}),
+    },
+  });
 // Multiple named watchlists (Task 13).
 export const getWatchlists = () => getJSON("/api/watchlists");
 export const createWatchlist = (name) =>

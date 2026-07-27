@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
 import Icon from "./Icon";
 import ChartPro from "./ChartPro";
+import CompanyInfo from "./CompanyInfo";
+import InsiderTrades from "./InsiderTrades";
 import Skeleton from "./Skeleton";
+import SuggestionHistoryStrip from "./SuggestionHistoryStrip";
+import TickerLabel from "./TickerLabel";
 import XPostCard from "./XPostCard";
 import { getAnalyze, analysisReportUrl } from "../api";
+import { useSettingsContext } from "../hooks/useSettingsContext";
 import styles from "./StockDetailPanel.module.css";
 
 const DIRECTIVE_TONE = {
@@ -46,6 +51,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   // shows the skeleton again without any synchronous setState in the effect.
   const [result, setResult] = useState(null);
   const [watchBusy, setWatchBusy] = useState(false);
+  const { settings } = useSettingsContext();
 
   useEffect(() => {
     let alive = true;
@@ -60,6 +66,9 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   const a = data?.analysis;
   const anchors = data?.seasonality_anchors || [];
   const xPosts = data?.x_posts || [];
+  const company = data?.company || null;
+  const insiderTrades = data?.insider_trades || [];
+  const companyInfo = settings.companyInfo || {};
   const lastClose = data?.daily?.length ? data.daily[data.daily.length - 1].close : null;
   const refPrice = a?.price ?? lastClose;
   const watched = watchlist?.some((w) => w.ticker === ticker);
@@ -78,7 +87,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
         <button className={styles.back} onClick={onBack}>
           <Icon name="arrowRight" size={14} /> <span>Back</span>
         </button>
-        <h2 className={styles.ticker}>{ticker}</h2>
+        <TickerLabel ticker={ticker} className={styles.ticker} as="h2" />
         {a && a.recommendation && (
           <span className={styles.directive} data-tone={RECO_TONE[a.recommendation]}
                 title="Buy / Sell / Hold — the headline call">{a.recommendation.toUpperCase()}</span>
@@ -132,8 +141,27 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
         <Skeleton w="100%" h="460px" />
       ) : (
         <>
-          <Pane caption="Chart">
+          <section className={styles.chartPane}>
             <ChartPro ticker={ticker} analysis={a} />
+          </section>
+
+          {companyInfo.profile !== false && (
+            <Pane caption="Company"
+                  right={<span className={styles.muted}>who this is · who owns it</span>}>
+              <CompanyInfo company={company} ticker={ticker} show={companyInfo} />
+            </Pane>
+          )}
+
+          {companyInfo.insiders !== false && (
+            <Pane caption="Insider trades"
+                  right={<span className={styles.muted}>SEC Form 4 · newest first</span>}>
+              <InsiderTrades trades={insiderTrades} ticker={ticker} />
+            </Pane>
+          )}
+
+          <Pane caption="Suggestion history"
+                right={<span className={styles.muted}>what we said · what happened next</span>}>
+            <SuggestionHistoryStrip ticker={ticker} daily={data?.daily || []} />
           </Pane>
 
           {anchors.length > 0 && (

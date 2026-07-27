@@ -3,6 +3,7 @@ import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
+import TickerLabel from "./TickerLabel";
 import { formatPercentSigned } from "../lib/format";
 import styles from "./SeasonalityPanel.module.css";
 
@@ -193,7 +194,7 @@ export default function SeasonalityPanel({ data, settings, quotes, loading, busy
               return (
                 <li key={s.ticker} className={styles.row}>
                   <div className={styles.tickerCol}>
-                    <span className={styles.ticker}>{s.ticker}</span>
+                    <TickerLabel ticker={s.ticker} className={styles.ticker} />
                     <span className={styles.meta}>{s.history_years} yrs</span>
                   </div>
                   <div className={styles.rowBody}>

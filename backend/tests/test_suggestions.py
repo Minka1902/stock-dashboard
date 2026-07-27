@@ -195,3 +195,66 @@ def test_render_leads_with_ta(conn):
     assert "BUY" in html
     sms = suggestions.render_sms(d)
     assert len(sms) <= 320 and "PLTR" in sms
+
+
+# ---- multi-watchlist coverage + new-idea split (Task 7) ----
+
+def test_suggestions_span_every_watchlist(conn):
+    """A ticker on a second list must be visible to the digest — it used to be
+    invisible because build_digest resolved to the user's first list only."""
+    first = db.get_watchlists(conn, 0)[0].id
+    second = db.create_watchlist(conn, 0, "Speculative", "2026-06-28T00:00:00+00:00").id
+    db.add_watch(conn, 0, WatchItem(ticker="AAPL", note="", added_at="t"), first)
+    db.add_watch(conn, 0, WatchItem(ticker="PLTR", note="", added_at="t"), second)
+    db.upsert_boom_scores(conn, [_boom("AAPL", 20), _boom("PLTR", 78, golden_cross=True)])
+
+    d = suggestions.build_digest(conn, "2026-06-29")
+    tickers = [o["ticker"] for o in d["opportunities"]]
+    assert "PLTR" in tickers, "second list was not scanned"
+    assert "AAPL" in tickers
+
+    # each row says which list it came from
+    pltr = next(o for o in d["opportunities"] if o["ticker"] == "PLTR")
+    assert pltr["lists"] == ["Speculative"]
+
+
+def test_hot_count_counts_every_list(conn):
+    first = db.get_watchlists(conn, 0)[0].id
+    second = db.create_watchlist(conn, 0, "Spec", "t").id
+    db.add_watch(conn, 0, WatchItem(ticker="AAPL", note="", added_at="t"), first)
+    db.add_watch(conn, 0, WatchItem(ticker="PLTR", note="", added_at="t"), second)
+    db.upsert_boom_scores(conn, [_boom("AAPL", 60), _boom("PLTR", 70)])
+    d = suggestions.build_digest(conn, "2026-06-29")
+    assert d["market_context"]["hot_count"] == 2
+
+
+def test_new_ideas_are_separate_from_tracked_names(conn):
+    """Unwatched candidates get their own ranked pool so tracked names can't
+    crowd them out (and vice versa)."""
+    first = db.get_watchlists(conn, 0)[0].id
+    db.add_watch(conn, 0, WatchItem(ticker="AAPL", note="", added_at="t"), first)
+    db.upsert_boom_scores(conn, [_boom("AAPL", 40), _boom("GME", 90, congress_buy=True)])
+    # GME becomes a candidate via a recent congress purchase
+    from app.models import CongressTrade
+    recent = (datetime.now(timezone.utc).date() - timedelta(days=3)).isoformat()
+    db.upsert_congress_trades(conn, [CongressTrade(
+        trade_hash="c1", representative="Rep. X", party="D", state="NY",
+        ticker="GME", asset_description="GameStop", transaction_date=recent,
+        transaction_type="Purchase", amount_range="$1,001 - $15,000",
+        filed_at=recent, chamber="house",
+    )])
+
+    d = suggestions.build_digest(conn, "2026-06-29")
+    tracked = [o["ticker"] for o in d["opportunities"]]
+    fresh = [o["ticker"] for o in d["new_ideas"]]
+    assert "AAPL" in tracked and "AAPL" not in fresh
+    assert "GME" in fresh and "GME" not in tracked
+    assert all(o["watched"] is False for o in d["new_ideas"])
+
+
+def test_watchlist_map_reports_every_list_holding_a_ticker(conn):
+    first = db.get_watchlists(conn, 0)[0].id
+    second = db.create_watchlist(conn, 0, "Spec", "t").id
+    db.add_watch(conn, 0, WatchItem(ticker="AAPL", note="", added_at="t"), first)
+    db.add_watch(conn, 0, WatchItem(ticker="AAPL", note="", added_at="t"), second)
+    assert db.get_watchlist_map(conn, 0)["AAPL"] == ["My Watchlist", "Spec"]
