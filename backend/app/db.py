@@ -911,6 +911,20 @@ def get_watchlist(conn: sqlite3.Connection, user_id: int, list_id: int | None = 
     return [WatchItem(**dict(row)) for row in cur.fetchall()]
 
 
+def get_watchlist_map(conn: sqlite3.Connection, user_id: int) -> dict[str, list[str]]:
+    """ticker -> names of this user's lists holding it (a ticker may be on several)."""
+    cur = conn.execute(
+        "SELECT w.ticker, l.name FROM watchlist w "
+        "JOIN watchlists l ON l.id = w.watchlist_id "
+        "WHERE l.user_id = ? ORDER BY l.sort_order, l.id",
+        (user_id,),
+    )
+    out: dict[str, list[str]] = {}
+    for row in cur.fetchall():
+        out.setdefault(row["ticker"], []).append(row["name"])
+    return out
+
+
 def get_watched_tickers_for_user(conn: sqlite3.Connection, user_id: int) -> list[str]:
     """Distinct tickers across all of this user's watchlists (for their quotes)."""
     cur = conn.execute(

@@ -209,7 +209,9 @@ X_TIMEOUT_SECONDS = float(os.environ.get("STOCKS_X_TIMEOUT_SECONDS", "8"))
 OHLC_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_OHLC_MIN_INTERVAL_SECONDS", "3600"))
 ANALYSIS_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_ANALYSIS_MIN_INTERVAL_SECONDS", "3600"))
 OHLC_MAX_TICKERS = int(os.environ.get("STOCKS_OHLC_MAX_TICKERS", "60"))
-OPPORTUNITY_CANDIDATES = int(os.environ.get("STOCKS_OPPORTUNITY_CANDIDATES", "20"))
+# Raised from 20: suggestions now rank tracked names and brand-new ideas in
+# separate pools, so the candidate list has to be deep enough to fill both.
+OPPORTUNITY_CANDIDATES = int(os.environ.get("STOCKS_OPPORTUNITY_CANDIDATES", "40"))
 
 # Optional override for the built frontend directory the backend serves (single
 # port). Empty → default to <repo>/frontend/dist. Used by tests to point at a

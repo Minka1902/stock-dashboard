@@ -3,6 +3,7 @@ import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import EmptyState from "./EmptyState";
 import TickerLabel from "./TickerLabel";
+import { openTickerTab } from "../lib/nav";
 import { getSuggestionLog } from "../api";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./SuggestionsPanel.module.css";
@@ -49,12 +50,38 @@ function DeliveryLog() {
   );
 }
 
+/** The symbol, clickable: opens that stock's analysis in a new tab. */
+function Symbol({ ticker }) {
+  return (
+    <button
+      type="button"
+      className={styles.symbolBtn}
+      onClick={() => openTickerTab(ticker)}
+      title={`Open ${ticker} analysis in a new tab`}
+    >
+      <TickerLabel ticker={ticker} className={styles.symbol} />
+    </button>
+  );
+}
+
+/** Which of the user's watchlists this ticker sits on. */
+function Lists({ lists }) {
+  if (!lists || lists.length === 0) return null;
+  return (
+    <span className={styles.lists}>
+      {lists.map((name) => (
+        <span key={name} className={styles.listChip}>{name}</span>
+      ))}
+    </span>
+  );
+}
+
 function AlertRow({ a }) {
   const tone = a.pl_pct == null ? "flat" : a.pl_pct >= 0 ? "pos" : "neg";
   const risky = /trim|watch|earnings|hedg/i.test(a.action);
   return (
     <li className={styles.alert}>
-      <TickerLabel ticker={a.ticker} className={styles.symbol} />
+      <Symbol ticker={a.ticker} /><Lists lists={a.lists} />
       {a.pl_pct != null && (
         <span className={styles.pl} data-tone={tone}>
           {a.pl_pct >= 0 ? "+" : ""}{a.pl_pct.toFixed(1)}%
@@ -70,24 +97,26 @@ function AlertRow({ a }) {
   );
 }
 
-function OpportunityRow({ o }) {
+/** The shared contents of an opportunity row, minus the <li> wrapper, so a
+ *  tracked name and a new idea render identically apart from the Watch button. */
+function OpportunityBody({ o }) {
   // Fresh deploy: TA not computed yet — fall back to the Boom read, flagged.
   if (o.ta_pending) {
     return (
-      <li className={styles.alert}>
-        <TickerLabel ticker={o.ticker} className={styles.symbol} />
+      <>
+        <Symbol ticker={o.ticker} /><Lists lists={o.lists} />
         <span className={styles.score}>Boom {o.score}</span>
         <span className={styles.reasons}>
           {o.signals.map((s) => <span key={s} className={styles.chip} data-tone="bull">{s}</span>)}
           <span className={styles.chip} data-tone="muted">TA pending</span>
         </span>
-      </li>
+      </>
     );
   }
   const tone = o.recommendation === "buy" ? "bull" : o.recommendation === "sell" ? "bear" : "muted";
   return (
-    <li className={styles.alert}>
-      <TickerLabel ticker={o.ticker} className={styles.symbol} />
+    <>
+      <Symbol ticker={o.ticker} /><Lists lists={o.lists} />
       <span className={styles.chip} data-tone={tone}>{(o.recommendation || "hold").toUpperCase()}</span>
       <span className={styles.action} data-risk="no">
         conv {o.conviction}
@@ -98,14 +127,49 @@ function OpportunityRow({ o }) {
         {(o.evidence || []).map((e) => <span key={e} className={styles.chip}>{e}</span>)}
         {o.score != null && <span className={styles.chip} data-tone="muted">Boom {o.score}</span>}
       </span>
+    </>
+  );
+}
+
+function OpportunityRow({ o }) {
+  return <li className={styles.alert}><OpportunityBody o={o} /></li>;
+}
+
+/** A candidate you don't track yet — adoptable in one click. */
+function NewIdeaRow({ o, onWatch }) {
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState(false);
+  const add = () => {
+    setAdding(true);
+    Promise.resolve(onWatch(o.ticker, "from suggestions"))
+      .then(() => setAdded(true))
+      .catch(() => {})
+      .finally(() => setAdding(false));
+  };
+  return (
+    <li className={styles.alert}>
+      <OpportunityBody o={o} />
+      {onWatch && (
+        <button
+          type="button"
+          className={styles.watchBtn}
+          onClick={add}
+          disabled={adding || added}
+          title={`Add ${o.ticker} to your watchlist`}
+        >
+          {added ? "✓ Watching" : adding ? "Adding…" : "+ Watch"}
+        </button>
+      )}
     </li>
   );
 }
 
-export default function SuggestionsPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
+export default function SuggestionsPanel({ data, loading, busy, onRefresh, onAddWatch, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
+  const newIdeas = data?.new_ideas || [];
   const empty = !loading && data
     && data.holdings_alerts.length === 0
     && data.opportunities.length === 0
+    && newIdeas.length === 0
     && data.seasonality.length === 0;
 
   return (
@@ -144,9 +208,26 @@ export default function SuggestionsPanel({ data, loading, busy, onRefresh, compa
 
           {data.opportunities.length > 0 && (
             <div className={styles.section}>
-              <h3 className={styles.sectionTitle}>New opportunities</h3>
+              <h3 className={styles.sectionTitle}>On your watchlists</h3>
               <ul className={styles.list}>
                 {data.opportunities.map((o) => <OpportunityRow key={o.ticker} o={o} />)}
+              </ul>
+            </div>
+          )}
+
+          {newIdeas.length > 0 && (
+            <div className={styles.section}>
+              <h3 className={styles.sectionTitle}>
+                New ideas
+                <span className={styles.sectionHint}>
+                  surfaced by congress buys, insider clusters, upgrades, social spikes
+                  or large contracts — not on any of your lists yet
+                </span>
+              </h3>
+              <ul className={styles.list}>
+                {newIdeas.map((o) => (
+                  <NewIdeaRow key={o.ticker} o={o} onWatch={onAddWatch} />
+                ))}
               </ul>
             </div>
           )}
@@ -157,7 +238,7 @@ export default function SuggestionsPanel({ data, loading, busy, onRefresh, compa
               <ul className={styles.list}>
                 {data.seasonality.map((s) => (
                   <li key={s.ticker} className={styles.alert}>
-                    <TickerLabel ticker={s.ticker} className={styles.symbol} />
+                    <Symbol ticker={s.ticker} /><Lists lists={s.lists} />
                     <span className={styles.action} data-risk={s.kind === "headwind" ? "yes" : "no"}>
                       {s.window_label}: avg {s.avg_pct >= 0 ? "+" : ""}{s.avg_pct}%, win {Math.round(s.win_rate * 100)}% / {s.n}y
                     </span>

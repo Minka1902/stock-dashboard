@@ -13,7 +13,8 @@ def test_background_analysis_defaults():
     assert config.OHLC_MIN_INTERVAL_SECONDS == 3600
     assert config.ANALYSIS_MIN_INTERVAL_SECONDS == 3600
     assert config.OHLC_MAX_TICKERS == 60
-    assert config.OPPORTUNITY_CANDIDATES == 20
+    # Deep enough to fill both suggestion pools (tracked names + new ideas).
+    assert config.OPPORTUNITY_CANDIDATES == 40
 
 
 def test_x_min_interval_overridable(monkeypatch):
