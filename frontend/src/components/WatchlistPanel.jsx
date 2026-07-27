@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
 import ExtHoursBadge from "./ExtHoursBadge";
+import MenuButton, { MenuDivider, MenuItem, MenuLabel } from "./MenuButton";
 import Sparkline from "./Sparkline";
 import SparkRange from "./SparkRange";
 import TickerLabel from "./TickerLabel";
@@ -20,7 +21,7 @@ function changeTone(pct) {
 export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
   const {
     lists, activeId, items, selectList,
-    addTicker, removeTicker, createList, renameList, deleteList,
+    addTicker, removeTicker, moveTicker, editNote, createList, renameList, deleteList,
   } = useWatchlists();
 
   const [ticker, setTicker] = useState("");
@@ -35,6 +36,10 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
   const [newName, setNewName] = useState("");
   const [renamingId, setRenamingId] = useState(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  // Per-row note editing: the ticker being edited, plus its draft.
+  const [noteTicker, setNoteTicker] = useState(null);
+  const [noteDraft, setNoteDraft] = useState("");
 
   async function submit(e) {
     e.preventDefault();
@@ -65,6 +70,17 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
     if (n && id != null) renameList(id, n).catch(() => {});
   };
 
+  const commitNote = () => {
+    const t = noteTicker;
+    const draft = noteDraft.trim();
+    setNoteTicker(null);
+    if (t == null) return;
+    const current = items.find((w) => w.ticker === t)?.note ?? "";
+    if (draft !== current) editNote(t, draft).catch((err) => setError(err.message));
+  };
+
+  const startNoteEdit = (w) => { setNoteDraft(w.note || ""); setNoteTicker(w.ticker); };
+
   return (
     <section className={styles.panel} id="watchlist">
       <header className={styles.head}>
@@ -87,7 +103,7 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
               maxLength={60}
               onChange={(e) => setRenameDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setRenamingId(null); }}
-              onBlur={() => setRenamingId(null)}
+              onBlur={commitRename}
             />
           ) : (
             <span key={l.id} className={styles.tabWrap} data-active={l.id === activeId ? "yes" : "no"}>
@@ -100,14 +116,24 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
                 {l.name}
               </button>
               {l.id === activeId && (
-                <>
-                  <button className={styles.tabIcon} title="Rename list" aria-label={`Rename ${l.name}`}
-                          onClick={() => { setRenameDraft(l.name); setRenamingId(l.id); }}>✎</button>
-                  {lists.length > 1 && (
-                    <button className={styles.tabIcon} title="Delete list" aria-label={`Delete ${l.name}`}
-                            onClick={() => deleteList(l.id)}>×</button>
+                <MenuButton label={`Actions for ${l.name}`} className={styles.tabMenu}>
+                  {(close) => (
+                    <>
+                      <MenuItem onSelect={() => { close(); setRenameDraft(l.name); setRenamingId(l.id); }}>
+                        <Icon name="edit" size={14} /> Rename
+                      </MenuItem>
+                      <MenuDivider />
+                      <MenuItem
+                        tone="danger"
+                        disabled={lists.length <= 1}
+                        onSelect={() => { close(); setConfirmDeleteId(l.id); }}
+                      >
+                        <Icon name="trash" size={14} />
+                        {lists.length <= 1 ? "Can't delete your only list" : "Delete list"}
+                      </MenuItem>
+                    </>
                   )}
-                </>
+                </MenuButton>
               )}
             </span>
           )
@@ -121,7 +147,7 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
             placeholder="List name"
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") commitCreate(); if (e.key === "Escape") setCreating(false); }}
-            onBlur={() => setCreating(false)}
+            onBlur={commitCreate}
           />
         ) : (
           <button className={styles.newTab} onClick={() => { setNewName(""); setCreating(true); }}>
@@ -129,6 +155,33 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
           </button>
         )}
       </div>
+
+      {confirmDeleteId != null && (() => {
+        const doomed = lists.find((l) => l.id === confirmDeleteId);
+        const count = doomed?.id === activeId ? items.length : null;
+        return (
+          <div className={styles.confirm} role="alertdialog" aria-label="Confirm delete">
+            <span className={styles.confirmText}>
+              Delete <strong>{doomed?.name}</strong>
+              {count ? ` and its ${count} ticker${count === 1 ? "" : "s"}` : " and everything on it"}?
+              This can't be undone.
+            </span>
+            <button className={styles.confirmCancel} onClick={() => setConfirmDeleteId(null)}>
+              Cancel
+            </button>
+            <button
+              className={styles.confirmGo}
+              onClick={() => {
+                const id = confirmDeleteId;
+                setConfirmDeleteId(null);
+                deleteList(id).catch((err) => setError(err.message));
+              }}
+            >
+              Delete list
+            </button>
+          </div>
+        );
+      })()}
 
       <form className={styles.form} onSubmit={submit} data-tour="add-form">
         <input
@@ -204,16 +257,65 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
                 loading={!sparks[w.ticker]}
                 range={range}
               />
-              <span className={styles.itemNote}>{w.note || "—"}</span>
+              {noteTicker === w.ticker ? (
+                <input
+                  className={styles.noteInput}
+                  value={noteDraft}
+                  autoFocus
+                  maxLength={120}
+                  placeholder="Note"
+                  aria-label={`Note for ${w.ticker}`}
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitNote();
+                    if (e.key === "Escape") setNoteTicker(null);
+                  }}
+                  onBlur={commitNote}
+                />
+              ) : (
+                <button
+                  className={styles.itemNote}
+                  onClick={() => startNoteEdit(w)}
+                  title={`Edit note for ${w.ticker}`}
+                >
+                  {w.note || "—"}
+                </button>
+              )}
               <span className={styles.added}>added {formatRelativeTime(w.added_at)}</span>
-              <button
-                className={styles.remove}
-                onClick={() => removeTicker(w.ticker)}
-                title={`Remove ${w.ticker}`}
-                aria-label={`Remove ${w.ticker}`}
-              >
-                ×
-              </button>
+              <MenuButton label={`Actions for ${w.ticker}`}>
+                {(close) => (
+                  <>
+                    <MenuItem onSelect={() => { close(); openTickerTab(w.ticker); }}>
+                      <Icon name="trending" size={14} /> Open analysis
+                    </MenuItem>
+                    <MenuItem onSelect={() => { close(); startNoteEdit(w); }}>
+                      <Icon name="note" size={14} /> {w.note ? "Edit note" : "Add note"}
+                    </MenuItem>
+
+                    {lists.length > 1 && (
+                      <>
+                        <MenuLabel>Move to</MenuLabel>
+                        {lists.filter((l) => l.id !== activeId).map((l) => (
+                          <MenuItem
+                            key={l.id}
+                            onSelect={() => {
+                              close();
+                              moveTicker(w.ticker, l.id).catch((err) => setError(err.message));
+                            }}
+                          >
+                            <Icon name="move" size={14} /> {l.name}
+                          </MenuItem>
+                        ))}
+                      </>
+                    )}
+
+                    <MenuDivider />
+                    <MenuItem tone="danger" onSelect={() => { close(); removeTicker(w.ticker); }}>
+                      <Icon name="trash" size={14} /> Remove from list
+                    </MenuItem>
+                  </>
+                )}
+              </MenuButton>
             </motion.li>
             );
           })}

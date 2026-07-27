@@ -137,6 +137,17 @@ export const addWatch = (ticker, note, listId) =>
   request("/api/watchlist", { method: "POST", body: { ticker, note, ...(listId != null ? { list_id: listId } : {}) } });
 export const removeWatch = (ticker, listId) =>
   request(`/api/watchlist/${encodeURIComponent(ticker)}${listId != null ? `?list_id=${encodeURIComponent(listId)}` : ""}`, { method: "DELETE" });
+// Move a ticker to another list and/or edit its note. Omit `toListId` to edit
+// in place; omit `note` to keep the stored one. Returns the source list's items.
+export const updateWatch = (ticker, { fromListId, toListId, note }) =>
+  request(`/api/watchlist/${encodeURIComponent(ticker)}`, {
+    method: "PATCH",
+    body: {
+      from_list_id: fromListId,
+      ...(toListId != null ? { to_list_id: toListId } : {}),
+      ...(note != null ? { note } : {}),
+    },
+  });
 // Multiple named watchlists (Task 13).
 export const getWatchlists = () => getJSON("/api/watchlists");
 export const createWatchlist = (name) =>

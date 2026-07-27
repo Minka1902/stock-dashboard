@@ -993,6 +993,17 @@ class WatchCreate(BaseModel):
     list_id: int | None = None
 
 
+class WatchUpdate(BaseModel):
+    """Move a watched ticker between lists and/or edit its note.
+
+    `to_list_id=None` edits in place; `note=None` keeps the stored note, so a
+    move never silently drops it.
+    """
+    from_list_id: int
+    to_list_id: int | None = None
+    note: str | None = None
+
+
 class WatchlistCreate(BaseModel):
     name: str = ""
 
@@ -1038,6 +1049,17 @@ def add_watch(item: WatchCreate, user=Depends(auth.get_current_user)):
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     db.add_watch(conn, user.id, WatchItem(ticker=ticker, note=item.note.strip(), added_at=now), item.list_id)
     return [w.model_dump() for w in db.get_watchlist(conn, user.id, item.list_id)]
+
+
+@app.patch("/api/watchlist/{ticker}")
+def patch_watch(ticker: str, body: WatchUpdate, user=Depends(auth.get_current_user)):
+    ok = db.update_watch(
+        conn, user.id, clean_ticker(ticker),
+        body.from_list_id, body.to_list_id, body.note,
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail="ticker or watchlist not found")
+    return [w.model_dump() for w in db.get_watchlist(conn, user.id, body.from_list_id)]
 
 
 @app.delete("/api/watchlist/{ticker}")
