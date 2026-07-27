@@ -396,6 +396,16 @@ def init_schema(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL,
             PRIMARY KEY (user_id, ticker, for_date)
         );
+        -- User-drawn chart annotations, one row per (user, ticker). The shapes
+        -- themselves are opaque JSON — the server stores and returns them, the
+        -- client owns their meaning.
+        CREATE TABLE IF NOT EXISTS drawings (
+            user_id    INTEGER NOT NULL,
+            ticker     TEXT NOT NULL,
+            shapes_json TEXT NOT NULL DEFAULT '[]',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, ticker)
+        );
         CREATE TABLE IF NOT EXISTS company_holders (
             ticker      TEXT NOT NULL,
             kind        TEXT NOT NULL DEFAULT 'institution',
@@ -1587,6 +1597,37 @@ def get_suggestion_history(
     sql += " ORDER BY for_date DESC, ticker ASC"
     cur = conn.execute(sql, params)
     return [SuggestionHistoryEntry(**dict(row)) for row in cur.fetchall()]
+
+
+def get_drawings(conn: sqlite3.Connection, user_id: int, ticker: str) -> dict:
+    """Stored chart annotations for one ticker. Returns the shapes plus the
+    timestamp, so the client can resolve which copy is newer."""
+    row = conn.execute(
+        "SELECT shapes_json, updated_at FROM drawings WHERE user_id = ? AND ticker = ?",
+        (user_id, ticker.upper()),
+    ).fetchone()
+    if row is None:
+        return {"shapes": [], "updated_at": None}
+    try:
+        shapes = json.loads(row["shapes_json"])
+    except (json.JSONDecodeError, TypeError):
+        shapes = []
+    return {"shapes": shapes, "updated_at": row["updated_at"]}
+
+
+def save_drawings(
+    conn: sqlite3.Connection, user_id: int, ticker: str, shapes: list, updated_at: str,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO drawings (user_id, ticker, shapes_json, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id, ticker) DO UPDATE SET
+            shapes_json = excluded.shapes_json, updated_at = excluded.updated_at
+        """,
+        (user_id, ticker.upper(), json.dumps(shapes), updated_at),
+    )
+    conn.commit()
 
 
 def upsert_company_holders(conn: sqlite3.Connection, records: list[CompanyHolder]) -> None:

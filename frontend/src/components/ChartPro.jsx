@@ -10,6 +10,7 @@ import {
   heikinAshi,
 } from "../lib/indicators";
 import { prefersReducedMotion } from "../lib/motionConfig";
+import { useDrawings } from "../lib/drawings/useDrawings";
 import styles from "./ChartPro.module.css";
 
 // lightweight-charts renders to canvas and cannot parse oklch(), so the chart
@@ -126,6 +127,15 @@ const DEFAULT_PREFS = {
 
 const PREFS_KEY = "chartProPrefs";
 
+// Drawing tools. Glyphs rather than icons so the toolbar keeps one visual
+// language with the existing LOG / PLAN pills.
+const DRAW_TOOLS = [
+  { key: "trendline", glyph: "╱", title: "Trendline — click two points" },
+  { key: "ray", glyph: "―", title: "Horizontal level — click once" },
+  { key: "zone", glyph: "▭", title: "Zone — click two corners" },
+  { key: "text", glyph: "T", title: "Text label — click to place" },
+];
+
 function loadPrefs() {
   try {
     const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
@@ -182,6 +192,10 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   const datasetKeyRef = useRef(null);  // `${ticker}|${tf}` — only refit when this changes
   const prevBarsRef = useRef(null);    // identity check: did the bar data actually change?
   const legendMapsRef = useRef({ bars: [], byTime: new Map(), idx: new Map() });
+  // The price series drawings anchor to, plus a counter that changes whenever
+  // it is rebuilt so the drawing primitive can re-attach.
+  const mainSeriesRef = useRef(null);
+  const [seriesEpoch, setSeriesEpoch] = useState(0);
 
   const setPref = useCallback((patch) => {
     setUpdating(true); // show the loader for the duration of the change (Task 5)
@@ -427,6 +441,9 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       main.setData(ohlcData);
     }
 
+    // The price series is what user drawings anchor to (see useDrawings).
+    mainSeriesRef.current = main;
+
     // A tracked line series; `label` (if given) registers it for the crosshair legend.
     const addLine = (data, color, label, width = 1, style) => {
       if (data.length < 2) return;
@@ -582,8 +599,21 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       else chart.timeScale().setVisibleLogicalRange(savedRange);
     }
     prevBarsRef.current = displayBars;
+    // Tell the drawing layer to re-attach to the series we just built.
+    setSeriesEpoch((n) => n + 1);
   }, [bars, displayBars, compareBars, analysis, prefs.type, prefs.overlays, prefs.compare,
       prefs.tf, ticker, intraday, ma, ema, bb, vwap, vol, rsi, macd]);
+
+  // User-drawn annotations: their own primitive layer, so they're independent
+  // of indicator toggles and of the analysis overlays drawn from the payload.
+  const drawing = useDrawings({
+    ticker,
+    chartRef,
+    elRef,
+    mainSeriesRef,
+    seriesEpoch,
+    enabled: hasData,
+  });
 
   const toneOf = (b) => (b && b.close >= b.open ? "pos" : "neg");
 
@@ -661,6 +691,34 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
             <button className={styles.pill} data-active={prefs.overlays ? "yes" : "no"}
                     title="Analysis overlays: support/resistance, entry/stop/target, patterns (daily)"
                     onClick={() => setPref({ overlays: !prefs.overlays })}>PLAN</button>
+          )}
+        </div>
+
+        <div className={styles.group} role="group" aria-label="Drawing tools">
+          {DRAW_TOOLS.map((t) => (
+            <button
+              key={t.key}
+              className={styles.pill}
+              data-active={drawing.tool === t.key ? "yes" : "no"}
+              title={t.title}
+              aria-pressed={drawing.tool === t.key}
+              onClick={() => drawing.setTool(t.key)}
+            >
+              {t.glyph}
+            </button>
+          ))}
+          <button
+            className={styles.pill}
+            title={drawing.selectedId ? "Delete the selected drawing (Del)" : "Remove every drawing on this chart"}
+            disabled={drawing.shapes.length === 0}
+            onClick={() => (drawing.selectedId ? drawing.deleteSelected() : drawing.clearAll())}
+          >
+            {drawing.selectedId ? "DEL" : "CLR"}
+          </button>
+          {!drawing.synced && (
+            <span className={styles.offlineNote} title="Saved on this device; the server copy will catch up on the next load.">
+              local
+            </span>
           )}
         </div>
       </div>

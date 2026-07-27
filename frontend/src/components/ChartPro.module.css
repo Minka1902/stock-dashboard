@@ -141,6 +141,19 @@
 }
 .retry:hover { color: var(--text); background: var(--surface-hover); }
 
+/* Shown when a drawing is saved on this device but the server write failed. */
+.offlineNote {
+  align-self: center;
+  padding: 2px 7px;
+  border-radius: var(--r-xs);
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 .canvasWrap { position: relative; min-height: 0; }
 .canvas { min-height: 0; }
 
