@@ -86,6 +86,13 @@ export const getSparklines = (tickers, range) =>
 export const analysisReportUrl = (ticker, { print = false } = {}) =>
   `${BASE}/api/analysis/${encodeURIComponent(ticker)}/report${print ? "?print=1" : ""}`;
 export const getSuggestionLog = () => getJSON("/api/suggestions/log");
+export const getSuggestionHistory = ({ ticker, months } = {}) => {
+  const q = new URLSearchParams();
+  if (ticker) q.set("ticker", ticker);
+  if (months) q.set("months", months);
+  const qs = q.toString();
+  return getJSON(`/api/suggestions/history${qs ? `?${qs}` : ""}`);
+};
 export const getOAuthProviders = () => getJSON("/api/auth/oauth/providers");
 export const oauthStartUrl = (provider) => `${BASE}/api/auth/oauth/${provider}/start`;
 export const getAlerts = () => getJSON("/api/alerts");

@@ -5,6 +5,7 @@ import styles from "./Sidebar.module.css";
 const NAV = [
   { key: "sentiment",   label: "Sentiment",   icon: "gauge",    hint: "the mood" },
   { key: "suggestions", label: "Suggestions", icon: "spark",    hint: "what to do" },
+  { key: "suggestion-history", label: "History", icon: "calendar", hint: "what happened next" },
   { key: "portfolio",   label: "Portfolio",   icon: "wallet",   hint: "your book" },
   { key: "trades",      label: "Trades",      icon: "trending", hint: "insiders" },
   { key: "news",        label: "News",        icon: "news",     hint: "the tape" },

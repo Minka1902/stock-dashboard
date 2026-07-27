@@ -4,6 +4,7 @@ import ChartPro from "./ChartPro";
 import CompanyInfo from "./CompanyInfo";
 import InsiderTrades from "./InsiderTrades";
 import Skeleton from "./Skeleton";
+import SuggestionHistoryStrip from "./SuggestionHistoryStrip";
 import TickerLabel from "./TickerLabel";
 import XPostCard from "./XPostCard";
 import { getAnalyze, analysisReportUrl } from "../api";
@@ -157,6 +158,11 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
               <InsiderTrades trades={insiderTrades} ticker={ticker} />
             </Pane>
           )}
+
+          <Pane caption="Suggestion history"
+                right={<span className={styles.muted}>what we said · what happened next</span>}>
+            <SuggestionHistoryStrip ticker={ticker} daily={data?.daily || []} />
+          </Pane>
 
           {anchors.length > 0 && (
             <Pane caption="This day in history"

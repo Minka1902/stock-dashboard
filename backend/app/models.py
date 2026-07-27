@@ -246,6 +246,22 @@ class Fundamentals(BaseModel):
     institution_pct: float | None = None  # fraction held by institutions (0-1)
 
 
+class SuggestionHistoryEntry(BaseModel):
+    """A suggestion that was made for a watched or held ticker on a given day.
+
+    Intentionally minimal — enough to answer "what did we say, and what did the
+    stock do afterwards". The outcome itself is computed from stored bars at
+    read time, not persisted.
+    """
+    user_id: int
+    ticker: str
+    for_date: str        # YYYY-MM-DD, the trading day the call was for
+    kind: str            # "holding" | "watchlist"
+    action: str
+    price: float | None
+    created_at: str
+
+
 class CompanyHolder(BaseModel):
     """A single institutional holder of a ticker (Yahoo institutionOwnership)."""
     ticker: str

@@ -32,6 +32,7 @@ from app.models import (
     StockAnalysis,
     Seasonality,
     ShortInterest,
+    SuggestionHistoryEntry,
     SocialSentiment,
     SourceStatus,
     SuggestionLogEntry,
@@ -380,6 +381,20 @@ def init_schema(conn: sqlite3.Connection) -> None:
             revenue_growth REAL,
             profit_margin  REAL,
             market_cap     REAL
+        );
+        -- One row per suggested ticker per trading day, for watchlisted and
+        -- held names only. Deliberately lean: outcomes ("+7d it went up 12%")
+        -- are derived at read time from stored bars, never stored, so they
+        -- can't go stale.
+        CREATE TABLE IF NOT EXISTS suggestion_history (
+            user_id    INTEGER NOT NULL,
+            ticker     TEXT NOT NULL,
+            for_date   TEXT NOT NULL,
+            kind       TEXT NOT NULL,   -- 'holding' | 'watchlist'
+            action     TEXT NOT NULL,
+            price      REAL,            -- reference price when suggested
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, ticker, for_date)
         );
         CREATE TABLE IF NOT EXISTS company_holders (
             ticker      TEXT NOT NULL,
@@ -1588,6 +1603,47 @@ def upsert_fundamentals(conn: sqlite3.Connection, records: list[Fundamentals]) -
 def get_fundamentals(conn: sqlite3.Connection) -> list[Fundamentals]:
     cur = conn.execute("SELECT * FROM fundamentals ORDER BY ticker ASC")
     return [Fundamentals(**dict(row)) for row in cur.fetchall()]
+
+
+def record_suggestion_history(
+    conn: sqlite3.Connection, records: list[SuggestionHistoryEntry],
+) -> int:
+    """Snapshot suggestions for a day. First write for a (user, ticker, date)
+    wins, so the recorded price is the one at the time the call was first made
+    — re-opening the page later never rewrites history."""
+    if not records:
+        return 0
+    cur = conn.executemany(
+        """
+        INSERT INTO suggestion_history
+            (user_id, ticker, for_date, kind, action, price, created_at)
+        VALUES (:user_id, :ticker, :for_date, :kind, :action, :price, :created_at)
+        ON CONFLICT(user_id, ticker, for_date) DO NOTHING
+        """,
+        [r.model_dump() for r in records],
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def get_suggestion_history(
+    conn: sqlite3.Connection,
+    user_id: int,
+    ticker: str | None = None,
+    months: int = 6,
+) -> list[SuggestionHistoryEntry]:
+    sql = (
+        "SELECT user_id, ticker, for_date, kind, action, price, created_at "
+        "FROM suggestion_history WHERE user_id = ? "
+        f"AND for_date >= date('now', '-{int(months)} months')"
+    )
+    params: list = [user_id]
+    if ticker:
+        sql += " AND ticker = ?"
+        params.append(ticker.upper())
+    sql += " ORDER BY for_date DESC, ticker ASC"
+    cur = conn.execute(sql, params)
+    return [SuggestionHistoryEntry(**dict(row)) for row in cur.fetchall()]
 
 
 def upsert_company_holders(conn: sqlite3.Connection, records: list[CompanyHolder]) -> None:

@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, routes_oauth, search, sentiment, suggestions, themes
+from app import analysis, analyze, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, routes_oauth, search, sentiment, suggestion_history, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.security import SecurityHeadersMiddleware, rate_limit
@@ -228,11 +228,23 @@ def _refresh_all():
         ingest.run_source(refresh_conn, name, fetch, store, min_interval_seconds=min_interval)
 
 
+def _snapshot_suggestion_history(for_date: str) -> None:
+    """Record every user's suggestions for `for_date`, so the history calendar
+    has a row per trading day whether or not anyone opened the app."""
+    for user in db.get_users(refresh_conn):
+        try:
+            digest = suggestions.build_digest(refresh_conn, for_date, user_id=user.id)
+            suggestion_history.record(refresh_conn, digest, user.id)
+        except Exception:
+            logger.exception("suggestion history snapshot failed for user %s", user.id)
+
+
 def _send_daily_digest():
     """Scheduled pre-market: deliver the next trading day's suggestions."""
     target = next_trading_day()
     if not is_trading_day(target):
         return
+    _snapshot_suggestion_history(target.isoformat())
     try:
         notify.send_digest(refresh_conn, target.isoformat())
     except Exception:
@@ -271,6 +283,7 @@ def _run_daily_analysis():
     try:
         today = datetime.now(ZoneInfo(settings.analysis_tz)).date()
         target = today if is_trading_day(today) else next_trading_day(today)
+        _snapshot_suggestion_history(target.isoformat())
         notify.send_digest(refresh_conn, target.isoformat())
     except Exception:
         # Delivery is already resilient; never let the job crash the scheduler.
@@ -860,7 +873,31 @@ def put_settings(item: SettingsUpdate, user=Depends(auth.get_current_user)):
 # ---------- suggestions (digest preview + delivery) ----------
 @app.get("/api/suggestions")
 def get_suggestions(user=Depends(auth.get_current_user)):
-    return suggestions.build_digest(conn, next_trading_day().isoformat(), user_id=user.id)
+    digest = suggestions.build_digest(conn, next_trading_day().isoformat(), user_id=user.id)
+    # Snapshot as a safety net so a day is never lost if the scheduled job
+    # didn't run; the first write for a (user, ticker, day) wins.
+    try:
+        suggestion_history.record(conn, digest, user.id)
+    except Exception:
+        logger.exception("suggestion history snapshot failed")
+    return digest
+
+
+@app.get("/api/suggestions/history")
+def suggestions_history(
+    ticker: str | None = None,
+    months: int = 6,
+    user=Depends(auth.get_current_user),
+):
+    """Past suggestions for watched/held tickers, with the realised move at
+    each horizon computed from stored bars."""
+    months = max(1, min(24, months))
+    clean = clean_ticker(ticker) if ticker else None
+    rows = db.get_suggestion_history(conn, user.id, clean, months)
+    return {
+        "entries": suggestion_history.with_outcomes(conn, rows),
+        "horizons": list(suggestion_history.HORIZONS),
+    }
 
 
 @app.post("/api/suggestions/send-test")
@@ -901,7 +938,7 @@ def alerts_read(body: AlertsRead, user=Depends(auth.get_current_user)):
 
 
 @app.get("/api/boom-scores/history/{ticker}")
-def boom_score_history(ticker: str):
+def boom_score_history(ticker: str, user=Depends(auth.get_current_user)):
     return db.get_boom_score_history(conn, clean_ticker(ticker))
 
 
