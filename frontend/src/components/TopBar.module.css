@@ -80,8 +80,11 @@
   letter-spacing: 0.09em;
   color: var(--text-faint);
 }
-.lean[data-lean="GREEDY"], .lean[data-lean="RISK_ON"] { color: var(--positive); border-color: var(--positive-weak); }
-.lean[data-lean="FEARFUL"], .lean[data-lean="RISK_OFF"] { color: var(--negative); border-color: var(--negative-weak); }
+/* Keyed on the derived tone rather than the lean word: the vocabulary lives in
+   lib/lean.js, and the old GREEDY→green rule contradicted its own read line
+   ("crowd is greedy — a time to trim"). */
+.lean[data-tone="pos"] { color: var(--positive); border-color: var(--positive-weak); }
+.lean[data-tone="neg"] { color: var(--negative); border-color: var(--negative-weak); }
 
 .cmd {
   display: inline-flex;

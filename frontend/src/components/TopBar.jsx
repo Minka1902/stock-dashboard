@@ -4,6 +4,7 @@ import Icon from "./Icon";
 import AlertsBell from "./AlertsBell";
 import UserMenu from "./UserMenu";
 import { formatRelativeTime } from "../lib/format";
+import { leanLabel, leanTone } from "../lib/lean";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./TopBar.module.css";
 
@@ -70,14 +71,6 @@ function ThemeMenu({ theme, themes, onSetTheme }) {
   );
 }
 
-const LEAN_LABEL = {
-  GREEDY: "Greedy",
-  FEARFUL: "Fearful",
-  NEUTRAL: "Neutral",
-  RISK_ON: "Risk on",
-  RISK_OFF: "Risk off",
-};
-
 export default function TopBar({
   title, sources, busy, onRefresh, theme, onSetTheme, themes = [],
   dyslexia, onToggleDyslexia, lean, alerts = [], unreadAlerts = 0,
@@ -103,9 +96,9 @@ export default function TopBar({
 
       <div className={styles.actions}>
         {lean && (
-          <span className={styles.lean} data-lean={lean}>
+          <span className={styles.lean} data-lean={lean} data-tone={leanTone(lean)}>
             <span className={styles.leanCap}>Lean</span>
-            {LEAN_LABEL[lean] || lean}
+            {leanLabel(lean)}
           </span>
         )}
 
