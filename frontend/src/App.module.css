@@ -38,6 +38,13 @@
   gap: var(--s-5);
 }
 
+/* Analysis takes the whole screen (no rail, no marquee, no top bar), so it
+   gets the width back and sits tighter to the top. */
+.app[data-detail="yes"] .inner {
+  max-width: 1860px;
+  padding-top: var(--s-4);
+}
+
 .twoCol {
   display: grid;
   grid-template-columns: 1fr 1fr;

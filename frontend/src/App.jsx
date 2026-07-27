@@ -4,6 +4,7 @@ import { useLiveQuotes } from "./hooks/useLiveQuotes";
 import { useTheme } from "./hooks/useTheme";
 import { useSettingsContext } from "./hooks/useSettingsContext";
 import { useAppSettings } from "./hooks/useAppSettings";
+import { useDocumentTitle } from "./hooks/useDocumentTitle";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
 import LiveTicker from "./components/LiveTicker";
@@ -75,7 +76,7 @@ export default function App({ auth }) {
     (appSettingsApi.appSettings.quotes_refresh_seconds || 30) * 1000,
   );
   const { theme, setTheme, toggle, themes } = useTheme();
-  const { settings, setSetting } = useSettingsContext();
+  const { settings, setSetting, labelFor } = useSettingsContext();
   const [view, setView] = useState("sentiment");
   const [cmdOpen, setCmdOpen] = useState(false);
   const scrollRef = useRef(null);
@@ -180,6 +181,17 @@ export default function App({ auth }) {
     setTourView(null);
   };
 
+  // The analysis view opens in its own tab, so the title has to name the stock
+  // or every tab looks identical. Honours the ticker/company-name setting.
+  const detailLabel = detailTicker ? labelFor(detailTicker) : null;
+  useDocumentTitle(
+    detailTicker
+      ? (detailLabel && detailLabel !== detailTicker
+        ? `${detailTicker} — ${detailLabel}`
+        : detailTicker)
+      : TITLES[view],
+  );
+
   const commandItems = [
     { id: "sentiment",   label: "Market Sentiment", hint: "the mood",   icon: "gauge",    run: () => navigate("sentiment") },
     { id: "suggestions", label: "Suggestions",      hint: "what to do", icon: "spark",    run: () => navigate("suggestions") },
@@ -197,10 +209,13 @@ export default function App({ auth }) {
   ];
 
   return (
-    <div className={styles.app}>
-      <Sidebar view={view} onNavigate={navigate} />
+    <div className={styles.app} data-detail={detailTicker ? "yes" : "no"}>
+      {/* While a ticker is open the analysis page is the whole screen: no rail,
+          no marquee, no top bar. Its own Back button is the way out (Task 19). */}
+      {!detailTicker && <Sidebar view={view} onNavigate={navigate} />}
 
       <main className={styles.main}>
+        {!detailTicker && (
         <div className={styles.band}>
           <TopBar
             title={detailTicker ? `${detailTicker} — analysis` : TITLES[view]}
@@ -226,6 +241,7 @@ export default function App({ auth }) {
           />
           <LiveTicker quotes={quotes} asOf={asOf} marketStatus={marketStatus} />
         </div>
+        )}
 
         <div className={styles.scroll} ref={scrollRef}>
           <div className={styles.inner}>
@@ -235,7 +251,7 @@ export default function App({ auth }) {
               </div>
             )}
 
-            <SourceStatus sources={sources} onOpenDetails={openSourceDetails} />
+            {!detailTicker && <SourceStatus sources={sources} onOpenDetails={openSourceDetails} />}
 
             <AnimatePresence mode="wait" initial={false}>
             {detailTicker ? (

@@ -563,6 +563,27 @@ def analyze_ticker(ticker: str, user=Depends(auth.get_current_user)):
         # already exist, so the analysis page stays one round trip.
         "company": _company_payload(t),
         "insider_trades": [tr.model_dump() for tr in db.get_trades_for(conn, t)],
+        # The signal sidecar. Every one of these was already stored per ticker
+        # and simply wasn't being surfaced on this page.
+        "signals": _signal_payload(t),
+        "watchlists": db.get_watchlist_map(conn, user.id).get(t, []),
+    }
+
+
+def _signal_payload(ticker: str) -> dict:
+    """Boom score, technicals, analyst, social and short interest for a ticker.
+    Anything not stored comes back as None so the UI can say so."""
+    boom = db.get_boom_score_for(conn, ticker)
+    tech = db.get_technical_signal_for(conn, ticker)
+    analyst_sig = db.get_analyst_for(conn, ticker)
+    social = db.get_social_for(conn, ticker)
+    short = db.get_short_interest_for(conn, ticker)
+    return {
+        "boom": boom.model_dump() if boom else None,
+        "technical": tech.model_dump() if tech else None,
+        "analyst": analyst_sig.model_dump() if analyst_sig else None,
+        "social": social.model_dump() if social else None,
+        "short_interest": short.model_dump() if short else None,
     }
 
 

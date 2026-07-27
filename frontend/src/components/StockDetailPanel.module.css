@@ -72,6 +72,53 @@
 }
 .paneBody { padding: var(--s-4); }
 
+/* Chart + signal sidecar. The chart is deliberately not full width — the read
+   belongs next to the picture, not a scroll away from it. */
+.main {
+  display: grid;
+  grid-template-columns: minmax(0, 2.4fr) minmax(280px, 1fr);
+  gap: var(--s-4);
+  align-items: start;
+}
+@media (max-width: 1180px) {
+  .main { grid-template-columns: 1fr; }
+}
+
+/* The chart carries its own toolbar and legend, so it gets the pane surface
+   without a caption head — the ticker is already the page heading. */
+.chartPane {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  padding: var(--s-4);
+  min-width: 0;
+}
+
+/* "Watching", with the list(s) it's on. */
+.watching {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: var(--positive-weak);
+  color: var(--positive);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.watchLists { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.watchList {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  border: 1px solid currentColor;
+  opacity: 0.75;
+}
+
 .tf { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
 .tfBtn {
   padding: 4px 12px; border: none; background: var(--surface-2); color: var(--text-muted);

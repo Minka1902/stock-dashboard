@@ -3,6 +3,7 @@ import Icon from "./Icon";
 import ChartPro from "./ChartPro";
 import CompanyInfo from "./CompanyInfo";
 import InsiderTrades from "./InsiderTrades";
+import SignalSidecar from "./SignalSidecar";
 import Skeleton from "./Skeleton";
 import SuggestionHistoryStrip from "./SuggestionHistoryStrip";
 import TickerLabel from "./TickerLabel";
@@ -68,11 +69,20 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   const xPosts = data?.x_posts || [];
   const company = data?.company || null;
   const insiderTrades = data?.insider_trades || [];
+  const signals = data?.signals || null;
   const companyInfo = settings.companyInfo || {};
   const lastClose = data?.daily?.length ? data.daily[data.daily.length - 1].close : null;
   const refPrice = a?.price ?? lastClose;
-  const watched = watchlist?.some((w) => w.ticker === ticker);
-  const canWatch = Boolean(onAddWatch) && watchlist && !watched;
+  // Membership comes from the server across ALL of the user's lists — the old
+  // check only saw the default list, so a ticker on a second list still
+  // offered "Watch" (Task 18). Falls back to the passed-in list while loading.
+  const memberOf = data?.watchlists ?? null;
+  const watched = memberOf
+    ? memberOf.length > 0
+    : Boolean(watchlist?.some((w) => w.ticker === ticker));
+  // `watchlist` is initialised to [] (truthy), so gate on the loaded payload
+  // instead — otherwise "Watch" flashes before we know the answer.
+  const canWatch = Boolean(onAddWatch) && !loading && !watched;
 
   const addToWatchlist = () => {
     setWatchBusy(true);
@@ -116,9 +126,21 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
             <Icon name="star" size={13} /> {watchBusy ? "Adding…" : "Watch"}
           </button>
         )}
-        {watched && watchlist && (
-          <span className={styles.reportBtn} title="Already on your watchlist" aria-disabled="true">
+        {watched && (
+          <span
+            className={styles.watching}
+            title={memberOf?.length
+              ? `On your ${memberOf.join(", ")} watchlist${memberOf.length > 1 ? "s" : ""}`
+              : "Already on your watchlist"}
+          >
             <Icon name="star" size={13} /> Watching
+            {memberOf?.length > 0 && (
+              <span className={styles.watchLists}>
+                {memberOf.map((name) => (
+                  <span key={name} className={styles.watchList}>{name}</span>
+                ))}
+              </span>
+            )}
           </span>
         )}
         {a && (
@@ -141,9 +163,14 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
         <Skeleton w="100%" h="460px" />
       ) : (
         <>
-          <Pane caption="Chart">
-            <ChartPro ticker={ticker} analysis={a} />
-          </Pane>
+          {/* The chart is the subject but not the whole page: the signal
+              sidecar sits beside it so the read and the picture are together. */}
+          <div className={styles.main}>
+            <section className={styles.chartPane}>
+              <ChartPro ticker={ticker} analysis={a} />
+            </section>
+            <SignalSidecar signals={signals} analysis={a} />
+          </div>
 
           {companyInfo.profile !== false && (
             <Pane caption="Company"
