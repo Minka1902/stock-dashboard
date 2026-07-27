@@ -1446,6 +1446,12 @@ def get_boom_scores(conn: sqlite3.Connection) -> list[BoomScore]:
 
 
 # ---------- single-ticker helpers for boom_score computation ----------
+def get_boom_score_for(conn: sqlite3.Connection, ticker: str) -> BoomScore | None:
+    cur = conn.execute("SELECT * FROM boom_scores WHERE ticker = ?", (ticker,))
+    row = cur.fetchone()
+    return _row_to_boom_score(dict(row)) if row else None
+
+
 def get_technical_signal_for(conn: sqlite3.Connection, ticker: str) -> TechnicalSignal | None:
     cur = conn.execute("SELECT * FROM technical_signals WHERE ticker = ?", (ticker,))
     row = cur.fetchone()
