@@ -61,19 +61,32 @@ export function useDrawings({ ticker, chartRef, elRef, mainSeriesRef, seriesEpoc
   // --- attach the primitive to whatever the current main series is ---
   useEffect(() => {
     const series = mainSeriesRef.current;
-    if (!enabled || !series) return undefined;
+    const chart = chartRef.current;
+    if (!enabled || !series || !chart) return undefined;
     const primitive = new DrawingPrimitive();
     primitiveRef.current = primitive;
     series.attachPrimitive(primitive);
     primitive.setShapes(shapesRef.current);
     return () => {
-      try { series.detachPrimitive?.(primitive); } catch { /* series already gone */ }
+      // Mark it dead first, so nothing else touches the series.
+      primitive.kill();
       if (primitiveRef.current === primitive) primitiveRef.current = null;
+      // On unmount React runs ChartPro's chart cleanup BEFORE this one, so the
+      // chart is already removed and chartRef nulled. Detaching from a series
+      // on a disposed chart schedules an async re-layout that then throws
+      // "Object is disposed" from the library's own update loop — uncatchable
+      // here. If the chart is gone there is nothing to detach from anyway.
+      // Reading the *current* ref is the whole point — we're asking "is the
+      // chart I attached to still the live one?", so the usual
+      // copy-it-into-a-variable advice would defeat the check.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      if (chartRef.current !== chart) return;
+      try { series.detachPrimitive?.(primitive); } catch { /* series already gone */ }
     };
     // ChartPro tears down and rebuilds its series on every pref change, so the
     // primitive has to re-attach to the new one — `seriesEpoch` is bumped there.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, seriesEpoch, ticker]);
+  }, [enabled, seriesEpoch, ticker, chartRef]);
 
   useEffect(() => { primitiveRef.current?.setShapes(shapes); }, [shapes]);
   useEffect(() => { primitiveRef.current?.setSelected(selectedId); }, [selectedId]);

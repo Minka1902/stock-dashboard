@@ -148,8 +148,10 @@ def test_rsi_outside_zone_does_not_fire(score_conn):
 
 def test_insider_cluster_two_buys_adds_20(score_conn):
     _add_ticker(score_conn)
-    _add_insider_buy(score_conn, accession="A1", date="2026-06-10")
-    _add_insider_buy(score_conn, accession="A2", date="2026-06-11")
+    # Relative to today: the cluster check looks back a fixed window, so fixed
+    # dates silently age out and the test starts failing on a calendar date.
+    _add_insider_buy(score_conn, accession="A1", date=_days_ago(7))
+    _add_insider_buy(score_conn, accession="A2", date=_days_ago(6))
     scores = boom_score_source.compute_all(["GME"], score_conn)
     assert scores[0].insider_cluster_buy is True
     assert scores[0].score >= 20
@@ -157,7 +159,7 @@ def test_insider_cluster_two_buys_adds_20(score_conn):
 
 def test_insider_cluster_one_buy_does_not_fire(score_conn):
     _add_ticker(score_conn)
-    _add_insider_buy(score_conn, accession="A1", date="2026-06-10")
+    _add_insider_buy(score_conn, accession="A1", date=_days_ago(7))
     scores = boom_score_source.compute_all(["GME"], score_conn)
     assert scores[0].insider_cluster_buy is False
 
@@ -252,15 +254,15 @@ def test_insider_cluster_sell_subtracts_20(score_conn):
     # Add two sell transactions.
     db.upsert_trades(score_conn, [InsiderTrade(
         accession="S1", ticker="GME", company="Co", owner="Owner",
-        role="CEO", transaction_date="2026-06-20", transaction_type="Sell",
+        role="CEO", transaction_date=_days_ago(5), transaction_type="Sell",
         shares=500.0, value=50000.0, filing_url="https://sec.gov/s1",
-        filed_at="2026-06-20T10:00:00+00:00",
+        filed_at=f"{_days_ago(5)}T10:00:00+00:00",
     )])
     db.upsert_trades(score_conn, [InsiderTrade(
         accession="S2", ticker="GME", company="Co", owner="Owner2",
-        role="CFO", transaction_date="2026-06-21", transaction_type="Sell",
+        role="CFO", transaction_date=_days_ago(4), transaction_type="Sell",
         shares=300.0, value=30000.0, filing_url="https://sec.gov/s2",
-        filed_at="2026-06-21T10:00:00+00:00",
+        filed_at=f"{_days_ago(4)}T10:00:00+00:00",
     )])
     scores = boom_score_source.compute_all(["GME"], score_conn)
     assert scores[0].insider_cluster_sell is True
@@ -272,8 +274,8 @@ def test_congress_sale_subtracts_15(score_conn):
     db.upsert_congress_trades(score_conn, [CongressTrade(
         trade_hash="sale001", representative="Rep Jones", party="R",
         state="TX", ticker="GME", asset_description="Stock",
-        transaction_date="2026-06-20", transaction_type="Sale",
-        amount_range="$50,001 - $100,000", filed_at="2026-06-22", chamber="senate",
+        transaction_date=_days_ago(5), transaction_type="Sale",
+        amount_range="$50,001 - $100,000", filed_at=_days_ago(3), chamber="senate",
     )])
     scores = boom_score_source.compute_all(["GME"], score_conn)
     assert scores[0].congress_sale is True

@@ -1,15 +1,30 @@
 """Unit tests for the analyst source module."""
-import time
+import calendar
+from datetime import datetime, timedelta, timezone
+
 from app.sources.analyst import parse_response
 
 
 _FETCHED = "2026-06-22T10:00:00+00:00"
 
-# Unix timestamps for test dates
-# 2026-07-15 = 1784102400 (approx), 2026-06-01 = 1780272000 (approx)
-_FUTURE_TS = int(time.mktime(time.strptime("2026-07-15", "%Y-%m-%d")))
-_PAST_TS = int(time.mktime(time.strptime("2026-05-01", "%Y-%m-%d")))
-_RECENT_TS = int(time.mktime(time.strptime("2026-06-10", "%Y-%m-%d")))
+# Timestamps are relative to today, because the parser filters on "is it in the
+# future" and "was it in the last N days" — fixed calendar dates silently age
+# out and the suite starts failing on a date rather than on a change.
+#
+# Anchored at 12:00 UTC and built with calendar.timegm (not time.mktime, which
+# reads local time) so converting back to a date can't slip a day either way.
+def _ts(days_from_today: int) -> int:
+    d = datetime.now(timezone.utc).date() + timedelta(days=days_from_today)
+    return calendar.timegm(datetime(d.year, d.month, d.day, 12, 0).timetuple())
+
+
+def _iso(days_from_today: int) -> str:
+    return (datetime.now(timezone.utc).date() + timedelta(days=days_from_today)).isoformat()
+
+
+_FUTURE_TS = _ts(20)    # upcoming earnings
+_PAST_TS = _ts(-90)     # long past — outside the "recent" window
+_RECENT_TS = _ts(-5)    # inside the recent-actions window
 
 
 def _payload(
@@ -33,7 +48,7 @@ def test_parse_next_earnings_future_date():
     payload = _payload(earnings_dates=[_FUTURE_TS])
     result = parse_response(payload, "AAPL", _FETCHED)
     assert result is not None
-    assert result.next_earnings == "2026-07-15"
+    assert result.next_earnings == _iso(20)
 
 
 def test_parse_next_earnings_past_date_skipped():

@@ -247,26 +247,17 @@ export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sour
               Nothing matches this filter yet — more arrives with the next refresh.
             </li>
           ) : (
-            rows.map((a) => (
-              <motion.li key={a.url} className={styles.item} variants={staggerItem}>
-                {a.image ? (
-                  <img className={styles.thumb} src={a.image} alt="" loading="lazy" />
-                ) : (
-                  <span className={styles.thumbFallback}><Icon name="news" size={18} /></span>
-                )}
-                <div className={styles.body}>
-                  <a className={styles.headline} href={a.url} target="_blank" rel="noreferrer">
-                    {a.title}
-                  </a>
-                  <div className={styles.meta}>
-                    {a.ticker && <TickerLabel ticker={a.ticker} className={styles.tickerBadge} />}
-                    <span className={styles.domain}>{a.domain}</span>
-                    {a.sourcecountry && <span className={styles.sep}>·</span>}
-                    {a.sourcecountry && <span>{a.sourcecountry}</span>}
-                    <span className={styles.sep}>·</span>
-                    <span>{formatRelativeTime(a.seendate)}</span>
-                  </div>
-                </div>
+            rows.map((it) => (
+              <motion.li
+                key={it.id}
+                className={it.kind === "x" ? styles.xItem : styles.item}
+                data-source={it.source}
+                data-kind={it.kind}
+                variants={staggerItem}
+              >
+                {it.kind === "x"
+                  ? <XPostCard post={it.raw} compact />
+                  : <Article a={it.raw} onPickSource={pickSource} />}
               </motion.li>
             ))
           )}

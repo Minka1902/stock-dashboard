@@ -531,6 +531,12 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
 
     // sub-panes — each indicator gets its OWN pane + visible price scale, and
     // shows its current value as an axis label ("tell the data", Task 11).
+    //
+    // Heights are collected and applied in one pass *after* every pane exists
+    // (see applyPaneHeights below): setting them inline, pane by pane, makes
+    // each call re-proportion the panes added after it, and the requested
+    // 56/64/72 came out as 27/27/66.
+    const wantedHeights = [];
     let paneIndex = 0;
     if (vol) {
       paneIndex += 1;
