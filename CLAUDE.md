@@ -14,7 +14,6 @@ watchlist, portfolio and notification profile, while market data is shared.
 **Core product principle — signals, not predictions.** Every signal must show its source and
 reasoning; never a black-box score and never fabricated/placeholder data. If a data source is
 unavailable, the source records an error status (visible in the UI) rather than inventing values.
-See `docs/superpowers/specs/2026-06-22-stock-signal-dashboard-design.md`.
 
 ## Layout & commands
 
@@ -53,7 +52,7 @@ npm run lint     # eslint
   carry the session cookie).
 
 **Run exactly one uvicorn worker.** The scheduler, TTL caches, rate limiter and the shared
-SQLite connection are all in-process — see `docs/scaling-roadmap.md` before scaling out.
+SQLite connection are all in-process; scaling out means moving all four out of the process first.
 
 ## Auth & multi-tenancy
 
