@@ -14,7 +14,6 @@ watchlist, portfolio and notification profile, while market data is shared.
 **Core product principle — signals, not predictions.** Every signal must show its source and
 reasoning; never a black-box score and never fabricated/placeholder data. If a data source is
 unavailable, the source records an error status (visible in the UI) rather than inventing values.
-See `docs/superpowers/specs/2026-06-22-stock-signal-dashboard-design.md`.
 
 ## Layout & commands
 
@@ -53,7 +52,7 @@ npm run lint     # eslint
   carry the session cookie).
 
 **Run exactly one uvicorn worker.** The scheduler, TTL caches, rate limiter and the shared
-SQLite connection are all in-process — see `docs/scaling-roadmap.md` before scaling out.
+SQLite connection are all in-process; scaling out means moving all four out of the process first.
 
 ## Auth & multi-tenancy
 
@@ -65,7 +64,9 @@ SQLite connection are all in-process — see `docs/scaling-roadmap.md` before sc
 - An ASGI middleware in `app/main.py` resolves the cookie once per request into
   `request.state.user` and 401s everything under `/api` except `/api/health` and `/api/auth/*`.
   Routes needing the user take `Depends(auth.get_current_user)`.
-- **Per-user tables**: `watchlist`, `portfolio` (PK `(user_id, ticker)`), `notify_profile`
+- **Per-user tables**: `watchlists` (named lists, PK `id`), `watchlist` (items, PK
+  `(watchlist_id, ticker)` — `user_id` is denormalized onto each row), `portfolio` (PK
+  `(user_id, ticker)`), `notify_profile`
   (PK `user_id`), `alert_reads`. **Shared**: all market-data tables, `stock_analysis` (stored
   *unsized*; `analysis.apply_sizing` personalizes at read time), `app_settings` (PUT is
   admin-only). The first registered account becomes admin and claims legacy `user_id=0` rows

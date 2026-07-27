@@ -41,6 +41,16 @@ export function useWatchlists() {
     setItems(await api.removeWatch(ticker, activeId));
   }, [activeId]);
 
+  // Move a ticker to another list. The API returns the *source* list's
+  // remaining items, which is exactly what this view is showing.
+  const moveTicker = useCallback(async (ticker, toListId) => {
+    setItems(await api.updateWatch(ticker, { fromListId: activeId, toListId }));
+  }, [activeId]);
+
+  const editNote = useCallback(async (ticker, note) => {
+    setItems(await api.updateWatch(ticker, { fromListId: activeId, note }));
+  }, [activeId]);
+
   const createList = useCallback(async (name) => {
     const ls = await api.createWatchlist(name);
     setLists(ls);
@@ -60,6 +70,7 @@ export function useWatchlists() {
 
   return {
     lists, activeId, items, loading,
-    selectList: setActiveId, addTicker, removeTicker, createList, renameList, deleteList,
+    selectList: setActiveId, addTicker, removeTicker, moveTicker, editNote,
+    createList, renameList, deleteList,
   };
 }

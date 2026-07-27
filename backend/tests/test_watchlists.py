@@ -66,6 +66,67 @@ def test_cannot_touch_another_users_list(conn):
     assert db.delete_watchlist(conn, 1, l2) is False
 
 
+# ---- moving a ticker between lists / editing its note (Tasks 5 + 6) ----
+
+def test_move_carries_the_note(conn):
+    a = db.get_watchlists(conn, 1)[0].id
+    b = db.create_watchlist(conn, 1, "Spec", "t").id
+    db.add_watch(conn, 1, WatchItem(ticker="AAPL", note="earnings play", added_at="t"), a)
+    assert db.update_watch(conn, 1, "AAPL", a, to_list_id=b) is True
+    assert db.get_watchlist(conn, 1, a) == []
+    moved = db.get_watchlist(conn, 1, b)
+    assert [w.ticker for w in moved] == ["AAPL"]
+    assert moved[0].note == "earnings play"  # a move must never drop the note
+
+
+def test_edit_note_in_place(conn):
+    a = db.get_watchlists(conn, 1)[0].id
+    db.add_watch(conn, 1, WatchItem(ticker="AAPL", note="old", added_at="t"), a)
+    assert db.update_watch(conn, 1, "AAPL", a, note="  new read  ") is True
+    assert db.get_watchlist(conn, 1, a)[0].note == "new read"
+
+
+def test_move_onto_a_list_that_already_has_it(conn):
+    a = db.get_watchlists(conn, 1)[0].id
+    b = db.create_watchlist(conn, 1, "Spec", "t").id
+    db.add_watch(conn, 1, WatchItem(ticker="AAPL", note="from a", added_at="t"), a)
+    db.add_watch(conn, 1, WatchItem(ticker="AAPL", note="from b", added_at="t"), b)
+    assert db.update_watch(conn, 1, "AAPL", a, to_list_id=b) is True
+    assert db.get_watchlist(conn, 1, a) == []            # source row gone
+    assert [w.ticker for w in db.get_watchlist(conn, 1, b)] == ["AAPL"]  # no duplicate
+
+
+def test_move_rejects_unknown_or_foreign_lists(conn):
+    a = db.get_watchlists(conn, 1)[0].id
+    foreign = db.get_watchlists(conn, 2)[0].id
+    db.add_watch(conn, 1, WatchItem(ticker="AAPL", note="", added_at="t"), a)
+    assert db.update_watch(conn, 1, "AAPL", a, to_list_id=foreign) is False
+    assert db.update_watch(conn, 1, "AAPL", foreign, to_list_id=a) is False
+    assert db.update_watch(conn, 1, "MSFT", a, to_list_id=a) is False  # not on the list
+    assert [w.ticker for w in db.get_watchlist(conn, 1, a)] == ["AAPL"]  # nothing moved
+
+
+def test_move_and_note_api(client):
+    lists = client.get("/api/watchlists").json()
+    src = lists[0]["id"]
+    dst = next(lst for lst in client.post("/api/watchlists", json={"name": "Spec"}).json()
+               if lst["name"] == "Spec")["id"]
+    client.post("/api/watchlist", json={"ticker": "NVDA", "note": "keep me", "list_id": src})
+
+    edited = client.patch("/api/watchlist/NVDA",
+                          json={"from_list_id": src, "note": "changed"}).json()
+    assert edited[0]["note"] == "changed"
+
+    remaining = client.patch("/api/watchlist/NVDA",
+                             json={"from_list_id": src, "to_list_id": dst}).json()
+    assert remaining == []
+    landed = client.get(f"/api/watchlist?list_id={dst}").json()
+    assert landed[0]["ticker"] == "NVDA" and landed[0]["note"] == "changed"
+
+    missing = client.patch("/api/watchlist/NVDA", json={"from_list_id": src})
+    assert missing.status_code == 404
+
+
 # ---- API layer ----
 
 def test_watchlists_api_crud(client):
