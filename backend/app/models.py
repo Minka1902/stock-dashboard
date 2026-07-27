@@ -232,6 +232,29 @@ class Fundamentals(BaseModel):
     revenue_growth: float | None
     profit_margin: float | None
     market_cap: float | None
+    # Company profile, parsed from the same Yahoo quoteSummary call. All
+    # optional: rows written before these columns existed simply have none, and
+    # a missing field renders as "—" rather than being invented.
+    name: str | None = None
+    website: str | None = None
+    country: str | None = None
+    city: str | None = None
+    employees: int | None = None
+    summary: str | None = None
+    officers_json: str = ""        # JSON list of {name, title, age, pay}
+    insider_pct: float | None = None      # fraction held by insiders (0-1)
+    institution_pct: float | None = None  # fraction held by institutions (0-1)
+
+
+class CompanyHolder(BaseModel):
+    """A single institutional holder of a ticker (Yahoo institutionOwnership)."""
+    ticker: str
+    holder: str
+    kind: str = "institution"   # PK is (ticker, kind, holder)
+    pct_held: float | None = None
+    shares: float | None = None
+    value: float | None = None
+    reported_at: str = ""
 
 
 class XPost(BaseModel):
