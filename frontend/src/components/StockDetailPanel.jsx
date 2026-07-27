@@ -163,14 +163,9 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
         <Skeleton w="100%" h="460px" />
       ) : (
         <>
-          {/* The chart is the subject but not the whole page: the signal
-              sidecar sits beside it so the read and the picture are together. */}
-          <div className={styles.main}>
-            <section className={styles.chartPane}>
-              <ChartPro ticker={ticker} analysis={a} />
-            </section>
-            <SignalSidecar signals={signals} analysis={a} />
-          </div>
+          <section className={styles.chartPane}>
+            <ChartPro ticker={ticker} analysis={a} />
+          </section>
 
           {companyInfo.profile !== false && (
             <Pane caption="Company"

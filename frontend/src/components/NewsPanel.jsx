@@ -43,7 +43,7 @@ function Article({ a, onPickSource }) {
           {a.title}
         </a>
         <div className={styles.meta}>
-          {a.ticker && <TickerLabel ticker={a.ticker} className={styles.tickerBadge} />}
+          {a.ticker && <span className={styles.tickerBadge}>{a.ticker}</span>}
           <button
             className={styles.domainBtn}
             onClick={() => onPickSource(String(a.domain || "").replace(/^www\./i, "").toLowerCase())}
