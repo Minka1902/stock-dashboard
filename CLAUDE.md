@@ -17,7 +17,7 @@ unavailable, the source records an error status (visible in the UI) rather than 
 
 ## Layout & commands
 
-Two independent apps, no root package manager. Run each from its own directory.
+Three independent apps, no root package manager. Run each from its own directory.
 
 ### Backend (`backend/`) — FastAPI + SQLite + APScheduler, Python 3.11+
 ```bash
@@ -53,6 +53,22 @@ npm run lint     # eslint
 
 **Run exactly one uvicorn worker.** The scheduler, TTL caches, rate limiter and the shared
 SQLite connection are all in-process; scaling out means moving all four out of the process first.
+
+### Extension (`extension/`) — MV3 browser extension, Chrome + Firefox
+```bash
+cd extension
+npm install
+npm run build    # -> dist-chrome/ and dist-firefox/ (three Vite passes each)
+npm run test     # node --test, no browser needed
+npm run lint
+```
+A companion to the dashboard, not a second one: ticker badges on finance/social sites, a
+watchlist popup, and desktop notifications for high-severity alerts (the backend has no push
+channel). It reuses the existing REST API and session cookie — **no backend changes.** All
+network calls run in the background worker, because a content-script `fetch` would carry the
+visited page's origin and be blocked by CORS. See `extension/README.md` for the load-unpacked
+steps, the `STOCKS_CORS_ORIGINS` note, and the list of constants duplicated from `frontend/`
+that must be kept in sync (notably `convictionTier`/`CHIP_META` from `BoomScorePanel.jsx`).
 
 ## Auth & multi-tenancy
 
