@@ -84,8 +84,12 @@ GDELT_TIMEOUT_SECONDS = float(os.environ.get("STOCKS_GDELT_TIMEOUT_SECONDS", "8"
 # of hammering it every cycle (which just earns more 429s and burns worker time).
 GDELT_COOLDOWN_SECONDS = float(os.environ.get("STOCKS_GDELT_COOLDOWN_SECONDS", "600"))
 # GDELT rate-limits hard, so refresh news at most once a day rather than every
-# cycle. The scheduled daily deep run (force=True) bypasses this for one pull/day.
+# cycle. The daily deep run no longer forces this (force_on_daily=False in the
+# SOURCES registry): forcing it defeated the gate the rate limiting requires.
 GDELT_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_GDELT_MIN_INTERVAL_SECONDS", str(86400)))
+# Retry sooner than the daily gate after a failure — a transient timeout should
+# not cost a whole day of headlines.
+GDELT_RETRY_INTERVAL_SECONDS = int(os.environ.get("STOCKS_GDELT_RETRY_INTERVAL_SECONDS", "1800"))
 
 # --- Insider trades (SEC EDGAR Form 4) ---
 # SEC requires a descriptive User-Agent with contact info for fair-access.
@@ -163,10 +167,22 @@ SENT_AAII_SPREAD = float(os.environ.get("STOCKS_SENT_AAII_SPREAD", "20"))
 SENT_PC_BUY = float(os.environ.get("STOCKS_SENT_PC_BUY", "1.0"))          # heavy puts = fear → buy
 SENT_PC_SELL = float(os.environ.get("STOCKS_SENT_PC_SELL", "0.8"))        # complacency → sell
 
-# FINRA margin debt updates monthly — check at most once a day.
+# FINRA publishes margin debt monthly, roughly three to four weeks after the
+# month closes, so asking daily only burned requests. Once a fortnight still
+# catches every release well before the next one.
 MARGIN_DEBT_MIN_INTERVAL_SECONDS = int(
-    os.environ.get("STOCKS_MARGIN_DEBT_MIN_INTERVAL_SECONDS", "86400")
+    os.environ.get("STOCKS_MARGIN_DEBT_MIN_INTERVAL_SECONDS", str(14 * 86400))
 )
+# Retry cadence after a *failed* fetch, which is a different question from how
+# often fresh data appears: a fortnight-long success interval must not become a
+# fortnight-long outage when FINRA returns a 401/403.
+MARGIN_DEBT_RETRY_INTERVAL_SECONDS = int(
+    os.environ.get("STOCKS_MARGIN_DEBT_RETRY_INTERVAL_SECONDS", "21600")  # 6h
+)
+# Direct link to FINRA's margin-statistics workbook. Normally discovered from
+# the statistics page, but that page is currently Cloudflare-blocked (403), so
+# this is the escape hatch that keeps the workbook tier usable.
+MARGIN_DEBT_WORKBOOK_URL = os.environ.get("STOCKS_MARGIN_DEBT_WORKBOOK_URL", "")
 SENT_MARGIN_SELL = float(os.environ.get("STOCKS_SENT_MARGIN_SELL", "45"))     # %YoY: overbought
 SENT_MARGIN_EXTREME = float(os.environ.get("STOCKS_SENT_MARGIN_EXTREME", "60"))  # pre-crash leverage
 SENT_MARGIN_BUY = float(os.environ.get("STOCKS_SENT_MARGIN_BUY", "-20"))      # deleveraging washout
