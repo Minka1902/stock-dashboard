@@ -1,12 +1,35 @@
 """Central configuration. Override via environment variables."""
 import os
 from datetime import date, timedelta
+from pathlib import Path
 
 # SQLite file location (one file, no server).
 DB_PATH = os.environ.get("STOCKS_DB_PATH", "stocks.db")
 
 # Log level for the app-wide logging config (see app/logging_config.py).
 LOG_LEVEL = os.environ.get("STOCKS_LOG_LEVEL", "INFO")
+
+# Where the rotating log file lives. Defaults to backend/logs/ (this file is
+# backend/app/config.py, so parents[1] is backend/). Logging to a file at all is
+# the point: uvicorn is launched detached and minimized, so a stderr-only setup
+# loses every traceback the moment the console window goes away — which is
+# exactly what made the last unexplained shutdown impossible to diagnose.
+LOG_DIR = Path(os.environ.get("STOCKS_LOG_DIR") or (Path(__file__).resolve().parents[1] / "logs"))
+LOG_MAX_BYTES = int(os.environ.get("STOCKS_LOG_MAX_BYTES", str(5 * 1024 * 1024)))
+LOG_BACKUP_COUNT = int(os.environ.get("STOCKS_LOG_BACKUP_COUNT", "5"))
+
+# How long a job may start late and still run. APScheduler's own default is 1
+# second (BackgroundScheduler -> base.py:909), which silently *drops* any job
+# delayed by a blocked thread pool or a sleeping laptop. 5 minutes means a late
+# run still happens; coalesce=True keeps a backlog from firing N times at once.
+SCHEDULER_MISFIRE_GRACE_SECONDS = int(
+    os.environ.get("STOCKS_SCHEDULER_MISFIRE_GRACE_SECONDS", "300"))
+
+# Retention for the run-history tables that feed the Server page. They are
+# append-only and would otherwise grow without bound.
+SOURCE_RUN_RETENTION_DAYS = int(os.environ.get("STOCKS_SOURCE_RUN_RETENTION_DAYS", "30"))
+JOB_RUN_RETENTION_DAYS = int(os.environ.get("STOCKS_JOB_RUN_RETENTION_DAYS", "90"))
+BOOM_HISTORY_RETENTION_DAYS = int(os.environ.get("STOCKS_BOOM_HISTORY_RETENTION_DAYS", "400"))
 
 # --- Web security ---
 # Comma-separated list of allowed browser origins. Because the session cookie
