@@ -3,7 +3,6 @@ import Icon from "./Icon";
 import ChartPro from "./ChartPro";
 import CompanyInfo from "./CompanyInfo";
 import InsiderTrades from "./InsiderTrades";
-import SignalSidecar from "./SignalSidecar";
 import Skeleton from "./Skeleton";
 import SuggestionHistoryStrip from "./SuggestionHistoryStrip";
 import TickerLabel from "./TickerLabel";
@@ -69,10 +68,19 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   const xPosts = data?.x_posts || [];
   const company = data?.company || null;
   const insiderTrades = data?.insider_trades || [];
-  const signals = data?.signals || null;
   const companyInfo = settings.companyInfo || {};
   const lastClose = data?.daily?.length ? data.daily[data.daily.length - 1].close : null;
   const refPrice = a?.price ?? lastClose;
+  // Day change, derived from the same daily bars the chart draws and with the
+  // same bar-to-bar formula as ChartPro's legend, so the two can't disagree on
+  // the same screen. Not taken from /api/quotes: that only covers watchlist and
+  // portfolio tickers, so an unwatched symbol would silently have no change at
+  // all. null when there aren't two closes to compare — rendered as "—" rather
+  // than a fabricated 0.00%.
+  const prevClose = data?.daily?.length >= 2 ? data.daily[data.daily.length - 2].close : null;
+  const changePct = prevClose && lastClose != null
+    ? ((lastClose - prevClose) / prevClose) * 100
+    : null;
   // Membership comes from the server across ALL of the user's lists — the old
   // check only saw the default list, so a ticker on a second list still
   // offered "Watch" (Task 18). Falls back to the passed-in list while loading.
@@ -97,7 +105,27 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
         <button className={styles.back} onClick={onBack}>
           <Icon name="arrowRight" size={14} /> <span>Back</span>
         </button>
-        <TickerLabel ticker={ticker} className={styles.ticker} as="h2" />
+        {/* Ticker and price read as one unit: the name of the thing and what
+            it costs. They used to sit at opposite ends of the flex row. */}
+        <span className={styles.identity}>
+          <TickerLabel ticker={ticker} className={styles.ticker} as="h2" />
+          {refPrice != null && (
+            <span className={styles.priceGroup}>
+              <span className={styles.price}>${n(refPrice)}</span>
+              <span
+                className={styles.change}
+                data-tone={changePct == null ? "flat" : changePct >= 0 ? "pos" : "neg"}
+                title={changePct == null
+                  ? "Not enough daily history to compute a change"
+                  : "Change vs the previous daily close"}
+              >
+                {changePct == null
+                  ? "—"
+                  : `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%`}
+              </span>
+            </span>
+          )}
+        </span>
         {a && a.recommendation && (
           <span className={styles.directive} data-tone={RECO_TONE[a.recommendation]}
                 title="Buy / Sell / Hold — the headline call">{a.recommendation.toUpperCase()}</span>
@@ -156,7 +184,6 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
             </a>
           </span>
         )}
-        {a?.price != null && <span className={styles.price}>${n(a.price)}</span>}
       </div>
 
       {loading ? (
