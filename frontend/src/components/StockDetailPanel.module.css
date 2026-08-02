@@ -184,6 +184,39 @@
   padding: var(--s-3); border: 1px solid var(--grid); border-radius: var(--r-sm); background: var(--surface-2);
 }
 .patName { font-family: var(--mono); font-weight: 700; }
+
+/* A forming shape is dimmed and dashed: present on the chart, not yet a fact. */
+.pattern[data-status="forming"] {
+  border-style: dashed;
+  background: transparent;
+}
+.pattern[data-status="forming"] .patName { color: var(--text-muted); }
+.patForming {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  border: 1px solid var(--accent-weak);
+  border-radius: var(--r-xs);
+  padding: 1px 5px;
+}
+
+.patCriteria {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 2px;
+}
+.patCriteria em {
+  font-family: var(--mono);
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.patCriteria em[data-met="yes"] { color: var(--positive); }
+.patCriteria em[data-met="no"]  { color: var(--text-muted); }
 .patDir {
   font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
 }

@@ -34,8 +34,8 @@ import math
 from datetime import datetime, timezone
 
 from app.models import (
-    BreakoutState, CandleSignal, Evidence, GapEvent, OHLCBar, PatternHit,
-    SRLevel, StockAnalysis, TargetRung, TrendlineLevel, VolumeRead,
+    BreakoutState, CandleSignal, Evidence, GapEvent, OHLCBar, PatternCriterion,
+    PatternHit, SRLevel, StockAnalysis, TargetRung, TrendlineLevel, VolumeRead,
 )
 from app.sources.technical import compute_ma, compute_macd, compute_rsi
 
@@ -246,6 +246,10 @@ def _pivot_ref(p: dict, role: str) -> dict:
     return {"date": p["date"], "price": p["price"], "role": role}
 
 
+def _criterion(name: str, met: bool, detail: str = "") -> PatternCriterion:
+    return PatternCriterion(name=name, met=met, detail=detail)
+
+
 def detect_double_top(pivots: list[dict], price: float) -> PatternHit | None:
     highs = _piv("high", pivots)
     lows = _piv("low", pivots)
@@ -258,16 +262,35 @@ def detect_double_top(pivots: list[dict], price: float) -> PatternHit | None:
     if not trough:
         return None
     neck = min(trough, key=lambda x: x["price"])
-    if price >= min(a["price"], b["price"]):
-        return None  # not yet rolling over
     top = (a["price"] + b["price"]) / 2
     conf = 0.55 + 0.25 * (1 - abs(a["price"] - b["price"]) / a["price"] / _LEVEL_TOL)
+
+    # The shape is on the chart. Whether it has *done* anything depends on price
+    # rolling over off the second peak and then losing the neckline.
+    rolling_over = price < min(a["price"], b["price"])
+    broke_neck = price < neck["price"]
+    criteria = [
+        _criterion("two peaks at the same level", True,
+                   f"{a['price']:.2f} and {b['price']:.2f}"),
+        _criterion("price back below the peaks", rolling_over,
+                   f"{price:.2f} vs {min(a['price'], b['price']):.2f}"),
+        _criterion("neckline broken", broke_neck,
+                   f"{price:.2f} vs neckline {neck['price']:.2f}"),
+    ]
+    if not rolling_over:
+        return None  # still pressing the highs: no topping shape to speak of yet
+
     return PatternHit(
         name="double_top", label="Double Top", direction="bearish",
-        confidence=round(min(conf, 0.9), 2),
+        # A shape that hasn't broken its neckline is worth less than one that has.
+        confidence=round(min(conf, 0.9) * (1.0 if broke_neck else 0.6), 2),
         pivots=[_pivot_ref(a, "peak 1"), _pivot_ref(neck, "neckline"), _pivot_ref(b, "peak 2")],
         measured_move=round(neck["price"] - (top - neck["price"]), 2),
-        note="Two failed pushes at the same ceiling.",
+        note=("Two failed pushes at the same ceiling."
+              if broke_neck
+              else "Two failed pushes at the same ceiling; the neckline still holds."),
+        status="confirmed" if broke_neck else "forming",
+        criteria=criteria,
     )
 
 
@@ -283,16 +306,32 @@ def detect_double_bottom(pivots: list[dict], price: float) -> PatternHit | None:
     if not peak:
         return None
     neck = max(peak, key=lambda x: x["price"])
-    if price <= max(a["price"], b["price"]):
-        return None
     bottom = (a["price"] + b["price"]) / 2
     conf = 0.55 + 0.25 * (1 - abs(a["price"] - b["price"]) / a["price"] / _LEVEL_TOL)
+
+    lifting = price > max(a["price"], b["price"])
+    broke_neck = price > neck["price"]
+    criteria = [
+        _criterion("two lows at the same level", True,
+                   f"{a['price']:.2f} and {b['price']:.2f}"),
+        _criterion("price back above the lows", lifting,
+                   f"{price:.2f} vs {max(a['price'], b['price']):.2f}"),
+        _criterion("neckline broken", broke_neck,
+                   f"{price:.2f} vs neckline {neck['price']:.2f}"),
+    ]
+    if not lifting:
+        return None  # still sitting on the lows: nothing has turned yet
+
     return PatternHit(
         name="double_bottom", label="Double Bottom", direction="bullish",
-        confidence=round(min(conf, 0.9), 2),
+        confidence=round(min(conf, 0.9) * (1.0 if broke_neck else 0.6), 2),
         pivots=[_pivot_ref(a, "low 1"), _pivot_ref(neck, "neckline"), _pivot_ref(b, "low 2")],
         measured_move=round(neck["price"] + (neck["price"] - bottom), 2),
-        note="Two successful defenses of the same floor.",
+        note=("Two successful defenses of the same floor."
+              if broke_neck
+              else "Two successful defenses of the same floor; the neckline is still overhead."),
+        status="confirmed" if broke_neck else "forming",
+        criteria=criteria,
     )
 
 
@@ -313,6 +352,19 @@ def detect_head_shoulders(pivots: list[dict], price: float) -> PatternHit | None
                             _pivot_ref(rs, "right shoulder")],
                     measured_move=round(neck - (head["price"] - neck), 2),
                     note="Topping structure; break of neckline confirms.",
+                    # NOTE: status stays "confirmed" even with the neckline
+                    # intact, which is what this detector has always done.
+                    # Reclassifying it would change conviction for every ticker
+                    # carrying an unbroken H&S, so it is left alone here and the
+                    # neckline state is surfaced as a criterion instead.
+                    criteria=[
+                        _criterion("head above both shoulders", True,
+                                   f"head {head['price']:.2f}"),
+                        _criterion("shoulders roughly level", True,
+                                   f"{ls['price']:.2f} and {rs['price']:.2f}"),
+                        _criterion("neckline broken", price < neck,
+                                   f"{price:.2f} vs neckline {neck:.2f}"),
+                    ],
                 )
     # inverse
     if len(lows) >= 3 and len(highs) >= 2:
@@ -461,8 +513,21 @@ def detect_patterns(bars: list[OHLCBar], pivots: list[dict], price: float) -> li
         detect_flag(bars),
     ]
     found = [h for h in hits if h is not None]
-    found.sort(key=lambda h: h.confidence, reverse=True)
+    # Confirmed first, then by confidence: a shape that has actually triggered
+    # outranks one that merely might, whatever their raw confidence numbers say.
+    found.sort(key=lambda h: (h.status != "confirmed", -h.confidence))
     return found
+
+
+def confirmed_patterns(hits: list[PatternHit]) -> list[PatternHit]:
+    """Only the patterns that have actually triggered.
+
+    The conviction pipeline must use this rather than the full list. A forming
+    pattern is a description of what price is heading towards; scoring it would
+    credit the stock for something that hasn't happened, which is exactly the
+    kind of thing this app is supposed to refuse to do.
+    """
+    return [h for h in hits if h.status == "confirmed"]
 
 
 # ============================ candlesticks (methodology D) ============================
@@ -999,8 +1064,11 @@ def build(ticker: str, daily: list[OHLCBar], price: float | None,
                {"ma_extension_atr": ma_ext})
 
     # --- strongest chart pattern (C) ---
-    if patterns:
-        p = patterns[0]
+    # Confirmed only. Forming shapes are shown on the page but must never move
+    # conviction, or the score would credit a break that hasn't happened.
+    scoring_patterns = confirmed_patterns(patterns)
+    if scoring_patterns:
+        p = scoring_patterns[0]
         w = round(p.confidence * 25)
         if p.direction == "bullish":
             ev("pattern", "bullish", w, f"{p.label} detected ({int(p.confidence*100)}% confidence) — bullish.")
