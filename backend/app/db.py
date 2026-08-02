@@ -1749,6 +1749,23 @@ def get_boom_score_history(conn: sqlite3.Connection, ticker: str, days: int = 30
     return [{"computed_at": row[0], "score": row[1]} for row in cur.fetchall()]
 
 
+def get_boom_score_history_all(conn: sqlite3.Connection, since: str) -> list[dict]:
+    """Every ticker's score history since a date, for the signal replay.
+
+    Ordered by (ticker, time) so the caller can walk each series and spot a
+    real threshold crossing rather than comparing unrelated rows.
+    """
+    cur = conn.execute(
+        """
+        SELECT ticker, computed_at, score FROM boom_score_history
+        WHERE computed_at >= ?
+        ORDER BY ticker ASC, computed_at ASC
+        """,
+        (since,),
+    )
+    return [{"ticker": r[0], "computed_at": r[1], "score": r[2]} for r in cur.fetchall()]
+
+
 # ---------- seasonality ----------
 
 def upsert_seasonality(conn: sqlite3.Connection, records: list[Seasonality]) -> None:

@@ -93,6 +93,10 @@ export const getSuggestionHistory = ({ ticker, months } = {}) => {
   const qs = q.toString();
   return getJSON(`/api/suggestions/history${qs ? `?${qs}` : ""}`);
 };
+export const getTrackRecord = (months = 12) =>
+  getJSON(`/api/backtest/track-record?months=${months}`);
+export const getSignalReplay = ({ horizon = 7, months = 12 } = {}) =>
+  getJSON(`/api/backtest/signal-replay?horizon=${horizon}&months=${months}`);
 export const getOAuthProviders = () => getJSON("/api/auth/oauth/providers");
 export const oauthStartUrl = (provider) => `${BASE}/api/auth/oauth/${provider}/start`;
 export const getAlerts = () => getJSON("/api/alerts");

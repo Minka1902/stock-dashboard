@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, routes_oauth, search, sentiment, suggestion_history, suggestions, themes
+from app import analysis, analyze, auth, backtest, chart_data, config, db, ingest, notify, quotes, report, routes_auth, routes_oauth, search, sentiment, suggestion_history, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.security import SecurityHeadersMiddleware, rate_limit
@@ -1066,6 +1066,21 @@ def patch_watch(ticker: str, body: WatchUpdate, user=Depends(auth.get_current_us
 def delete_watch(ticker: str, list_id: int | None = None, user=Depends(auth.get_current_user)):
     db.remove_watch(conn, user.id, clean_ticker(ticker), list_id)
     return [w.model_dump() for w in db.get_watchlist(conn, user.id, list_id)]
+
+
+@app.get("/api/backtest/track-record")
+def backtest_track_record(months: int = 12, user=Depends(auth.get_current_user)):
+    """How the app's own suggestions have actually turned out, for this user."""
+    return backtest.track_record(conn, user.id, months=max(1, min(months, 60)))
+
+
+@app.get("/api/backtest/signal-replay")
+def backtest_signal_replay(
+    horizon: int = 7, months: int = 12, user=Depends(auth.get_current_user)
+):
+    """Boom-score threshold crossings vs the forward move that followed."""
+    return backtest.signal_replay(
+        conn, horizon_days=max(1, min(horizon, 90)), months=max(1, min(months, 60)))
 
 
 @app.get("/api/sources")
