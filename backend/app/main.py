@@ -567,6 +567,13 @@ def analyze_ticker(ticker: str, user=Depends(auth.get_current_user)):
         # and simply wasn't being surfaced on this page.
         "signals": _signal_payload(t),
         "watchlists": db.get_watchlist_map(conn, user.id).get(t, []),
+        # This ticker's alerts, each carrying what its type actually means. One
+        # extra indexed query rather than a second round trip, and the meaning
+        # ships from the same module as the detectors so it can't drift.
+        "alerts": [
+            {**al.model_dump(), "explain": alerts_source.ALERT_MEANING.get(al.type)}
+            for al in db.get_alerts_for(conn, user.id, t)
+        ],
     }
 
 

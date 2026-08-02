@@ -4,6 +4,7 @@ import ChartPro from "./ChartPro";
 import CompanyInfo from "./CompanyInfo";
 import InsiderTrades from "./InsiderTrades";
 import Skeleton from "./Skeleton";
+import StockAlerts from "./StockAlerts";
 import SuggestionHistoryStrip from "./SuggestionHistoryStrip";
 import TickerLabel from "./TickerLabel";
 import XPostCard from "./XPostCard";
@@ -68,6 +69,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   const xPosts = data?.x_posts || [];
   const company = data?.company || null;
   const insiderTrades = data?.insider_trades || [];
+  const stockAlerts = data?.alerts || [];
   const companyInfo = settings.companyInfo || {};
   const lastClose = data?.daily?.length ? data.daily[data.daily.length - 1].close : null;
   const refPrice = a?.price ?? lastClose;
@@ -207,6 +209,15 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
               <InsiderTrades trades={insiderTrades} ticker={ticker} />
             </Pane>
           )}
+
+          <Pane caption="Alerts"
+                right={<span className={styles.muted}>
+                  {stockAlerts.length > 0
+                    ? `${stockAlerts.length} fired · newest first`
+                    : "nothing has tripped"}
+                </span>}>
+            <StockAlerts alerts={stockAlerts} ticker={ticker} />
+          </Pane>
 
           <Pane caption="Suggestion history"
                 right={<span className={styles.muted}>what we said · what happened next</span>}>

@@ -533,6 +533,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
             read_at   TEXT NOT NULL,
             PRIMARY KEY (user_id, dedup_key)
         );
+        -- Per-ticker alert lookup for the analysis page.
+        CREATE INDEX IF NOT EXISTS idx_alerts_ticker ON alerts(ticker, id DESC);
         CREATE TABLE IF NOT EXISTS oauth_identities (
             provider         TEXT NOT NULL,
             provider_user_id TEXT NOT NULL,
@@ -2184,6 +2186,28 @@ def get_alerts(conn: sqlite3.Connection, user_id: int, limit: int = 100) -> list
         ORDER BY a.id DESC LIMIT ?
         """,
         (user_id, limit),
+    )
+    return [_row_to_alert(dict(row)) for row in cur.fetchall()]
+
+
+def get_alerts_for(
+    conn: sqlite3.Connection, user_id: int, ticker: str, limit: int = 20
+) -> list[Alert]:
+    """This ticker's alerts, newest first. Same read-state join as get_alerts."""
+    cur = conn.execute(
+        """
+        SELECT a.dedup_key, a.created_at, a.ticker, a.type, a.severity, a.title,
+               a.message, (ar.dedup_key IS NOT NULL) AS read, a.pushed
+        FROM alerts a
+        LEFT JOIN alert_reads ar
+            ON ar.dedup_key = a.dedup_key AND ar.user_id = ?
+        WHERE a.ticker = ?
+        -- created_at, not id. Insertion order tracks time for alerts the
+        -- detector fires live, but it is not the same thing, and this list is
+        -- labelled "newest first" in the UI. id breaks ties deterministically.
+        ORDER BY a.created_at DESC, a.id DESC LIMIT ?
+        """,
+        (user_id, ticker, limit),
     )
     return [_row_to_alert(dict(row)) for row in cur.fetchall()]
 
