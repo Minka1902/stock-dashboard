@@ -1,2 +1,6 @@
 # Playwright / browser-driven test artifacts
 .playwright-mcp/
+
+# Launcher bookkeeping: pid files for -Stop, and redirected child output.
+.run/
+logs/
