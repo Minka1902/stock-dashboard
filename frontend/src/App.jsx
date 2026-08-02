@@ -34,6 +34,7 @@ import SuggestionHistoryPanel from "./components/SuggestionHistoryPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
 import XPostsPanel from "./components/XPostsPanel";
 import InfoPanel from "./components/InfoPanel";
+import ServerPanel from "./components/ServerPanel";
 import StockDetailPanel from "./components/StockDetailPanel";
 import BackToTop from "./components/BackToTop";
 import Tour from "./components/Tour";
@@ -66,6 +67,7 @@ const TITLES = {
   portfolio:   "Portfolio",
   x:           "X Watch",
   info:        "Info",
+  server:      "Server",
   settings:    "Settings",
 };
 
@@ -94,9 +96,14 @@ export default function App({ auth }) {
     if (detailTicker) clearDetail();
     setView(v);
   };
-  // Open the Info page scrolled to its data-sources section (from the failed-
-  // source strip). The panel mounts on navigate, so scroll on the next frame.
+  // The failed-source strip is the "something's wrong" signal; the Server page
+  // is the "what and why". Admins get the diagnostics, everyone else still gets
+  // the Info page's plain-language source directory.
   const openSourceDetails = () => {
+    if (auth?.user?.is_admin) {
+      navigate("server");
+      return;
+    }
     navigate("info");
     setTimeout(() => {
       document.getElementById("info-sources")?.scrollIntoView({
@@ -212,7 +219,9 @@ export default function App({ auth }) {
     <div className={styles.app} data-detail={detailTicker ? "yes" : "no"}>
       {/* While a ticker is open the analysis page is the whole screen: no rail,
           no marquee, no top bar. Its own Back button is the way out (Task 19). */}
-      {!detailTicker && <Sidebar view={view} onNavigate={navigate} />}
+      {!detailTicker && (
+        <Sidebar view={view} onNavigate={navigate} isAdmin={Boolean(auth?.user?.is_admin)} />
+      )}
 
       <main className={styles.main}>
         {!detailTicker && (
@@ -309,6 +318,14 @@ export default function App({ auth }) {
 
             {view === "info" && (
               <InfoPanel onNavigate={navigate} sources={sources} />
+            )}
+
+            {/* Diagnostics expose the DB path and tracebacks, so the route is
+                admin-only server-side too — this check is just the UI half. */}
+            {view === "server" && (
+              auth?.user?.is_admin
+                ? <ServerPanel />
+                : <p className={styles.error}>The server page is admin-only.</p>
             )}
 
             {view === "x" && (
