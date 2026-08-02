@@ -342,7 +342,7 @@ export default function App({ auth }) {
             {view === "contracts" && <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "watchlist" && <WatchlistPanel quotes={quotesByTicker} marketStatus={marketStatus} />}
             {view === "yield-curve" && <YieldCurvePanel data={yieldCurve} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "econ-calendar" && <EconCalendarPanel data={econCalendar} loading={loading} busy={busy} onRefresh={refresh} />}
+            {view === "econ-calendar" && <EconCalendarPanel data={econCalendar} loading={loading} busy={busy} onRefresh={refresh} onNavigate={navigate} />}
             {view === "signals" && <TechnicalPanel data={signals} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "fear-greed" && <FearGreedPanel data={fearGreed} loading={loading} busy={busy} onRefresh={refresh} />}
             {view === "congress" && <CongressPanel data={congressTrades} loading={loading} busy={busy} onRefresh={refresh} />}
