@@ -7,6 +7,8 @@ import CollapseToggle from "./CollapseToggle";
 import EmptyState from "./EmptyState";
 import XPostCard from "./XPostCard";
 import TickerLabel from "./TickerLabel";
+import Segmented from "./Segmented";
+import MenuButton, { MenuItem, MenuLabel } from "./MenuButton";
 import { sourceStale } from "../lib/sources";
 import { SORT_COLUMNS, sourceCounts, unifyFeed } from "../lib/newsSources";
 import { useSortableRows } from "../hooks/useSortableRows";
@@ -18,6 +20,9 @@ const COMPACT_LIMIT = 5;
 // GDELT can return a hundred-plus distinct domains. Showing every chip buries
 // the feed, so the rail leads with the most prolific sources and expands.
 const SOURCE_CHIP_LIMIT = 12;
+// Same problem one level up: every tagged ticker used to get its own tab, so a
+// busy news day produced a wall of chips. The rest move into an overflow menu.
+const TICKER_TAB_LIMIT = 8;
 
 function SkeletonItems({ rows = 6 }) {
   return Array.from({ length: rows }).map((_, i) => (
@@ -87,16 +92,56 @@ export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sour
   // and a publisher can be compared against an individual X account.
   const items = useMemo(() => unifyFeed(news, xPosts), [news, xPosts]);
 
-  const tickers = useMemo(
-    () => [...new Set(items.flatMap((i) => i.tickers))].sort(),
-    [items],
-  );
+  // Ranked, not alphabetical: with one chip per tagged ticker the strip grew
+  // unbounded and wrapped into a wall of equally-weighted options. Holdings
+  // first, then whatever has the most coverage — so the tickers worth clicking
+  // are the ones that stay visible above the overflow cut.
+  const tickers = useMemo(() => {
+    const counts = new Map();
+    for (const i of items) {
+      for (const t of i.tickers) counts.set(t, (counts.get(t) || 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([ticker, count]) => ({ ticker, count }))
+      .sort((a, b) => (
+        (held.has(a.ticker) ? 0 : 1) - (held.has(b.ticker) ? 0 : 1)
+        || b.count - a.count
+        || a.ticker.localeCompare(b.ticker)
+      ));
+  }, [items, held]);
   const hasTagged = tickers.length > 0;
 
   const [filter, setFilter] = useState(null);   // topic; null = auto
   const [source, setSource] = useState(null);   // null = every source
   const [allSources, setAllSources] = useState(false);
   const active = filter ?? (hasTagged && held.size > 0 ? "portfolio" : "all");
+
+  // Fixed segments, then the top-ranked tickers; the tail goes into a menu so
+  // the strip stays one readable row instead of growing with the feed.
+  const { segments, overflowTickers } = useMemo(() => {
+    const head = tickers.slice(0, TICKER_TAB_LIMIT);
+    const tail = tickers.slice(TICKER_TAB_LIMIT);
+    // Keep the current selection on the strip even if it ranks below the cut,
+    // otherwise selecting from the overflow menu makes the active tab vanish.
+    const selectedInTail = tail.find((t) => t.ticker === active);
+    const shown = selectedInTail ? [...head, selectedInTail] : head;
+    return {
+      segments: [
+        { value: "all", label: "All" },
+        ...(hasTagged ? [{ value: "portfolio", label: "Portfolio" }] : []),
+        { value: "macro", label: "Macro" },
+        ...shown.map((t) => ({
+          value: t.ticker,
+          label: t.ticker,
+          badge: t.count,
+          title: `${t.count} item${t.count === 1 ? "" : "s"} mentioning ${t.ticker}`,
+        })),
+      ],
+      overflowTickers: selectedInTail
+        ? tail.filter((t) => t.ticker !== active)
+        : tail,
+    };
+  }, [tickers, hasTagged, active]);
 
   // If GDELT hasn't responded in 24h its articles are stale; fall back to the X
   // feed, which is the only live option. Signals, not stale data.
@@ -165,27 +210,27 @@ export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sour
 
       {!collapsed && !compact && !showEmpty && (
         <>
-          <div className={styles.tabs} role="tablist" aria-label="News filter">
-            <button className={styles.tab} role="tab" aria-selected={active === "all"}
-                    data-active={active === "all" ? "yes" : "no"} onClick={() => setFilter("all")}>
-              All
-            </button>
-            {hasTagged && (
-              <button className={styles.tab} role="tab" aria-selected={active === "portfolio"}
-                      data-active={active === "portfolio" ? "yes" : "no"} onClick={() => setFilter("portfolio")}>
-                Portfolio
-              </button>
+          <div className={styles.tabs}>
+            <Segmented
+              ariaLabel="News filter"
+              value={active}
+              onChange={setFilter}
+              options={segments}
+            />
+            {overflowTickers.length > 0 && (
+              <MenuButton label={`${overflowTickers.length} more tickers`} className={styles.moreBtn}>
+                {(close) => (
+                  <>
+                    <MenuLabel>More tickers</MenuLabel>
+                    {overflowTickers.map((t) => (
+                      <MenuItem key={t.ticker} onSelect={() => { close(); setFilter(t.ticker); }}>
+                        <TickerLabel ticker={t.ticker} /> <span className={styles.menuCount}>{t.count}</span>
+                      </MenuItem>
+                    ))}
+                  </>
+                )}
+              </MenuButton>
             )}
-            <button className={styles.tab} role="tab" aria-selected={active === "macro"}
-                    data-active={active === "macro" ? "yes" : "no"} onClick={() => setFilter("macro")}>
-              Macro
-            </button>
-            {tickers.map((t) => (
-              <button key={t} className={styles.tab} role="tab" aria-selected={active === t}
-                      data-active={active === t ? "yes" : "no"} onClick={() => setFilter(t)}>
-                {t}
-              </button>
-            ))}
           </div>
 
           <div className={styles.sourceBar}>

@@ -271,8 +271,18 @@
 .tabs {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   padding: 0 var(--s-4) var(--s-3);
+}
+.moreBtn { margin-left: 2px; }
+.menuCount {
+  margin-left: auto;
+  padding-left: var(--s-3);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
 }
 .tab {
   appearance: none;
