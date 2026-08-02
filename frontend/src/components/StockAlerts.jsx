@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
 import { alertIcon, alertTypeLabel } from "../lib/alertMeta";
@@ -12,8 +12,19 @@ import styles from "./StockAlerts.module.css";
  * The bell only ever showed the newest eight across all tickers, so an alert
  * about the stock you were reading about was routinely invisible here.
  */
-export default function StockAlerts({ alerts = [], ticker }) {
-  const [openKey, setOpenKey] = useState(null);
+export default function StockAlerts({ alerts = [], ticker, focusKey = null }) {
+  // Arriving from an alert click: expand its explanation straight away — the
+  // whole point of following the link is to find out what it was telling you.
+  const [openKey, setOpenKey] = useState(focusKey);
+  const focusRef = useRef(null);
+
+  useEffect(() => {
+    if (!focusKey || !focusRef.current) return;
+    focusRef.current.scrollIntoView({
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      block: "center",
+    });
+  }, [focusKey, alerts]);
 
   if (alerts.length === 0) {
     return (
@@ -29,8 +40,15 @@ export default function StockAlerts({ alerts = [], ticker }) {
     <ul className={styles.list}>
       {alerts.map((a) => {
         const open = openKey === a.dedup_key;
+        const focused = focusKey === a.dedup_key;
         return (
-          <li key={a.dedup_key} className={styles.item} data-read={a.read ? "yes" : "no"}>
+          <li
+            key={a.dedup_key}
+            ref={focused ? focusRef : null}
+            className={styles.item}
+            data-read={a.read ? "yes" : "no"}
+            data-focused={focused ? "yes" : undefined}
+          >
             <span className={styles.severity} data-sev={a.severity} title={`${a.severity} severity`} />
             <div className={styles.body}>
               <div className={styles.top}>

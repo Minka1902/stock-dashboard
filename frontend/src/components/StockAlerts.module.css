@@ -18,6 +18,24 @@
 /* Unread alerts carry a little more weight; read ones recede rather than vanish. */
 .item[data-read="yes"] { opacity: 0.72; }
 
+/* The alert you followed to get here. Arriving at a long page with no marker
+   leaves you hunting for the one you clicked. Full opacity even though
+   following the link marks it read. */
+.item[data-focused="yes"] {
+  opacity: 1;
+  border-color: var(--accent);
+  background: var(--accent-weak);
+  animation: alertPulse 1.6s ease-out 1;
+}
+@keyframes alertPulse {
+  0%   { box-shadow: 0 0 0 0 var(--accent-weak); }
+  35%  { box-shadow: 0 0 0 5px var(--accent-weak); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .item[data-focused="yes"] { animation: none; }
+}
+
 .severity {
   flex: none;
   width: 3px;

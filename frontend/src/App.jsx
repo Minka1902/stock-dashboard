@@ -201,6 +201,20 @@ export default function App({ auth }) {
     loading, busy, error, refresh, addWatch, markAlertsRead,
   } = data;
 
+  /**
+   * Open the stock an alert is about, in this tab, and mark that one alert
+   * read. The dedup_key rides along in the URL so the analysis page can scroll
+   * to it and highlight it — otherwise you land on a long page with no
+   * indication of which alert you followed.
+   *
+   * Declared after the destructure above: markAlertsRead is a `const` and this
+   * closes over it, so hoisting this earlier is a temporal-dead-zone crash.
+   */
+  const openAlert = useCallback((alert) => {
+    markAlertsRead([alert.dedup_key]).catch(() => {});
+    navigateTo({ kind: "stock", ticker: alert.ticker, alertKey: alert.dedup_key });
+  }, [markAlertsRead]);
+
   // Only auto-run tours for a genuinely first-time account. Captured once at
   // mount (App mounts only when authed, so auth.user is present) so the value
   // is stable for the session even after we flip the server flag on first close.
@@ -285,6 +299,7 @@ export default function App({ auth }) {
             alerts={alerts}
             unreadAlerts={unreadAlerts}
             onMarkAlertsRead={markAlertsRead}
+            onOpenAlert={openAlert}
             onOpenCommand={() => setCmdOpen(true)}
             user={auth?.user}
             onLogout={auth?.logout}
@@ -320,6 +335,8 @@ export default function App({ auth }) {
                   onBack={closeDetail}
                   watchlist={watchlist}
                   onAddWatch={addWatch}
+                  // From /stock/X?alert=<dedup_key>: which alert brought you here.
+                  focusAlertKey={route.kind === "stock" ? route.alertKey : null}
                 />
               </motion.div>
             ) : (
