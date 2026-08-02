@@ -85,7 +85,7 @@ function SortButton({ label, sortKey, sort, onSort }) {
   );
 }
 
-export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sources = [], loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
+export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sources = [], loading, busy, onRefresh, onUpdateNews, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const held = useMemo(() => new Set(portfolio.map((h) => h.ticker)), [portfolio]);
 
   // Articles and X posts as one list, so "source" means the same thing for both
@@ -146,7 +146,39 @@ export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sour
   // If GDELT hasn't responded in 24h its articles are stale; fall back to the X
   // feed, which is the only live option. Signals, not stale data.
   const newsStatus = useMemo(() => sources.find((s) => s.source === "gdelt"), [sources]);
+  const xStatus = useMemo(() => sources.find((s) => s.source === "x_posts"), [sources]);
   const newsStale = sourceStale(newsStatus, 24);
+
+  // Fetch-now state. `attempted` gates the outcome line so it only appears
+  // after the user actually asked for an update.
+  const [attempted, setAttempted] = useState(false);
+  const fetching = Boolean(busy && attempted);
+
+  const update = () => {
+    if (!onUpdateNews) return;
+    setAttempted(true);
+    Promise.resolve(onUpdateNews()).catch(() => {});
+  };
+
+  // What to say once the refresh lands. The button must never imply success it
+  // didn't get: GDELT rate-limits hard and is frequently in cooldown or timing
+  // out, and silently doing nothing is exactly the behaviour being fixed.
+  const updateOutcome = useMemo(() => {
+    if (!attempted || fetching) return null;
+    const failed = [
+      ["News", newsStatus],
+      ["X Watch", xStatus],
+    ].filter(([, s]) => s && String(s.status).startsWith("error"));
+    if (failed.length === 0) {
+      return { tone: "ok", text: `Updated · ${newsStatus?.record_count ?? 0} articles held` };
+    }
+    return {
+      tone: "error",
+      text: failed
+        .map(([label, s]) => `${label}: ${String(s.status).replace(/^error:\s*/, "")}`)
+        .join(" · "),
+    };
+  }, [attempted, fetching, newsStatus, xStatus]);
 
   const byTopic = useMemo(() => {
     let rows = items;
@@ -200,7 +232,31 @@ export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sour
           </p>
         </div>
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
+        {!compact && onUpdateNews && (
+          <span className={styles.headTools}>
+            <button
+              type="button"
+              className={styles.updateBtn}
+              onClick={update}
+              disabled={fetching}
+              title="Fetch headlines now, bypassing the daily gate"
+            >
+              <Icon name="refresh" size={13} />
+              {fetching ? "Fetching…" : "Update"}
+            </button>
+          </span>
+        )}
       </header>
+
+      {/* The outcome of an explicit Update, said out loud. GDELT rate-limits
+          hard and is often in cooldown or timing out; reporting nothing would
+          leave the button looking like it silently did nothing. */}
+      {!collapsed && updateOutcome && (
+        <p className={styles.updateNote} data-tone={updateOutcome.tone} role="status">
+          <Icon name={updateOutcome.tone === "ok" ? "info" : "bell"} size={13} />
+          {updateOutcome.text}
+        </p>
+      )}
 
       {!collapsed && newsStale && (
         <p className={styles.staleNote}>

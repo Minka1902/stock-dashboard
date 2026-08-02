@@ -152,7 +152,7 @@ export default function App({ auth }) {
     yieldCurve, econCalendar, signals, fearGreed, vix, aaii, putCall, marginDebt, sentiment, congressTrades,
     shortInterest, social, analyst, boomScores, fundamentals, seasonality,
     portfolio, xPosts, suggestions, analyses, alerts, unreadAlerts,
-    loading, busy, error, refresh, addWatch, addHolding, updateHolding,
+    loading, busy, error, refresh, refreshOne, addWatch, addHolding, updateHolding,
     setHoldingCategory, removeHolding,
     markAlertsRead,
   } = data;
@@ -299,7 +299,13 @@ export default function App({ auth }) {
             )}
 
             {view === "news" && (
-              <NewsPanel news={news} portfolio={portfolio} xPosts={xPosts} sources={sources} loading={loading} busy={busy} onRefresh={refresh} />
+              <NewsPanel
+                news={news} portfolio={portfolio} xPosts={xPosts} sources={sources}
+                loading={loading} busy={busy} onRefresh={refresh}
+                // force: both feeds sit behind long throttles (GDELT is daily),
+                // so an un-forced "update now" would usually be a silent no-op.
+                onUpdateNews={() => refreshOne(["gdelt", "x_posts"], { force: true })}
+              />
             )}
 
             {view === "suggestion-history" && <SuggestionHistoryPanel />}
