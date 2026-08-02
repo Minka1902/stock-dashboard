@@ -41,6 +41,7 @@ import app.sources.seasonality as seasonality_source
 import app.sources.boom_score as boom_score_source
 import app.sources.ohlc as ohlc_source
 import app.sources.x_posts as x_posts_source
+import app.sources.earnings as earnings_source
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -108,6 +109,29 @@ def x_posts_fetch(conn):
     known = set(db.get_all_watched_tickers(conn)) | set(db.get_all_portfolio_tickers(conn))
     accounts = db.get_app_settings(conn).x_accounts or config.X_ACCOUNTS
     return x_posts_source.fetch(accounts, known)
+
+
+def earnings_fetch(conn):
+    """Earnings dates for what the user tracks, plus a curated large-cap list.
+
+    "Big companies" has to be defined somewhere; app/data/majors.py states it
+    explicitly as configuration rather than inferring it. Capped and rotated
+    stalest-first so a large universe spreads across successive runs instead of
+    making one run outlast the refresh interval.
+    """
+    from app.data.majors import MAJORS
+
+    majors = config.EARNINGS_UNIVERSE or MAJORS
+    universe = sorted(
+        set(db.get_all_watched_tickers(conn))
+        | set(db.get_all_portfolio_tickers(conn))
+        | set(majors)
+    )
+    if not universe:
+        return []
+    seen = {e.ticker: e.fetched_at for e in db.get_earnings(conn)}
+    universe.sort(key=lambda t: seen.get(t, ""))  # "" (never fetched) first
+    return earnings_source.fetch(universe[: config.EARNINGS_MAX_TICKERS])
 
 
 def seasonality_fetch(conn):
@@ -208,6 +232,7 @@ def build_sources(conn):
         "analyst":        (lambda: analyst_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_analyst_signals, None),
         "fundamentals":   (lambda: fundamentals_fetch(conn), _store_fundamentals, None),
         "x_posts":        (lambda: x_posts_fetch(conn), db.upsert_x_posts, config.X_MIN_INTERVAL_SECONDS),
+        "earnings":       (lambda: earnings_fetch(conn), db.upsert_earnings, config.EARNINGS_MIN_INTERVAL_SECONDS),
         "seasonality":    (lambda: seasonality_fetch(conn), db.upsert_seasonality, config.SEASONALITY_MIN_INTERVAL_SECONDS),
         "boom_score":     (lambda: score_fetch(conn), db.upsert_boom_scores, None),
         "ohlc":           (lambda: ohlc_fetch(conn), db.upsert_ohlc, config.OHLC_MIN_INTERVAL_SECONDS),  # 2y history barely moves intraday
@@ -1066,6 +1091,47 @@ def patch_watch(ticker: str, body: WatchUpdate, user=Depends(auth.get_current_us
 def delete_watch(ticker: str, list_id: int | None = None, user=Depends(auth.get_current_user)):
     db.remove_watch(conn, user.id, clean_ticker(ticker), list_id)
     return [w.model_dump() for w in db.get_watchlist(conn, user.id, list_id)]
+
+
+@app.get("/api/earnings")
+def earnings(
+    date_from: str | None = None,
+    date_to: str | None = None,
+    scope: str = "all",
+    user=Depends(auth.get_current_user),
+):
+    """Earnings calendar. scope=mine limits it to what this user tracks.
+
+    Each row carries `is_estimate`, `held` and `watched` so the UI can show a
+    projected date differently from a confirmed one, and the user's own names
+    differently from the general market.
+    """
+    tickers = None
+    held = set(h.ticker for h in db.get_portfolio(conn, user.id))
+    watched = {w.ticker for w in db.get_watchlist(conn, user.id)}
+    if scope == "mine":
+        tickers = sorted(held | watched)
+        if not tickers:
+            return []
+    rows = db.get_earnings(conn, date_from, date_to, tickers)
+    return [
+        {**e.model_dump(), "held": e.ticker in held, "watched": e.ticker in watched}
+        for e in rows
+    ]
+
+
+@app.get("/api/earnings/{ticker}")
+def earnings_for(ticker: str, user=Depends(auth.get_current_user)):
+    """One company's next date plus its reported history."""
+    t = clean_ticker(ticker)
+    rows = db.get_earnings_for(conn, t)
+    today = datetime.now(timezone.utc).date().isoformat()
+    upcoming = [e for e in rows if e.event_date >= today]
+    return {
+        "ticker": t,
+        "next": upcoming[-1].model_dump() if upcoming else None,
+        "history": [e.model_dump() for e in rows if e.event_date < today],
+    }
 
 
 @app.get("/api/sources")

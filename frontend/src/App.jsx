@@ -31,6 +31,7 @@ import SeasonalityPanel from "./components/SeasonalityPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import SuggestionsPanel from "./components/SuggestionsPanel";
 import SuggestionHistoryPanel from "./components/SuggestionHistoryPanel";
+import EarningsPanel from "./components/EarningsPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
 import XPostsPanel from "./components/XPostsPanel";
 import InfoPanel from "./components/InfoPanel";
@@ -52,6 +53,7 @@ const TITLES = {
   watchlist:   "Watchlist",
   "yield-curve": "Yield Curve",
   "econ-calendar": "Economic Calendar",
+  earnings:    "Earnings",
   signals:     "Signals",
   "fear-greed": "Fear & Greed",
   congress:    "Congress",
@@ -303,6 +305,7 @@ export default function App({ auth }) {
             )}
 
             {view === "suggestion-history" && <SuggestionHistoryPanel />}
+            {view === "earnings" && <EarningsPanel />}
             {view === "settings" && (
               <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={navigate} appSettingsApi={appSettingsApi} user={auth?.user} theme={theme} onSetTheme={setTheme} themes={themes} />
             )}

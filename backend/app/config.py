@@ -218,6 +218,23 @@ OPPORTUNITY_CANDIDATES = int(os.environ.get("STOCKS_OPPORTUNITY_CANDIDATES", "40
 # temp dist. See app/main.py static-serving block.
 STATIC_DIR = os.environ.get("STOCKS_STATIC_DIR", "") or None
 
+# --- Earnings calendar ---
+# Who counts as "big". Comma-separated override; empty falls back to the
+# curated list in app/data/majors.py.
+EARNINGS_UNIVERSE = [
+    t.strip().upper()
+    for t in os.environ.get("STOCKS_EARNINGS_UNIVERSE", "").split(",")
+    if t.strip()
+]
+# One Yahoo call per ticker, so the fan-out is capped and rotated stalest-first
+# across runs rather than hammering the whole universe every cycle.
+EARNINGS_MAX_TICKERS = int(os.environ.get("STOCKS_EARNINGS_MAX_TICKERS", "120"))
+# Earnings dates move rarely; 6h is plenty and keeps the quota clear.
+EARNINGS_MIN_INTERVAL_SECONDS = int(
+    os.environ.get("STOCKS_EARNINGS_MIN_INTERVAL_SECONDS", "21600"))
+EARNINGS_RETRY_INTERVAL_SECONDS = int(
+    os.environ.get("STOCKS_EARNINGS_RETRY_INTERVAL_SECONDS", "1800"))
+
 # --- Alerts ---
 # Boom Score level whose upward crossing fires a high-severity alert.
 ALERT_BOOM_THRESHOLD = int(os.environ.get("STOCKS_ALERT_BOOM_THRESHOLD", "60"))

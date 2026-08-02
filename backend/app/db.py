@@ -17,6 +17,7 @@ from app.models import (
     CompanyHolder,
     CongressTrade,
     ContractRecord,
+    EarningsEvent,
     EconEvent,
     FearGreedSnapshot,
     Fundamentals,
@@ -533,6 +534,21 @@ def init_schema(conn: sqlite3.Connection) -> None:
             read_at   TEXT NOT NULL,
             PRIMARY KEY (user_id, dedup_key)
         );
+        CREATE TABLE IF NOT EXISTS earnings_events (
+            ticker           TEXT NOT NULL,
+            event_date       TEXT NOT NULL,   -- YYYY-MM-DD
+            is_estimate      INTEGER NOT NULL DEFAULT 1,
+            timing           TEXT NOT NULL DEFAULT '',
+            eps_estimate     REAL,
+            eps_actual       REAL,
+            surprise_pct     REAL,
+            revenue_estimate REAL,
+            quarter          TEXT NOT NULL DEFAULT '',
+            source           TEXT NOT NULL DEFAULT 'yahoo',
+            fetched_at       TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (ticker, event_date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_earnings_date ON earnings_events(event_date);
         CREATE TABLE IF NOT EXISTS oauth_identities (
             provider         TEXT NOT NULL,
             provider_user_id TEXT NOT NULL,
@@ -2186,6 +2202,66 @@ def get_alerts(conn: sqlite3.Connection, user_id: int, limit: int = 100) -> list
         (user_id, limit),
     )
     return [_row_to_alert(dict(row)) for row in cur.fetchall()]
+
+
+# ---------- earnings ----------
+def upsert_earnings(conn: sqlite3.Connection, records: list[EarningsEvent]) -> None:
+    conn.executemany(
+        """
+        INSERT INTO earnings_events
+            (ticker, event_date, is_estimate, timing, eps_estimate, eps_actual,
+             surprise_pct, revenue_estimate, quarter, source, fetched_at)
+        VALUES (:ticker, :event_date, :is_estimate, :timing, :eps_estimate, :eps_actual,
+                :surprise_pct, :revenue_estimate, :quarter, :source, :fetched_at)
+        ON CONFLICT(ticker, event_date) DO UPDATE SET
+            is_estimate=excluded.is_estimate,
+            timing=excluded.timing,
+            eps_estimate=excluded.eps_estimate,
+            -- Never overwrite a reported figure with a NULL from a later fetch
+            -- that only carried the forward calendar.
+            eps_actual=COALESCE(excluded.eps_actual, earnings_events.eps_actual),
+            surprise_pct=COALESCE(excluded.surprise_pct, earnings_events.surprise_pct),
+            revenue_estimate=excluded.revenue_estimate,
+            quarter=CASE WHEN excluded.quarter != '' THEN excluded.quarter ELSE earnings_events.quarter END,
+            source=excluded.source,
+            fetched_at=excluded.fetched_at
+        """,
+        [{**r.model_dump(), "is_estimate": int(r.is_estimate)} for r in records],
+    )
+    conn.commit()
+
+
+def _row_to_earnings(row) -> EarningsEvent:
+    d = dict(row)
+    d["is_estimate"] = bool(d["is_estimate"])
+    return EarningsEvent(**d)
+
+
+def get_earnings(
+    conn: sqlite3.Connection,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    tickers: list[str] | None = None,
+) -> list[EarningsEvent]:
+    sql = "SELECT * FROM earnings_events WHERE 1=1"
+    params: list = []
+    if date_from:
+        sql += " AND event_date >= ?"
+        params.append(date_from)
+    if date_to:
+        sql += " AND event_date <= ?"
+        params.append(date_to)
+    if tickers:
+        sql += f" AND ticker IN ({','.join('?' * len(tickers))})"
+        params.extend(tickers)
+    sql += " ORDER BY event_date ASC, ticker ASC"
+    return [_row_to_earnings(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def get_earnings_for(conn: sqlite3.Connection, ticker: str) -> list[EarningsEvent]:
+    cur = conn.execute(
+        "SELECT * FROM earnings_events WHERE ticker = ? ORDER BY event_date DESC", (ticker,))
+    return [_row_to_earnings(r) for r in cur.fetchall()]
 
 
 def count_unread_alerts(conn: sqlite3.Connection, user_id: int) -> int:
