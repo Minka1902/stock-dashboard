@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
+import SuggestionHistoryPreview from "./SuggestionHistoryPreview";
 import { formatDate } from "../lib/format";
 import styles from "./EconCalendarPanel.module.css";
 
@@ -34,7 +35,7 @@ function groupByDate(events) {
   return groups;
 }
 
-export default function EconCalendarPanel({ data = [], loading, busy, onRefresh }) {
+export default function EconCalendarPanel({ data = [], loading, busy, onRefresh, onNavigate }) {
   const [highOnly, setHighOnly] = useState(false);
 
   const filtered = useMemo(
@@ -48,6 +49,12 @@ export default function EconCalendarPanel({ data = [], loading, busy, onRefresh 
   const showEmpty = !loading && filtered.length === 0;
 
   return (
+    <>
+    {/* What we suggested and how it turned out, above the macro schedule: the
+        calendar answers "what's coming", this answers "how did the last two
+        weeks of calls actually go". */}
+    <SuggestionHistoryPreview onOpenFull={() => onNavigate?.("suggestion-history")} />
+
     <section className={styles.panel} id="econ-calendar">
       <header className={styles.head}>
         <div>
@@ -109,6 +116,7 @@ export default function EconCalendarPanel({ data = [], loading, busy, onRefresh 
         </div>
       )}
     </section>
+    </>
   );
 }
 

@@ -62,7 +62,38 @@
 .convNum[data-neg="yes"] { color: var(--negative); }
 
 .spacer { flex: 1; }
+
+/* Ticker + price as one unit. Price is baseline-aligned with the ticker and the
+   change sits under it, so the pair scans as "AAPL, $307.34, down 7%" rather
+   than as two unrelated numbers at opposite ends of the bar. */
+.identity {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  min-width: 0;
+}
+.priceGroup {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
 .price { font-family: var(--mono); font-size: 18px; font-weight: 700; }
+.change {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.change[data-tone="pos"]  { color: var(--positive); }
+.change[data-tone="neg"]  { color: var(--negative); }
+.change[data-tone="flat"] { color: var(--text-faint); }
+
+/* Narrow screens: let the identity block wrap onto its own line instead of
+   squeezing the recommendation/conviction chips off the bar. */
+@media (max-width: 720px) {
+  .topbar { flex-wrap: wrap; }
+  .identity { flex: 1 1 100%; }
+}
 
 /* panes */
 .pane { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
