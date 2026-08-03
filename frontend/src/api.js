@@ -131,8 +131,15 @@ export const removeHolding = (ticker) =>
   request(`/api/portfolio/${encodeURIComponent(ticker)}`, { method: "DELETE" });
 export const sendTestSuggestions = () =>
   request("/api/suggestions/send-test", { method: "POST" });
-export const refreshSource = (name) =>
-  request(`/api/refresh/${encodeURIComponent(name)}`, { method: "POST" });
+// Returns 202 { source, queued, status } — the work happens on a background
+// executor server-side, so this resolving does NOT mean the refresh finished.
+// Poll /api/sources (see useDashboardData.refreshOne) to observe completion.
+// `force` bypasses the per-source throttle and is admin-only.
+export const refreshSource = (name, { force = false } = {}) =>
+  request(
+    `/api/refresh/${encodeURIComponent(name)}${force ? "?force=1" : ""}`,
+    { method: "POST" },
+  );
 export const addWatch = (ticker, note, listId) =>
   request("/api/watchlist", { method: "POST", body: { ticker, note, ...(listId != null ? { list_id: listId } : {}) } });
 export const removeWatch = (ticker, listId) =>

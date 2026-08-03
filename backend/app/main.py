@@ -1,15 +1,27 @@
 """FastAPI surface + scheduler wiring."""
 import json
 import logging
+import platform
 import re
+import threading
+import time
+import traceback
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
+from apscheduler.events import (
+    EVENT_JOB_ERROR,
+    EVENT_JOB_EXECUTED,
+    EVENT_JOB_MAX_INSTANCES,
+    EVENT_JOB_MISSED,
+)
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -19,6 +31,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from app import analysis, analyze, auth, chart_data, config, db, ingest, notify, quotes, report, routes_auth, routes_oauth, search, sentiment, suggestion_history, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
+from app.version import __version__
 from app.security import SecurityHeadersMiddleware, rate_limit
 from app.validation import clean_ticker
 from app.market_calendar import is_trading_day, market_status, next_trading_day
@@ -182,17 +195,44 @@ db.init_schema(conn)
 refresh_conn = db.connect(config.DB_PATH)
 
 
+class SourceSpec(NamedTuple):
+    """How one source is wired into the pipeline.
+
+    The first three fields keep the original ``(fetch, store, min_interval)``
+    positional shape, so plain 3-tuples in the registry below still work and are
+    normalized into a SourceSpec by ``build_sources``.
+
+    retry_interval: how soon to retry after a *failure*. Without this, a long
+    min_interval doubles as a long retry gate, so one bad fetch silences the
+    source for the entire window.
+    force_on_daily: whether the daily deep run may bypass the throttle. False for
+    sources whose upstream publishes slowly or rate-limits us hard — forcing
+    those daily just burns the quota and re-records the same error.
+    """
+
+    fetch: object
+    store: object
+    min_interval: int | None = None
+    retry_interval: int | None = None
+    force_on_daily: bool = True
+
+
 def build_sources(conn):
-    """Registry bound to a connection: name -> (fetch, store, min_interval).
+    """Registry bound to a connection: name -> SourceSpec.
 
     Fetch closures reference the module-global fetcher names (so tests can still
     monkeypatch them) and pass in `conn`; store fns take the connection from
     ingest.run_source. Ordering matters: boom_score is a pure DB computation and
     must run after every source it reads; alerts must run last (diffs boom_score).
     """
-    return {
+    raw = {
         "usaspending": (lambda: contracts_fetch(conn), db.upsert_contracts, None),
-        "gdelt":       (lambda: news_fetch(conn), db.upsert_news, config.GDELT_MIN_INTERVAL_SECONDS),
+        # GDELT rate-limits hard (429s) and the daily gate is the point, so the
+        # deep run must not force it; a failure retries on its own shorter clock.
+        "gdelt":       SourceSpec(lambda: news_fetch(conn), db.upsert_news,
+                                  config.GDELT_MIN_INTERVAL_SECONDS,
+                                  retry_interval=config.GDELT_RETRY_INTERVAL_SECONDS,
+                                  force_on_daily=False),
         "edgar":       (lambda: trades_fetch(conn), db.upsert_trades, None),
         "yield_curve": (lambda: yield_curve_source.fetch(config.YIELD_CURVE_MONTHS), db.upsert_yield_curve, None),
         "econ_calendar": (lambda: econ_calendar_fetch(conn), db.upsert_econ_events, config.ECON_CALENDAR_MIN_INTERVAL_SECONDS),
@@ -201,7 +241,12 @@ def build_sources(conn):
         "vix":         (lambda: vix_source.fetch(config.VIX_RANGE), db.upsert_vix, None),
         "aaii":        (lambda: aaii_source.fetch(), db.upsert_aaii, config.AAII_MIN_INTERVAL_SECONDS),
         "put_call":    (lambda: put_call_source.fetch(), db.upsert_put_call, config.PUT_CALL_MIN_INTERVAL_SECONDS),
-        "margin_debt": (lambda: margin_debt_source.fetch(), db.upsert_margin_debt, config.MARGIN_DEBT_MIN_INTERVAL_SECONDS),
+        # FINRA publishes monthly; a fortnightly success cadence with a 6h retry
+        # keeps a 401/403 from freezing the source for the whole fortnight.
+        "margin_debt": SourceSpec(lambda: margin_debt_source.fetch(), db.upsert_margin_debt,
+                                  config.MARGIN_DEBT_MIN_INTERVAL_SECONDS,
+                                  retry_interval=config.MARGIN_DEBT_RETRY_INTERVAL_SECONDS,
+                                  force_on_daily=False),
         "congress":       (lambda: congress_source.fetch(config.CONGRESS_LOOKBACK_DAYS), db.upsert_congress_trades, config.CONGRESS_MIN_INTERVAL_SECONDS),
         "short_interest": (lambda: short_interest_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_short_interest, None),
         "social":         (lambda: social_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_social_sentiment, None),
@@ -214,18 +259,54 @@ def build_sources(conn):
         "analysis":       (lambda: analysis_fetch(conn), db.upsert_analyses, config.ANALYSIS_MIN_INTERVAL_SECONDS),  # after ohlc; cheap DB+quote read
         "alerts":         (lambda: alerts_source.detect(conn), db.upsert_alerts, None),  # must be last (diffs boom_score)
     }
+    return {
+        name: spec if isinstance(spec, SourceSpec) else SourceSpec(*spec)
+        for name, spec in raw.items()
+    }
 
 
 # The scheduler and the manual-refresh route drive ingestion through the refresh
 # connection; API read routes use `conn`.
 SOURCES = build_sources(refresh_conn)
 
-scheduler = BackgroundScheduler()
+# misfire_grace_time defaults to ONE second in APScheduler (base.py:909), which
+# silently drops any job delayed past it — a sleeping laptop or a busy thread
+# pool is enough, and the app then stops updating until it is restarted, with no
+# trace. 5 minutes lets a late job still run; coalesce collapses a backlog into
+# one run; max_instances=1 keeps two refresh cycles off the same connection.
+scheduler = BackgroundScheduler(
+    job_defaults={
+        "coalesce": True,
+        "max_instances": 1,
+        "misfire_grace_time": config.SCHEDULER_MISFIRE_GRACE_SECONDS,
+    }
+)
+
+# Ingestion is single-flight. The interval refresh and the daily deep run are
+# separate jobs that can otherwise interleave, both driving refresh_conn.
+_REFRESH_LOCK = threading.Lock()
+
+# Manual /api/refresh work runs here instead of on the request thread. A slow
+# source (margin_debt: 3 tiers x 30s timeout; technical: 30s x N tickers) would
+# otherwise hold an HTTP request open for minutes and starve the single worker.
+_refresh_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="refresh")
+
+_STARTED_AT = time.time()
 
 
 def _refresh_all():
-    for name, (fetch, store, min_interval) in SOURCES.items():
-        ingest.run_source(refresh_conn, name, fetch, store, min_interval_seconds=min_interval)
+    if not _REFRESH_LOCK.acquire(blocking=False):
+        logger.info("refresh_all skipped: a refresh cycle is already running")
+        return
+    try:
+        for name, spec in SOURCES.items():
+            ingest.run_source(
+                refresh_conn, name, spec.fetch, spec.store,
+                min_interval_seconds=spec.min_interval,
+                retry_interval_seconds=spec.retry_interval,
+            )
+    finally:
+        _REFRESH_LOCK.release()
 
 
 def _snapshot_suggestion_history(for_date: str) -> None:
@@ -273,12 +354,22 @@ def analysis_trigger(settings: AppSettings) -> CronTrigger:
 
 
 def _run_daily_analysis():
-    """Scheduled deep run: force-refresh every source (bypassing per-source
-    min-interval throttles), which recomputes analyses, boom scores and alerts,
-    then deliver the digest for the relevant trading session."""
-    for name, (fetch, store, min_interval) in SOURCES.items():
-        ingest.run_source(refresh_conn, name, fetch, store,
-                          min_interval_seconds=min_interval, force=True)
+    """Scheduled deep run: refresh every source, recompute analyses, boom scores
+    and alerts, then deliver the digest for the relevant trading session.
+
+    Sources marked ``force_on_daily=False`` keep their throttle here. Forcing a
+    slowly-published or hard-rate-limited upstream once a day just burns quota
+    and re-records the same error — and it would defeat every long cadence the
+    registry declares.
+    """
+    with _REFRESH_LOCK:
+        for name, spec in SOURCES.items():
+            ingest.run_source(
+                refresh_conn, name, spec.fetch, spec.store,
+                min_interval_seconds=spec.min_interval,
+                retry_interval_seconds=spec.retry_interval,
+                force=spec.force_on_daily,
+            )
     settings = db.get_app_settings(refresh_conn)
     try:
         today = datetime.now(ZoneInfo(settings.analysis_tz)).date()
@@ -290,13 +381,77 @@ def _run_daily_analysis():
         logger.exception("post-analysis digest delivery failed")
 
 
+_JOB_EVENT_NAMES = {
+    EVENT_JOB_EXECUTED: "executed",
+    EVENT_JOB_ERROR: "error",
+    EVENT_JOB_MISSED: "missed",
+    EVENT_JOB_MAX_INSTANCES: "max_instances",
+}
+
+
+def _on_job_event(event):
+    """Persist every scheduler outcome, including the silent ones.
+
+    'missed' and 'max_instances' are the two that matter: APScheduler only logs
+    them, and this app's logs used to go to a console window that no longer
+    exists. A job quietly not running is exactly the failure we couldn't see.
+    """
+    name = _JOB_EVENT_NAMES.get(event.code, str(event.code))
+    detail = None
+    if getattr(event, "exception", None) is not None:
+        detail = "".join(
+            traceback.format_exception(
+                type(event.exception), event.exception, event.exception.__traceback__)
+        )[-2000:]
+        logger.error("job %s raised", event.job_id, exc_info=event.exception)
+    elif name in ("missed", "max_instances"):
+        logger.warning("job %s %s", event.job_id, name)
+    try:
+        db.record_job_run(refresh_conn, event.job_id, name, _now_iso(), detail=detail)
+    except Exception:  # noqa: BLE001 - diagnostics must never break the scheduler
+        logger.exception("failed to record job run for %s", event.job_id)
+
+
+def _prune_history():
+    """Trim append-only history so the DB doesn't grow without bound.
+
+    boom_score_history alone accumulates one row per watched ticker every
+    refresh cycle — ~4k rows/day.
+    """
+    try:
+        deleted = db.prune_history(
+            refresh_conn,
+            config.SOURCE_RUN_RETENTION_DAYS,
+            config.JOB_RUN_RETENTION_DAYS,
+            config.BOOM_HISTORY_RETENTION_DAYS,
+        )
+        if any(deleted.values()):
+            logger.info("pruned history: %s", deleted)
+    except Exception:  # noqa: BLE001
+        logger.exception("history prune failed")
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    scheduler.add_listener(
+        _on_job_event,
+        EVENT_JOB_EXECUTED | EVENT_JOB_ERROR | EVENT_JOB_MISSED | EVENT_JOB_MAX_INSTANCES,
+    )
     scheduler.add_job(
         _refresh_all,
         "interval",
         seconds=config.REFRESH_INTERVAL_SECONDS,
         id="refresh_all",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _prune_history,
+        CronTrigger(hour=3, minute=17),
+        id="prune_history",
         replace_existing=True,
     )
     scheduler.add_job(
@@ -318,7 +473,19 @@ async def lifespan(app: FastAPI):
     )
     scheduler.start()
     yield
-    scheduler.shutdown(wait=False)
+    # Drain rather than abandon: an ingestion job killed mid-write leaves the WAL
+    # to grow unchecked (it was 7.5 MB uncheckpointed before this).
+    try:
+        scheduler.shutdown(wait=True)
+    except Exception:  # noqa: BLE001
+        logger.exception("scheduler shutdown failed")
+    _refresh_executor.shutdown(wait=True, cancel_futures=True)
+    for label, connection in (("request", conn), ("refresh", refresh_conn)):
+        try:
+            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            connection.close()
+        except Exception:  # noqa: BLE001
+            logger.exception("closing the %s connection failed", label)
 
 
 app = FastAPI(title="Stock Signal Dashboard", lifespan=lifespan)
@@ -357,9 +524,38 @@ app.include_router(routes_auth.build_router(conn))
 app.include_router(routes_oauth.build_router(conn))
 
 
+@app.exception_handler(Exception)
+async def _unhandled_exception(request: Request, exc: Exception):
+    """Log the traceback before returning a generic 500.
+
+    Starlette re-raises unhandled errors so uvicorn can log them, which meant
+    they only ever reached the discarded console. Log them ourselves so they
+    land in the rotating file, and keep the response body free of internals.
+    """
+    logger.exception("unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "internal server error"})
+
+
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    """Cheap liveness probe. Public, and always HTTP 200 by design.
+
+    start.ps1 polls this to decide the app came up, so a degraded subsystem must
+    not read as "failed to start" — the status field carries that instead.
+    Detailed diagnostics live behind the admin-only /api/server/* routes.
+    """
+    checks = {"db": False, "scheduler": scheduler.running}
+    try:
+        conn.execute("SELECT 1").fetchone()
+        checks["db"] = True
+    except Exception:  # noqa: BLE001
+        logger.exception("health check: db probe failed")
+    return {
+        "status": "ok" if all(checks.values()) else "degraded",
+        "version": __version__,
+        "uptime_seconds": round(time.time() - _STARTED_AT, 1),
+        "checks": checks,
+    }
 
 
 @app.get("/api/contracts")
@@ -1073,16 +1269,50 @@ def sources():
     return [s.model_dump() for s in db.get_source_statuses(conn)]
 
 
-@app.post("/api/refresh/{source_name}", dependencies=[Depends(rate_limit("refresh", 30, 60))])
-def refresh(source_name: str):
+def _run_source_job(source_name: str, spec: "SourceSpec", force: bool) -> None:
+    """Body of a queued manual refresh. Runs on the refresh executor."""
+    with _REFRESH_LOCK:
+        ingest.run_source(
+            refresh_conn, source_name, spec.fetch, spec.store,
+            min_interval_seconds=spec.min_interval,
+            retry_interval_seconds=spec.retry_interval,
+            force=force,
+        )
+
+
+@app.post(
+    "/api/refresh/{source_name}",
+    status_code=202,
+    dependencies=[Depends(rate_limit("refresh", 120, 60))],
+)
+def refresh(source_name: str, force: bool = False, user=Depends(auth.get_current_user)):
+    """Queue a refresh and return immediately.
+
+    This used to run the fetch inline on the request thread. A slow source
+    (margin_debt is 3 tiers x a 30s timeout; technical is 30s x N tickers,
+    sequentially) then held the request open for minutes while contending with
+    the scheduler for the refresh connection — and the dashboard fires 19 of
+    these at once. To a user, a single worker tied up like that is
+    indistinguishable from a dead server.
+
+    `force=1` bypasses the throttle and is admin-only: it is the one path that
+    can hammer a rate-limited upstream on demand.
+    """
     if source_name not in SOURCES:
         raise HTTPException(status_code=404, detail="unknown source")
-    fetch, store, min_interval = SOURCES[source_name]
-    # Ingestion runs on the refresh connection (shared with the scheduler,
-    # serialized by its lock) so a manual refresh never blocks request reads.
-    ingest.run_source(refresh_conn, source_name, fetch, store, min_interval_seconds=min_interval)
+    if force and not user.is_admin:
+        raise HTTPException(status_code=403, detail="admin only")
+    spec = SOURCES[source_name]
+    _refresh_executor.submit(_run_source_job, source_name, spec, force)
+    # .get(): a source that has never run and is currently throttled has no
+    # source_status row at all, which used to raise KeyError here -> 500.
     statuses = {s.source: s for s in db.get_source_statuses(refresh_conn)}
-    return statuses[source_name].model_dump()
+    current = statuses.get(source_name)
+    return {
+        "source": source_name,
+        "queued": True,
+        "status": current.model_dump() if current else None,
+    }
 
 
 # ---------- single-port static serving (serve the built frontend `dist/`) ----------

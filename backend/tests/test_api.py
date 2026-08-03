@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from app import db
 from app import quotes as quotes_module
 from app.models import ContractRecord, LiveQuote
-from tests.conftest import authenticate
+from tests.conftest import authenticate, drain_refresh
 
 
 @pytest.fixture
@@ -34,13 +34,18 @@ def client(tmp_path, monkeypatch):
 
 
 def test_health(client):
-    assert client.get("/api/health").json() == {"status": "ok"}
+    body = client.get("/api/health").json()
+    assert body["status"] in ("ok", "degraded")
+    assert body["checks"]["db"] is True
+    assert "version" in body and "uptime_seconds" in body
 
 
 def test_contracts_empty_then_populated_after_refresh(client):
     assert client.get("/api/contracts").json() == []
-    refreshed = client.post("/api/refresh/usaspending").json()
-    assert refreshed["status"] == "ok"
+    queued = client.post("/api/refresh/usaspending")
+    assert queued.status_code == 202
+    assert queued.json()["queued"] is True
+    drain_refresh()
     contracts = client.get("/api/contracts").json()
     assert len(contracts) == 1
     assert contracts[0]["recipient_name"] == "Acme"
@@ -48,6 +53,7 @@ def test_contracts_empty_then_populated_after_refresh(client):
 
 def test_sources_reports_freshness(client):
     client.post("/api/refresh/usaspending")
+    drain_refresh()
     sources = client.get("/api/sources").json()
     assert sources[0]["source"] == "usaspending"
     assert sources[0]["last_refreshed_at"] is not None
