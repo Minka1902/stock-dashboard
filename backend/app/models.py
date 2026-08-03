@@ -420,6 +420,14 @@ class OHLCSeries(BaseModel):
     fetched_at: str
 
 
+class PatternCriterion(BaseModel):
+    """One requirement of a pattern, and whether price has met it yet."""
+
+    name: str              # e.g. "price below neckline"
+    met: bool
+    detail: str = ""       # the actual vs required reading, in words
+
+
 class PatternHit(BaseModel):
     name: str              # machine key, e.g. "cup_handle"
     label: str             # human, e.g. "Cup & Handle"
@@ -428,6 +436,11 @@ class PatternHit(BaseModel):
     pivots: list[dict]     # [{date, price, role}] — the points that define it
     measured_move: float | None = None  # classic projected target price, if any
     note: str = ""
+    # "confirmed" = every requirement met, and the only kind that feeds
+    # conviction. "forming" = the shape is on the chart but the trigger hasn't
+    # happened yet — what the stock is heading towards, not what it has done.
+    status: str = "confirmed"
+    criteria: list[PatternCriterion] = []
 
 
 class SRLevel(BaseModel):
