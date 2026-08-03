@@ -100,6 +100,16 @@ export const getSuggestionHistory = ({ ticker, months } = {}) => {
 export const getOAuthProviders = () => getJSON("/api/auth/oauth/providers");
 export const oauthStartUrl = (provider) => `${BASE}/api/auth/oauth/${provider}/start`;
 export const getAlerts = () => getJSON("/api/alerts");
+export const getEarnings = ({ from, to, scope } = {}) => {
+  const q = new URLSearchParams();
+  if (from) q.set("date_from", from);
+  if (to) q.set("date_to", to);
+  if (scope) q.set("scope", scope);
+  const qs = q.toString();
+  return getJSON(`/api/earnings${qs ? `?${qs}` : ""}`);
+};
+export const getEarningsFor = (ticker) =>
+  getJSON(`/api/earnings/${encodeURIComponent(ticker)}`);
 export const searchStocks = (q) =>
   getJSON(`/api/search?q=${encodeURIComponent(q)}`);
 export const getAnalyze = (ticker) =>

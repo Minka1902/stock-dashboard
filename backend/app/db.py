@@ -17,6 +17,7 @@ from app.models import (
     CompanyHolder,
     CongressTrade,
     ContractRecord,
+    EarningsEvent,
     EconEvent,
     FearGreedSnapshot,
     Fundamentals,

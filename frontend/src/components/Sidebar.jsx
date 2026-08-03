@@ -11,6 +11,7 @@ const NAV = [
   { key: "news",        label: "News",        icon: "news",     hint: "the tape" },
   { key: "watchlist",   label: "Watchlist",   icon: "star",     hint: "charts & radar" },
   { key: "econ-calendar", label: "Calendar",  icon: "calendar", hint: "macro events" },
+  { key: "earnings",    label: "Earnings",    icon: "contract", hint: "who reports when" },
 ];
 
 // Shown only to admins: it exposes the DB path, tracebacks and machine stats.

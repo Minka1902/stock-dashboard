@@ -216,6 +216,27 @@ class AnalystSignal(BaseModel):
     latest_to_grade: str | None  # e.g. "Buy", "Outperform"
 
 
+class EarningsEvent(BaseModel):
+    """One company earnings date — upcoming or already reported.
+
+    `is_estimate` is load-bearing: Yahoo projects a forward date when the
+    company hasn't confirmed one, and showing a guess as a fixture would be
+    exactly the kind of false certainty this app avoids.
+    """
+
+    ticker: str            # PK part 1
+    event_date: str        # PK part 2 — YYYY-MM-DD
+    is_estimate: bool
+    timing: str            # "bmo" | "amc" | "intraday" | "" when unknown
+    eps_estimate: float | None = None
+    eps_actual: float | None = None      # None until it has reported
+    surprise_pct: float | None = None
+    revenue_estimate: float | None = None
+    quarter: str = ""      # e.g. "-1q" from Yahoo's history rows
+    source: str = "yahoo"
+    fetched_at: str = ""
+
+
 class BoomScore(BaseModel):
     ticker: str         # PRIMARY KEY
     computed_at: str

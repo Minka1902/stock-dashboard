@@ -32,6 +32,7 @@ import SeasonalityPanel from "./components/SeasonalityPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import SuggestionsPanel from "./components/SuggestionsPanel";
 import SuggestionHistoryPanel from "./components/SuggestionHistoryPanel";
+import EarningsPanel from "./components/EarningsPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
 import XPostsPanel from "./components/XPostsPanel";
 import InfoPanel from "./components/InfoPanel";
