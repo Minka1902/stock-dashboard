@@ -47,7 +47,7 @@ function Stat({ label, value, tone }) {
   );
 }
 
-export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch }) {
+export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch, focusAlertKey = null }) {
   // Track which ticker the loaded payload belongs to: switching tickers
   // shows the skeleton again without any synchronous setState in the effect.
   const [result, setResult] = useState(null);
@@ -216,7 +216,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
                     ? `${stockAlerts.length} fired · newest first`
                     : "nothing has tripped"}
                 </span>}>
-            <StockAlerts alerts={stockAlerts} ticker={ticker} />
+            <StockAlerts alerts={stockAlerts} ticker={ticker} focusKey={focusAlertKey} />
           </Pane>
 
           <Pane caption="Suggestion history"

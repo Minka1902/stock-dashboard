@@ -74,7 +74,7 @@ function ThemeMenu({ theme, themes, onSetTheme }) {
 export default function TopBar({
   title, sources, busy, onRefresh, theme, onSetTheme, themes = [],
   dyslexia, onToggleDyslexia, lean, alerts = [], unreadAlerts = 0,
-  onMarkAlertsRead, onOpenCommand, user, onLogout, onNavigate, hasTour, onStartTour,
+  onMarkAlertsRead, onOpenAlert, onOpenCommand, user, onLogout, onNavigate, hasTour, onStartTour,
 }) {
   const refreshed = sources
     .filter((s) => s.last_refreshed_at)
@@ -115,7 +115,12 @@ export default function TopBar({
         </button>
 
         <span data-tour="alerts">
-          <AlertsBell alerts={alerts} unread={unreadAlerts} onMarkRead={onMarkAlertsRead} />
+          <AlertsBell
+            alerts={alerts}
+            unread={unreadAlerts}
+            onMarkRead={onMarkAlertsRead}
+            onOpen={onOpenAlert}
+          />
         </span>
 
         {hasTour && (

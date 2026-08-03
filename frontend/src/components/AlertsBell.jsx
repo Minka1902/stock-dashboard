@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
 import TickerLabel from "./TickerLabel";
 import { alertIcon } from "../lib/alertMeta";
+import { routeToPath } from "../lib/nav";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./AlertsBell.module.css";
 
 /** Passive unread indicator + popover of recent alerts. No full page. */
-export default function AlertsBell({ alerts = [], unread = 0, onMarkRead }) {
+export default function AlertsBell({ alerts = [], unread = 0, onMarkRead, onOpen }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
 
@@ -57,7 +58,22 @@ export default function AlertsBell({ alerts = [], unread = 0, onMarkRead }) {
               {recent.map((a) => (
                 <li key={a.dedup_key} className={styles.item} data-unread={a.read ? "no" : "yes"}>
                   <span className={styles.dot} data-sev={a.severity} />
-                  <div className={styles.body}>
+                  {/* A real anchor, not a button with onClick: that's what makes
+                      Ctrl/Cmd/middle-click open a new tab, and what lets the
+                      status bar preview the destination. The handler only
+                      intercepts a plain left click. */}
+                  <a
+                    className={styles.body}
+                    href={routeToPath({ kind: "stock", ticker: a.ticker, alertKey: a.dedup_key })}
+                    onClick={(e) => {
+                      if (e.defaultPrevented || e.button !== 0
+                          || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+                        return; // let the browser do its thing
+                      }
+                      e.preventDefault();
+                      onOpen?.(a);
+                    }}
+                  >
                     <div className={styles.line1}>
                       <TickerLabel ticker={a.ticker} className={styles.symbol} />
                       <Icon name={alertIcon(a.type)} size={13} />
@@ -65,7 +81,18 @@ export default function AlertsBell({ alerts = [], unread = 0, onMarkRead }) {
                       <span className={styles.time}>{formatRelativeTime(a.created_at)}</span>
                     </div>
                     <p className={styles.message}>{a.message}</p>
-                  </div>
+                  </a>
+                  {!a.read && (
+                    <button
+                      type="button"
+                      className={styles.markOne}
+                      title="Mark this alert read"
+                      aria-label={`Mark "${a.title}" read`}
+                      onClick={() => onMarkRead?.([a.dedup_key])}
+                    >
+                      <Icon name="check" size={13} />
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
