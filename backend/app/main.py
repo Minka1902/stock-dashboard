@@ -8,7 +8,7 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import NamedTuple
 from zoneinfo import ZoneInfo
@@ -32,6 +32,13 @@ from app import analysis, analyze, auth, chart_data, config, db, ingest, notify,
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
+
+# Optional: the Server page degrades to "unavailable" rather than reporting
+# zeros, which would look identical to a genuinely idle machine.
+try:
+    import psutil
+except ImportError:  # pragma: no cover - exercised by monkeypatching psutil=None
+    psutil = None
 from app.security import SecurityHeadersMiddleware, rate_limit
 from app.validation import clean_ticker
 from app.market_calendar import is_trading_day, market_status, next_trading_day
@@ -1274,6 +1281,138 @@ def delete_watch(ticker: str, list_id: int | None = None, user=Depends(auth.get_
 @app.get("/api/sources")
 def sources():
     return [s.model_dump() for s in db.get_source_statuses(conn)]
+
+
+# ---------- server introspection (admin only) ----------
+# Everything here exposes the DB path, tracebacks and machine stats, so it is
+# gated to admins rather than any signed-in user.
+
+def _require_admin(user=Depends(auth.get_current_user)):
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="admin only")
+    return user
+
+
+def _process_stats() -> dict:
+    """Process/system metrics, or an honest 'unavailable' when psutil isn't there.
+
+    Reporting zeros for a missing dependency would be indistinguishable from a
+    genuinely idle machine.
+    """
+    if psutil is None:
+        return {"available": False, "reason": "psutil is not installed"}
+    try:
+        proc = psutil.Process()
+        with proc.oneshot():
+            mem = proc.memory_info()
+            return {
+                "available": True,
+                "pid": proc.pid,
+                "rss_bytes": mem.rss,
+                "cpu_percent": proc.cpu_percent(interval=None),
+                "num_threads": proc.num_threads(),
+                "open_files": len(proc.open_files()),
+                "system": {
+                    "cpu_percent": psutil.cpu_percent(interval=None),
+                    "per_cpu": psutil.cpu_percent(interval=None, percpu=True),
+                    "mem_percent": psutil.virtual_memory().percent,
+                },
+            }
+    except Exception as exc:  # noqa: BLE001 - diagnostics must not 500
+        return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
+
+
+def _db_stats() -> dict:
+    path = Path(config.DB_PATH)
+    out = {"path": str(path.resolve()) if path.exists() else config.DB_PATH}
+    for label, suffix in (("size_bytes", ""), ("wal_bytes", "-wal")):
+        target = Path(str(path) + suffix)
+        out[label] = target.stat().st_size if target.exists() else 0
+    return out
+
+
+@app.get("/api/server/overview")
+def server_overview(user=Depends(_require_admin)):
+    jobs = []
+    for job in scheduler.get_jobs():
+        nxt = getattr(job, "next_run_time", None)
+        jobs.append({
+            "id": job.id,
+            "next_run_at": nxt.isoformat() if nxt else None,
+            "trigger": str(job.trigger),
+        })
+    return {
+        "version": __version__,
+        "started_at": datetime.fromtimestamp(_STARTED_AT, tz=timezone.utc).isoformat(timespec="seconds"),
+        "uptime_seconds": round(time.time() - _STARTED_AT, 1),
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "process": _process_stats(),
+        "db": _db_stats(),
+        "scheduler": {"running": scheduler.running, "jobs": jobs},
+        # What the ingestion worker is doing at this exact moment.
+        "running_sources": ingest.running_sources(),
+        "refresh_interval_seconds": config.REFRESH_INTERVAL_SECONDS,
+    }
+
+
+@app.get("/api/server/sources")
+def server_sources(user=Depends(_require_admin)):
+    """Per-source health: status, both clocks, run counters and the next gate."""
+    stats = db.get_source_run_stats(conn)
+    running = ingest.running_sources()
+    now = datetime.now(timezone.utc)
+    out = []
+    for status in db.get_source_statuses(conn):
+        spec = SOURCES.get(status.source)
+        row = status.model_dump()
+        row.update(stats.get(status.source, {}))
+        row["min_interval_seconds"] = spec.min_interval if spec else None
+        row["retry_interval_seconds"] = spec.retry_interval if spec else None
+        row["force_on_daily"] = spec.force_on_daily if spec else None
+        row["running_for_seconds"] = running.get(status.source)
+
+        # When this source is next allowed to run. Without it, a source that is
+        # silently throttled is indistinguishable from one that is broken.
+        failed = (status.status or "").startswith("error")
+        gate = (spec.retry_interval or spec.min_interval) if (spec and failed) else (
+            spec.min_interval if spec else None)
+        anchor = status.last_refreshed_at if failed else (
+            status.last_success_at or status.last_refreshed_at)
+        next_at = None
+        if gate and anchor:
+            try:
+                parsed = datetime.fromisoformat(anchor)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                next_at = (parsed + timedelta(seconds=gate)).isoformat(timespec="seconds")
+            except (ValueError, TypeError):
+                next_at = None
+        row["next_eligible_at"] = next_at
+        row["eligible_now"] = next_at is None or next_at <= now.isoformat(timespec="seconds")
+        out.append(row)
+    return out
+
+
+@app.get("/api/server/events")
+def server_events(limit: int = 60, user=Depends(_require_admin)):
+    """Recent source runs and scheduler job events, newest first, interleaved."""
+    limit = max(1, min(limit, 300))
+    events = []
+    for run in db.get_source_runs(conn, limit=limit):
+        events.append({
+            "kind": "source", "at": run.finished_at, "id": run.source,
+            "outcome": run.outcome, "duration_ms": run.duration_ms,
+            "record_count": run.record_count, "detail": run.detail,
+        })
+    for job in db.get_job_runs(conn, limit=limit):
+        events.append({
+            "kind": "job", "at": job.at, "id": job.job_id,
+            "outcome": job.event, "duration_ms": job.duration_ms,
+            "record_count": None, "detail": job.detail,
+        })
+    events.sort(key=lambda e: e["at"] or "", reverse=True)
+    return events[:limit]
 
 
 def _run_source_job(source_name: str, spec: "SourceSpec", force: bool) -> None:

@@ -13,7 +13,13 @@ const NAV = [
   { key: "econ-calendar", label: "Calendar",  icon: "calendar", hint: "macro events" },
 ];
 
-export default function Sidebar({ view, onNavigate }) {
+// Shown only to admins: it exposes the DB path, tracebacks and machine stats.
+const ADMIN_NAV = [
+  { key: "server", label: "Server", icon: "layers", hint: "health & errors" },
+];
+
+export default function Sidebar({ view, onNavigate, isAdmin = false }) {
+  const items = isAdmin ? [...NAV, ...ADMIN_NAV] : NAV;
   return (
     <aside className={styles.rail}>
       <div className={styles.brand}>
@@ -23,7 +29,7 @@ export default function Sidebar({ view, onNavigate }) {
       </div>
 
       <nav className={styles.nav} data-tour="nav">
-        {NAV.map((item) => {
+        {items.map((item) => {
           const active = view === item.key;
           return (
             <button

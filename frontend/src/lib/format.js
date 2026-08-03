@@ -32,6 +32,27 @@ export function formatCount(n) {
 }
 
 // "just now" / "2 min ago" / "3 hr ago" / locale date for older
+/**
+ * Time until a FUTURE instant ("in 3 min", "overdue").
+ *
+ * formatRelativeTime is past-tense: a future timestamp gives it a negative
+ * diff, which lands in its "just now" branch — so a job scheduled hours out
+ * reads as if it were about to run.
+ */
+export function formatUntil(iso) {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "—";
+  const sec = Math.round((then - Date.now()) / 1000);
+  if (sec <= 0) return "due";
+  if (sec < 60) return `in ${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `in ${min} min`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `in ${hr}h ${min % 60}m`;
+  return `in ${Math.floor(hr / 24)}d ${hr % 24}h`;
+}
+
 export function formatRelativeTime(iso) {
   if (!iso) return "never";
   const then = new Date(iso).getTime();

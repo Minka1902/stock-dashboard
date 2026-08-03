@@ -50,6 +50,10 @@ const getJSON = (path) => request(path);
 
 export const getContracts = () => getJSON("/api/contracts");
 export const getSources = () => getJSON("/api/sources");
+// Admin-only server introspection (the Server page).
+export const getServerOverview = () => getJSON("/api/server/overview");
+export const getServerSources = () => getJSON("/api/server/sources");
+export const getServerEvents = (limit = 60) => getJSON(`/api/server/events?limit=${limit}`);
 export const getNews = () => getJSON("/api/news");
 export const getTrades = () => getJSON("/api/trades");
 export const getWatchlist = (listId) =>
