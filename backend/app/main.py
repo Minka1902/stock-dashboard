@@ -227,7 +227,12 @@ def build_sources(conn):
     """
     raw = {
         "usaspending": (lambda: contracts_fetch(conn), db.upsert_contracts, None),
-        "gdelt":       (lambda: news_fetch(conn), db.upsert_news, config.GDELT_MIN_INTERVAL_SECONDS),
+        # GDELT rate-limits hard (429s) and the daily gate is the point, so the
+        # deep run must not force it; a failure retries on its own shorter clock.
+        "gdelt":       SourceSpec(lambda: news_fetch(conn), db.upsert_news,
+                                  config.GDELT_MIN_INTERVAL_SECONDS,
+                                  retry_interval=config.GDELT_RETRY_INTERVAL_SECONDS,
+                                  force_on_daily=False),
         "edgar":       (lambda: trades_fetch(conn), db.upsert_trades, None),
         "yield_curve": (lambda: yield_curve_source.fetch(config.YIELD_CURVE_MONTHS), db.upsert_yield_curve, None),
         "econ_calendar": (lambda: econ_calendar_fetch(conn), db.upsert_econ_events, config.ECON_CALENDAR_MIN_INTERVAL_SECONDS),
@@ -236,7 +241,12 @@ def build_sources(conn):
         "vix":         (lambda: vix_source.fetch(config.VIX_RANGE), db.upsert_vix, None),
         "aaii":        (lambda: aaii_source.fetch(), db.upsert_aaii, config.AAII_MIN_INTERVAL_SECONDS),
         "put_call":    (lambda: put_call_source.fetch(), db.upsert_put_call, config.PUT_CALL_MIN_INTERVAL_SECONDS),
-        "margin_debt": (lambda: margin_debt_source.fetch(), db.upsert_margin_debt, config.MARGIN_DEBT_MIN_INTERVAL_SECONDS),
+        # FINRA publishes monthly; a fortnightly success cadence with a 6h retry
+        # keeps a 401/403 from freezing the source for the whole fortnight.
+        "margin_debt": SourceSpec(lambda: margin_debt_source.fetch(), db.upsert_margin_debt,
+                                  config.MARGIN_DEBT_MIN_INTERVAL_SECONDS,
+                                  retry_interval=config.MARGIN_DEBT_RETRY_INTERVAL_SECONDS,
+                                  force_on_daily=False),
         "congress":       (lambda: congress_source.fetch(config.CONGRESS_LOOKBACK_DAYS), db.upsert_congress_trades, config.CONGRESS_MIN_INTERVAL_SECONDS),
         "short_interest": (lambda: short_interest_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_short_interest, None),
         "social":         (lambda: social_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_social_sentiment, None),
