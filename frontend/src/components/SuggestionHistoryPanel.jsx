@@ -5,25 +5,12 @@ import EmptyState from "./EmptyState";
 import TickerLabel from "./TickerLabel";
 import { getSuggestionHistory } from "../api";
 import { openTickerTab } from "../lib/nav";
+import { DAY_NAMES, monthGrid } from "../lib/calendarGrid";
 import { outcomeTone, pctLabel } from "../lib/suggestionHistory";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./SuggestionHistoryPanel.module.css";
 
-const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTH_FMT = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
-
-/** Calendar cells for a month: leading blanks so day 1 lands on its weekday. */
-function monthGrid(year, month) {
-  const first = new Date(year, month, 1);
-  const lead = (first.getDay() + 6) % 7; // Monday-first
-  const days = new Date(year, month + 1, 0).getDate();
-  const cells = Array.from({ length: lead }, () => null);
-  for (let d = 1; d <= days; d += 1) {
-    const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    cells.push({ day: d, iso });
-  }
-  return cells;
-}
 
 /** A number that counts up to its value — animejs, reduced-motion aware. */
 function Tally({ value, className }) {

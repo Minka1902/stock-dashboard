@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useDashboardData } from "./hooks/useDashboardData";
+import { useRoute } from "./hooks/useRoute";
 import { useLiveQuotes } from "./hooks/useLiveQuotes";
 import { useTheme } from "./hooks/useTheme";
 import { useSettingsContext } from "./hooks/useSettingsContext";
@@ -40,35 +41,82 @@ import BackToTop from "./components/BackToTop";
 import Tour from "./components/Tour";
 import { TOURS } from "./lib/tours";
 import { AnimatePresence, motion } from "motion/react";
-import { parseStockHash, openTickerTab } from "./lib/nav";
+import { goBack, navigateTo, openTickerTab } from "./lib/nav";
+import { DEFAULT_VIEW, TITLES } from "./lib/routes";
 import { prefersReducedMotion } from "./lib/motionConfig";
 import styles from "./App.module.css";
 
-const TITLES = {
-  sentiment:   "Market Sentiment",
-  overview:    "Overview",
-  contracts:   "Contracts",
-  trades:      "Trades",
-  news:        "News",
-  watchlist:   "Watchlist",
-  "yield-curve": "Yield Curve",
-  "econ-calendar": "Economic Calendar",
-  signals:     "Signals",
-  "fear-greed": "Fear & Greed",
-  congress:    "Congress",
-  "boom-score": "Boom Score",
-  short:       "Short Interest",
-  social:      "WSB Sentiment",
-  analyst:     "Analyst Ratings",
-  fundamentals: "Fundamentals",
-  seasonality: "Seasonality",
-  suggestions: "Suggestions",
-  "suggestion-history": "Suggestion History",
-  portfolio:   "Portfolio",
-  x:           "X Watch",
-  info:        "Info",
-  server:      "Server",
-  settings:    "Settings",
+/**
+ * view key -> renderer. Replaces a 25-branch `{view === "x" && <Panel/>}` chain.
+ *
+ * Every panel takes the same props bag, so adding a view is one entry here plus
+ * one title in lib/routes.js — and, crucially, feature branches that add a view
+ * no longer all edit the same stretch of JSX and collide.
+ */
+const VIEWS = {
+  sentiment: (p) => (
+    <MarketSentimentPanel
+      sentiment={p.sentiment} fearGreed={p.fearGreed} vix={p.vix} aaii={p.aaii}
+      putCall={p.putCall} marginDebt={p.marginDebt}
+      shortInterest={p.shortInterest} social={p.social}
+      loading={p.loading} busy={p.busy} onRefresh={p.refresh}
+    />
+  ),
+  suggestions: (p) => (
+    <SuggestionsPanel data={p.suggestions} loading={p.loading} busy={p.busy} onRefresh={p.refresh} onAddWatch={p.addWatch} />
+  ),
+  portfolio: (p) => (
+    <PortfolioPanel portfolio={p.portfolio} signals={p.signals} quotes={p.quotesByTicker} analyses={p.analyses} onAdd={p.addHolding} onEdit={p.updateHolding} onSetCategory={p.setHoldingCategory} onRemove={p.removeHolding} />
+  ),
+  trades: (p) => <TradesPanel trades={p.trades} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  news: (p) => (
+    <NewsPanel news={p.news} portfolio={p.portfolio} xPosts={p.xPosts} sources={p.sources} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />
+  ),
+  "suggestion-history": () => <SuggestionHistoryPanel />,
+  settings: (p) => (
+    <SettingsPanel settings={p.settings} setSetting={p.setSetting} onNavigate={p.navigate} appSettingsApi={p.appSettingsApi} user={p.user} theme={p.theme} onSetTheme={p.setTheme} themes={p.themes} />
+  ),
+  info: (p) => <InfoPanel onNavigate={p.navigate} sources={p.sources} />,
+  x: (p) => <XPostsPanel data={p.xPosts} sources={p.sources} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  contracts: (p) => <ContractsPanel contracts={p.contracts} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  watchlist: (p) => <WatchlistPanel quotes={p.quotesByTicker} marketStatus={p.marketStatus} />,
+  "yield-curve": (p) => <YieldCurvePanel data={p.yieldCurve} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  "econ-calendar": (p) => <EconCalendarPanel data={p.econCalendar} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  signals: (p) => <TechnicalPanel data={p.signals} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  "fear-greed": (p) => <FearGreedPanel data={p.fearGreed} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  congress: (p) => <CongressPanel data={p.congressTrades} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  "boom-score": (p) => <BoomScorePanel data={p.boomScores} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  short: (p) => <ShortPanel data={p.shortInterest} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  social: (p) => <SocialPanel data={p.social} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  analyst: (p) => <AnalystPanel data={p.analyst} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  fundamentals: (p) => <FundamentalsPanel data={p.fundamentals} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  seasonality: (p) => (
+    <SeasonalityPanel data={p.seasonality} settings={p.settings} quotes={p.quotesByTicker} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />
+  ),
+  // Retained but no longer in navigation (reachable by URL or from code).
+  overview: (p) => (
+    <>
+      <BoomScorePanel data={p.boomScores} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("boom-score")} collapsible collapsed={p.isCollapsed("boom-score")} onToggleCollapse={() => p.toggleCollapsed("boom-score")} />
+      <SuggestionsPanel data={p.suggestions} loading={p.loading} busy={p.busy} onRefresh={p.refresh} onAddWatch={p.addWatch} compact onViewAll={() => p.navigate("suggestions")} collapsible collapsed={p.isCollapsed("suggestions")} onToggleCollapse={() => p.toggleCollapsed("suggestions")} />
+      <StatGrid contracts={p.contracts} sources={p.sources} loading={p.loading} />
+      <ContractsPanel contracts={p.contracts} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("contracts")} collapsible collapsed={p.isCollapsed("contracts")} onToggleCollapse={() => p.toggleCollapsed("contracts")} />
+      <div className={styles.twoCol}>
+        <TechnicalPanel data={p.signals} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("signals")} collapsible collapsed={p.isCollapsed("signals")} onToggleCollapse={() => p.toggleCollapsed("signals")} />
+        <SeasonalityPanel data={p.seasonality} settings={p.settings} quotes={p.quotesByTicker} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("seasonality")} collapsible collapsed={p.isCollapsed("seasonality")} onToggleCollapse={() => p.toggleCollapsed("seasonality")} />
+      </div>
+      <div className={styles.twoCol}>
+        <YieldCurvePanel data={p.yieldCurve} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("yield-curve")} collapsible collapsed={p.isCollapsed("yield-curve")} onToggleCollapse={() => p.toggleCollapsed("yield-curve")} />
+        <FearGreedPanel data={p.fearGreed} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("fear-greed")} collapsible collapsed={p.isCollapsed("fear-greed")} onToggleCollapse={() => p.toggleCollapsed("fear-greed")} />
+      </div>
+      <CongressPanel data={p.congressTrades} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("congress")} collapsible collapsed={p.isCollapsed("congress")} onToggleCollapse={() => p.toggleCollapsed("congress")} />
+      <div className={styles.twoCol}>
+        <ShortPanel data={p.shortInterest} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("short")} collapsible collapsed={p.isCollapsed("short")} onToggleCollapse={() => p.toggleCollapsed("short")} />
+        <SocialPanel data={p.social} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("social")} collapsible collapsed={p.isCollapsed("social")} onToggleCollapse={() => p.toggleCollapsed("social")} />
+      </div>
+      <AnalystPanel data={p.analyst} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("analyst")} collapsible collapsed={p.isCollapsed("analyst")} onToggleCollapse={() => p.toggleCollapsed("analyst")} />
+      <FundamentalsPanel data={p.fundamentals} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("fundamentals")} collapsible collapsed={p.isCollapsed("fundamentals")} onToggleCollapse={() => p.toggleCollapsed("fundamentals")} />
+    </>
+  ),
 };
 
 export default function App({ auth }) {
@@ -79,26 +127,31 @@ export default function App({ auth }) {
   );
   const { theme, setTheme, toggle, themes } = useTheme();
   const { settings, setSetting, labelFor } = useSettingsContext();
-  const [view, setView] = useState("sentiment");
   const [cmdOpen, setCmdOpen] = useState(false);
   const scrollRef = useRef(null);
-  // Any-ticker detail view is driven by the URL hash (#/stock/TICKER) so it can
-  // live in its own tab (Task 13). It overlays the current view when present.
-  const [detailTicker, setDetailTicker] = useState(parseStockHash);
-  // Strip the #/stock/TICKER hash and drop the overlay without touching `view`.
-  const clearDetail = () => {
-    window.history.replaceState(null, "", window.location.pathname + window.location.search);
-    setDetailTicker(null);
-  };
-  // Nav from within a detail tab must close the overlay first, else the sidebar
-  // click would only change the (hidden) TopBar title and the overlay would stay.
-  const navigate = (v) => {
-    if (detailTicker) clearDetail();
-    setView(v);
-  };
-  // The failed-source strip is the "something's wrong" signal; the Server page
-  // is the "what and why". Admins get the diagnostics, everyone else still gets
-  // the Info page's plain-language source directory.
+
+  // The address bar is the single source of truth for both the current view and
+  // the any-ticker detail page (/stock/TICKER), so every view is deep-linkable
+  // and survives a reload.
+  const route = useRoute();
+  const detailTicker = route.kind === "stock" ? route.ticker : null;
+  // While a ticker is open the detail page owns the whole screen — sidebar,
+  // top bar, tours and the VIEWS switch are all suppressed below — so `view`
+  // is unused in that state and needs no "remember where I came from" state.
+  // Going back is history.back(), which restores the previous URL anyway.
+  const view = route.kind === "view" ? route.view : DEFAULT_VIEW;
+
+  // A path we don't recognise renders the default view, so make the URL agree.
+  useEffect(() => {
+    if (route.kind === "view" && !route.known) {
+      navigateTo({ kind: "view", view: DEFAULT_VIEW }, { replace: true });
+    }
+  }, [route]);
+
+  const navigate = useCallback((v) => navigateTo({ kind: "view", view: v }), []);
+
+  // Open the Info page scrolled to its data-sources section (from the failed-
+  // source strip). The panel mounts on navigate, so scroll on the next frame.
   const openSourceDetails = () => {
     if (auth?.user?.is_admin) {
       navigate("server");
@@ -115,20 +168,12 @@ export default function App({ auth }) {
   // Guided tour: which view's tour is currently running (null = none).
   const [tourView, setTourView] = useState(null);
 
-  useEffect(() => {
-    const onHash = () => setDetailTicker(parseStockHash());
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
-  }, []);
-
-  // Back control for the standalone tab: try to close it if it was script-opened
-  // (no-op for noopener tabs), otherwise clear the hash and land on the default
-  // dashboard view rather than whatever stale `view` was last selected.
-  const closeDetail = () => {
-    window.close();
-    clearDetail();
-    setView("sentiment");
-  };
+  // Back out of the detail page. history.back() keeps the browser's own notion
+  // of "back" intact; goBack() falls back to the dashboard when this tab was
+  // opened straight onto a ticker and has nothing to return to.
+  // (The old code called window.close() first, which never worked: openTickerTab
+  // passes "noopener", so the tab has a null opener and the browser refuses.)
+  const closeDetail = useCallback(() => goBack(), []);
 
   // Cmd/Ctrl+K toggles the command palette (palette mounts only while open).
   useEffect(() => {
@@ -154,15 +199,26 @@ export default function App({ auth }) {
     }
   };
 
+  // Only what App itself renders (chrome, banners, the detail overlay). Panel
+  // data reaches the views through `viewProps`, which spreads `data` wholesale.
   const {
-    contracts, sources, news, trades, watchlist,
-    yieldCurve, econCalendar, signals, fearGreed, vix, aaii, putCall, marginDebt, sentiment, congressTrades,
-    shortInterest, social, analyst, boomScores, fundamentals, seasonality,
-    portfolio, xPosts, suggestions, analyses, alerts, unreadAlerts,
-    loading, busy, error, refresh, addWatch, addHolding, updateHolding,
-    setHoldingCategory, removeHolding,
-    markAlertsRead,
+    sources, watchlist, sentiment, alerts, unreadAlerts,
+    loading, busy, error, refresh, addWatch, markAlertsRead,
   } = data;
+
+  /**
+   * Open the stock an alert is about, in this tab, and mark that one alert
+   * read. The dedup_key rides along in the URL so the analysis page can scroll
+   * to it and highlight it — otherwise you land on a long page with no
+   * indication of which alert you followed.
+   *
+   * Declared after the destructure above: markAlertsRead is a `const` and this
+   * closes over it, so hoisting this earlier is a temporal-dead-zone crash.
+   */
+  const openAlert = useCallback((alert) => {
+    markAlertsRead([alert.dedup_key]).catch(() => {});
+    navigateTo({ kind: "stock", ticker: alert.ticker, alertKey: alert.dedup_key });
+  }, [markAlertsRead]);
 
   // Only auto-run tours for a genuinely first-time account. Captured once at
   // mount (App mounts only when authed, so auth.user is present) so the value
@@ -198,6 +254,15 @@ export default function App({ auth }) {
         : detailTicker)
       : TITLES[view],
   );
+
+  // One props bag shared by every entry in VIEWS.
+  const viewProps = {
+    ...data,
+    quotesByTicker, marketStatus,
+    settings, setSetting, navigate, appSettingsApi,
+    user: auth?.user, theme, setTheme, themes,
+    isCollapsed, toggleCollapsed,
+  };
 
   const commandItems = [
     { id: "sentiment",   label: "Market Sentiment", hint: "the mood",   icon: "gauge",    run: () => navigate("sentiment") },
@@ -241,6 +306,7 @@ export default function App({ auth }) {
             alerts={alerts}
             unreadAlerts={unreadAlerts}
             onMarkAlertsRead={markAlertsRead}
+            onOpenAlert={openAlert}
             onOpenCommand={() => setCmdOpen(true)}
             user={auth?.user}
             onLogout={auth?.logout}
@@ -276,6 +342,8 @@ export default function App({ auth }) {
                   onBack={closeDetail}
                   watchlist={watchlist}
                   onAddWatch={addWatch}
+                  // From /stock/X?alert=<dedup_key>: which alert brought you here.
+                  focusAlertKey={route.kind === "stock" ? route.alertKey : null}
                 />
               </motion.div>
             ) : (
@@ -286,89 +354,7 @@ export default function App({ auth }) {
                 exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, y: 10 }}
                 transition={prefersReducedMotion() ? { duration: 0 } : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
               >
-            {view === "sentiment" && (
-              <MarketSentimentPanel
-                sentiment={sentiment} fearGreed={fearGreed} vix={vix} aaii={aaii}
-                putCall={putCall} marginDebt={marginDebt}
-                shortInterest={shortInterest} social={social}
-                loading={loading} busy={busy} onRefresh={refresh}
-              />
-            )}
-
-            {view === "suggestions" && (
-              <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} onAddWatch={addWatch} />
-            )}
-
-            {view === "portfolio" && (
-              <PortfolioPanel portfolio={portfolio} signals={signals} quotes={quotesByTicker} analyses={analyses} onAdd={addHolding} onEdit={updateHolding} onSetCategory={setHoldingCategory} onRemove={removeHolding} />
-            )}
-
-            {view === "trades" && (
-              <TradesPanel trades={trades} loading={loading} busy={busy} onRefresh={refresh} />
-            )}
-
-            {view === "news" && (
-              <NewsPanel news={news} portfolio={portfolio} xPosts={xPosts} sources={sources} loading={loading} busy={busy} onRefresh={refresh} />
-            )}
-
-            {view === "suggestion-history" && <SuggestionHistoryPanel />}
-            {view === "settings" && (
-              <SettingsPanel settings={settings} setSetting={setSetting} onNavigate={navigate} appSettingsApi={appSettingsApi} user={auth?.user} theme={theme} onSetTheme={setTheme} themes={themes} />
-            )}
-
-            {view === "info" && (
-              <InfoPanel onNavigate={navigate} sources={sources} />
-            )}
-
-            {/* Diagnostics expose the DB path and tracebacks, so the route is
-                admin-only server-side too — this check is just the UI half. */}
-            {view === "server" && (
-              auth?.user?.is_admin
-                ? <ServerPanel />
-                : <p className={styles.error}>The server page is admin-only.</p>
-            )}
-
-            {view === "x" && (
-              <XPostsPanel data={xPosts} sources={sources} loading={loading} busy={busy} onRefresh={refresh} />
-            )}
-
-            {/* --- Retained but no longer in navigation (reachable only via code) --- */}
-            {view === "overview" && (
-              <>
-                <BoomScorePanel data={boomScores} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("boom-score")} collapsible collapsed={isCollapsed("boom-score")} onToggleCollapse={() => toggleCollapsed("boom-score")} />
-                <SuggestionsPanel data={suggestions} loading={loading} busy={busy} onRefresh={refresh} onAddWatch={addWatch} compact onViewAll={() => setView("suggestions")} collapsible collapsed={isCollapsed("suggestions")} onToggleCollapse={() => toggleCollapsed("suggestions")} />
-                <StatGrid contracts={contracts} sources={sources} loading={loading} />
-                <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("contracts")} collapsible collapsed={isCollapsed("contracts")} onToggleCollapse={() => toggleCollapsed("contracts")} />
-                <div className={styles.twoCol}>
-                  <TechnicalPanel data={signals} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("signals")} collapsible collapsed={isCollapsed("signals")} onToggleCollapse={() => toggleCollapsed("signals")} />
-                  <SeasonalityPanel data={seasonality} settings={settings} quotes={quotesByTicker} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("seasonality")} collapsible collapsed={isCollapsed("seasonality")} onToggleCollapse={() => toggleCollapsed("seasonality")} />
-                </div>
-                <div className={styles.twoCol}>
-                  <YieldCurvePanel data={yieldCurve} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("yield-curve")} collapsible collapsed={isCollapsed("yield-curve")} onToggleCollapse={() => toggleCollapsed("yield-curve")} />
-                  <FearGreedPanel data={fearGreed} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("fear-greed")} collapsible collapsed={isCollapsed("fear-greed")} onToggleCollapse={() => toggleCollapsed("fear-greed")} />
-                </div>
-                <CongressPanel data={congressTrades} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("congress")} collapsible collapsed={isCollapsed("congress")} onToggleCollapse={() => toggleCollapsed("congress")} />
-                <div className={styles.twoCol}>
-                  <ShortPanel data={shortInterest} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("short")} collapsible collapsed={isCollapsed("short")} onToggleCollapse={() => toggleCollapsed("short")} />
-                  <SocialPanel data={social} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("social")} collapsible collapsed={isCollapsed("social")} onToggleCollapse={() => toggleCollapsed("social")} />
-                </div>
-                <AnalystPanel data={analyst} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("analyst")} collapsible collapsed={isCollapsed("analyst")} onToggleCollapse={() => toggleCollapsed("analyst")} />
-                <FundamentalsPanel data={fundamentals} loading={loading} busy={busy} onRefresh={refresh} compact onViewAll={() => setView("fundamentals")} collapsible collapsed={isCollapsed("fundamentals")} onToggleCollapse={() => toggleCollapsed("fundamentals")} />
-              </>
-            )}
-            {view === "contracts" && <ContractsPanel contracts={contracts} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "watchlist" && <WatchlistPanel quotes={quotesByTicker} marketStatus={marketStatus} />}
-            {view === "yield-curve" && <YieldCurvePanel data={yieldCurve} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "econ-calendar" && <EconCalendarPanel data={econCalendar} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "signals" && <TechnicalPanel data={signals} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "fear-greed" && <FearGreedPanel data={fearGreed} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "congress" && <CongressPanel data={congressTrades} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "boom-score" && <BoomScorePanel data={boomScores} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "short" && <ShortPanel data={shortInterest} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "social" && <SocialPanel data={social} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "analyst" && <AnalystPanel data={analyst} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "fundamentals" && <FundamentalsPanel data={fundamentals} loading={loading} busy={busy} onRefresh={refresh} />}
-            {view === "seasonality" && <SeasonalityPanel data={seasonality} settings={settings} quotes={quotesByTicker} loading={loading} busy={busy} onRefresh={refresh} />}
+            {(VIEWS[view] || VIEWS[DEFAULT_VIEW])(viewProps)}
               </motion.div>
             )}
             </AnimatePresence>
