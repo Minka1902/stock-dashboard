@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getContracts,
   getSources,
@@ -44,38 +44,68 @@ const EXTERNAL_SOURCES = [
 ];
 
 /**
+ * Every endpoint the dashboard loads, declared once.
+ *
+ * This replaced two hand-maintained parallel arrays (a Promise.allSettled list
+ * and a positional array of setters). Adding an endpoint meant editing both in
+ * lockstep, and an insertion in the wrong place silently routed one panel's
+ * data into another. Here a new endpoint is a single object.
+ *
+ * `apply` is for payloads that don't map 1:1 onto their key.
+ */
+const ENDPOINTS = [
+  { key: "contracts", fetch: getContracts, initial: [] },
+  // The connectivity probe for the "backend unreachable" banner.
+  { key: "sources", fetch: getSources, initial: [], probe: true },
+  { key: "news", fetch: getNews, initial: [] },
+  { key: "trades", fetch: getTrades, initial: [] },
+  { key: "watchlist", fetch: getWatchlist, initial: [] },
+  { key: "yieldCurve", fetch: getYieldCurve, initial: [] },
+  { key: "signals", fetch: getSignals, initial: [] },
+  { key: "fearGreed", fetch: getFearGreed, initial: [] },
+  { key: "vix", fetch: getVix, initial: [] },
+  { key: "aaii", fetch: getAaii, initial: [] },
+  { key: "putCall", fetch: getPutCall, initial: [] },
+  { key: "marginDebt", fetch: getMarginDebt, initial: [] },
+  { key: "sentiment", fetch: getSentiment, initial: null },
+  { key: "congressTrades", fetch: getCongressTrades, initial: [] },
+  { key: "shortInterest", fetch: getShortInterest, initial: [] },
+  { key: "social", fetch: getSocial, initial: [] },
+  { key: "analyst", fetch: getAnalyst, initial: [] },
+  { key: "boomScores", fetch: getBoomScores, initial: [] },
+  { key: "fundamentals", fetch: getFundamentals, initial: [] },
+  { key: "seasonality", fetch: getSeasonality, initial: [] },
+  { key: "portfolio", fetch: getPortfolio, initial: [] },
+  { key: "suggestions", fetch: getSuggestions, initial: null },
+  {
+    key: "alerts",
+    fetch: getAlerts,
+    initial: [],
+    // Payload is { alerts, unread }, so it feeds two slots.
+    apply: (value) => ({ alerts: value.alerts, unreadAlerts: value.unread }),
+    extraInitial: { unreadAlerts: 0 },
+  },
+  { key: "analyses", fetch: getAnalyses, initial: [] },
+  { key: "econCalendar", fetch: getEconCalendar, initial: [] },
+  { key: "xPosts", fetch: getXPosts, initial: [] },
+];
+
+const INITIAL_DATA = ENDPOINTS.reduce(
+  (acc, e) => ({ ...acc, [e.key]: e.initial, ...(e.extraInitial || {}) }),
+  {},
+);
+
+/** How long to wait for queued server-side refreshes before giving up and reloading. */
+const REFRESH_WAIT_MS = 90000;
+const REFRESH_POLL_MS = 1500;
+
+/**
  * Owns all dashboard data: contracts, sources, news, insider trades, watchlist.
  * Loads in parallel, supports manual refresh of all sources, auto-refreshes
  * every 3 minutes, and exposes watchlist add/remove.
  */
 export function useDashboardData() {
-  const [contracts, setContracts] = useState([]);
-  const [sources, setSources] = useState([]);
-  const [news, setNews] = useState([]);
-  const [trades, setTrades] = useState([]);
-  const [watchlist, setWatchlist] = useState([]);
-  const [yieldCurve, setYieldCurve] = useState([]);
-  const [econCalendar, setEconCalendar] = useState([]);
-  const [signals, setSignals] = useState([]);
-  const [fearGreed, setFearGreed] = useState([]);
-  const [vix, setVix] = useState([]);
-  const [aaii, setAaii] = useState([]);
-  const [putCall, setPutCall] = useState([]);
-  const [marginDebt, setMarginDebt] = useState([]);
-  const [sentiment, setSentiment] = useState(null);
-  const [congressTrades, setCongressTrades] = useState([]);
-  const [shortInterest, setShortInterest] = useState([]);
-  const [social, setSocial] = useState([]);
-  const [analyst, setAnalyst] = useState([]);
-  const [boomScores, setBoomScores] = useState([]);
-  const [fundamentals, setFundamentals] = useState([]);
-  const [seasonality, setSeasonality] = useState([]);
-  const [portfolio, setPortfolio] = useState([]);
-  const [xPosts, setXPosts] = useState([]);
-  const [suggestions, setSuggestions] = useState(null);
-  const [analyses, setAnalyses] = useState([]);
-  const [alerts, setAlerts] = useState([]);
-  const [unreadAlerts, setUnreadAlerts] = useState(0);
+  const [data, setData] = useState(INITIAL_DATA);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -84,59 +114,27 @@ export function useDashboardData() {
     // Load every source independently: one failing endpoint (e.g. an upstream
     // 429/500) must not blank the whole dashboard. Each result is applied on
     // its own; failures leave that panel's previous state untouched.
-    const results = await Promise.allSettled([
-      getContracts(),      // 0
-      getSources(),        // 1 — connectivity signal for the error banner
-      getNews(),           // 2
-      getTrades(),         // 3
-      getWatchlist(),      // 4
-      getYieldCurve(),     // 5
-      getSignals(),        // 6
-      getFearGreed(),      // 7
-      getVix(),            // 8
-      getAaii(),           // 9
-      getPutCall(),        // 10
-      getMarginDebt(),     // 11
-      getSentiment(),      // 12
-      getCongressTrades(), // 13
-      getShortInterest(),  // 14
-      getSocial(),         // 15
-      getAnalyst(),        // 16
-      getBoomScores(),     // 17
-      getFundamentals(),   // 18
-      getSeasonality(),    // 19
-      getPortfolio(),      // 20
-      getSuggestions(),    // 21
-      getAlerts(),         // 22 — special shape { alerts, unread }
-      getAnalyses(),       // 23
-      getEconCalendar(),   // 24
-      getXPosts(),         // 25
-    ]);
+    const results = await Promise.allSettled(ENDPOINTS.map((e) => e.fetch()));
 
-    const setters = [
-      setContracts, setSources, setNews, setTrades, setWatchlist,
-      setYieldCurve, setSignals, setFearGreed, setVix, setAaii,
-      setPutCall, setMarginDebt, setSentiment, setCongressTrades,
-      setShortInterest, setSocial, setAnalyst, setBoomScores,
-      setFundamentals, setSeasonality, setPortfolio, setSuggestions,
-      null, // alerts handled below
-      setAnalyses,
-      setEconCalendar,
-      setXPosts,
-    ];
+    const patch = {};
     results.forEach((r, i) => {
-      if (r.status === "fulfilled" && setters[i]) setters[i](r.value);
+      if (r.status !== "fulfilled") return;
+      const endpoint = ENDPOINTS[i];
+      Object.assign(
+        patch,
+        endpoint.apply ? endpoint.apply(r.value) : { [endpoint.key]: r.value },
+      );
     });
-
-    const alerts = results[22];
-    if (alerts.status === "fulfilled") {
-      setAlerts(alerts.value.alerts);
-      setUnreadAlerts(alerts.value.unread);
-    }
+    if (Object.keys(patch).length) setData((prev) => ({ ...prev, ...patch }));
 
     // Only banner a genuine outage: the sources fetch is the connectivity probe.
-    const sources = results[1];
-    setError(sources.status === "fulfilled" ? null : (sources.reason?.message || "backend unreachable"));
+    const probeIndex = ENDPOINTS.findIndex((e) => e.probe);
+    const probe = results[probeIndex];
+    setError(
+      probe.status === "fulfilled"
+        ? null
+        : probe.reason?.message || "backend unreachable",
+    );
     setLoading(false);
   }, []);
 
@@ -148,21 +146,48 @@ export function useDashboardData() {
     return () => clearInterval(id);
   }, [load]);
 
-  // Refresh every external source, then reload. Partial failures are fine:
-  // each source records its own status server-side. Bounded concurrency: firing
-  // all ~18 refreshes at once saturates the single backend worker (each does
-  // blocking network I/O), so run them a few at a time.
-  const refresh = useCallback(async () => {
+  /**
+   * Refresh named sources and wait for the server to actually finish them.
+   *
+   * POST /api/refresh now returns 202 and does the work on a background
+   * executor, so the response no longer means "done". We snapshot each source's
+   * last_refreshed_at, then poll /api/sources until every requested source has
+   * moved on (or the deadline passes) before reloading the panels.
+   */
+  const refreshOne = useCallback(async (names, { force = false } = {}) => {
+    const wanted = Array.isArray(names) ? names : [names];
     setBusy(true);
     try {
-      const queue = [...EXTERNAL_SOURCES];
+      let before = {};
+      try {
+        before = Object.fromEntries(
+          (await getSources()).map((s) => [s.source, s.last_refreshed_at]),
+        );
+      } catch { /* first load may not have statuses yet; treat as all-stale */ }
+
+      // Bounded concurrency: the backend runs these on a single worker anyway,
+      // and the rate limiter counts every call.
+      const queue = [...wanted];
       const worker = async () => {
         while (queue.length) {
           const s = queue.shift();
-          try { await refreshSource(s); } catch { /* status recorded server-side */ }
+          try { await refreshSource(s, { force }); } catch { /* status recorded server-side */ }
         }
       };
       await Promise.all(Array.from({ length: 4 }, worker));
+
+      const deadline = Date.now() + REFRESH_WAIT_MS;
+      let pending = new Set(wanted);
+      while (pending.size && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, REFRESH_POLL_MS));
+        let statuses;
+        try { statuses = await getSources(); } catch { break; }
+        for (const s of statuses) {
+          if (pending.has(s.source) && s.last_refreshed_at !== before[s.source]) {
+            pending.delete(s.source);
+          }
+        }
+      }
       await load();
     } catch (e) {
       setError(e.message);
@@ -171,76 +196,48 @@ export function useDashboardData() {
     }
   }, [load]);
 
+  const refresh = useCallback(() => refreshOne(EXTERNAL_SOURCES), [refreshOne]);
+
+  const patch = useCallback((next) => setData((prev) => ({ ...prev, ...next })), []);
+
   const addWatch = useCallback(async (ticker, note) => {
-    setWatchlist(await apiAddWatch(ticker, note));
-  }, []);
+    patch({ watchlist: await apiAddWatch(ticker, note) });
+  }, [patch]);
 
   const removeWatch = useCallback(async (ticker) => {
-    setWatchlist(await apiRemoveWatch(ticker));
-  }, []);
+    patch({ watchlist: await apiRemoveWatch(ticker) });
+  }, [patch]);
 
   const addHolding = useCallback(async (ticker, shares, avgCost) => {
     const list = await apiAddHolding(ticker, shares, avgCost);
-    setPortfolio(list);
+    patch({ portfolio: list });
     return list;
-  }, []);
+  }, [patch]);
 
   const updateHolding = useCallback(async (ticker, shares, avgCost) => {
-    setPortfolio(await apiUpdateHolding(ticker, shares, avgCost));
-  }, []);
+    patch({ portfolio: await apiUpdateHolding(ticker, shares, avgCost) });
+  }, [patch]);
 
   const setHoldingCategory = useCallback(async (ticker, category) => {
-    setPortfolio(await apiSetHoldingCategory(ticker, category));
-  }, []);
+    patch({ portfolio: await apiSetHoldingCategory(ticker, category) });
+  }, [patch]);
 
   const removeHolding = useCallback(async (ticker) => {
-    setPortfolio(await apiRemoveHolding(ticker));
-  }, []);
+    patch({ portfolio: await apiRemoveHolding(ticker) });
+  }, [patch]);
 
-  /**
-   * Mark alerts read. No argument marks everything; an array of dedup_keys
-   * marks exactly those. The backend already accepted per-key marking — only
-   * the "all" path was ever wired up here.
-   */
-  const markAlertsRead = useCallback(async (keys) => {
-    const payload = Array.isArray(keys) && keys.length ? { keys } : { all: true };
-    const { alerts: a, unread } = await apiMarkAlertsRead(payload);
-    setAlerts(a);
-    setUnreadAlerts(unread);
-  }, []);
+  const markAlertsRead = useCallback(async () => {
+    const { alerts: a, unread } = await apiMarkAlertsRead({ all: true });
+    patch({ alerts: a, unreadAlerts: unread });
+  }, [patch]);
 
-  return {
-    contracts,
-    sources,
-    news,
-    trades,
-    watchlist,
-    yieldCurve,
-    econCalendar,
-    signals,
-    fearGreed,
-    vix,
-    aaii,
-    putCall,
-    marginDebt,
-    sentiment,
-    congressTrades,
-    shortInterest,
-    social,
-    analyst,
-    boomScores,
-    fundamentals,
-    seasonality,
-    portfolio,
-    xPosts,
-    suggestions,
-    analyses,
-    alerts,
-    unreadAlerts,
+  return useMemo(() => ({
+    ...data,
     loading,
     busy,
     error,
     refresh,
+    refreshOne,
     addWatch,
     removeWatch,
     addHolding,
@@ -248,5 +245,8 @@ export function useDashboardData() {
     setHoldingCategory,
     removeHolding,
     markAlertsRead,
-  };
+  }), [
+    data, loading, busy, error, refresh, refreshOne, addWatch, removeWatch,
+    addHolding, updateHolding, setHoldingCategory, removeHolding, markAlertsRead,
+  ]);
 }
