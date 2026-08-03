@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { useCallback, useState } from "react";
+import { AnimatePresence, Reorder, useDragControls } from "motion/react";
 import Icon from "./Icon";
 import ExtHoursBadge from "./ExtHoursBadge";
 import MenuButton, { MenuDivider, MenuItem, MenuLabel } from "./MenuButton";
@@ -7,15 +7,78 @@ import Sparkline from "./Sparkline";
 import SparkRange from "./SparkRange";
 import TickerLabel from "./TickerLabel";
 import { useWatchlists } from "../hooks/useWatchlists";
+import { useLocalOrder } from "../hooks/useLocalOrder";
 import { useSparklines } from "../hooks/useSparklines";
 import { openTickerTab } from "../lib/nav";
-import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
+import { prefersReducedMotion, staggerItem } from "../lib/motionConfig";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./WatchlistPanel.module.css";
 
 function changeTone(pct) {
   if (pct == null) return "flat";
   return pct >= 0 ? "pos" : "neg";
+}
+
+const itemId = (w) => w.ticker;
+
+/**
+ * One reorderable row. useDragControls has to live in a component per row —
+ * hooks can't be called inside the map in the parent.
+ */
+function WatchRow({ item, position, total, onMove, children }) {
+  const controls = useDragControls();
+  const [dragging, setDragging] = useState(false);
+  return (
+    <Reorder.Item
+      value={item}
+      className={styles.item}
+      data-dragging={dragging ? "true" : undefined}
+      dragListener={false}
+      dragControls={controls}
+      onDragStart={() => setDragging(true)}
+      onDragEnd={() => setDragging(false)}
+      variants={staggerItem}
+      exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, x: -12 }}
+      layout={!prefersReducedMotion()}
+    >
+      <DragHandle
+        controls={controls}
+        ticker={item.ticker}
+        onMove={onMove}
+        position={position}
+        total={total}
+      />
+      {children}
+    </Reorder.Item>
+  );
+}
+
+/**
+ * A drag handle that also works from the keyboard.
+ *
+ * Reorder.Item is pointer-only, so on its own it would make reordering
+ * mouse-exclusive. dragListener={false} + dragControls confines dragging to
+ * this handle, which also keeps the row's inline note editor and kebab menu
+ * clickable instead of swallowing every press as a drag.
+ */
+function DragHandle({ controls, ticker, onMove, position, total }) {
+  return (
+    <button
+      type="button"
+      className={styles.handle}
+      aria-label={`Reorder ${ticker}. Position ${position} of ${total}. Use arrow up and down to move.`}
+      onPointerDown={(e) => {
+        e.preventDefault(); // don't start a text selection while dragging
+        controls.start(e);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowUp") { e.preventDefault(); onMove(-1); }
+        if (e.key === "ArrowDown") { e.preventDefault(); onMove(1); }
+      }}
+    >
+      <Icon name="grip" size={14} />
+    </button>
+  );
 }
 
 export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
@@ -29,7 +92,21 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
   const [range, setRange] = useState("1m");
-  const { series: sparks } = useSparklines(items.map((w) => w.ticker), range);
+
+  // Manual ordering, remembered locally per list. Server-side ordering would
+  // need a schema column; local is enough while this is a single-device
+  // preference, and it keeps the watchlist API untouched.
+  const { ordered, isCustom, setOrderedItems, moveBy, reset: resetOrder } = useLocalOrder(
+    activeId == null ? null : `watchlistOrder:v1:${activeId}`, items, itemId);
+  const { series: sparks } = useSparklines(ordered.map((w) => w.ticker), range);
+
+  // Announce keyboard moves — a visual reshuffle tells a screen reader nothing.
+  const [liveMessage, setLiveMessage] = useState("");
+  const handleMove = useCallback((ticker, delta) => {
+    const next = moveBy(ticker, delta);
+    if (!next) return;
+    setLiveMessage(`${ticker} moved to position ${next.indexOf(ticker) + 1} of ${next.length}`);
+  }, [moveBy]);
 
   // List tab editing state.
   const [creating, setCreating] = useState(false);
@@ -88,7 +165,19 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
           <h2 className={styles.title}>Watchlists</h2>
           <p className={styles.subtitle}>Group the tickers you want to keep an eye on</p>
         </div>
-        {items.length > 0 && <SparkRange value={range} onChange={setRange} />}
+        <span className={styles.headerTools}>
+          {isCustom && (
+            <button
+              type="button"
+              className={styles.resetOrder}
+              onClick={() => { resetOrder(); setLiveMessage("Order reset to newest first"); }}
+              title="Forget your manual order and go back to newest-added first"
+            >
+              <Icon name="refresh" size={12} /> Reset order
+            </button>
+          )}
+          {items.length > 0 && <SparkRange value={range} onChange={setRange} />}
+        </span>
       </header>
 
       {/* list selector */}
@@ -211,22 +300,23 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
           <p className={styles.emptyText}>Add a ticker above to start tracking it.</p>
         </div>
       ) : (
-        <motion.ul
+        <Reorder.Group
+          as="ul"
+          axis="y"
           className={styles.list}
-          variants={staggerContainer}
-          initial={prefersReducedMotion() ? false : "hidden"}
-          animate="visible"
+          values={ordered}
+          onReorder={setOrderedItems}
         >
           <AnimatePresence initial={false}>
-          {items.map((w) => {
+          {ordered.map((w, index) => {
             const q = quotes[w.ticker];
             return (
-            <motion.li
+            <WatchRow
               key={w.ticker}
-              className={styles.item}
-              variants={staggerItem}
-              exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, x: -12 }}
-              layout={!prefersReducedMotion()}
+              item={w}
+              position={index + 1}
+              total={ordered.length}
+              onMove={(delta) => handleMove(w.ticker, delta)}
             >
               <button
                 className={styles.symbolBtn}
@@ -310,18 +400,34 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
                     )}
 
                     <MenuDivider />
+                    <MenuLabel>Reorder</MenuLabel>
+                    <MenuItem
+                      disabled={index === 0}
+                      onSelect={() => { close(); handleMove(w.ticker, -1); }}
+                    >
+                      <Icon name="arrowUp" size={14} /> Move up
+                    </MenuItem>
+                    <MenuItem
+                      disabled={index === ordered.length - 1}
+                      onSelect={() => { close(); handleMove(w.ticker, 1); }}
+                    >
+                      <Icon name="arrowDown" size={14} /> Move down
+                    </MenuItem>
+
+                    <MenuDivider />
                     <MenuItem tone="danger" onSelect={() => { close(); removeTicker(w.ticker); }}>
                       <Icon name="trash" size={14} /> Remove from list
                     </MenuItem>
                   </>
                 )}
               </MenuButton>
-            </motion.li>
+            </WatchRow>
             );
           })}
           </AnimatePresence>
-        </motion.ul>
+        </Reorder.Group>
       )}
+      <p aria-live="polite" className={styles.srOnly}>{liveMessage}</p>
     </section>
   );
 }

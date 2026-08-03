@@ -218,9 +218,9 @@ def test_x_posts_registered_with_hourly_interval():
 
     sources = main_module.build_sources(main_module.conn)
     assert "x_posts" in sources
-    _fetch, store_fn, min_interval = sources["x_posts"]
-    assert min_interval == 3600
-    assert store_fn is db.upsert_x_posts
+    spec = sources["x_posts"]
+    assert spec.min_interval == 3600
+    assert spec.store is db.upsert_x_posts
 
 
 def test_x_posts_refresh_skipped_within_the_hour(conn):

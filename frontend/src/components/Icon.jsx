@@ -124,13 +124,34 @@ const PATHS = {
       <path d="M20 15h-5v5M8 9h8M8 13h4" />
     </>
   ),
+  // Six-dot drag grip — the conventional "pick this row up" affordance.
+  grip: (
+    <>
+      <circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" />
+      <circle cx="9" cy="12" r="1.4" /><circle cx="15" cy="12" r="1.4" />
+      <circle cx="9" cy="18" r="1.4" /><circle cx="15" cy="18" r="1.4" />
+    </>
+  ),
+  arrowUp: (
+    <>
+      <path d="M12 19V5" />
+      <path d="M6 11l6-6 6 6" />
+    </>
+  ),
+  arrowDown: (
+    <>
+      <path d="M12 5v14" />
+      <path d="M6 13l6 6 6-6" />
+    </>
+  ),
 };
 
 export default function Icon({ name, size = 18, strokeWidth = 1.8, ...rest }) {
   const path = PATHS[name];
   if (!path) return null;
   // 'spark' and 'star' read better filled; everything else is a clean stroke.
-  const filled = name === "spark" || name === "x";
+  // 'grip' is dots — stroked circles would render as hollow rings.
+  const filled = name === "spark" || name === "x" || name === "grip";
   return (
     <svg
       width={size}

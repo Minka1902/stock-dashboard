@@ -1,3 +1,6 @@
+import httpx
+import pytest
+
 from app.models import MarginDebtPoint
 from app.sources import margin_debt
 
@@ -139,3 +142,113 @@ def test_parse_workbook_roundtrip():
     assert [(p.month, p.debit_balances) for p in points] == [
         ("2026-04", 1_020_000.0), ("2026-05", 1_050_123.0),
     ]
+
+
+# ---- tier fallback wiring ----------------------------------------------------
+# FINRA currently answers 401 on the API and 403 on the statistics page. These
+# lock down that the workbook tier is still *reached* and still *reported* in
+# that state — it used to be skipped silently, so the status string claimed only
+# two tiers had been tried.
+
+class _Resp:
+    def __init__(self, text="", content=b"", status=200):
+        self.text = text
+        self.content = content
+        self._status = status
+
+    def raise_for_status(self):
+        if self._status >= 400:
+            raise httpx.HTTPStatusError(
+                f"Client error '{self._status}'", request=None, response=None)
+
+    def json(self):
+        return {}
+
+
+class _BlockedClient:
+    """API 401 + page 403, i.e. exactly what FINRA returns today."""
+
+    def __init__(self, workbook: bytes | None = None):
+        self.workbook = workbook
+        self.requested = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def get(self, url, **kwargs):
+        self.requested.append(url)
+        if "api.finra.org" in url:
+            return _Resp(status=401)
+        if url.endswith((".xlsx", ".xls")):
+            if self.workbook is None:
+                return _Resp(status=404)
+            return _Resp(content=self.workbook)
+        return _Resp(status=403)  # the statistics page
+
+
+def _client_factory(client):
+    def _factory(*a, **kw):
+        return client
+    return _factory
+
+
+def test_blocked_page_still_reports_the_workbook_tier(monkeypatch):
+    """The old code appended nothing for the workbook when the page failed."""
+    client = _BlockedClient()
+    monkeypatch.setattr(margin_debt.httpx, "Client", _client_factory(client))
+    monkeypatch.setattr(margin_debt.config, "MARGIN_DEBT_WORKBOOK_URL", "")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        margin_debt.fetch()
+
+    message = str(excinfo.value)
+    assert "api" in message
+    assert "page" in message
+    assert "workbook" in message, "the workbook tier must not be silently omitted"
+
+
+def test_configured_workbook_url_is_used_when_the_page_is_blocked(monkeypatch):
+    """The escape hatch: a known workbook URL keeps tier 3 usable at all."""
+    import io
+    from datetime import datetime as dt
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Month", "Debit Balances"])
+    ws.append([dt(2026, 6, 1), 1_060_000])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    client = _BlockedClient(workbook=buf.getvalue())
+    monkeypatch.setattr(margin_debt.httpx, "Client", _client_factory(client))
+    monkeypatch.setattr(
+        margin_debt.config, "MARGIN_DEBT_WORKBOOK_URL",
+        "https://www.finra.org/sites/default/files/margin-statistics.xlsx")
+
+    points = margin_debt.fetch()
+    assert [(p.month, p.debit_balances) for p in points] == [("2026-06", 1_060_000.0)]
+    assert points.note == "fallback: workbook"
+    assert any(u.endswith(".xlsx") for u in client.requested)
+
+
+def test_margin_debt_cadence_is_fortnightly_with_a_short_retry():
+    """Cadence is about when we ASK; the retry gate is a separate clock, so one
+    401 can't freeze the source for the full fortnight."""
+    from app import config as app_config
+
+    assert app_config.MARGIN_DEBT_MIN_INTERVAL_SECONDS == 14 * 86400
+    assert app_config.MARGIN_DEBT_RETRY_INTERVAL_SECONDS < 86400
+
+
+def test_margin_debt_and_gdelt_are_not_forced_by_the_daily_run():
+    """force_on_daily=True would bypass both gates every weekday."""
+    from app import main as main_module
+
+    sources = main_module.build_sources(main_module.conn)
+    for name in ("margin_debt", "gdelt"):
+        assert sources[name].force_on_daily is False, name
+        assert sources[name].retry_interval is not None, name

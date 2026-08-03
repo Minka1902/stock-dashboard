@@ -135,6 +135,14 @@ function Indicator({ caption, threshold, signal, value, sub, note, stale, childr
 
 // Honest data-age badge for slow-cadence sources: shows the period the latest
 // datum covers and flags it when it's older than the expected release rhythm.
+/** Whole months between a YYYY-MM key and this month. null if unparseable. */
+function monthsSince(monthKey) {
+  const m = /^(\d{4})-(\d{2})$/.exec(monthKey || "");
+  if (!m) return null;
+  const now = new Date();
+  return (now.getFullYear() - Number(m[1])) * 12 + (now.getMonth() + 1 - Number(m[2]));
+}
+
 function staleness(latestIso, { warnDays, label }) {
   if (!latestIso) return null;
   const then = new Date(latestIso);
@@ -180,7 +188,15 @@ export default function MarketSentimentPanel({
   const mdLatest = marginDebt.reduce((m, p) => (p.month > m ? p.month : m), "");
   const aaiiStale = staleness(aaiiLatest, { warnDays: 10, label: "week ending" });
   const mdStale = staleness(mdLatest ? `${mdLatest}-01` : null, { warnDays: 75, label: "data for" });
-  if (mdStale) mdStale.text = `data for ${mdLatest} (monthly)${mdStale.warn ? " · stale" : ""}`;
+  if (mdStale) {
+    // Say how far behind, not just "stale". FINRA has been returning 401/403,
+    // so the number that matters is how old the newest month we hold actually
+    // is — "data for 2026-05" alone reads as current if you don't check a
+    // calendar.
+    const months = monthsSince(mdLatest);
+    const age = months == null ? "" : months <= 1 ? " · current" : ` · ${months} months behind`;
+    mdStale.text = `data for ${mdLatest} (monthly)${age}`;
+  }
 
   // Composite ledger: the five indicators + their signals.
   const ledger = [

@@ -91,12 +91,36 @@
 
 .item {
   display: flex;
+  align-items: flex-start;
   gap: var(--s-3);
   padding: var(--s-3);
   border-radius: var(--r-sm);
 }
 .item[data-unread="yes"] {
   background: var(--accent-weak);
+}
+.item:hover { background: var(--surface-hover); }
+.item[data-unread="yes"]:hover { background: var(--accent-weak); }
+
+/* Per-alert "mark read", so clearing one no longer means clearing all. */
+.markOne {
+  flex: none;
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: var(--r-xs);
+  padding: 3px;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+.item:hover .markOne,
+.markOne:focus-visible { opacity: 1; }
+.markOne:hover { color: var(--positive); border-color: var(--positive-weak); }
+.markOne:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (hover: none) {
+  .markOne { opacity: 1; }
 }
 
 .dot {
@@ -111,7 +135,17 @@
 .dot[data-sev="medium"] { background: var(--accent); }
 .dot[data-sev="low"] { background: var(--info); }
 
-.body { min-width: 0; }
+/* The row body is the link to the stock's analysis page. */
+.body {
+  min-width: 0;
+  flex: 1;
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.body:hover .title { color: var(--accent); }
+.body:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs); }
 .line1 {
   display: flex;
   align-items: baseline;
