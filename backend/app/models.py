@@ -45,10 +45,44 @@ class WatchItem(BaseModel):
 
 class SourceStatus(BaseModel):
     source: str
-    last_refreshed_at: str | None  # ISO timestamp, None if never run
+    last_refreshed_at: str | None  # ISO timestamp of the last ATTEMPT, None if never run
     status: str                    # "ok" or "error: <msg>"
     record_count: int
     error_detail: str | None = None  # full error + traceback for the Info page
+    # Last attempt that actually succeeded. Distinct from last_refreshed_at on
+    # purpose: a throttle keyed off "last attempt" freezes a source for its whole
+    # min_interval after a single failure, which is how margin_debt went quiet.
+    last_success_at: str | None = None
+    last_duration_ms: int | None = None
+
+
+class SourceRun(BaseModel):
+    """One recorded execution of a source — including skips.
+
+    Skips are recorded too. A source that is silently throttled looks identical
+    to a healthy one in `source_status`; the run log is what makes "it hasn't
+    actually fetched in two weeks" visible.
+    """
+
+    id: int
+    source: str
+    started_at: str
+    finished_at: str
+    outcome: str        # "ok" | "error" | "skipped"
+    duration_ms: int
+    record_count: int
+    detail: str | None = None
+
+
+class JobRun(BaseModel):
+    """A scheduler job lifecycle event (executed / error / missed / max_instances)."""
+
+    id: int
+    job_id: str
+    event: str
+    at: str
+    duration_ms: int | None = None
+    detail: str | None = None
 
 
 class YieldPoint(BaseModel):
@@ -407,6 +441,14 @@ class OHLCSeries(BaseModel):
     fetched_at: str
 
 
+class PatternCriterion(BaseModel):
+    """One requirement of a pattern, and whether price has met it yet."""
+
+    name: str              # e.g. "price below neckline"
+    met: bool
+    detail: str = ""       # the actual vs required reading, in words
+
+
 class PatternHit(BaseModel):
     name: str              # machine key, e.g. "cup_handle"
     label: str             # human, e.g. "Cup & Handle"
@@ -415,6 +457,11 @@ class PatternHit(BaseModel):
     pivots: list[dict]     # [{date, price, role}] — the points that define it
     measured_move: float | None = None  # classic projected target price, if any
     note: str = ""
+    # "confirmed" = every requirement met, and the only kind that feeds
+    # conviction. "forming" = the shape is on the chart but the trigger hasn't
+    # happened yet — what the stock is heading towards, not what it has done.
+    status: str = "confirmed"
+    criteria: list[PatternCriterion] = []
 
 
 class SRLevel(BaseModel):

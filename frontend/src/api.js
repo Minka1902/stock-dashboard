@@ -50,6 +50,10 @@ const getJSON = (path) => request(path);
 
 export const getContracts = () => getJSON("/api/contracts");
 export const getSources = () => getJSON("/api/sources");
+// Admin-only server introspection (the Server page).
+export const getServerOverview = () => getJSON("/api/server/overview");
+export const getServerSources = () => getJSON("/api/server/sources");
+export const getServerEvents = (limit = 60) => getJSON(`/api/server/events?limit=${limit}`);
 export const getNews = () => getJSON("/api/news");
 export const getTrades = () => getJSON("/api/trades");
 export const getWatchlist = (listId) =>
@@ -141,8 +145,15 @@ export const removeHolding = (ticker) =>
   request(`/api/portfolio/${encodeURIComponent(ticker)}`, { method: "DELETE" });
 export const sendTestSuggestions = () =>
   request("/api/suggestions/send-test", { method: "POST" });
-export const refreshSource = (name) =>
-  request(`/api/refresh/${encodeURIComponent(name)}`, { method: "POST" });
+// Returns 202 { source, queued, status } — the work happens on a background
+// executor server-side, so this resolving does NOT mean the refresh finished.
+// Poll /api/sources (see useDashboardData.refreshOne) to observe completion.
+// `force` bypasses the per-source throttle and is admin-only.
+export const refreshSource = (name, { force = false } = {}) =>
+  request(
+    `/api/refresh/${encodeURIComponent(name)}${force ? "?force=1" : ""}`,
+    { method: "POST" },
+  );
 export const addWatch = (ticker, note, listId) =>
   request("/api/watchlist", { method: "POST", body: { ticker, note, ...(listId != null ? { list_id: listId } : {}) } });
 export const removeWatch = (ticker, listId) =>

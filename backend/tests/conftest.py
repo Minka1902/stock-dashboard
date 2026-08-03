@@ -1,5 +1,14 @@
-import pytest
-from app import db, security
+import os
+import tempfile
+
+# Point file logging at a scratch dir before anything imports app.config, so a
+# test run never writes into the real backend/logs/backend.log that we ask
+# people to read after an incident.
+os.environ.setdefault(
+    "STOCKS_LOG_DIR", os.path.join(tempfile.gettempdir(), "stocks-test-logs"))
+
+import pytest  # noqa: E402
+from app import db, security  # noqa: E402
 
 
 @pytest.fixture
@@ -18,6 +27,19 @@ def _reset_rate_limiter():
     security.limiter.reset()
     yield
     security.limiter.reset()
+
+
+def drain_refresh(timeout=30):
+    """Block until every queued /api/refresh job has finished.
+
+    POST /api/refresh returns 202 and does the work on a single-worker executor,
+    so a test that asserts on the result has to wait. The executor is FIFO with
+    exactly one thread, so a sentinel submitted afterwards can only run once the
+    real jobs are done — no polling, no sleeps.
+    """
+    from app import main
+
+    main._refresh_executor.submit(lambda: None).result(timeout=timeout)
 
 
 def authenticate(client, email="tester@example.com", password="hunter2-secure"):

@@ -1,0 +1,184 @@
+.wrap { display: flex; flex-direction: column; gap: var(--s-4); }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1px solid var(--grid);
+}
+.headRight {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.headRight[data-tone="pos"] { color: var(--positive); }
+.headRight[data-tone="neg"] { color: var(--negative); }
+.refresh {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: var(--r-xs);
+  padding: 3px 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.refresh:hover { color: var(--accent); border-color: var(--accent); }
+
+.body { padding: var(--s-4); display: flex; flex-direction: column; gap: var(--s-4); }
+
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s-4); }
+@media (max-width: 760px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+.stat { display: flex; flex-direction: column; gap: 3px; }
+.statLabel {
+  font-family: var(--mono); font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-faint);
+}
+.statValue {
+  font-family: var(--mono); font-size: 15px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.statValue[data-tone="pos"] { color: var(--positive); }
+.statValue[data-tone="neg"] { color: var(--negative); }
+
+.cpus { display: flex; flex-direction: column; gap: 6px; }
+.cpuGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+  gap: 5px;
+}
+.meter {
+  display: block;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.meterFill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  border-radius: inherit;
+}
+.meterFill[data-hot="yes"] { background: var(--negative); }
+
+/* in-flight indicator */
+.pulse {
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+
+.running { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.runningItem { display: flex; align-items: center; gap: var(--s-2); }
+.runName { font-family: var(--mono); font-weight: 700; }
+.runFor { font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+
+.jobs { display: flex; flex-wrap: wrap; gap: var(--s-3); }
+.job {
+  display: inline-flex; align-items: baseline; gap: 7px;
+  border: 1px solid var(--grid); border-radius: var(--r-sm);
+  padding: 4px 9px; background: var(--surface-2);
+}
+.jobId { font-family: var(--mono); font-size: 11px; font-weight: 700; }
+.jobNext { font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
+
+.tableWrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.table th {
+  text-align: left;
+  font-family: var(--mono); font-size: 9.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--text-faint);
+  padding: var(--s-2) var(--s-3);
+  border-bottom: 1px solid var(--grid);
+  white-space: nowrap;
+}
+.table td {
+  padding: 7px var(--s-3);
+  border-bottom: 1px solid var(--grid);
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.table tbody tr:hover { background: var(--surface-2); }
+.table tr[data-failed="yes"] .srcName { color: var(--negative); }
+.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.srcName { font-family: var(--mono); font-weight: 700; color: var(--text); }
+.status { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.status span[data-tone="pos"] { color: var(--positive); }
+.status span[data-tone="neg"] { color: var(--negative); }
+.never { font-style: normal; color: var(--negative); }
+
+.outcome {
+  font-family: var(--mono); font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: 0.05em; padding: 1px 6px; border-radius: var(--r-xs);
+  border: 1px solid var(--grid); color: var(--text-muted);
+}
+.outcome[data-outcome="ok"], .outcome[data-outcome="executed"] {
+  color: var(--positive); border-color: var(--positive-weak);
+}
+.outcome[data-outcome="error"] { color: var(--negative); border-color: var(--negative-weak); }
+/* Skips get their own tone: not a failure, but not work either. */
+.outcome[data-outcome="skipped"] { color: var(--text-faint); }
+.outcome[data-outcome="missed"], .outcome[data-outcome="max_instances"] {
+  color: var(--accent); border-color: var(--accent-weak);
+}
+
+.evKind {
+  font-family: var(--mono); font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-faint);
+}
+.evKind[data-kind="job"] { color: var(--accent); }
+.evDetail {
+  max-width: 380px; overflow: hidden; text-overflow: ellipsis;
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-faint);
+}
+.evTime { text-align: right; font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); }
+
+.errBlock {
+  border: 1px solid var(--negative-weak);
+  border-radius: var(--r-sm);
+  padding: var(--s-3);
+  background: var(--surface-2);
+}
+.errBlock + .errBlock { margin-top: var(--s-2); }
+.errBlock summary { cursor: pointer; display: flex; gap: var(--s-3); align-items: baseline; }
+.errName { font-family: var(--mono); font-weight: 700; color: var(--negative); }
+.errMsg { font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
+.trace {
+  margin-top: var(--s-3);
+  padding: var(--s-3);
+  background: var(--bg);
+  border-radius: var(--r-xs);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+}
+
+.muted { font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
+.error {
+  margin: var(--s-4);
+  display: flex; align-items: center; gap: 8px;
+  color: var(--negative); font-size: 13px;
+}
