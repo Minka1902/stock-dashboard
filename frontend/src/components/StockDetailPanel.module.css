@@ -62,7 +62,38 @@
 .convNum[data-neg="yes"] { color: var(--negative); }
 
 .spacer { flex: 1; }
+
+/* Ticker + price as one unit. Price is baseline-aligned with the ticker and the
+   change sits under it, so the pair scans as "AAPL, $307.34, down 7%" rather
+   than as two unrelated numbers at opposite ends of the bar. */
+.identity {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  min-width: 0;
+}
+.priceGroup {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
 .price { font-family: var(--mono); font-size: 18px; font-weight: 700; }
+.change {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.change[data-tone="pos"]  { color: var(--positive); }
+.change[data-tone="neg"]  { color: var(--negative); }
+.change[data-tone="flat"] { color: var(--text-faint); }
+
+/* Narrow screens: let the identity block wrap onto its own line instead of
+   squeezing the recommendation/conviction chips off the bar. */
+@media (max-width: 720px) {
+  .topbar { flex-wrap: wrap; }
+  .identity { flex: 1 1 100%; }
+}
 
 /* panes */
 .pane { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
@@ -153,6 +184,39 @@
   padding: var(--s-3); border: 1px solid var(--grid); border-radius: var(--r-sm); background: var(--surface-2);
 }
 .patName { font-family: var(--mono); font-weight: 700; }
+
+/* A forming shape is dimmed and dashed: present on the chart, not yet a fact. */
+.pattern[data-status="forming"] {
+  border-style: dashed;
+  background: transparent;
+}
+.pattern[data-status="forming"] .patName { color: var(--text-muted); }
+.patForming {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  border: 1px solid var(--accent-weak);
+  border-radius: var(--r-xs);
+  padding: 1px 5px;
+}
+
+.patCriteria {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 2px;
+}
+.patCriteria em {
+  font-family: var(--mono);
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.patCriteria em[data-met="yes"] { color: var(--positive); }
+.patCriteria em[data-met="no"]  { color: var(--text-muted); }
 .patDir {
   font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
 }

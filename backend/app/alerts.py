@@ -36,6 +36,70 @@ _SEVERITY = {
 }
 
 
+# What each alert type actually means, kept next to the detectors that fire it.
+# Lives on the backend on purpose: a copy in the frontend would drift the moment
+# a new type is added here, and an alert with no explanation is the failure mode
+# this is meant to prevent. `what` states the trigger, `why` says why it's worth
+# knowing, `look_at` points at what to check before acting.
+ALERT_MEANING = {
+    "boom_cross": {
+        "what": "The composite Boom Score crossed the alert threshold.",
+        "why": "Several independent signals lined up at once rather than a single source moving.",
+        "look_at": "The component chips on the Boom Score page — which signals actually fired.",
+    },
+    "golden_cross": {
+        "what": "The 50-day moving average crossed above the 200-day.",
+        "why": "A conventional trend-change marker. It is a lagging signal, not a prediction.",
+        "look_at": "Whether volume confirms the move, and where the nearest resistance sits.",
+    },
+    "insider_cluster": {
+        "what": "Multiple company insiders bought within a short window (SEC Form 4).",
+        "why": "Clustered buying by people with the most context is a stronger tell than one filing.",
+        "look_at": "The Insider trades pane: who bought, their role, and the sizes.",
+    },
+    "earnings_soon": {
+        "what": "Earnings are due within the next week.",
+        "why": "Earnings can override every other signal, in either direction.",
+        "look_at": "Position size and whether you want exposure through the print.",
+    },
+    "congress_buy": {
+        "what": "A member of Congress disclosed a sizeable purchase.",
+        "why": "Disclosures lag the trade by up to 45 days, so this is context, not a live signal.",
+        "look_at": "The disclosure date versus the transaction date on the Congress page.",
+    },
+    "breakdown_warning": {
+        "what": "Price is approaching a support level that has held before.",
+        "why": "The methodology warns before a fall rather than after it.",
+        "look_at": "The support levels in Structure, and where your stop sits relative to them.",
+    },
+    "breakout_setup": {
+        "what": "Price is coiling just under a resistance level.",
+        "why": "A setup, not a breakout — it resolves in either direction.",
+        "look_at": "The level itself, and whether volume is building into it.",
+    },
+    "breakout_confirmed": {
+        "what": "Price broke above resistance and the move was confirmed by volume.",
+        "why": "Confirmation is what separates a breakout from a false one.",
+        "look_at": "The measured move and the R:R on the trade plan before chasing.",
+    },
+    "false_breakout": {
+        "what": "Price broke a level and then fell back below it.",
+        "why": "Failed breakouts often resolve hard in the opposite direction.",
+        "look_at": "Whether the reclaim holds, and the next support beneath.",
+    },
+    "topping_formation": {
+        "what": "The moving-average structure has rolled over into a topping pattern.",
+        "why": "Structure deteriorating ahead of price is the earliest of the trend warnings.",
+        "look_at": "The MA state in Structure and the pattern list for a matching formation.",
+    },
+    "recommendation_change": {
+        "what": "The headline Buy/Sell/Hold call changed.",
+        "why": "The composite read moved enough to change the conclusion, not just the score.",
+        "look_at": "The evidence list under 'Why' — which inputs changed.",
+    },
+}
+
+
 def _alert(now: str, ticker: str, type_: str, key: str, title: str, message: str,
            severity: str | None = None) -> Alert:
     return Alert(

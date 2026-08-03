@@ -17,6 +17,7 @@ from app.models import (
     CompanyHolder,
     CongressTrade,
     ContractRecord,
+    EarningsEvent,
     EconEvent,
     FearGreedSnapshot,
     Fundamentals,
@@ -34,7 +35,9 @@ from app.models import (
     ShortInterest,
     SuggestionHistoryEntry,
     SocialSentiment,
+    SourceRun,
     SourceStatus,
+    JobRun,
     SuggestionLogEntry,
     TechnicalSignal,
     User,
@@ -66,7 +69,10 @@ def connect(db_path: str) -> sqlite3.Connection:
     # WAL lets readers proceed while a write is in flight; busy_timeout keeps
     # a briefly-locked DB from surfacing as an exception under load.
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
+    # 15s, not 5s: the request and refresh connections share the file's write
+    # lock, and a long ingestion write during a poll-heavy page was enough to
+    # surface "database is locked" to the UI.
+    conn.execute("PRAGMA busy_timeout=15000")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
@@ -533,6 +539,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
             read_at   TEXT NOT NULL,
             PRIMARY KEY (user_id, dedup_key)
         );
+        -- Per-ticker alert lookup for the analysis page.
+        CREATE INDEX IF NOT EXISTS idx_alerts_ticker ON alerts(ticker, id DESC);
         CREATE TABLE IF NOT EXISTS oauth_identities (
             provider         TEXT NOT NULL,
             provider_user_id TEXT NOT NULL,
@@ -541,6 +549,28 @@ def init_schema(conn: sqlite3.Connection) -> None:
             created_at       TEXT NOT NULL,
             PRIMARY KEY (provider, provider_user_id)
         );
+        CREATE TABLE IF NOT EXISTS source_runs (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            source       TEXT NOT NULL,
+            started_at   TEXT NOT NULL,
+            finished_at  TEXT NOT NULL,
+            outcome      TEXT NOT NULL,   -- ok | error | skipped
+            duration_ms  INTEGER NOT NULL,
+            record_count INTEGER NOT NULL DEFAULT 0,
+            detail       TEXT
+        );
+        CREATE TABLE IF NOT EXISTS job_runs (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id      TEXT NOT NULL,
+            event       TEXT NOT NULL,    -- executed | error | missed | max_instances
+            at          TEXT NOT NULL,
+            duration_ms INTEGER,
+            detail      TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_source_runs_src_id ON source_runs(source, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_job_runs_id        ON job_runs(id DESC);
+        CREATE INDEX IF NOT EXISTS idx_boom_hist_ticker_time
+            ON boom_score_history(ticker, computed_at);
         """
     )
     conn.commit()
@@ -606,6 +636,9 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _try_add_column(conn, "contracts", "ticker", "TEXT")
     _try_add_column(conn, "seasonality", "anchors_json", "TEXT NOT NULL DEFAULT '[]'")
     _try_add_column(conn, "source_status", "error_detail", "TEXT")
+    # Distinct from last_refreshed_at (= last attempt). See SourceStatus in models.py.
+    _try_add_column(conn, "source_status", "last_success_at", "TEXT")
+    _try_add_column(conn, "source_status", "last_duration_ms", "INTEGER")
     _try_add_column(conn, "portfolio", "category", "TEXT")  # NULL = auto-classified
     _try_add_column(conn, "app_settings", "x_accounts", "TEXT")  # comma list; NULL = env default
     # TA transition snapshot on alert_state (Phase 3 — warn before falls/breakouts).
@@ -971,21 +1004,36 @@ def update_source_status(
     status: str,
     record_count: int,
     error_detail: str | None = None,
+    success: bool = False,
+    duration_ms: int | None = None,
 ) -> None:
     # error_detail is explicitly written (NULL on success) so a stale traceback
     # from a prior failure is cleared once the source recovers.
+    #
+    # last_success_at only advances when success=True, and it does so inside the
+    # UPSERT (a CASE on excluded) rather than via a read-modify-write, so a
+    # concurrent failure can never clobber a good timestamp.
     conn.execute(
         """
         INSERT INTO source_status
-            (source, last_refreshed_at, status, record_count, error_detail)
-        VALUES (?, ?, ?, ?, ?)
+            (source, last_refreshed_at, status, record_count, error_detail,
+             last_success_at, last_duration_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(source) DO UPDATE SET
             last_refreshed_at=excluded.last_refreshed_at,
             status=excluded.status,
             record_count=excluded.record_count,
-            error_detail=excluded.error_detail
+            error_detail=excluded.error_detail,
+            last_duration_ms=excluded.last_duration_ms,
+            last_success_at=CASE
+                WHEN excluded.last_success_at IS NOT NULL THEN excluded.last_success_at
+                ELSE source_status.last_success_at
+            END
         """,
-        (source, last_refreshed_at, status, record_count, error_detail),
+        (
+            source, last_refreshed_at, status, record_count, error_detail,
+            last_refreshed_at if success else None, duration_ms,
+        ),
     )
     conn.commit()
 
@@ -993,6 +1041,107 @@ def update_source_status(
 def get_source_statuses(conn: sqlite3.Connection) -> list[SourceStatus]:
     cur = conn.execute("SELECT * FROM source_status ORDER BY source")
     return [SourceStatus(**dict(row)) for row in cur.fetchall()]
+
+
+# ---------- run history (Server page / diagnostics) ----------
+def record_source_run(
+    conn: sqlite3.Connection,
+    source: str,
+    started_at: str,
+    finished_at: str,
+    outcome: str,
+    duration_ms: int,
+    record_count: int = 0,
+    detail: str | None = None,
+) -> None:
+    """Append one source execution, including skips.
+
+    Skips matter most: a throttled source and a healthy one look identical in
+    `source_status`, so without this row "it hasn't fetched in two weeks" is
+    invisible.
+    """
+    conn.execute(
+        """
+        INSERT INTO source_runs
+            (source, started_at, finished_at, outcome, duration_ms, record_count, detail)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (source, started_at, finished_at, outcome, duration_ms, record_count, detail),
+    )
+    conn.commit()
+
+
+def get_source_runs(
+    conn: sqlite3.Connection, source: str | None = None, limit: int = 100
+) -> list[SourceRun]:
+    if source:
+        cur = conn.execute(
+            "SELECT * FROM source_runs WHERE source = ? ORDER BY id DESC LIMIT ?",
+            (source, limit),
+        )
+    else:
+        cur = conn.execute("SELECT * FROM source_runs ORDER BY id DESC LIMIT ?", (limit,))
+    return [SourceRun(**dict(row)) for row in cur.fetchall()]
+
+
+def get_source_run_stats(conn: sqlite3.Connection) -> dict[str, dict]:
+    """Per-source run counters and durations, keyed by source name."""
+    cur = conn.execute(
+        """
+        SELECT source,
+               COUNT(*)                                        AS runs_total,
+               SUM(CASE WHEN outcome = 'ok'      THEN 1 ELSE 0 END) AS runs_ok,
+               SUM(CASE WHEN outcome = 'error'   THEN 1 ELSE 0 END) AS runs_error,
+               SUM(CASE WHEN outcome = 'skipped' THEN 1 ELSE 0 END) AS runs_skipped,
+               AVG(CASE WHEN outcome != 'skipped' THEN duration_ms END) AS avg_duration_ms,
+               MAX(CASE WHEN outcome != 'skipped' THEN duration_ms END) AS max_duration_ms
+        FROM source_runs
+        GROUP BY source
+        """
+    )
+    return {row["source"]: dict(row) for row in cur.fetchall()}
+
+
+def record_job_run(
+    conn: sqlite3.Connection,
+    job_id: str,
+    event: str,
+    at: str,
+    duration_ms: int | None = None,
+    detail: str | None = None,
+) -> None:
+    conn.execute(
+        "INSERT INTO job_runs (job_id, event, at, duration_ms, detail) VALUES (?, ?, ?, ?, ?)",
+        (job_id, event, at, duration_ms, detail),
+    )
+    conn.commit()
+
+
+def get_job_runs(conn: sqlite3.Connection, limit: int = 100) -> list[JobRun]:
+    cur = conn.execute("SELECT * FROM job_runs ORDER BY id DESC LIMIT ?", (limit,))
+    return [JobRun(**dict(row)) for row in cur.fetchall()]
+
+
+def prune_history(
+    conn: sqlite3.Connection,
+    source_run_days: int,
+    job_run_days: int,
+    boom_history_days: int,
+) -> dict[str, int]:
+    """Trim the append-only history tables. Returns rows deleted per table."""
+    deleted = {}
+    for table, column, days in (
+        ("source_runs", "started_at", source_run_days),
+        ("job_runs", "at", job_run_days),
+        ("boom_score_history", "computed_at", boom_history_days),
+    ):
+        cur = conn.execute(
+            f"DELETE FROM {table} WHERE {column} < datetime('now', ?)",  # noqa: S608 - table/col are literals above
+            (f"-{int(days)} days",),
+        )
+        deleted[table] = cur.rowcount
+    conn.commit()
+    return deleted
 
 
 # ---------- yield curve ----------
@@ -2201,6 +2350,28 @@ def get_alerts(conn: sqlite3.Connection, user_id: int, limit: int = 100) -> list
         ORDER BY a.id DESC LIMIT ?
         """,
         (user_id, limit),
+    )
+    return [_row_to_alert(dict(row)) for row in cur.fetchall()]
+
+
+def get_alerts_for(
+    conn: sqlite3.Connection, user_id: int, ticker: str, limit: int = 20
+) -> list[Alert]:
+    """This ticker's alerts, newest first. Same read-state join as get_alerts."""
+    cur = conn.execute(
+        """
+        SELECT a.dedup_key, a.created_at, a.ticker, a.type, a.severity, a.title,
+               a.message, (ar.dedup_key IS NOT NULL) AS read, a.pushed
+        FROM alerts a
+        LEFT JOIN alert_reads ar
+            ON ar.dedup_key = a.dedup_key AND ar.user_id = ?
+        WHERE a.ticker = ?
+        -- created_at, not id. Insertion order tracks time for alerts the
+        -- detector fires live, but it is not the same thing, and this list is
+        -- labelled "newest first" in the UI. id breaks ties deterministically.
+        ORDER BY a.created_at DESC, a.id DESC LIMIT ?
+        """,
+        (user_id, ticker, limit),
     )
     return [_row_to_alert(dict(row)) for row in cur.fetchall()]
 

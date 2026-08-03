@@ -35,6 +35,26 @@ def test_spa_serves_index_and_falls_back(tmp_path):
     assert c.get("/api/health").json() == {"status": "ok"}
 
 
+def test_spa_serves_the_real_client_routes(tmp_path):
+    """Every client route must return index.html, not a 404.
+
+    The frontend uses History API paths (/news, /stock/NVDA) rather than a hash,
+    so a hard reload or a pasted deep link hits the server for a path that has
+    no file behind it. If this regresses, deep links break only in the
+    single-port build — the Vite dev server would still work, which makes it an
+    easy one to miss.
+    """
+    app = FastAPI()
+    assert _mount_spa(app, _dist(tmp_path)) is True
+    c = TestClient(app)
+
+    for path in ("/news", "/portfolio", "/watchlist", "/suggestion-history",
+                 "/stock/NVDA", "/stock/BRK.B", "/stock/NVDA?alert=boom%7CNVDA"):
+        resp = c.get(path)
+        assert resp.status_code == 200, path
+        assert "APP" in resp.text, path
+
+
 def test_no_dist_is_a_noop(tmp_path):
     app = FastAPI()
     assert _mount_spa(app, tmp_path / "nope") is False

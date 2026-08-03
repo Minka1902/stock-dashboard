@@ -1,12 +1,35 @@
 """Central configuration. Override via environment variables."""
 import os
 from datetime import date, timedelta
+from pathlib import Path
 
 # SQLite file location (one file, no server).
 DB_PATH = os.environ.get("STOCKS_DB_PATH", "stocks.db")
 
 # Log level for the app-wide logging config (see app/logging_config.py).
 LOG_LEVEL = os.environ.get("STOCKS_LOG_LEVEL", "INFO")
+
+# Where the rotating log file lives. Defaults to backend/logs/ (this file is
+# backend/app/config.py, so parents[1] is backend/). Logging to a file at all is
+# the point: uvicorn is launched detached and minimized, so a stderr-only setup
+# loses every traceback the moment the console window goes away — which is
+# exactly what made the last unexplained shutdown impossible to diagnose.
+LOG_DIR = Path(os.environ.get("STOCKS_LOG_DIR") or (Path(__file__).resolve().parents[1] / "logs"))
+LOG_MAX_BYTES = int(os.environ.get("STOCKS_LOG_MAX_BYTES", str(5 * 1024 * 1024)))
+LOG_BACKUP_COUNT = int(os.environ.get("STOCKS_LOG_BACKUP_COUNT", "5"))
+
+# How long a job may start late and still run. APScheduler's own default is 1
+# second (BackgroundScheduler -> base.py:909), which silently *drops* any job
+# delayed by a blocked thread pool or a sleeping laptop. 5 minutes means a late
+# run still happens; coalesce=True keeps a backlog from firing N times at once.
+SCHEDULER_MISFIRE_GRACE_SECONDS = int(
+    os.environ.get("STOCKS_SCHEDULER_MISFIRE_GRACE_SECONDS", "300"))
+
+# Retention for the run-history tables that feed the Server page. They are
+# append-only and would otherwise grow without bound.
+SOURCE_RUN_RETENTION_DAYS = int(os.environ.get("STOCKS_SOURCE_RUN_RETENTION_DAYS", "30"))
+JOB_RUN_RETENTION_DAYS = int(os.environ.get("STOCKS_JOB_RUN_RETENTION_DAYS", "90"))
+BOOM_HISTORY_RETENTION_DAYS = int(os.environ.get("STOCKS_BOOM_HISTORY_RETENTION_DAYS", "400"))
 
 # --- Web security ---
 # Comma-separated list of allowed browser origins. Because the session cookie
@@ -61,8 +84,12 @@ GDELT_TIMEOUT_SECONDS = float(os.environ.get("STOCKS_GDELT_TIMEOUT_SECONDS", "8"
 # of hammering it every cycle (which just earns more 429s and burns worker time).
 GDELT_COOLDOWN_SECONDS = float(os.environ.get("STOCKS_GDELT_COOLDOWN_SECONDS", "600"))
 # GDELT rate-limits hard, so refresh news at most once a day rather than every
-# cycle. The scheduled daily deep run (force=True) bypasses this for one pull/day.
+# cycle. The daily deep run no longer forces this (force_on_daily=False in the
+# SOURCES registry): forcing it defeated the gate the rate limiting requires.
 GDELT_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_GDELT_MIN_INTERVAL_SECONDS", str(86400)))
+# Retry sooner than the daily gate after a failure — a transient timeout should
+# not cost a whole day of headlines.
+GDELT_RETRY_INTERVAL_SECONDS = int(os.environ.get("STOCKS_GDELT_RETRY_INTERVAL_SECONDS", "1800"))
 
 # --- Insider trades (SEC EDGAR Form 4) ---
 # SEC requires a descriptive User-Agent with contact info for fair-access.
@@ -140,10 +167,22 @@ SENT_AAII_SPREAD = float(os.environ.get("STOCKS_SENT_AAII_SPREAD", "20"))
 SENT_PC_BUY = float(os.environ.get("STOCKS_SENT_PC_BUY", "1.0"))          # heavy puts = fear → buy
 SENT_PC_SELL = float(os.environ.get("STOCKS_SENT_PC_SELL", "0.8"))        # complacency → sell
 
-# FINRA margin debt updates monthly — check at most once a day.
+# FINRA publishes margin debt monthly, roughly three to four weeks after the
+# month closes, so asking daily only burned requests. Once a fortnight still
+# catches every release well before the next one.
 MARGIN_DEBT_MIN_INTERVAL_SECONDS = int(
-    os.environ.get("STOCKS_MARGIN_DEBT_MIN_INTERVAL_SECONDS", "86400")
+    os.environ.get("STOCKS_MARGIN_DEBT_MIN_INTERVAL_SECONDS", str(14 * 86400))
 )
+# Retry cadence after a *failed* fetch, which is a different question from how
+# often fresh data appears: a fortnight-long success interval must not become a
+# fortnight-long outage when FINRA returns a 401/403.
+MARGIN_DEBT_RETRY_INTERVAL_SECONDS = int(
+    os.environ.get("STOCKS_MARGIN_DEBT_RETRY_INTERVAL_SECONDS", "21600")  # 6h
+)
+# Direct link to FINRA's margin-statistics workbook. Normally discovered from
+# the statistics page, but that page is currently Cloudflare-blocked (403), so
+# this is the escape hatch that keeps the workbook tier usable.
+MARGIN_DEBT_WORKBOOK_URL = os.environ.get("STOCKS_MARGIN_DEBT_WORKBOOK_URL", "")
 SENT_MARGIN_SELL = float(os.environ.get("STOCKS_SENT_MARGIN_SELL", "45"))     # %YoY: overbought
 SENT_MARGIN_EXTREME = float(os.environ.get("STOCKS_SENT_MARGIN_EXTREME", "60"))  # pre-crash leverage
 SENT_MARGIN_BUY = float(os.environ.get("STOCKS_SENT_MARGIN_BUY", "-20"))      # deleveraging washout
@@ -217,6 +256,23 @@ OPPORTUNITY_CANDIDATES = int(os.environ.get("STOCKS_OPPORTUNITY_CANDIDATES", "40
 # port). Empty → default to <repo>/frontend/dist. Used by tests to point at a
 # temp dist. See app/main.py static-serving block.
 STATIC_DIR = os.environ.get("STOCKS_STATIC_DIR", "") or None
+
+# --- Earnings calendar ---
+# Who counts as "big". Comma-separated override; empty falls back to the
+# curated list in app/data/majors.py.
+EARNINGS_UNIVERSE = [
+    t.strip().upper()
+    for t in os.environ.get("STOCKS_EARNINGS_UNIVERSE", "").split(",")
+    if t.strip()
+]
+# One Yahoo call per ticker, so the fan-out is capped and rotated stalest-first
+# across runs rather than hammering the whole universe every cycle.
+EARNINGS_MAX_TICKERS = int(os.environ.get("STOCKS_EARNINGS_MAX_TICKERS", "120"))
+# Earnings dates move rarely; 6h is plenty and keeps the quota clear.
+EARNINGS_MIN_INTERVAL_SECONDS = int(
+    os.environ.get("STOCKS_EARNINGS_MIN_INTERVAL_SECONDS", "21600"))
+EARNINGS_RETRY_INTERVAL_SECONDS = int(
+    os.environ.get("STOCKS_EARNINGS_RETRY_INTERVAL_SECONDS", "1800"))
 
 # --- Alerts ---
 # Boom Score level whose upward crossing fires a high-severity alert.

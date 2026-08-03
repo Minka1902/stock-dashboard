@@ -3,8 +3,8 @@ import Icon from "./Icon";
 import ChartPro from "./ChartPro";
 import CompanyInfo from "./CompanyInfo";
 import InsiderTrades from "./InsiderTrades";
-import SignalSidecar from "./SignalSidecar";
 import Skeleton from "./Skeleton";
+import StockAlerts from "./StockAlerts";
 import SuggestionHistoryStrip from "./SuggestionHistoryStrip";
 import TickerLabel from "./TickerLabel";
 import XPostCard from "./XPostCard";
@@ -47,7 +47,7 @@ function Stat({ label, value, tone }) {
   );
 }
 
-export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch }) {
+export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch, focusAlertKey = null }) {
   // Track which ticker the loaded payload belongs to: switching tickers
   // shows the skeleton again without any synchronous setState in the effect.
   const [result, setResult] = useState(null);
@@ -69,10 +69,20 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   const xPosts = data?.x_posts || [];
   const company = data?.company || null;
   const insiderTrades = data?.insider_trades || [];
-  const signals = data?.signals || null;
+  const stockAlerts = data?.alerts || [];
   const companyInfo = settings.companyInfo || {};
   const lastClose = data?.daily?.length ? data.daily[data.daily.length - 1].close : null;
   const refPrice = a?.price ?? lastClose;
+  // Day change, derived from the same daily bars the chart draws and with the
+  // same bar-to-bar formula as ChartPro's legend, so the two can't disagree on
+  // the same screen. Not taken from /api/quotes: that only covers watchlist and
+  // portfolio tickers, so an unwatched symbol would silently have no change at
+  // all. null when there aren't two closes to compare — rendered as "—" rather
+  // than a fabricated 0.00%.
+  const prevClose = data?.daily?.length >= 2 ? data.daily[data.daily.length - 2].close : null;
+  const changePct = prevClose && lastClose != null
+    ? ((lastClose - prevClose) / prevClose) * 100
+    : null;
   // Membership comes from the server across ALL of the user's lists — the old
   // check only saw the default list, so a ticker on a second list still
   // offered "Watch" (Task 18). Falls back to the passed-in list while loading.
@@ -83,6 +93,16 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   // `watchlist` is initialised to [] (truthy), so gate on the loaded payload
   // instead — otherwise "Watch" flashes before we know the answer.
   const canWatch = Boolean(onAddWatch) && !loading && !watched;
+
+  // Confirmed by default: forming shapes are context, not conclusions, and
+  // leading with them would overstate what the chart has actually done.
+  const [patternFilter, setPatternFilter] = useState("confirmed");
+  const allPatterns = a?.patterns || [];
+  const confirmedCount = allPatterns.filter((p) => p.status !== "forming").length;
+  const formingCount = allPatterns.length - confirmedCount;
+  const shownPatterns = patternFilter === "all"
+    ? allPatterns
+    : allPatterns.filter((p) => p.status !== "forming");
 
   const addToWatchlist = () => {
     setWatchBusy(true);
@@ -97,7 +117,27 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
         <button className={styles.back} onClick={onBack}>
           <Icon name="arrowRight" size={14} /> <span>Back</span>
         </button>
-        <TickerLabel ticker={ticker} className={styles.ticker} as="h2" />
+        {/* Ticker and price read as one unit: the name of the thing and what
+            it costs. They used to sit at opposite ends of the flex row. */}
+        <span className={styles.identity}>
+          <TickerLabel ticker={ticker} className={styles.ticker} as="h2" />
+          {refPrice != null && (
+            <span className={styles.priceGroup}>
+              <span className={styles.price}>${n(refPrice)}</span>
+              <span
+                className={styles.change}
+                data-tone={changePct == null ? "flat" : changePct >= 0 ? "pos" : "neg"}
+                title={changePct == null
+                  ? "Not enough daily history to compute a change"
+                  : "Change vs the previous daily close"}
+              >
+                {changePct == null
+                  ? "—"
+                  : `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%`}
+              </span>
+            </span>
+          )}
+        </span>
         {a && a.recommendation && (
           <span className={styles.directive} data-tone={RECO_TONE[a.recommendation]}
                 title="Buy / Sell / Hold — the headline call">{a.recommendation.toUpperCase()}</span>
@@ -156,7 +196,6 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
             </a>
           </span>
         )}
-        {a?.price != null && <span className={styles.price}>${n(a.price)}</span>}
       </div>
 
       {loading ? (
@@ -180,6 +219,15 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
               <InsiderTrades trades={insiderTrades} ticker={ticker} />
             </Pane>
           )}
+
+          <Pane caption="Alerts"
+                right={<span className={styles.muted}>
+                  {stockAlerts.length > 0
+                    ? `${stockAlerts.length} fired · newest first`
+                    : "nothing has tripped"}
+                </span>}>
+            <StockAlerts alerts={stockAlerts} ticker={ticker} focusKey={focusAlertKey} />
+          </Pane>
 
           <Pane caption="Suggestion history"
                 right={<span className={styles.muted}>what we said · what happened next</span>}>
@@ -317,21 +365,77 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
               )}
             </Pane>
 
-            <Pane caption="Patterns">
-              {a.patterns.length === 0 ? (
-                <p className={styles.muted}>No classical pattern reads clearly right now.</p>
+            <Pane
+              caption="Patterns"
+              right={formingCount > 0 && (
+                <Segmented
+                  ariaLabel="Pattern filter"
+                  value={patternFilter}
+                  onChange={setPatternFilter}
+                  options={[
+                    { value: "confirmed", label: "Confirmed", badge: confirmedCount,
+                      title: "Patterns that have actually triggered" },
+                    { value: "all", label: "Incl. forming", badge: a.patterns.length,
+                      title: "Also show shapes that are on the chart but haven't triggered yet" },
+                  ]}
+                />
+              )}
+            >
+              {shownPatterns.length === 0 ? (
+                <p className={styles.muted}>
+                  {a.patterns.length === 0
+                    ? "No classical pattern reads clearly right now."
+                    : "Nothing confirmed — switch to “Incl. forming” for the shapes still developing."}
+                </p>
               ) : (
                 <ul className={styles.patterns}>
-                  {a.patterns.map((p, i) => (
-                    <li key={i} className={styles.pattern}>
+                  {shownPatterns.map((p, i) => (
+                    <li key={i} className={styles.pattern} data-status={p.status}>
                       <span className={styles.patName}>{p.label}</span>
                       <span className={styles.patDir} data-tone={p.direction === "bullish" ? "pos" : p.direction === "bearish" ? "neg" : ""}>{p.direction}</span>
                       <span className={styles.patConf}>{Math.round(p.confidence * 100)}%</span>
+                      {p.status === "forming" && (
+                        <span className={styles.patForming} title="The shape is there; the trigger hasn't happened">
+                          forming
+                        </span>
+                      )}
                       {p.measured_move && <span className={styles.patMove}>→ ${n(p.measured_move)}</span>}
                       <span className={styles.patNote}>{p.note}</span>
+                      {/* What's still outstanding. Showing why it isn't a pattern
+                          yet is the honest version of "what it's heading towards". */}
+                      {p.criteria?.length > 0 && (
+                        <span className={styles.patCriteria}>
+                          {p.criteria.map((c, j) => (
+                            <em key={j} data-met={c.met ? "yes" : "no"}>
+                              {c.met ? "✓" : "○"} {c.name}
+                              {c.detail ? ` (${c.detail})` : ""}
+                            </em>
+                          ))}
+                        </span>
+                      )}
                       <span className={styles.patPivots}>
                         {p.pivots.map((pv, j) => <em key={j}>{pv.role} ${n(pv.price)}</em>)}
                       </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Pane>
+
+            {/* Trendlines were computed on every analysis and rendered nowhere. */}
+            <Pane caption="Trendlines"
+                  right={<span className={styles.muted}>diagonal support &amp; resistance</span>}>
+              {(a.trendlines || []).length === 0 ? (
+                <p className={styles.muted}>No trendline has enough touches to be worth drawing.</p>
+              ) : (
+                <ul className={styles.patterns}>
+                  {a.trendlines.map((t, i) => (
+                    <li key={i} className={styles.pattern}>
+                      <span className={styles.patName}>{t.kind === "support" ? "Rising support" : "Falling resistance"}</span>
+                      <span className={styles.patDir} data-tone={t.kind === "support" ? "pos" : "neg"}>{t.kind}</span>
+                      <span className={styles.patConf}>{t.touches} touches</span>
+                      <span className={styles.patMove}>now ≈ ${n(t.current_value)}</span>
+                      {t.broken && <span className={styles.patForming}>broken</span>}
                     </li>
                   ))}
                 </ul>

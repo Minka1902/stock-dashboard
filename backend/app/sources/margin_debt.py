@@ -14,6 +14,7 @@ from datetime import datetime
 
 import httpx
 
+from app import config
 from app.ingest import FetchResult
 from app.models import MarginDebtPoint
 
@@ -189,9 +190,17 @@ def fetch() -> list[MarginDebtPoint]:
             errors.append("page: no rows parsed")
         except httpx.HTTPError as exc:
             errors.append(f"page: {exc}")
-        # Tier 3: the Excel workbook linked from the page.
+        # Tier 3: the Excel workbook. Normally discovered from the page, but a
+        # configured URL wins so the tier still works when the page is blocked.
+        #
+        # This tier used to be unreachable in exactly the situation it exists
+        # for: when the page request failed, page_html stayed None, so the
+        # `if wb_url` and `elif page_html is not None` arms were both skipped —
+        # the workbook was never tried AND no error was appended, so the status
+        # string silently omitted the whole tier.
         try:
-            wb_url = find_workbook_url(page_html) if page_html else None
+            wb_url = config.MARGIN_DEBT_WORKBOOK_URL or (
+                find_workbook_url(page_html) if page_html else None)
             if wb_url:
                 resp = client.get(wb_url, headers=_HEADERS)
                 resp.raise_for_status()
@@ -201,6 +210,10 @@ def fetch() -> list[MarginDebtPoint]:
                 errors.append("workbook: no valid rows")
             elif page_html is not None:
                 errors.append("workbook: no link found on page")
+            else:
+                errors.append(
+                    "workbook: page unavailable, so no link to discover "
+                    "(set STOCKS_MARGIN_DEBT_WORKBOOK_URL to try it directly)")
         except Exception as exc:
             errors.append(f"workbook: {exc}")
     raise RuntimeError("; ".join(errors))

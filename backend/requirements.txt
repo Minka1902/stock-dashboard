@@ -9,3 +9,6 @@ openpyxl==3.1.5
 argon2-cffi==25.1.0
 pyotp==2.10.0
 segno==1.6.6
+# Process/system metrics for the Server page. Imported defensively in main.py,
+# so a missing wheel degrades that one panel rather than breaking startup.
+psutil==7.2.2

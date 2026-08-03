@@ -8,56 +8,67 @@
 
       dev  (default)  Two detached, minimized windows: uvicorn --reload on
                       :8000 and the Vite dev server on :5173 (Vite proxies
-                      /api -> :8000). Hot reload on both sides.
+                      /api -> the backend). Hot reload on both sides.
 
       prod            Builds frontend/dist once, then serves the SPA *and* the
-                      API from a single uvicorn worker on :8000. No Vite, no
-                      proxy, one port.
+                      API from a single supervised uvicorn worker on :8000.
+                      No Vite, no proxy, one port.
 
-    Both modes launch detached: the servers keep running after this terminal
-    closes. Stop them with `.\start.ps1 -Stop` (or stop.bat), or by closing
-    their windows.
+    Never prompts. Anything that would have asked a question is either a flag
+    or a hard failure with the command to fix it -- the old prompts blocked
+    double-click launches on a window that was already minimized.
 
-    Preflight verifies the backend venv, backend deps and frontend
-    node_modules, offering to create/install anything missing, and reports any
-    port already in use before starting anything.
+    Child output is redirected to logs\, and the backend also writes its own
+    rotating log there, so a crash leaves evidence behind instead of dying with
+    the console window.
 
     Exactly one uvicorn worker, always: the APScheduler jobs, TTL caches, rate
-    limiter and the shared SQLite connection are all in-process.
+    limiter and the shared SQLite connections are all in-process.
 
 .PARAMETER Mode
     'dev' (default) or 'prod'. Positional, so `.\start.ps1 prod` works.
 
 .PARAMETER ApiPort
-    Backend port. Default 8000. In dev, note that the Vite proxy target in
-    frontend/vite.config.js is hard-coded to :8000 -- changing this only makes
-    sense together with that file.
+    Backend port. Default 8000. In dev the Vite proxy target follows this
+    automatically via VITE_API_TARGET.
 
 .PARAMETER WebPort
     Vite dev-server port (dev mode only). Default 5173. The backend CORS
     allowlist is pointed at it automatically.
 
+.PARAMETER Install
+    Create the venv and install backend/frontend dependencies if missing,
+    instead of failing with instructions.
+
+.PARAMETER Kill
+    Stop whatever already holds the ports, instead of failing.
+
 .PARAMETER NoBrowser
     Don't open a browser once the API answers /api/health.
 
-.PARAMETER Force
-    Answer every preflight prompt with "yes" (install deps, free busy ports).
+.PARAMETER NoSupervise
+    prod only: run uvicorn directly rather than under the restart supervisor.
 
 .PARAMETER Stop
-    Don't start anything: stop whatever is serving the dashboard on ApiPort /
-    WebPort and exit.
+    Stop the dashboard and exit.
+
+.PARAMETER Status
+    Report what's running -- pids, ports, health, log tails, DB size -- and exit.
+
+.PARAMETER Logs
+    Tail the logs and exit (Ctrl+C to stop following).
 
 .EXAMPLE
     .\start.ps1
     Dev: API on :8000 with reload, UI on :5173.
 
 .EXAMPLE
-    .\start.ps1 prod
-    Build the frontend, then serve everything from :8000.
+    .\start.ps1 prod -Kill
+    Build the frontend, free the port if busy, then serve everything from :8000.
 
 .EXAMPLE
-    .\start.ps1 -Stop
-    Shut the dashboard down.
+    .\start.ps1 -Status
+    Show what's running and where the logs are.
 #>
 [CmdletBinding()]
 param(
@@ -67,23 +78,24 @@ param(
 
     [int]$ApiPort = 8000,
     [int]$WebPort = 5173,
+    [switch]$Install,
+    [switch]$Kill,
     [switch]$NoBrowser,
-    [switch]$Force,
-    [switch]$Stop
+    [switch]$NoSupervise,
+    [switch]$Stop,
+    [switch]$Status,
+    [switch]$Logs
 )
 
 $ErrorActionPreference = 'Stop'
 
-$Root     = $PSScriptRoot
-$Backend  = Join-Path $Root 'backend'
-$Frontend = Join-Path $Root 'frontend'
-$Python   = Join-Path $Backend '.venv\Scripts\python.exe'
+$Root      = $PSScriptRoot
+$Backend   = Join-Path $Root 'backend'
+$Frontend  = Join-Path $Root 'frontend'
+$Python    = Join-Path $Backend '.venv\Scripts\python.exe'
 $DistIndex = Join-Path $Frontend 'dist\index.html'
-
-# Ancestors of a listening process are only killed when their command line
-# looks like part of a dashboard launch -- so `-Stop` never takes out the
-# terminal you happen to have started things from.
-$OursPattern = 'uvicorn|vite|npm|stocks-backend|stocks-frontend|stocks-app'
+$RunDir    = Join-Path $Root '.run'
+$LogDir    = Join-Path $Backend 'logs'
 
 
 # ---------------------------------------------------------------- output ----
@@ -108,13 +120,33 @@ function Fail {
     exit 1
 }
 
-function Confirm-Action {
-    param([string]$Question, [bool]$DefaultYes = $true)
-    if ($Force) { return $true }
-    if ($DefaultYes) { $suffix = '(Y/n)' } else { $suffix = '(y/N)' }
-    $answer = Read-Host "  $Question $suffix"
-    if ([string]::IsNullOrWhiteSpace($answer)) { return $DefaultYes }
-    return ($answer.Trim().ToLower() -in @('y', 'yes'))
+
+# ------------------------------------------------------------- pid files ----
+# Recorded at launch so -Stop knows exactly what it started. The previous
+# version walked the process tree of whatever held the port and killed any
+# ancestor whose command line matched 'uvicorn|vite|npm', which could take out
+# an unrelated terminal that merely happened to be in the chain.
+
+function Save-Pid {
+    param([string]$Name, [int]$ProcessId)
+    New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
+    Set-Content -Path (Join-Path $RunDir "$Name.pid") -Value $ProcessId -Encoding ascii
+}
+
+function Get-SavedPids {
+    if (-not (Test-Path $RunDir)) { return @() }
+    Get-ChildItem -Path $RunDir -Filter '*.pid' -ErrorAction SilentlyContinue | ForEach-Object {
+        $raw = (Get-Content $_.FullName -ErrorAction SilentlyContinue | Select-Object -First 1)
+        $parsed = 0
+        if ([int]::TryParse($raw, [ref]$parsed) -and $parsed -gt 4) {
+            [pscustomobject]@{ Name = $_.BaseName; Id = $parsed; File = $_.FullName }
+        }
+    }
+}
+
+function Remove-PidFile {
+    param([string]$Path)
+    Remove-Item -Path $Path -Force -ErrorAction SilentlyContinue
 }
 
 
@@ -142,57 +174,88 @@ function Get-PortPids {
              ForEach-Object { [int]$_ } | Select-Object -Unique)
 }
 
-function Get-ServerTree {
-    <#
-        Listener pid plus any ancestor that is clearly part of the same launch,
-        innermost first. Needed because `uvicorn --reload` runs a supervisor
-        parent that would instantly respawn a child killed on its own.
-    #>
-    param([int]$Port)
-    $ids = New-Object System.Collections.Generic.List[int]
-    foreach ($listener in (Get-PortPids -Port $Port)) {
-        $ids.Add($listener)
-        $current = Get-CimInstance Win32_Process -Filter "ProcessId = $listener" -ErrorAction SilentlyContinue
-        $hops = 0
-        while ($current -and $current.ParentProcessId -and $hops -lt 6) {
-            $hops++
-            $parentId = [int]$current.ParentProcessId
-            if ($parentId -le 4) { break }
-            $parent = Get-CimInstance Win32_Process -Filter "ProcessId = $parentId" -ErrorAction SilentlyContinue
-            if (-not $parent) { break }
-            if ([string]$parent.CommandLine -notmatch $OursPattern) { break }
-            $ids.Add($parentId)
-            $current = $parent
-        }
-    }
-    return @($ids | Select-Object -Unique)
+function Describe-Pid {
+    param([int]$ProcessId)
+    $p = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if (-not $p) { return "pid $ProcessId (gone)" }
+    $cmd = ''
+    try {
+        $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction Stop).CommandLine
+    } catch { }
+    if ($cmd) { return "$($p.ProcessName) (pid $ProcessId): $cmd" }
+    return "$($p.ProcessName) (pid $ProcessId)"
 }
 
-function Stop-Servers {
+function Stop-Tree {
+    <# Kill a process and its children. /T covers uvicorn's reload supervisor,
+       which would otherwise respawn the worker we just killed. #>
+    param([int]$ProcessId)
+    if (-not (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)) { return $false }
+    taskkill /T /F /PID $ProcessId 2>&1 | Out-Null
+    return $true
+}
+
+function Stop-OrphansOf {
     <#
-        Kill everything serving $Port, outermost-first, and keep going until the
-        port is actually free. Repeated passes matter: the uvicorn reload child
-        can outlive its supervisor by a few seconds and stays bound the whole
-        time, so a single pass would report success on a still-busy port.
-        Returns the number of distinct processes killed.
+        Kill live children of a pid that is itself already gone.
+
+        uvicorn --reload runs a supervisor plus a worker. Kill the supervisor
+        without /T and the worker is orphaned, keeps the socket, and keeps
+        serving -- while the TCP table still credits the dead parent, so the
+        port looks held by a pid that no longer exists and can't be killed.
+        Matching on ParentProcessId targets exactly those strays, without the
+        old version's broad 'uvicorn|vite|npm' command-line sweep that could
+        take out an unrelated process.
     #>
-    param([int]$Port, [int]$TimeoutSeconds = 15)
-    $killed = New-Object System.Collections.Generic.HashSet[int]
-    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-    while ($true) {
-        $tree = Get-ServerTree -Port $Port
-        if ($tree.Count -eq 0) { break }
-        for ($i = $tree.Count - 1; $i -ge 0; $i--) {
-            if (Get-Process -Id $tree[$i] -ErrorAction SilentlyContinue) {
-                Stop-Process -Id $tree[$i] -Force -ErrorAction SilentlyContinue
-                [void]$killed.Add($tree[$i])
-            }
+    param([int]$DeadParentId)
+    $killed = 0
+    $orphans = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $DeadParentId" -ErrorAction SilentlyContinue)
+    foreach ($orphan in $orphans) {
+        $id = [int]$orphan.ProcessId
+        if (Stop-Tree -ProcessId $id) {
+            $killed++
+            Write-Check 'stop' 'orphaned worker' "stopped pid $id (parent $DeadParentId is gone)" 'Yellow'
         }
-        Start-Sleep -Milliseconds 600
-        if ((Get-PortPids -Port $Port).Count -eq 0) { break }
-        if ((Get-Date) -ge $deadline) { break }
     }
-    return $killed.Count
+    return $killed
+}
+
+function Stop-Dashboard {
+    <# Stop by pid file first, then sweep the ports for anything left. #>
+    param([int[]]$Ports)
+    $killed = 0
+
+    foreach ($entry in Get-SavedPids) {
+        if (Stop-Tree -ProcessId $entry.Id) {
+            $killed++
+            Write-Check 'stop' $entry.Name "stopped pid $($entry.Id)" 'Yellow'
+        }
+        Remove-PidFile -Path $entry.File
+    }
+
+    foreach ($port in $Ports) {
+        $deadline = (Get-Date).AddSeconds(12)
+        while ($true) {
+            $owners = Get-PortPids -Port $port
+            if ($owners.Count -eq 0) { break }
+            foreach ($owner in $owners) {
+                if (Stop-Tree -ProcessId $owner) {
+                    $killed++
+                    Write-Check 'stop' "port $port" "stopped pid $owner" 'Yellow'
+                } else {
+                    # The listed owner is already dead but the port is still
+                    # held: an orphaned child inherited the socket.
+                    $killed += Stop-OrphansOf -DeadParentId $owner
+                }
+            }
+            Start-Sleep -Milliseconds 500
+            # Repeat: a reload child can stay bound for a moment after its
+            # parent dies, so one pass would report a port free while it isn't.
+            if ((Get-PortPids -Port $port).Count -eq 0) { break }
+            if ((Get-Date) -ge $deadline) { break }
+        }
+    }
+    return $killed
 }
 
 function Assert-PortFree {
@@ -202,20 +265,17 @@ function Assert-PortFree {
         Write-Check 'preflight' "port $Port" 'free'
         return
     }
-    $names = @($owners | ForEach-Object {
-        $p = Get-Process -Id $_ -ErrorAction SilentlyContinue
-        if ($p) { "$($p.ProcessName) (pid $_)" } else { "pid $_" }
-    })
-    Write-Check 'preflight' "port $Port" ("in use by " + ($names -join ', ')) 'Yellow'
-    if (-not (Confirm-Action "Stop it and continue?" $false)) {
-        Fail "$Label port $Port is occupied." @(
-            "Free it yourself, re-run with -Force, or pick another port:",
-            "  .\start.ps1 $Mode -ApiPort <n> -WebPort <n>"
-        )
+    if (-not $Kill) {
+        $who = @($owners | ForEach-Object { Describe-Pid $_ })
+        Fail "$Label port $Port is already in use." (@(
+            'Re-run with -Kill to stop it, or pick another port:',
+            "  .\start.ps1 $Mode -ApiPort <n> -WebPort <n>",
+            'Currently held by:'
+        ) + $who)
     }
-    $killed = Stop-Servers -Port $Port
+    [void](Stop-Dashboard -Ports @($Port))
     if ((Get-PortPids -Port $Port).Count -gt 0) {
-        Fail "Could not free port $Port (killed $killed process(es); something is still listening)."
+        Fail "Could not free port $Port -- something is still listening."
     }
     Write-Check 'preflight' "port $Port" 'freed'
 }
@@ -237,12 +297,12 @@ function Test-PythonImports {
 
 function Initialize-Backend {
     if (-not (Test-Path $Python)) {
-        Write-Check 'preflight' 'backend venv' 'missing' 'Yellow'
-        if (-not (Confirm-Action "Create backend\.venv and install requirements now?")) {
-            Fail 'Backend venv is required.' @(
-                'cd backend',
-                'python -m venv .venv',
-                '.venv\Scripts\python.exe -m pip install -r requirements.txt'
+        if (-not $Install) {
+            Fail 'Backend venv is missing.' @(
+                'Re-run with -Install, or set it up yourself:',
+                '  cd backend',
+                '  python -m venv .venv',
+                '  .venv\Scripts\python.exe -m pip install -r requirements.txt'
             )
         }
         $sysPython = Get-Command python -ErrorAction SilentlyContinue
@@ -267,10 +327,10 @@ function Initialize-Backend {
         Write-Check 'preflight' 'backend deps' 'ok'
         return
     }
-    Write-Check 'preflight' 'backend deps' 'incomplete' 'Yellow'
-    if (-not (Confirm-Action "Install backend\requirements.txt now?")) {
-        Fail 'Backend dependencies are missing.' @(
-            'cd backend && .venv\Scripts\python.exe -m pip install -r requirements.txt'
+    if (-not $Install) {
+        Fail 'Backend dependencies are missing or incomplete.' @(
+            'Re-run with -Install, or:',
+            '  cd backend && .venv\Scripts\python.exe -m pip install -r requirements.txt'
         )
     }
     Push-Location $Backend
@@ -292,9 +352,9 @@ function Initialize-Frontend {
         Write-Check 'preflight' 'frontend node_modules' 'ok'
         return
     }
-    Write-Check 'preflight' 'frontend node_modules' 'missing' 'Yellow'
-    if (-not (Confirm-Action "Run npm install in frontend\ now?")) {
-        Fail 'Frontend dependencies are required.' @('cd frontend && npm install')
+    if (-not $Install) {
+        Fail 'Frontend dependencies are missing.' @(
+            'Re-run with -Install, or:  cd frontend && npm install')
     }
     Push-Location $Frontend
     try {
@@ -310,11 +370,19 @@ function Initialize-Frontend {
 # ----------------------------------------------------------------- launch ----
 
 function Start-ServerWindow {
-    <# Detached, minimized, titled console window. Survives this terminal. #>
-    param([string]$Title, [string]$WorkDir, [string]$Command)
+    <# Detached, minimized, titled console window with its output on disk. #>
+    param([string]$Title, [string]$WorkDir, [string]$Command, [string]$LogName)
+    New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+    $log = Join-Path $LogDir $LogName
+    # Built by concatenation with an explicit quote char: the redirect target
+    # has to be quoted for cmd (the path can contain spaces), and nesting
+    # escaped quotes inside an interpolated string here is a parse error.
+    $quote = [char]34
+    $argLine = '/c title ' + $Title + ' & ' + $Command +
+               ' > ' + $quote + $log + $quote + ' 2>&1'
     $spec = @{
         FilePath         = 'cmd.exe'
-        ArgumentList     = "/c title $Title & $Command"
+        ArgumentList     = $argLine
         WorkingDirectory = $WorkDir
         WindowStyle      = 'Minimized'
         PassThru         = $true
@@ -341,32 +409,80 @@ function Wait-Health {
     return -1
 }
 
+function Show-LogTail {
+    param([string]$Name, [int]$Lines = 6)
+    $path = Join-Path $LogDir $Name
+    if (-not (Test-Path $path)) { return }
+    Write-Host ''
+    Write-Host "  --- $Name (last $Lines) ---" -ForegroundColor DarkGray
+    Get-Content $path -Tail $Lines -ErrorAction SilentlyContinue |
+        ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+}
+
 
 # ------------------------------------------------------------------- main ----
 
 Write-Host ''
 
+if ($Logs) {
+    $paths = @('backend.log', 'api.log', 'web.log', 'supervisor.log') |
+        ForEach-Object { Join-Path $LogDir $_ } | Where-Object { Test-Path $_ }
+    if ($paths.Count -eq 0) { Fail "No logs yet in $LogDir." }
+    Write-Note "Following: $($paths -join ', ')  (Ctrl+C to stop)"
+    Write-Host ''
+    Get-Content -Path $paths -Tail 40 -Wait
+    exit 0
+}
+
+if ($Status) {
+    Write-Host '  Stock Signal Dashboard - status' -ForegroundColor Cyan
+    Write-Host ''
+    $saved = @(Get-SavedPids)
+    if ($saved.Count -eq 0) {
+        Write-Check 'status' 'pid files' 'none recorded' 'Yellow'
+    } else {
+        foreach ($entry in $saved) {
+            $alive = [bool](Get-Process -Id $entry.Id -ErrorAction SilentlyContinue)
+            Write-Check 'status' $entry.Name `
+                ("pid $($entry.Id) " + $(if ($alive) { 'running' } else { 'NOT running' })) `
+                $(if ($alive) { 'Green' } else { 'Red' })
+        }
+    }
+    foreach ($port in @($ApiPort, $WebPort)) {
+        $owners = Get-PortPids -Port $port
+        Write-Check 'status' "port $port" `
+            $(if ($owners.Count) { "listening (pid $($owners -join ', '))" } else { 'free' }) `
+            $(if ($owners.Count) { 'Green' } else { 'DarkGray' })
+    }
+    try {
+        $h = Invoke-WebRequest -Uri "http://127.0.0.1:$ApiPort/api/health" -UseBasicParsing -TimeoutSec 3
+        Write-Check 'status' 'api /api/health' $h.Content
+    } catch {
+        Write-Check 'status' 'api /api/health' 'no response' 'Red'
+    }
+    $db = Join-Path $Backend 'stocks.db'
+    if (Test-Path $db) {
+        $size = [math]::Round((Get-Item $db).Length / 1MB, 1)
+        $wal = Join-Path $Backend 'stocks.db-wal'
+        $walSize = if (Test-Path $wal) { [math]::Round((Get-Item $wal).Length / 1MB, 1) } else { 0 }
+        Write-Check 'status' 'database' ('{0}MB (+{1}MB WAL)' -f $size, $walSize)
+    }
+    Show-LogTail -Name 'backend.log'
+    Write-Host ''
+    exit 0
+}
+
 if ($Stop) {
     Write-Host '  Stock Signal Dashboard - stop' -ForegroundColor Cyan
     Write-Host ''
-    $total = 0
-    $stuck = 0
-    foreach ($port in @($ApiPort, $WebPort)) {
-        $killed = Stop-Servers -Port $port
-        $total += $killed
-        if ((Get-PortPids -Port $port).Count -gt 0) {
-            $stuck++
-            Write-Check 'stop' "port $port" 'still bound - kill it manually' 'Red'
-        } elseif ($killed -gt 0) {
-            Write-Check 'stop' "port $port" "stopped $killed process(es)" 'Yellow'
-        } else {
-            Write-Check 'stop' "port $port" 'nothing listening'
-        }
+    $total = Stop-Dashboard -Ports @($ApiPort, $WebPort)
+    $stuck = @($ApiPort, $WebPort) | Where-Object { (Get-PortPids -Port $_).Count -gt 0 }
+    foreach ($port in $stuck) {
+        Write-Check 'stop' "port $port" 'still bound - kill it manually' 'Red'
     }
+    if ($total -eq 0 -and $stuck.Count -eq 0) { Write-Note 'Dashboard was not running.' }
     Write-Host ''
-    if ($stuck -gt 0) { exit 1 }
-    if ($total -eq 0) { Write-Note 'Dashboard was not running.' }
-    Write-Host ''
+    if ($stuck.Count -gt 0) { exit 1 }
     exit 0
 }
 
@@ -390,6 +506,17 @@ if ($Mode -eq 'dev' -and $WebPort -ne 5173) {
     Write-Check 'preflight' 'CORS origin' "http://localhost:$WebPort"
 }
 
+# Point the Vite proxy at whichever API port we're actually using. Without this
+# the target is hard-coded to :8000 and -ApiPort silently breaks the UI.
+$env:VITE_API_TARGET = "http://localhost:$ApiPort"
+
+# Python block-buffers stdout/stderr when they aren't a terminal, and here they
+# are a file. Without this the redirected log stays empty until the buffer
+# fills or the process exits -- i.e. it is empty exactly when you go looking
+# for it after a hang.
+$env:PYTHONUNBUFFERED = '1'
+
+New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
 Write-Host ''
 
 if ($Mode -eq 'prod') {
@@ -404,21 +531,21 @@ if ($Mode -eq 'prod') {
     if (-not (Test-Path $DistIndex)) { Fail "Build finished but $DistIndex is missing." }
     Write-Check 'build' 'frontend dist' 'ok'
 
-    $cmd = ".venv\Scripts\python.exe -m uvicorn app.main:app --port $ApiPort"
-    $app = Start-ServerWindow -Title 'stocks-app' -WorkDir $Backend -Command $cmd
+    $supervise = if ($NoSupervise) { ' --no-supervise' } else { '' }
+    $cmd = ".venv\Scripts\python.exe run_server.py --port $ApiPort$supervise"
+    $app = Start-ServerWindow -Title 'stocks-app' -WorkDir $Backend -Command $cmd -LogName 'api.log'
+    Save-Pid -Name 'app' -ProcessId $app.Id
     Write-Check 'start' 'app (api + spa)' "pid $($app.Id)"
     $openUrl = "http://localhost:$ApiPort"
 } else {
-    if ($ApiPort -ne 8000) {
-        Write-Note "note: vite.config.js proxies /api to :8000, not :$ApiPort -- update it or the UI can't reach the API." 'Yellow'
-    }
-
     $backendCmd = ".venv\Scripts\python.exe -m uvicorn app.main:app --reload --reload-dir app --port $ApiPort"
-    $api = Start-ServerWindow -Title 'stocks-backend' -WorkDir $Backend -Command $backendCmd
+    $api = Start-ServerWindow -Title 'stocks-backend' -WorkDir $Backend -Command $backendCmd -LogName 'api.log'
+    Save-Pid -Name 'api' -ProcessId $api.Id
     Write-Check 'start' 'backend (uvicorn reload)' "pid $($api.Id)"
 
     $frontendCmd = "npm.cmd run dev -- --port $WebPort --strictPort"
-    $web = Start-ServerWindow -Title 'stocks-frontend' -WorkDir $Frontend -Command $frontendCmd
+    $web = Start-ServerWindow -Title 'stocks-frontend' -WorkDir $Frontend -Command $frontendCmd -LogName 'web.log'
+    Save-Pid -Name 'web' -ProcessId $web.Id
     Write-Check 'start' 'frontend (vite)' "pid $($web.Id)"
 
     $openUrl = "http://localhost:$WebPort"
@@ -427,9 +554,10 @@ if ($Mode -eq 'prod') {
 $elapsed = Wait-Health -Port $ApiPort
 if ($elapsed -lt 0) {
     Write-Check 'wait' 'api /api/health' 'no response' 'Red'
+    Show-LogTail -Name 'api.log' -Lines 20
     Write-Host ''
-    Write-Note 'The backend window is minimized -- restore it to read the traceback.' 'Yellow'
-    Write-Note "Then: .\start.ps1 -Stop" 'Yellow'
+    Write-Note "Full logs: $LogDir   (.\start.ps1 -Logs to follow)" 'Yellow'
+    Write-Note '.\start.ps1 -Stop to shut down.' 'Yellow'
     Write-Host ''
     exit 1
 }
@@ -449,7 +577,9 @@ if ($Mode -eq 'prod') {
     }
 }
 Write-Host ''
-Write-Note 'Stop with:  .\start.ps1 -Stop   (or stop.bat)'
+Write-Note "Logs   $LogDir   (.\start.ps1 -Logs)"
+Write-Note 'Status .\start.ps1 -Status'
+Write-Note 'Stop   .\start.ps1 -Stop   (or stop.bat)'
 Write-Host ''
 
 if (-not $NoBrowser) { Start-Process $openUrl | Out-Null }
