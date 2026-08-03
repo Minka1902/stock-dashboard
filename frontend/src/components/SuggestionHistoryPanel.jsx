@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { animate } from "animejs";
 import { AnimatePresence, motion } from "motion/react";
+import BacktestPanels from "./BacktestPanels";
 import EmptyState from "./EmptyState";
 import TickerLabel from "./TickerLabel";
 import { getSuggestionHistory } from "../api";
@@ -84,6 +85,7 @@ export default function SuggestionHistoryPanel({ compact = false, ticker = null 
   }
 
   return (
+    <>
     <section className={styles.panel} id="suggestion-history">
       {!compact && (
         <header className={styles.head}>
@@ -213,6 +215,11 @@ export default function SuggestionHistoryPanel({ compact = false, ticker = null 
           </AnimatePresence>
         </>
       )}
-    </section>
+      </section>
+
+      {/* "What happened next" per day is the calendar above; this is the same
+          question asked in aggregate. */}
+      {!compact && <BacktestPanels />}
+    </>
   );
 }
