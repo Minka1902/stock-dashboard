@@ -4,3 +4,13 @@
 # Launcher bookkeeping: pid files for -Stop, and redirected child output.
 .run/
 logs/
+
+# Windows service: the downloaded NSSM binary, and the secrets file
+# (service.env.example is the tracked template).
+windows/nssm/
+windows/service.env
+
+# Electron desktop shell
+desktop/node_modules/
+desktop/out/
+desktop/dist/

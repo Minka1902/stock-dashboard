@@ -3,8 +3,13 @@ import os
 from datetime import date, timedelta
 from pathlib import Path
 
-# SQLite file location (one file, no server).
-DB_PATH = os.environ.get("STOCKS_DB_PATH", "stocks.db")
+# SQLite file location (one file, no server). Defaults to backend/stocks.db,
+# resolved from this file rather than the cwd — the same way LOG_DIR below is.
+# A bare relative default only worked because every launcher happened to chdir
+# to backend/ first; a Windows service starts in C:\Windows\system32, where the
+# relative path would silently create a second, empty database.
+DB_PATH = os.environ.get("STOCKS_DB_PATH") or str(
+    Path(__file__).resolve().parents[1] / "stocks.db")
 
 # Log level for the app-wide logging config (see app/logging_config.py).
 LOG_LEVEL = os.environ.get("STOCKS_LOG_LEVEL", "INFO")

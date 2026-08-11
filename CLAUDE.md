@@ -70,6 +70,52 @@ visited page's origin and be blocked by CORS. See `extension/README.md` for the 
 steps, the `STOCKS_CORS_ORIGINS` note, and the list of constants duplicated from `frontend/`
 that must be kept in sync (notably `convictionTier`/`CHIP_META` from `BoomScorePanel.jsx`).
 
+### Windows service (`windows/`) — NSSM, PowerShell only
+```powershell
+.\windows\install-service.ps1      # elevated; registers + starts SignalDashboard
+.\windows\service-control.ps1 -Status    # -Start -Stop -Restart -Logs
+.\windows\uninstall-service.ps1          # -PurgeData to drop the database too
+.\windows\install-desktop.ps1            # npm install + Start Menu shortcut (no elevation)
+```
+The production run mode. Hosts the backend as a boot-start LocalSystem service so the
+scheduler keeps ingesting before anyone logs in. **NSSM is the only supervisor** —
+the service invokes `run_server.py --no-supervise`, which runs uvicorn *in-process* so
+NSSM's Ctrl-C reaches it and the lifespan WAL checkpoint actually runs.
+
+Data moves machine-wide to `C:\ProgramData\SignalDashboard\` (`db\`, `logs\`); the code
+still runs from this working tree. Secrets come from `windows\service.env` — **nothing
+loads a `.env`**, so that file is the only way they reach a LocalSystem service.
+The service DB is separate from `backend\stocks.db` used by `start.ps1` (separate
+accounts, separate TOTP). See `windows/README.md`, especially the note that
+`STOCKS_CORS_ORIGINS[0]` doubles as the OAuth post-login redirect target
+(`routes_oauth.py::_frontend_origin`) and must stay the app's own origin.
+
+### Desktop app (`desktop/`) — Electron shell
+```bash
+cd desktop
+npm install
+npm start        # electron .
+npm run test     # node --test, no Electron needed
+npm run lint
+```
+A window plus a tray icon (unread count, native toasts) over the running service — it
+never starts the backend itself. The window loads **`http://127.0.0.1:8000`, the backend's
+own origin, never `file://`**: routing is History-API paths, Vite emits absolute asset
+URLs, and auth is a same-origin httpOnly cookie, so same-origin is what makes all three
+work with zero frontend changes. `127.0.0.1` not `localhost` — uvicorn binds IPv4 only
+and they are separate cookie jars. See `desktop/README.md`.
+
+### Constants duplicated across apps (keep in sync)
+No root package manager, so the companions copy rather than share:
+
+| Copy | Source |
+|---|---|
+| `extension/…` `convictionTier`/`CHIP_META` | `frontend/src/components/BoomScorePanel.jsx` |
+| `desktop/src/alerts/seen.js`, `desktop/tests/seen.test.js` | `extension/src/background/seen.js` (verbatim) |
+| `"app:navigate"` in `desktop/src/preload.cjs` | `NAV_EVENT` in `frontend/src/lib/nav.js` |
+| `desktop/src/tray.js` menu items | `commandItems` in `frontend/src/App.jsx` |
+| poll cadence, `MAX_NOTIFICATIONS_PER_POLL` | `extension/src/background/index.js` |
+
 ## Auth & multi-tenancy
 
 - **`app/auth.py` + `app/routes_auth.py`** — Argon2id passwords; opaque session tokens
@@ -162,3 +208,14 @@ All backend config is env-var driven with `STOCKS_` prefixes and sane defaults i
 in env, never in code/DB** — SMTP (email digest), Twilio (SMS), and the optional Alpha Vantage key.
 Notification channels safely no-op and log when their env vars are unset, so the app runs fully
 without any of them.
+
+**Nothing loads a `.env` file.** `config.py` reads `os.environ` once at import; there is no
+`python-dotenv` and no `load_dotenv` anywhere. `backend/.env.example` is documentation — you
+must export the variables in your shell, or (for the Windows service, which inherits nothing
+from the installing user) put them in `windows/service.env`, which the installer bakes into the
+service's environment block.
+
+Path defaults are `__file__`-relative, not cwd-relative — `DB_PATH` → `backend/stocks.db`,
+`LOG_DIR` → `backend/logs/`, the SPA dist → `frontend/dist/`. That matters because a Windows
+service starts in `C:\Windows\system32`, where a relative DB path would silently create a
+second, empty database and the app would come up looking healthy with no data.
