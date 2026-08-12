@@ -1,0 +1,259 @@
+<#
+.SYNOPSIS
+    Register the Signal dashboard backend as a Windows service (via NSSM).
+
+.DESCRIPTION
+    Installs the FastAPI backend + APScheduler ingest loop as a service that
+    starts at boot, before any user logs in, and restarts itself on crash.
+
+    Data lives machine-wide under C:\ProgramData\SignalDashboard, NOT in the
+    repo, because a LocalSystem service has no user profile to write into.
+
+    Re-running this script is safe: an existing service is stopped and removed
+    first, so it doubles as the upgrade path.
+
+.PARAMETER Port
+    Port to serve on (default 8000). Bound to 127.0.0.1 only.
+
+.PARAMETER NssmPath
+    Use an nssm.exe you already have instead of downloading one.
+
+.PARAMETER NssmSha256
+    Expected SHA-256 of the NSSM zip. See -TrustNssmDownload.
+
+.PARAMETER TrustNssmDownload
+    Allow downloading NSSM without a pinned checksum. The hash that was
+    actually downloaded is printed so you can pin it in Common.ps1.
+
+.PARAMETER SkipBuild
+    Don't run `npm run build`; use the existing frontend\dist.
+
+.PARAMETER ImportExistingDb
+    Copy an existing backend\stocks.db into the service's data directory
+    using SQLite's online backup API. Never deletes the source.
+
+.EXAMPLE
+    .\windows\install-service.ps1
+.EXAMPLE
+    .\windows\install-service.ps1 -Port 8080 -NssmPath C:\tools\nssm.exe
+#>
+[CmdletBinding()]
+param(
+    [int]$Port = 8000,
+    [string]$NssmPath,
+    [string]$NssmSha256,
+    [switch]$TrustNssmDownload,
+    [switch]$SkipBuild,
+    [switch]$ImportExistingDb
+)
+
+#Requires -Version 5.1
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Common.ps1')
+
+if ($NssmSha256) { $script:NssmSha256 = $NssmSha256 }
+if ($TrustNssmDownload) { $script:AllowUnpinnedNssm = $true }
+
+Write-Host ''
+Write-Host '  Signal - install Windows service' -ForegroundColor Cyan
+Write-Host ''
+
+Assert-Admin
+
+# ---------------------------------------------------------------- preflight --
+if (-not (Test-Path $Python)) {
+    Fail "No virtualenv at $Python" @(
+        'Create it first (from the repo root):',
+        '  .\start.bat -Install'
+    )
+}
+# Pre-quoted single string on purpose: Windows PowerShell joins an
+# -ArgumentList array without quoting, which hands python a bare `-c import`.
+# Same trick as start.ps1's Test-PythonImports.
+$probe = Start-Process -FilePath $Python -WindowStyle Hidden -Wait -PassThru `
+                       -ArgumentList '-c "import fastapi, uvicorn, apscheduler"'
+if ($probe.ExitCode -ne 0) {
+    Fail 'The virtualenv is missing dependencies.' @(
+        'Reinstall them:',
+        "  cd `"$Backend`"",
+        '  .venv\Scripts\python.exe -m pip install -r requirements.txt'
+    )
+}
+Write-Step 'preflight' 'venv + deps ok'
+
+# The SPA mount in app/main.py is a silent no-op when index.html is absent --
+# you would get a working API serving a blank page, which is a miserable thing
+# to debug. Fail here instead.
+if (-not $SkipBuild) {
+    Write-Step 'build' 'npm run build ...' 'DarkGray'
+    Push-Location $Frontend
+    try {
+        & npm.cmd run build
+        if ($LASTEXITCODE -ne 0) { Fail 'npm run build failed -- see the output above.' }
+    } finally { Pop-Location }
+}
+if (-not (Test-Path $DistIndex)) {
+    Fail "No frontend build at $DistIndex" @(
+        'The backend serves the built SPA from this path; without it the service',
+        'comes up as an API with a blank web page.',
+        'Build it:  cd frontend; npm run build'
+    )
+}
+Write-Step 'build' 'frontend dist ok'
+
+$nssm = Resolve-Nssm -NssmPath $NssmPath
+Write-Step 'nssm' $nssm
+
+# ------------------------------------------------------------ data scaffold --
+foreach ($d in @($DataRoot, $DataDb, $DataLogs)) {
+    New-Item -ItemType Directory -Force -Path $d | Out-Null
+}
+# Lock the tree down: the DB holds password hashes and TOTP secrets, and
+# service.env holds API keys in plaintext. Inherited ProgramData ACLs let
+# ordinary users read; these do not.
+& icacls.exe $DataRoot /inheritance:r /grant:r `
+    'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' | Out-Null
+Write-Step 'data' $DataRoot
+
+if (-not (Test-Path $EnvFile)) {
+    Copy-Item (Join-Path $PSScriptRoot 'service.env.example') $EnvFile
+    Write-Step 'secrets' 'created windows\service.env from the example'
+} else {
+    Write-Step 'secrets' 'windows\service.env (existing)'
+}
+
+# ------------------------------------------------------------- existing DB ---
+$devDb = Join-Path $Backend 'stocks.db'
+if ((Test-Path $devDb) -and -not (Test-Path $DbFile)) {
+    if ($ImportExistingDb) {
+        # sqlite3's online backup folds the -wal in and yields one consistent
+        # file. Copying stocks.db alone while a -wal exists silently loses
+        # every committed-but-uncheckpointed transaction.
+        & $Python -c "import sqlite3,sys; s=sqlite3.connect(sys.argv[1]); d=sqlite3.connect(sys.argv[2]); s.backup(d); d.close(); s.close()" $devDb $DbFile
+        if ($LASTEXITCODE -ne 0) { Fail 'Importing the existing database failed.' }
+        Write-Step 'database' 'imported from backend\stocks.db'
+    } else {
+        Write-Host ''
+        Write-Host '  NOTE: an existing dev database was found at' -ForegroundColor Yellow
+        Write-Host "        $devDb" -ForegroundColor Yellow
+        Write-Host '        The service starts with a SEPARATE, EMPTY database, so you will' -ForegroundColor Yellow
+        Write-Host '        register a new account and enrol TOTP again. To copy the dev data' -ForegroundColor Yellow
+        Write-Host '        across instead, re-run with -ImportExistingDb.' -ForegroundColor Yellow
+        Write-Host ''
+    }
+}
+
+# --------------------------------------------------------------- reinstall ---
+if (Get-DashboardService) {
+    Write-Step 'service' 'already exists, replacing' 'DarkGray'
+    & $nssm stop $ServiceName 2>&1 | Out-Null      # may already be stopped
+    Invoke-Nssm $nssm remove $ServiceName confirm | Out-Null
+    Start-Sleep -Milliseconds 500
+}
+
+# ---------------------------------------------------------------- register ---
+$origin = "http://127.0.0.1:$Port"
+$entry  = Join-Path $Backend 'run_server.py'
+
+Invoke-Nssm $nssm install $ServiceName $Python | Out-Null
+Invoke-Nssm $nssm set $ServiceName AppParameters `
+    "`"$entry`" --host 127.0.0.1 --port $Port --no-supervise" | Out-Null
+Invoke-Nssm $nssm set $ServiceName AppDirectory $Backend | Out-Null
+Invoke-Nssm $nssm set $ServiceName DisplayName $ServiceDisplay | Out-Null
+Invoke-Nssm $nssm set $ServiceName Description ($ServiceDesc -f $Port) | Out-Null
+Invoke-Nssm $nssm set $ServiceName ObjectName 'LocalSystem' | Out-Null
+
+# Delayed auto-start: still long before any human logs in, but it stops the
+# first _refresh_all cycle from racing DHCP/DNS on a cold boot and marking
+# every source as errored.
+Invoke-Nssm $nssm set $ServiceName Start SERVICE_DELAYED_AUTO_START | Out-Null
+Invoke-Nssm $nssm set $ServiceName DependOnService Tcpip Dnscache | Out-Null
+
+# NSSM is the ONLY supervisor. run_server.py's own restart loop is bypassed
+# with --no-supervise; two restart policies would fight over the port.
+Invoke-Nssm $nssm set $ServiceName AppExit Default Restart | Out-Null
+Invoke-Nssm $nssm set $ServiceName AppRestartDelay 5000 | Out-Null
+Invoke-Nssm $nssm set $ServiceName AppThrottle 10000 | Out-Null
+
+# Graceful stop. These four are what protect the WAL checkpoint that
+# app/main.py's lifespan runs on shutdown -- AppNoConsole 1 would silently
+# disable the Ctrl-C path and turn every stop into a TerminateProcess.
+Invoke-Nssm $nssm set $ServiceName AppNoConsole 0 | Out-Null
+Invoke-Nssm $nssm set $ServiceName AppStopMethodSkip 0 | Out-Null
+Invoke-Nssm $nssm set $ServiceName AppStopMethodConsole 20000 | Out-Null
+Invoke-Nssm $nssm set $ServiceName AppStopMethodWindow 5000 | Out-Null
+Invoke-Nssm $nssm set $ServiceName AppStopMethodThreads 5000 | Out-Null
+
+Invoke-Nssm $nssm set $ServiceName AppStdout (Join-Path $DataLogs 'service-stdout.log') | Out-Null
+Invoke-Nssm $nssm set $ServiceName AppStderr (Join-Path $DataLogs 'service-stderr.log') | Out-Null
+Invoke-Nssm $nssm set $ServiceName AppRotateFiles 1 | Out-Null
+Invoke-Nssm $nssm set $ServiceName AppRotateOnline 1 | Out-Null
+Invoke-Nssm $nssm set $ServiceName AppRotateBytes 10485760 | Out-Null
+
+# Environment. Paths and origins live here (operational, visible in `nssm
+# edit`); secrets come from service.env below.
+#
+# Two orderings matter:
+#   * STOCKS_CORS_ORIGINS[0] is reused by routes_oauth.py::_frontend_origin as
+#     the post-login redirect target. If the app origin is not FIRST, a
+#     completed OAuth login redirects to the wrong host -- a different cookie
+#     jar -- and the session appears to vanish. Do not reorder this.
+#   * 127.0.0.1, never "localhost": uvicorn binds IPv4 only, and Windows
+#     resolves localhost to ::1 first, so a localhost origin can fail to
+#     connect at all. It is also a distinct cookie jar from 127.0.0.1.
+$envPairs = [ordered]@{
+    'PYTHONUNBUFFERED'           = '1'
+    'STOCKS_DB_PATH'             = $DbFile
+    'STOCKS_LOG_DIR'             = $DataLogs
+    'STOCKS_STATIC_DIR'          = (Join-Path $Frontend 'dist')
+    'STOCKS_CORS_ORIGINS'        = $origin
+    'STOCKS_OAUTH_REDIRECT_BASE' = $origin
+}
+foreach ($kv in (Read-ServiceEnv).GetEnumerator()) { $envPairs[$kv.Key] = $kv.Value }
+$envArgs = @($envPairs.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" })
+Invoke-Nssm $nssm set $ServiceName AppEnvironmentExtra @envArgs | Out-Null
+
+Write-Step 'service' "registered as $ServiceName"
+
+# -------------------------------------------------------------------- start --
+Invoke-Nssm $nssm start $ServiceName | Out-Null
+$elapsed = Wait-Health -Port $Port -TimeoutSeconds 60
+if ($elapsed -lt 0) {
+    Write-Host ''
+    Write-Host '  The service was registered but never answered /api/health.' -ForegroundColor Red
+    Write-Host ''
+    foreach ($log in @('service-stderr.log', 'backend.log')) {
+        $p = Join-Path $DataLogs $log
+        if (Test-Path $p) {
+            Write-Host "  --- last 30 lines of $log ---" -ForegroundColor DarkGray
+            Get-Content $p -Tail 30 | ForEach-Object { Write-Host "  $_" }
+            Write-Host ''
+        }
+    }
+    Fail 'Service did not become healthy.' @(
+        'Import-time failures (a bad STOCKS_CORS_ORIGINS, a missing dependency)',
+        'never reach backend.log -- check service-stderr.log first.',
+        "Logs: $DataLogs"
+    )
+}
+Write-Step 'health' "ok in ${elapsed}s"
+
+$health = Get-HealthJson -Port $Port
+Write-Host ''
+Write-Host '  Installed.' -ForegroundColor Green
+Write-Host ''
+Write-Step 'url'      $origin
+Write-Step 'service'  "$ServiceName (delayed auto-start, LocalSystem)"
+Write-Step 'status'   $health.status $(if ($health.status -eq 'ok') { 'Green' } else { 'Yellow' })
+Write-Step 'database' $DbFile
+Write-Step 'logs'     $DataLogs
+Write-Step 'secrets'  $EnvFile
+Write-Host ''
+Write-Host '  Day to day:' -ForegroundColor DarkGray
+Write-Host '    .\windows\service-control.ps1 -Status'
+Write-Host '    .\windows\service-control.ps1 -Restart     (after editing service.env)'
+Write-Host '    .\windows\service-control.ps1 -Logs'
+Write-Host ''
+Write-Host '  It now starts automatically at boot, before you log in.' -ForegroundColor DarkGray
+Write-Host ''

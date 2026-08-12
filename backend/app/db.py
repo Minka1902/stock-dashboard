@@ -6,6 +6,7 @@ import re
 import sqlite3
 import sys
 import threading
+from pathlib import Path
 
 from app.models import (
     AaiiSentiment,
@@ -64,6 +65,14 @@ class _LockingConnection(sqlite3.Connection):
 
 
 def connect(db_path: str) -> sqlite3.Connection:
+    # SQLite creates the file but not its directory. The Windows service points
+    # this at C:\ProgramData\SignalDashboard\db\, and this runs at import time
+    # (main.py connects before logging exists), so a missing directory would
+    # surface only as "unable to open database file" in the service's stderr
+    # log. ":memory:" and bare filenames have no parent worth creating.
+    parent = Path(db_path).parent
+    if str(parent) not in ("", ".") and not db_path.startswith(":"):
+        parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, factory=_LockingConnection, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     # WAL lets readers proceed while a write is in flight; busy_timeout keeps
@@ -567,6 +576,22 @@ def init_schema(conn: sqlite3.Connection) -> None:
             duration_ms INTEGER,
             detail      TEXT
         );
+        CREATE TABLE IF NOT EXISTS earnings (
+            ticker           TEXT NOT NULL,
+            event_date       TEXT NOT NULL,   -- YYYY-MM-DD
+            is_estimate      INTEGER NOT NULL DEFAULT 1,
+            timing           TEXT NOT NULL DEFAULT '',  -- bmo | amc | intraday | ''
+            eps_estimate     REAL,
+            eps_actual       REAL,            -- NULL until the company reports
+            surprise_pct     REAL,
+            revenue_estimate REAL,
+            quarter          TEXT NOT NULL DEFAULT '',
+            source           TEXT NOT NULL DEFAULT 'yahoo',
+            fetched_at       TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (ticker, event_date)
+        );
+        -- The calendar is read by date range far more often than by ticker.
+        CREATE INDEX IF NOT EXISTS idx_earnings_date ON earnings(event_date);
         CREATE INDEX IF NOT EXISTS idx_source_runs_src_id ON source_runs(source, id DESC);
         CREATE INDEX IF NOT EXISTS idx_job_runs_id        ON job_runs(id DESC);
         CREATE INDEX IF NOT EXISTS idx_boom_hist_ticker_time
@@ -1521,6 +1546,84 @@ def get_analyst_for(conn: sqlite3.Connection, ticker: str) -> AnalystSignal | No
     cur = conn.execute("SELECT * FROM analyst_signals WHERE ticker = ?", (ticker,))
     row = cur.fetchone()
     return AnalystSignal(**dict(row)) if row else None
+
+
+# ---------- earnings calendar ----------
+def upsert_earnings(conn: sqlite3.Connection, records: list[EarningsEvent]) -> None:
+    """Store calendar rows, keeping any figures the new fetch doesn't carry.
+
+    Yahoo's forward calendar returns a bare date with no actuals, so a plain
+    `excluded.*` update would erase the reported EPS/surprise/quarter of a
+    company that has already announced. COALESCE keeps the stored value
+    whenever the incoming row is NULL, and `is_estimate` only ever ratchets
+    towards confirmed (1 -> 0), never back.
+    """
+    conn.executemany(
+        """
+        INSERT INTO earnings
+            (ticker, event_date, is_estimate, timing, eps_estimate, eps_actual,
+             surprise_pct, revenue_estimate, quarter, source, fetched_at)
+        VALUES
+            (:ticker, :event_date, :is_estimate, :timing, :eps_estimate, :eps_actual,
+             :surprise_pct, :revenue_estimate, :quarter, :source, :fetched_at)
+        ON CONFLICT(ticker, event_date) DO UPDATE SET
+            is_estimate=MIN(earnings.is_estimate, excluded.is_estimate),
+            timing=CASE WHEN excluded.timing != '' THEN excluded.timing
+                        ELSE earnings.timing END,
+            eps_estimate=COALESCE(excluded.eps_estimate, earnings.eps_estimate),
+            eps_actual=COALESCE(excluded.eps_actual, earnings.eps_actual),
+            surprise_pct=COALESCE(excluded.surprise_pct, earnings.surprise_pct),
+            revenue_estimate=COALESCE(excluded.revenue_estimate, earnings.revenue_estimate),
+            quarter=CASE WHEN excluded.quarter != '' THEN excluded.quarter
+                         ELSE earnings.quarter END,
+            source=excluded.source,
+            fetched_at=excluded.fetched_at
+        """,
+        [{**r.model_dump(), "is_estimate": int(r.is_estimate)} for r in records],
+    )
+    conn.commit()
+
+
+def get_earnings(
+    conn: sqlite3.Connection,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    tickers: list[str] | None = None,
+) -> list[EarningsEvent]:
+    """Calendar rows, oldest first. Every filter is optional and ANDed."""
+    where: list[str] = []
+    params: list = []
+    if date_from:
+        where.append("event_date >= ?")
+        params.append(date_from)
+    if date_to:
+        where.append("event_date <= ?")
+        params.append(date_to)
+    if tickers is not None:
+        if not tickers:
+            return []
+        where.append(f"ticker IN ({','.join('?' * len(tickers))})")
+        params.extend(tickers)
+    sql = "SELECT * FROM earnings"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY event_date ASC, ticker ASC"
+    cur = conn.execute(sql, params)
+    return [_earnings_row(row) for row in cur.fetchall()]
+
+
+def get_earnings_for(conn: sqlite3.Connection, ticker: str) -> list[EarningsEvent]:
+    """One company's rows, oldest first (history then upcoming)."""
+    cur = conn.execute(
+        "SELECT * FROM earnings WHERE ticker = ? ORDER BY event_date ASC", (ticker,))
+    return [_earnings_row(row) for row in cur.fetchall()]
+
+
+def _earnings_row(row: sqlite3.Row) -> EarningsEvent:
+    # SQLite has no bool type; is_estimate comes back as 0/1.
+    data = dict(row)
+    data["is_estimate"] = bool(data["is_estimate"])
+    return EarningsEvent(**data)
 
 
 # ---------- boom scores ----------

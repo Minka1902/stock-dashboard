@@ -265,6 +265,38 @@ function Assert-PortFree {
         Write-Check 'preflight' "port $Port" 'free'
         return
     }
+    # The Windows service restarts itself, so -Kill cannot free its port: the
+    # taskkill succeeds, NSSM starts a new uvicorn ~5s later, and the retry
+    # below reports "something is still listening" with no hint as to what.
+    # Catch it before offering -Kill at all.
+    # NSSM is the service process and runs uvicorn as its child, so the pid
+    # holding the port is the child -- match on the parent chain, not on the
+    # service pid directly. Only blame the service if it really owns THIS port;
+    # `-ApiPort 8001` alongside a running service must still work normally.
+    $svc = Get-Service -Name 'SignalDashboard' -ErrorAction SilentlyContinue
+    $svcOwnsPort = $false
+    if ($svc -and $svc.Status -eq 'Running') {
+        $svcPid = (Get-CimInstance Win32_Service -Filter "Name='SignalDashboard'").ProcessId
+        foreach ($owner in $owners) {
+            $p = Get-CimInstance Win32_Process -Filter "ProcessId=$owner" -ErrorAction SilentlyContinue
+            if ($p -and ($owner -eq $svcPid -or $p.ParentProcessId -eq $svcPid)) {
+                $svcOwnsPort = $true
+                break
+            }
+        }
+    }
+    if ($svcOwnsPort) {
+        Fail "$Label port $Port is held by the SignalDashboard Windows service." (@(
+            'The service restarts on kill, so -Kill will not free it. Either:',
+            "  .\start.ps1 $Mode -ApiPort 8001        # run dev alongside the service",
+            '  .\windows\service-control.ps1 -Stop    # stop the service first (admin)',
+            '',
+            'Note the dev instance uses backend\stocks.db, a different database',
+            'from the service -- separate accounts, separate TOTP enrolment.',
+            'Currently held by:'
+        ) + @($owners | ForEach-Object { Describe-Pid $_ }))
+    }
+
     if (-not $Kill) {
         $who = @($owners | ForEach-Object { Describe-Pid $_ })
         Fail "$Label port $Port is already in use." (@(

@@ -60,7 +60,8 @@ def main() -> int:
     parser.add_argument("--max-restarts", type=int, default=10)
     parser.add_argument(
         "--no-supervise", action="store_true",
-        help="exec uvicorn directly, without the restart loop")
+        help="run uvicorn in this process, without the restart loop "
+             "(what the Windows service uses — see windows/README.md)")
     args = parser.parse_args()
 
     # Run from backend/ so the relative default STOCKS_DB_PATH resolves the same
@@ -70,10 +71,21 @@ def main() -> int:
     log_dir = Path(os.environ.get("STOCKS_LOG_DIR") or (Path.cwd() / "logs"))
     _setup_logging(log_dir)
 
-    cmd = _uvicorn_command(args)
-
     if args.no_supervise:
-        return subprocess.call(cmd)
+        # In-process on purpose, not a child. Under a service manager the stop
+        # signal is delivered to *this* pid; with uvicorn in a subprocess it
+        # would never reach the server, and app.main's lifespan shutdown — which
+        # ends with PRAGMA wal_checkpoint(TRUNCATE) on both connections — would
+        # be skipped on every stop. Reload is a dev-only flag and needs the
+        # subprocess form, so it keeps the old path.
+        if args.reload:
+            return subprocess.call(_uvicorn_command(args))
+        import uvicorn
+        logger.info("starting uvicorn in-process on %s:%s", args.host, args.port)
+        uvicorn.run("app.main:app", host=args.host, port=args.port)
+        return 0
+
+    cmd = _uvicorn_command(args)
 
     restarts = 0
     while True:
