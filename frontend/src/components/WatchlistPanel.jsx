@@ -69,6 +69,9 @@ function DragHandle({ controls, ticker, onMove, position, total }) {
       aria-label={`Reorder ${ticker}. Position ${position} of ${total}. Use arrow up and down to move.`}
       onPointerDown={(e) => {
         e.preventDefault(); // don't start a text selection while dragging
+        // preventDefault on pointerdown also suppresses the browser's default
+        // focus step, which would silently break the keyboard path below.
+        e.currentTarget.focus();
         controls.start(e);
       }}
       onKeyDown={(e) => {

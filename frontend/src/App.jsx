@@ -71,9 +71,23 @@ const VIEWS = {
   ),
   trades: (p) => <TradesPanel trades={p.trades} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   news: (p) => (
-    <NewsPanel news={p.news} portfolio={p.portfolio} xPosts={p.xPosts} sources={p.sources} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />
+    <NewsPanel
+      news={p.news} portfolio={p.portfolio} xPosts={p.xPosts} sources={p.sources}
+      loading={p.loading} busy={p.busy} onRefresh={p.refresh}
+      // force: both feeds sit behind long throttles (GDELT is daily),
+      // so an un-forced "update now" would usually be a silent no-op.
+      onUpdateNews={() => p.refreshOne(["gdelt", "x_posts"], { force: true })}
+    />
   ),
   "suggestion-history": () => <SuggestionHistoryPanel />,
+  earnings: () => <EarningsPanel />,
+  // Diagnostics expose the DB path and tracebacks, so the route is admin-only
+  // server-side too — this check is just the UI half.
+  server: (p) => (
+    p.user?.is_admin
+      ? <ServerPanel />
+      : <p className={styles.error}>The server page is admin-only.</p>
+  ),
   settings: (p) => (
     <SettingsPanel settings={p.settings} setSetting={p.setSetting} onNavigate={p.navigate} appSettingsApi={p.appSettingsApi} user={p.user} theme={p.theme} onSetTheme={p.setTheme} themes={p.themes} />
   ),
@@ -82,7 +96,7 @@ const VIEWS = {
   contracts: (p) => <ContractsPanel contracts={p.contracts} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   watchlist: (p) => <WatchlistPanel quotes={p.quotesByTicker} marketStatus={p.marketStatus} />,
   "yield-curve": (p) => <YieldCurvePanel data={p.yieldCurve} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
-  "econ-calendar": (p) => <EconCalendarPanel data={p.econCalendar} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  "econ-calendar": (p) => <EconCalendarPanel data={p.econCalendar} loading={p.loading} busy={p.busy} onRefresh={p.refresh} onNavigate={p.navigate} />,
   signals: (p) => <TechnicalPanel data={p.signals} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   "fear-greed": (p) => <FearGreedPanel data={p.fearGreed} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   congress: (p) => <CongressPanel data={p.congressTrades} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,

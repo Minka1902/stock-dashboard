@@ -1344,6 +1344,21 @@ def earnings_for(ticker: str, user=Depends(auth.get_current_user)):
     }
 
 
+@app.get("/api/backtest/track-record")
+def backtest_track_record(months: int = 12, user=Depends(auth.get_current_user)):
+    """How the app's own suggestions have actually turned out, for this user."""
+    return backtest.track_record(conn, user.id, months=max(1, min(months, 60)))
+
+
+@app.get("/api/backtest/signal-replay")
+def backtest_signal_replay(
+    horizon: int = 7, months: int = 12, user=Depends(auth.get_current_user)
+):
+    """Boom-score threshold crossings vs the forward move that followed."""
+    return backtest.signal_replay(
+        conn, horizon_days=max(1, min(horizon, 90)), months=max(1, min(months, 60)))
+
+
 @app.get("/api/sources")
 def sources():
     return [s.model_dump() for s in db.get_source_statuses(conn)]

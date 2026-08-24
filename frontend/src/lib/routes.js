@@ -25,6 +25,8 @@ export const TITLES = {
   x:           "X Watch",
   info:        "Info",
   settings:    "Settings",
+  earnings:    "Earnings",
+  server:      "Server",
 };
 
 /** The view shown at "/" — and the fallback for an unrecognised path. */

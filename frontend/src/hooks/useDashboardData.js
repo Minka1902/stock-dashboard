@@ -226,8 +226,14 @@ export function useDashboardData() {
     patch({ portfolio: await apiRemoveHolding(ticker) });
   }, [patch]);
 
-  const markAlertsRead = useCallback(async () => {
-    const { alerts: a, unread } = await apiMarkAlertsRead({ all: true });
+  /**
+   * Mark alerts read. No argument marks everything; an array of dedup_keys
+   * marks exactly those. The backend already accepted per-key marking — only
+   * the "all" path was ever wired up here.
+   */
+  const markAlertsRead = useCallback(async (keys) => {
+    const payload = Array.isArray(keys) && keys.length ? { keys } : { all: true };
+    const { alerts: a, unread } = await apiMarkAlertsRead(payload);
     patch({ alerts: a, unreadAlerts: unread });
   }, [patch]);
 
