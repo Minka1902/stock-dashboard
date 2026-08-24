@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
 import AnimatedNumber from "./AnimatedNumber";
 import ExtHoursBadge from "./ExtHoursBadge";
+import MenuButton, { MenuDivider, MenuItem, MenuLabel } from "./MenuButton";
 import Sparkline from "./Sparkline";
 import SparkRange from "./SparkRange";
 import TickerLabel from "./TickerLabel";
@@ -251,10 +252,11 @@ export default function PortfolioPanel({
                                   title={`Analyze ${h.ticker} in a new tab`}>
                             <TickerLabel ticker={h.ticker} className={styles.symbol} />
                           </button>
-                          <CategorySelect
+                          <CategoryCell
                             ticker={h.ticker}
                             category={h.category || "Other"}
                             source={h.category_source}
+                            editing={isEditing}
                             onSetCategory={onSetCategory}
                           />
                         </td>
@@ -367,26 +369,65 @@ export default function PortfolioPanel({
   );
 }
 
-// Category chip + inline theme override dropdown.
-function CategorySelect({ ticker, category, source, onSetCategory }) {
-  const change = (e) => {
-    const v = e.target.value;
-    onSetCategory(ticker, v === "__auto__" ? null : v);
-  };
+/**
+ * The holding's theme: a read-only chip normally, a picker while the row is
+ * being edited.
+ *
+ * It used to be a live <select> rendered outside edit mode, so a mis-click on
+ * a scrolling table silently rewrote a holding's theme. Gating it behind the
+ * pencil matches shares and avg-cost, which were always edit-only.
+ *
+ * The picker is MenuButton rather than a native <select> because a native
+ * dropdown's options are OS chrome: they ignore data-theme and cannot be
+ * styled cross-browser, so the list sat there in system colours while the
+ * rest of the app was in Iris Dusk. MenuButton renders real DOM and inherits
+ * the tokens — and, since it is portaled, is not clipped by the table.
+ */
+function CategoryCell({ ticker, category, source, editing, onSetCategory }) {
+  const isManual = source === "manual";
+  const label = isManual ? category : `Auto · ${category}`;
+
+  if (!editing) {
+    return (
+      <span className={styles.catWrap}>
+        <span
+          className={styles.catChip}
+          data-source={source}
+          title={isManual ? "Manual theme override" : `Automatically classified as ${category}`}
+        >
+          {label}
+        </span>
+      </span>
+    );
+  }
+
   return (
     <span className={styles.catWrap}>
-      <select
-        className={styles.catSelect}
-        value={source === "manual" ? category : "__auto__"}
-        onChange={change}
-        onClick={(e) => e.stopPropagation()}
-        aria-label={`Theme for ${ticker}`}
-        title={source === "manual" ? "Manual theme override" : `Auto: ${category}`}
-        data-source={source}
+      <MenuButton
+        label={`Theme for ${ticker}`}
+        glyph={label}
+        align="start"
+        className={styles.catMenu}
       >
-        <option value="__auto__">{`Auto · ${category}`}</option>
-        {THEMES.map((t) => <option key={t} value={t}>{t}</option>)}
-      </select>
+        {(close) => (
+          <>
+            <MenuLabel>Theme</MenuLabel>
+            <MenuItem onSelect={() => { onSetCategory(ticker, null); close(); }}>
+              {`Auto${isManual ? "" : " ·"} ${isManual ? "" : category}`.trim()}
+            </MenuItem>
+            <MenuDivider />
+            {THEMES.map((t) => (
+              <MenuItem
+                key={t}
+                tone={isManual && t === category ? "active" : undefined}
+                onSelect={() => { onSetCategory(ticker, t); close(); }}
+              >
+                {t}
+              </MenuItem>
+            ))}
+          </>
+        )}
+      </MenuButton>
     </span>
   );
 }

@@ -60,6 +60,9 @@
 .item[data-tone="danger"] svg { color: var(--negative); }
 .item[data-tone="danger"]:hover:not(:disabled) { background: var(--negative-weak); }
 
+/* The currently-selected option in a picker menu. */
+.item[data-tone="active"] { color: var(--accent); background: var(--accent-weak); }
+
 .groupLabel {
   padding: var(--s-2) 10px 4px;
   font-family: var(--mono);
