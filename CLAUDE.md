@@ -211,8 +211,15 @@ sitting in context every session.
 - **`src/hooks/useDashboardData.js`** owns *all* dashboard state: loads every endpoint in parallel
   on mount, auto-polls every 3 min, and exposes `refresh()` which POSTs `/api/refresh/<source>` for
   each `EXTERNAL_SOURCES` entry (via `Promise.allSettled`, so partial failures are fine) then reloads.
-- **`src/App.jsx`** is a single-page view switcher (`view` state + `TITLES` map). Each section is a
-  `*Panel` component in `src/components/`, paired with a co-located `.module.css`.
+- **Routing is real History API paths** (`src/lib/nav.js`), hand-rolled rather than react-router:
+  a flat list of views plus one parameterised route (`/stock/<TICKER>`). `view` is *derived* from
+  the URL in `App.jsx`, not state; `VIEWS` maps it to a panel and `TITLES` (`src/lib/routes.js`)
+  maps it to a path segment and page title. Each section is a `*Panel` component in
+  `src/components/`, paired with a co-located `.module.css`.
+- `/stock/<TICKER>` normally opens in a **new tab** (`openTickerTab`); in-app navigation to it
+  carries `?from=<view>`. That param is what `leaveStock` uses to decide whether Back returns to
+  a view or closes the tab — and it is why `openTickerTab` must not pass `noopener`, which
+  forfeits a tab's right to close itself.
 - Styling is **CSS Modules + design tokens** defined in `src/index.css` (`:root` custom properties
   for spacing/radius/typography; the "Iris Dusk" dark theme). No CSS framework. Accessibility is a
   first-class concern: an always-on ADHD-friendly type scale and an opt-in dyslexia mode
