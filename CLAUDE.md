@@ -25,21 +25,14 @@ cd backend
 python -m venv .venv && .venv/Scripts/python.exe -m pip install -r requirements.txt  # first time (Windows)
 .venv/Scripts/python.exe -m uvicorn app.main:app --reload --port 8000   # run API + scheduler
 .venv/Scripts/python.exe -m pytest                                       # all tests
-.venv/Scripts/python.exe -m pytest tests/test_boom_score.py             # one file
-.venv/Scripts/python.exe -m pytest tests/test_boom_score.py::test_name  # one test
 ```
 Imports are package-relative (`from app import db`), so **always run from `backend/`** with the
 `app.main:app` module path. Tests use a `conn` fixture (`tests/conftest.py`) giving a fresh
 temp-file SQLite DB per test.
 
 ### Frontend (`frontend/`) — React 19 + Vite, plain CSS Modules
-```bash
-cd frontend
-npm install
-npm run dev      # Vite dev server on :5173
-npm run build
-npm run lint     # eslint
-```
+Standard npm scripts (`install` / `dev` / `build` / `lint`) — see `package.json`.
+
 **Two run modes:**
 - **Single port (prod-like):** `cd frontend && npm run build`, then run uvicorn — the backend
   serves the built `frontend/dist/` on `:8000` (SPA catch-all in `app/main.py::_mount_spa`, only
@@ -179,15 +172,9 @@ scaled by trade amount and time-decayed. Component booleans are persisted so the
 score, and each run also appends to boom-score history.
 
 ### Adding a new data source
-1. `app/sources/<name>.py` with `fetch(...) -> list[<Model>]` (pure parse helpers kept separate).
-2. Add the Pydantic model to `app/models.py`.
-3. In `app/db.py`: add the table to `init_schema`, plus `upsert_<name>` / `get_<name>` (and any
-   `get_<name>_for(ticker)` helpers Boom Score needs).
-4. Register in the `SOURCES` dict in `app/main.py` (before `boom_score`/`alerts`) and add a
-   `GET /api/<name>` route.
-5. Add a `pytest` test (parsing logic without network; storage via the `conn` fixture).
-6. Frontend: add the fetch in `src/api.js`, wire it into `src/hooks/useDashboardData.js` (state +
-   `Promise.all` load), add the source name to `EXTERNAL_SOURCES` there, and add a panel/view.
+Step-by-step checklist lives in the `adding-a-data-source` skill
+(`.claude/skills/adding-a-data-source/SKILL.md`) — it loads on demand rather than
+sitting in context every session.
 
 ## Frontend architecture
 

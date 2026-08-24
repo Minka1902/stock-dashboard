@@ -6,6 +6,7 @@ import InsiderTrades from "./InsiderTrades";
 import Skeleton from "./Skeleton";
 import StockAlerts from "./StockAlerts";
 import SuggestionHistoryStrip from "./SuggestionHistoryStrip";
+import Segmented from "./Segmented";
 import TickerLabel from "./TickerLabel";
 import XPostCard from "./XPostCard";
 import { getAnalyze, analysisReportUrl } from "../api";

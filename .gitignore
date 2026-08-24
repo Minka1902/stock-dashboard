@@ -1,6 +1,10 @@
 # Playwright / browser-driven test artifacts
 .playwright-mcp/
 
+# Per-machine Claude Code settings. The skills under .claude/skills/ ARE tracked —
+# CLAUDE.md points at them as the canonical checklists.
+.claude/settings.local.json
+
 # Launcher bookkeeping: pid files for -Stop, and redirected child output.
 .run/
 logs/
