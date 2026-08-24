@@ -121,6 +121,11 @@ class LiveQuote(BaseModel):
     regular_price: float | None = None       # meta.regularMarketPrice (session close)
     extended_change_pct: float | None = None  # PRE: vs prev close; POST: vs regular close
     fetched_at: str
+    # "equity" | "fx". FX quotes come from the same endpoint but need different
+    # display: more decimals, and they must not drive the market-open badge,
+    # since currencies trade ~24/5 and would report REGULAR at 3am.
+    kind: str = "equity"
+    label: str = ""             # display name; "USD/ILS" for USDILS=X
 
 
 class FearGreedSnapshot(BaseModel):
