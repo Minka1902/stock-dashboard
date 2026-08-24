@@ -130,6 +130,36 @@ No root package manager, so the companions copy rather than share:
   enrolls TOTP via pyotp).
 - Rate limiting (`app/security.py`) is a fixed-window in-memory limiter; ticker inputs are
   whitelisted by `app/validation.py::clean_ticker` before reaching outbound URLs.
+- **`app/registration.py` is the only gate on account creation** (`STOCKS_REGISTRATION` =
+  `open` | `invite` | `closed`, default `open`). There are exactly two account factories —
+  `routes_auth.register` and the auto-create inside `routes_oauth._resolve_user` — and both
+  must call it. A third creation path that forgets to is the regression to watch for.
+  Deliberately no first-user bootstrap exemption: it would be a race between the operator and
+  the first stranger to load the URL, and the winner gets `is_admin` plus `claim_legacy_rows`.
+- `db.delete_user` sweeps all ten per-user tables explicitly. Only `sessions`,
+  `recovery_codes` and `oauth_identities` declare `ON DELETE CASCADE`, so deleting the `users`
+  row alone strands the rest under an id SQLite may reissue. Keep `_PER_USER_TABLES` in step
+  with the schema.
+
+## Public exposure
+
+The app can be served on the internet through a tunnel (Tailscale Funnel — see
+`windows/README.md`). Three things that are load-bearing:
+
+- **The bind never changes.** The tunnel dials `127.0.0.1` from this machine; `0.0.0.0` would
+  only add LAN exposure. `install-service.ps1 -PublicOrigin` derives every env var that has to
+  agree with the public URL, including the `CORS_ORIGINS[0]` ordering rule above.
+- **`security.py::_client_ip` trusts `X-Forwarded-For` only from `config.TRUSTED_PROXY_IPS`.**
+  Behind a tunnel every socket peer is loopback, so keying rate limits on the peer alone puts
+  the whole internet in one bucket; trusting the header unconditionally lets anyone forge a
+  private one. uvicorn's own `ProxyHeadersMiddleware` (on by default, `forwarded_allow_ips`
+  `127.0.0.1`) is a second layer that composes — `run_server.py` passes it the same list so
+  the two agree on one boundary. Because it may already have rewritten `request.client`, a
+  peer that is *not* trusted is treated as the real client and the header is never re-parsed.
+- **HSTS is only sent on requests that really arrived over HTTPS** (`_is_https`). An
+  unconditional header would also go out on `http://localhost:8000` and pin that origin to
+  HTTPS in the browser profile permanently, breaking dev in a way that is very hard to
+  diagnose. Never add `preload`: `ts.net` is Tailscale's domain, not ours.
 
 ## On-demand analysis & search (any ticker)
 

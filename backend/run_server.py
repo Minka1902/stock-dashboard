@@ -26,11 +26,26 @@ FAST_FAIL_SECONDS = 20
 logger = logging.getLogger("supervisor")
 
 
+def _trusted_proxies() -> str:
+    """STOCKS_TRUSTED_PROXY_IPS, read straight from the environment.
+
+    This is a launcher; it deliberately does not import app.config (same reason
+    STOCKS_LOG_DIR is read by hand below). uvicorn wraps the app in its own
+    ProxyHeadersMiddleware whose default trust list is "127.0.0.1"; passing the
+    value through keeps that layer and app/security.py::_client_ip agreeing on
+    one boundary instead of two independent defaults.
+    """
+    return os.environ.get("STOCKS_TRUSTED_PROXY_IPS", "").strip()
+
+
 def _uvicorn_command(args) -> list[str]:
     cmd = [
         sys.executable, "-m", "uvicorn", "app.main:app",
         "--host", args.host, "--port", str(args.port),
     ]
+    # Empty would parse as a single trusted "" host, so only pass it when set.
+    if _trusted_proxies():
+        cmd += ["--forwarded-allow-ips", _trusted_proxies()]
     if args.reload:
         # --reload-dir keeps the watcher off .venv and the SQLite files.
         cmd += ["--reload", "--reload-dir", "app"]
@@ -81,8 +96,11 @@ def main() -> int:
         if args.reload:
             return subprocess.call(_uvicorn_command(args))
         import uvicorn
+        kwargs = {}
+        if _trusted_proxies():
+            kwargs["forwarded_allow_ips"] = _trusted_proxies()
         logger.info("starting uvicorn in-process on %s:%s", args.host, args.port)
-        uvicorn.run("app.main:app", host=args.host, port=args.port)
+        uvicorn.run("app.main:app", host=args.host, port=args.port, **kwargs)
         return 0
 
     cmd = _uvicorn_command(args)

@@ -2645,6 +2645,44 @@ def count_users(conn: sqlite3.Connection) -> int:
     return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
 
+# Every table that carries a user_id. Only sessions, recovery_codes and
+# oauth_identities declare ON DELETE CASCADE, so deleting the users row alone
+# would strand the rest under an id SQLite may reissue to the next account.
+# Sweep all of them explicitly and keep this list in step with the schema.
+_PER_USER_TABLES = (
+    "watchlist",
+    "watchlists",
+    "portfolio",
+    "notify_profile",
+    "alert_reads",
+    "suggestion_history",
+    "drawings",
+    "sessions",
+    "recovery_codes",
+    "oauth_identities",
+)
+
+
+def delete_user(conn: sqlite3.Connection, user_id: int) -> bool:
+    """Delete an account and every row it owns. Returns False if unknown.
+
+    Shared market data (ticker-keyed tables, `stock_analysis`, `alerts`) is
+    deliberately untouched — it belongs to the instance, not to the account.
+    """
+    if get_user(conn, user_id) is None:
+        return False
+    try:
+        for table in _PER_USER_TABLES:
+            if _has_column(conn, table, "user_id"):
+                conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return True
+
+
 def set_onboarded(conn: sqlite3.Connection, user_id: int) -> None:
     """Mark that the account has seen the guided tour (persists across devices)."""
     conn.execute("UPDATE users SET onboarded = 1 WHERE id = ?", (user_id,))

@@ -102,6 +102,8 @@ export const getTrackRecord = (months = 12) =>
 export const getSignalReplay = ({ horizon = 7, months = 12 } = {}) =>
   getJSON(`/api/backtest/signal-replay?horizon=${horizon}&months=${months}`);
 export const getOAuthProviders = () => getJSON("/api/auth/oauth/providers");
+// "open" | "invite" | "closed" — decides whether to offer a sign-up tab at all.
+export const getRegistrationMode = () => getJSON("/api/auth/registration");
 export const oauthStartUrl = (provider) => `${BASE}/api/auth/oauth/${provider}/start`;
 export const getAlerts = () => getJSON("/api/alerts");
 export const getEarnings = ({ from, to, scope } = {}) => {
@@ -184,8 +186,11 @@ export const deleteWatchlist = (id) =>
 
 // ---------- auth ----------
 export const getMe = () => getJSON("/api/auth/me");
-export const register = (email, password) =>
-  request("/api/auth/register", { method: "POST", body: { email, password } });
+export const register = (email, password, inviteCode) =>
+  request("/api/auth/register", {
+    method: "POST",
+    body: { email, password, invite_code: inviteCode || "" },
+  });
 export const login = (email, password) =>
   request("/api/auth/login", { method: "POST", body: { email, password } });
 export const totpSetup = () => getJSON("/api/auth/totp/setup");
