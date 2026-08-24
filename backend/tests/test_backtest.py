@@ -82,6 +82,28 @@ def test_track_record_groups_by_action_and_kind(conn):
     assert {b["label"] for b in out["by_kind"]} == {"watchlist", "holding"}
 
 
+def test_track_record_groups_by_ticker(conn):
+    """The aggregate rows say "BUY · conv 3" but not which stock; by_ticker is
+    what lets the table name the company."""
+    _seed_bars(conn, "AAPL")
+    _seed_bars(conn, "MSFT")
+    _seed_suggestion(conn, "AAPL", days_ago=40)
+    _seed_suggestion(conn, "AAPL", days_ago=30)
+    _seed_suggestion(conn, "MSFT", days_ago=40)
+
+    out = backtest.track_record(conn, user_id=1)
+    labels = [b["label"] for b in out["by_ticker"]]
+    assert labels == ["AAPL", "MSFT"]  # busiest first, then alphabetical
+    aapl = out["by_ticker"][0]
+    assert aapl["n"] == 2
+    # Same bucket shape as every other grouping, so the UI can share a row.
+    assert set(aapl) >= {"label", "n", "d7", "d7_pending", "d30", "d30_pending"}
+
+
+def test_track_record_by_ticker_is_empty_without_history(conn):
+    assert backtest.track_record(conn, user_id=1)["by_ticker"] == []
+
+
 def test_benchmark_says_why_it_is_missing(conn):
     """Silence would let a track record flatter itself in a rising market."""
     _seed_bars(conn, "AAPL")
