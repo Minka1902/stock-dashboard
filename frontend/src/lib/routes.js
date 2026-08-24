@@ -23,9 +23,10 @@ export const TITLES = {
   "suggestion-history": "Suggestion History",
   portfolio:   "Portfolio",
   x:           "X Watch",
+  earnings:    "Earnings",
+  // App-level utilities, grouped as they are in the account menu.
   info:        "Info",
   settings:    "Settings",
-  earnings:    "Earnings",
   server:      "Server",
 };
 

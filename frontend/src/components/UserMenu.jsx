@@ -79,6 +79,13 @@ export default function UserMenu({ user, onLogout, onNavigate }) {
             <button type="button" role="menuitem" className={styles.item} onClick={() => go("info")}>
               <Icon name="info" size={15} /> Info / Guide
             </button>
+            {/* Admin-only: exposes the DB path, tracebacks and machine stats.
+                The route is gated server-side too — this is just the UI half. */}
+            {user.is_admin && (
+              <button type="button" role="menuitem" className={styles.item} onClick={() => go("server")}>
+                <Icon name="layers" size={15} /> Server
+              </button>
+            )}
 
             <div className={styles.divider} />
 

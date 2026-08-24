@@ -294,6 +294,11 @@ export default function App({ auth }) {
     { id: "x",           label: "X Watch",          hint: "tracked accounts", icon: "x", run: () => navigate("x") },
     { id: "info",        label: "Info",             hint: "modules, sources & glossary", icon: "info", run: () => navigate("info") },
     { id: "settings",    label: "Settings",         hint: "config", icon: "settings", run: () => navigate("settings") },
+    // Sits with Info and Settings, and only for admins — same grouping and the
+    // same gate as the account menu.
+    ...(auth?.user?.is_admin
+      ? [{ id: "server", label: "Server", hint: "health & errors", icon: "layers", run: () => navigate("server") }]
+      : []),
     { id: "refresh",     label: "Refresh all sources", hint: "sync now", icon: "refresh", run: () => refresh() },
     { id: "theme",       label: "Toggle theme", hint: theme === "dark" ? "to light" : "to dark", icon: theme === "dark" ? "sun" : "moon", run: () => toggle() },
     { id: "dyslexia",    label: "Dyslexia-friendly mode", hint: settings.dyslexia ? "on" : "off", icon: "book", run: () => setSetting("dyslexia", !settings.dyslexia) },
@@ -304,7 +309,7 @@ export default function App({ auth }) {
       {/* While a ticker is open the analysis page is the whole screen: no rail,
           no marquee, no top bar. Its own Back button is the way out (Task 19). */}
       {!detailTicker && (
-        <Sidebar view={view} onNavigate={navigate} isAdmin={Boolean(auth?.user?.is_admin)} />
+        <Sidebar view={view} onNavigate={navigate} />
       )}
 
       <main className={styles.main}>

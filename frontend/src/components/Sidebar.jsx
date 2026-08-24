@@ -14,13 +14,10 @@ const NAV = [
   { key: "earnings",    label: "Earnings",    icon: "contract", hint: "who reports when" },
 ];
 
-// Shown only to admins: it exposes the DB path, tracebacks and machine stats.
-const ADMIN_NAV = [
-  { key: "server", label: "Server", icon: "layers", hint: "health & errors" },
-];
-
-export default function Sidebar({ view, onNavigate, isAdmin = false }) {
-  const items = isAdmin ? [...NAV, ...ADMIN_NAV] : NAV;
+// Server lives in the account menu next to Settings and Info / Guide — the
+// three are app-level utilities rather than modules in the flow above.
+export default function Sidebar({ view, onNavigate }) {
+  const items = NAV;
   return (
     <aside className={styles.rail}>
       <div className={styles.brand}>
