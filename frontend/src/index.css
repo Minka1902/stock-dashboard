@@ -63,6 +63,18 @@ body {
 
   --sidebar-w: 212px;
 
+  /* Stacking order. Anchored popups are portaled to <body>, so they live in
+     the root stacking context and these values are directly comparable. That
+     matters: the top band sets `backdrop-filter`, which creates a stacking
+     context, so a popup rendered inside it could never outrank a sticky table
+     row no matter how large its z-index — the reason menus used to be sliced
+     off by the first row of a scrolled table. */
+  --z-sticky: 1;    /* sticky thead / group-header rows */
+  --z-raised: 3;    /* in-panel chrome: chart toolbar, section nav */
+  --z-popover: 400; /* menus and tooltips anchored to a trigger */
+  --z-overlay: 800; /* command palette */
+  --z-tour: 1000;   /* guided-tour spotlight, above everything */
+
   /* motion */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
@@ -116,6 +128,7 @@ body {
   --info: oklch(0.74 0.11 232);
   --info-weak: oklch(0.74 0.11 232 / 0.16);
   --shadow: 0 1px 0 oklch(1 0 0 / 0.04) inset, 0 12px 34px oklch(0 0 0 / 0.5);
+  --shadow-lg: 0 1px 0 oklch(1 0 0 / 0.05) inset, 0 20px 48px oklch(0 0 0 / 0.62);
 }
 
 /* ---------- Light theme (fallback) ---------- */
@@ -144,6 +157,7 @@ body {
   --info: oklch(0.52 0.12 232);
   --info-weak: oklch(0.52 0.12 232 / 0.14);
   --shadow: 0 1px 2px oklch(0.6 0.02 80 / 0.18), 0 12px 30px oklch(0.6 0.02 80 / 0.16);
+  --shadow-lg: 0 2px 4px oklch(0.6 0.02 80 / 0.16), 0 20px 44px oklch(0.6 0.02 80 / 0.22);
 }
 
 /* ---------- Retro theme (purple-phosphor terminal) ----------
@@ -174,6 +188,7 @@ body {
   --info: oklch(0.82 0.13 200);
   --info-weak: oklch(0.82 0.13 200 / 0.16);
   --shadow: 0 1px 0 oklch(0.74 0.18 300 / 0.06) inset, 0 12px 34px oklch(0 0.02 300 / 0.55);
+  --shadow-lg: 0 1px 0 oklch(0.74 0.18 300 / 0.08) inset, 0 20px 48px oklch(0 0.02 300 / 0.66);
 }
 
 /* ---------- Warm theme (cream / amber paper) ---------- */
@@ -202,6 +217,7 @@ body {
   --info: oklch(0.52 0.12 232);
   --info-weak: oklch(0.52 0.12 232 / 0.14);
   --shadow: 0 1px 2px oklch(0.55 0.04 60 / 0.20), 0 12px 30px oklch(0.55 0.04 60 / 0.16);
+  --shadow-lg: 0 2px 4px oklch(0.55 0.04 60 / 0.18), 0 20px 44px oklch(0.55 0.04 60 / 0.22);
 }
 
 body {

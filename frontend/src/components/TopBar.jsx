@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
 import AlertsBell from "./AlertsBell";
+import Popover from "./Popover";
 import UserMenu from "./UserMenu";
 import { formatRelativeTime } from "../lib/format";
 import { leanLabel, leanTone } from "../lib/lean";
-import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./TopBar.module.css";
 
 // Theme switcher: a trigger button + motion popover of the available themes,
@@ -13,9 +12,14 @@ import styles from "./TopBar.module.css";
 function ThemeMenu({ theme, themes, onSetTheme }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const menuRef = useRef(null);
   useEffect(() => {
     if (!open) return undefined;
-    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onDoc = (e) => {
+      // Portaled to <body>, so it is not inside ref — check it separately.
+      if (menuRef.current?.contains(e.target)) return;
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
@@ -33,16 +37,7 @@ function ThemeMenu({ theme, themes, onSetTheme }) {
       >
         <Icon name={isLight ? "sun" : "moon"} size={17} />
       </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            className={styles.themeMenu}
-            role="menu"
-            initial={prefersReducedMotion() ? false : { opacity: 0, y: -6, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
-            transition={prefersReducedMotion() ? { duration: 0 } : { duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-          >
+      <Popover open={open} anchorRef={ref} contentRef={menuRef} className={styles.themeMenu} role="menu">
             {themes.map((t) => (
               <button
                 key={t.key}
@@ -64,9 +59,7 @@ function ThemeMenu({ theme, themes, onSetTheme }) {
                 </span>
               </button>
             ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </Popover>
     </div>
   );
 }

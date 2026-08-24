@@ -57,18 +57,16 @@
   .trigger { padding: 3px; }
 }
 
+/* Position, z-index and max-height come from Popover. */
 .menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 50;
   min-width: 232px;
   padding: var(--s-2);
   border-radius: var(--r-md);
   border: 1px solid var(--border);
   background: var(--surface);
-  box-shadow: var(--shadow-lg, 0 16px 40px -12px rgba(0, 0, 0, 0.5));
+  box-shadow: var(--shadow-lg);
   transform-origin: top right;
+  overflow-y: auto;
 }
 
 .identity {

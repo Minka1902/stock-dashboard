@@ -190,6 +190,7 @@
 /* --- group headers --- */
 .groupRow td {
   position: sticky;
+  z-index: var(--z-sticky);
   top: 0;
   background: var(--surface-2);
   border-top: 1px solid var(--border);
