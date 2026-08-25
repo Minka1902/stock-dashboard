@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app import db
+from app import config, db
 from app import quotes as quotes_module
 from app.models import ContractRecord, LiveQuote
 from tests.conftest import authenticate, drain_refresh
@@ -71,34 +71,65 @@ def test_sentiment_endpoint_ok_on_empty_db(client):
     assert body["overall"]["lean"] == "NEUTRAL"
 
 
-def test_quotes_empty_watchlist_and_portfolio(client):
-    resp = client.get("/api/quotes")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["quotes"] == []
-    assert "as_of" in body
+def _stub_quotes(monkeypatch, record=None):
+    """Stub the one network boundary in the quotes module.
 
-
-def test_quotes_union_of_watchlist_and_portfolio(client, monkeypatch):
-    requested = []
-
+    Needed on every /api/quotes test now that the route also fetches FX: an
+    unstubbed call would reach Yahoo for the currency pairs even when the
+    watchlist is empty.
+    """
     def stub_fetch_quotes(tickers):
-        requested.append(list(tickers))
+        if record is not None:
+            record.append(list(tickers))
         return [
             LiveQuote(ticker=t, price=100.0, change_pct=1.5, previous_close=98.5,
                       market_state="PRE", fetched_at="2026-07-04T12:00:00+00:00")
             for t in tickers
         ]
-
     monkeypatch.setattr(quotes_module, "fetch_quotes", stub_fetch_quotes)
+    quotes_module._cache.clear()   # no leakage between tests
+
+
+def test_quotes_empty_watchlist_and_portfolio(client, monkeypatch):
+    """No holdings still yields the FX strip — it is not derived from the
+    watchlist, so there is something to show on a brand-new account."""
+    _stub_quotes(monkeypatch)
+    resp = client.get("/api/quotes")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [q["ticker"] for q in body["quotes"]] == config.FX_PAIRS
+    assert {q["kind"] for q in body["quotes"]} == {"fx"}
+    assert "as_of" in body
+
+
+def test_quotes_union_of_watchlist_and_portfolio(client, monkeypatch):
+    requested = []
+    _stub_quotes(monkeypatch, record=requested)
     client.post("/api/watchlist", json={"ticker": "LMT", "note": ""})
     client.post("/api/portfolio", json={"ticker": "NOC", "shares": 1, "avg_cost": 10})
 
     body = client.get("/api/quotes").json()
-    assert requested == [["LMT", "NOC"]]
-    tickers = {q["ticker"] for q in body["quotes"]}
-    assert tickers == {"LMT", "NOC"}
+    # FX is fetched separately, so the equity request is still exactly the union.
+    assert ["LMT", "NOC"] in requested
+    equities = [q for q in body["quotes"] if q["kind"] == "equity"]
+    assert {q["ticker"] for q in equities} == {"LMT", "NOC"}
     assert all("price" in q and "market_state" in q for q in body["quotes"])
+
+
+def test_quotes_keeps_fx_out_of_the_equity_fetch(client, monkeypatch):
+    """FX must never enter the watchlist path: a watchlist ticker is fed to
+    technicals, boom score and earnings, none of which mean anything for a
+    currency pair."""
+    requested = []
+    _stub_quotes(monkeypatch, record=requested)
+    client.post("/api/watchlist", json={"ticker": "LMT", "note": ""})
+
+    body = client.get("/api/quotes").json()
+    equity_calls = [c for c in requested if c == ["LMT"]]
+    assert equity_calls, requested
+    assert not any(t.endswith("=X") for call in equity_calls for t in call)
+    fx = [q for q in body["quotes"] if q["kind"] == "fx"]
+    assert [q["label"] for q in fx] == ["USD/ILS", "EUR/ILS", "EUR/USD"]
 
 
 def test_portfolio_add_twice_merges(client):

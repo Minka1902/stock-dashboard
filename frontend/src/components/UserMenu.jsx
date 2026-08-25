@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
+import Popover from "./Popover";
 import { initialsFor, gradientFor } from "../lib/avatar";
-import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./UserMenu.module.css";
 
 /**
@@ -14,12 +13,15 @@ import styles from "./UserMenu.module.css";
 export default function UserMenu({ user, onLogout, onNavigate }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
+  const menuRef = useRef(null);
   const email = user?.email || "";
   const local = email.includes("@") ? email.split("@")[0] : email;
 
   useEffect(() => {
     if (!open) return undefined;
     const onDown = (e) => {
+      // Portaled to <body>, so it is not inside wrapRef — check it separately.
+      if (menuRef.current?.contains(e.target)) return;
       if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
     };
     const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
@@ -51,16 +53,7 @@ export default function UserMenu({ user, onLogout, onNavigate }) {
         <span className={styles.local}>{local}</span>
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            className={styles.menu}
-            role="menu"
-            initial={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: -6 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: -6 }}
-            transition={{ duration: prefersReducedMotion() ? 0 : 0.16, ease: [0.22, 1, 0.36, 1] }}
-          >
+      <Popover open={open} anchorRef={wrapRef} contentRef={menuRef} className={styles.menu} role="menu">
             <div className={styles.identity}>
               <span className={styles.avatarLg} style={{ background: gradientFor(email) }} aria-hidden="true">
                 {initialsFor(email)}
@@ -79,15 +72,20 @@ export default function UserMenu({ user, onLogout, onNavigate }) {
             <button type="button" role="menuitem" className={styles.item} onClick={() => go("info")}>
               <Icon name="info" size={15} /> Info / Guide
             </button>
+            {/* Admin-only: exposes the DB path, tracebacks and machine stats.
+                The route is gated server-side too — this is just the UI half. */}
+            {user.is_admin && (
+              <button type="button" role="menuitem" className={styles.item} onClick={() => go("server")}>
+                <Icon name="layers" size={15} /> Server
+              </button>
+            )}
 
             <div className={styles.divider} />
 
             <button type="button" role="menuitem" className={`${styles.item} ${styles.logout}`} onClick={() => { setOpen(false); onLogout?.(); }}>
               <Icon name="arrowRight" size={15} /> Log out
             </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </Popover>
     </div>
   );
 }

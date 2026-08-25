@@ -2,7 +2,7 @@
   position: fixed;
   right: var(--s-5);
   bottom: var(--s-5);
-  z-index: 40; /* above content, below overlays (command palette / tour) */
+  z-index: var(--z-popover); /* above content, below the palette and tour */
   width: 44px;
   height: 44px;
   display: grid;

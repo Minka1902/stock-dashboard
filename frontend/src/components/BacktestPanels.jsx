@@ -51,6 +51,7 @@ function TrackRecord() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [horizon, setHorizon] = useState(7);
+  const [groupBy, setGroupBy] = useState("action");
 
   useEffect(() => {
     let alive = true;
@@ -63,7 +64,15 @@ function TrackRecord() {
   if (error) return <p className={styles.error}>Couldn&apos;t load the track record: {error}</p>;
   if (!data) return <Skeleton w="100%" h="260px" />;
 
-  const buckets = [data.overall, ...data.by_action.filter((b) => b.label !== "(none)")];
+  // Three groupings of the same rows. "By stock" answers the first question
+  // the aggregates provoke — which company is this actually about.
+  const named = (list) => (list || []).filter((b) => b.label !== "(none)");
+  const GROUPS = {
+    action: [data.overall, ...named(data.by_action)],
+    kind: [data.overall, ...named(data.by_kind)],
+    ticker: named(data.by_ticker),
+  };
+  const buckets = GROUPS[groupBy] || GROUPS.action;
 
   return (
     <div className={styles.body}>
@@ -77,6 +86,16 @@ function TrackRecord() {
           options={[
             { value: "7", label: "7 days" },
             { value: "30", label: "30 days" },
+          ]}
+        />
+        <Segmented
+          ariaLabel="Group by"
+          value={groupBy}
+          onChange={setGroupBy}
+          options={[
+            { value: "action", label: "By action" },
+            { value: "kind", label: "By kind" },
+            { value: "ticker", label: "By stock" },
           ]}
         />
         <span className={styles.benchmark}>
@@ -97,7 +116,8 @@ function TrackRecord() {
           <table className={styles.table}>
             <thead>
               <tr>
-                <th>Bucket</th><th className={styles.num}>Total</th>
+                <th>{groupBy === "ticker" ? "Stock" : "Bucket"}</th>
+                <th className={styles.num}>Total</th>
                 <th className={styles.num}>Scored</th><th className={styles.num}>Pending</th>
                 <th className={styles.num}>Hit rate</th><th className={styles.num}>Median</th>
                 <th className={styles.num}>Best</th><th className={styles.num}>Worst</th>

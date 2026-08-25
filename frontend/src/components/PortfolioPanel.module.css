@@ -190,6 +190,7 @@
 /* --- group headers --- */
 .groupRow td {
   position: sticky;
+  z-index: var(--z-sticky);
   top: 0;
   background: var(--surface-2);
   border-top: 1px solid var(--border);
@@ -220,24 +221,48 @@
 
 /* --- category chip / override --- */
 .catWrap { display: block; margin-top: 3px; }
-.catSelect {
+
+/* Shared shape for the read-only chip and the picker trigger, so switching
+   into edit mode doesn't make the row jump. */
+.catChip,
+.catMenu > button {
+  display: inline-block;
   font-family: var(--mono);
   font-size: 9.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  padding: 1px 4px;
+  padding: 1px 6px;
   border-radius: var(--r-pill);
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text-muted);
-  cursor: pointer;
   max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.catSelect[data-source="manual"] {
+.catChip { cursor: default; }
+.catChip[data-source="manual"] {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--accent-weak);
+}
+
+/* Only the editable form advertises itself as clickable. */
+.catMenu { display: inline-block; }
+.catMenu > button {
+  cursor: pointer;
+  border-style: dashed;
+  /* MenuButton's trigger is a fixed 24x24 box built for a "⋯" glyph; this one
+     holds a theme name, so it has to size to its text. */
+  width: auto;
+  height: auto;
+}
+.catMenu > button:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
 }
 
 /* --- inline edit --- */

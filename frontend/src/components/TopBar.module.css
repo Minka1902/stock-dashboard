@@ -128,11 +128,8 @@
 
 /* theme switcher popover */
 .themeWrap { position: relative; }
+/* Position and z-index come from Popover. */
 .themeMenu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 40;
   width: 214px;
   padding: var(--s-1);
   display: flex;
@@ -141,7 +138,8 @@
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-lg);
+  transform-origin: top right;
 }
 .themeItem {
   display: flex;

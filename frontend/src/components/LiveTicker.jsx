@@ -8,17 +8,27 @@ function tone(pct) {
   return pct >= 0 ? "pos" : "neg";
 }
 
+const isFx = (q) => q.kind === "fx";
+
+// Two decimals is right for a share price and wrong for a rate: EUR/USD would
+// read a flat "1.09" and never appear to move.
+function formatPrice(q) {
+  if (q.price == null) return "—";
+  return q.price.toFixed(isFx(q) ? 4 : 2);
+}
+
 function Item({ q }) {
   const t = tone(q.change_pct);
   return (
     <span className={styles.item} role="listitem">
-      <span className={styles.symbol}>{q.ticker}</span>
-      <span className={styles.price}>{q.price != null ? q.price.toFixed(2) : "—"}</span>
+      <span className={styles.symbol}>{q.label || q.ticker}</span>
+      <span className={styles.price}>{formatPrice(q)}</span>
       <span className={styles.change} data-tone={t}>
         <span className={styles.arrow}>{t === "pos" ? "▲" : t === "neg" ? "▼" : "•"}</span>
         {q.change_pct != null ? `${Math.abs(q.change_pct).toFixed(2)}%` : "—"}
       </span>
-      {(q.market_state === "PRE" || q.market_state === "POST") && (
+      {/* Session badges are an equity notion; FX has no pre/post market. */}
+      {!isFx(q) && (q.market_state === "PRE" || q.market_state === "POST") && (
         <span className={styles.badge}>{q.market_state}</span>
       )}
     </span>
@@ -26,7 +36,9 @@ function Item({ q }) {
 }
 
 function marketBadge(quotes) {
-  const state = quotes.find((q) => q.market_state)?.market_state;
+  // Equities only: FX trades ~24/5 and reports REGULAR through the night, so
+  // letting it answer here would show "LIVE" at 3am on a closed market.
+  const state = quotes.find((q) => !isFx(q) && q.market_state)?.market_state;
   return state || null;
 }
 

@@ -187,6 +187,17 @@ QUOTES_TIMEOUT_SECONDS = float(os.environ.get("STOCKS_QUOTES_TIMEOUT_SECONDS", "
 # costs ~one timeout, not N sequential timeouts, on the request thread.
 QUOTES_MAX_WORKERS = int(os.environ.get("STOCKS_QUOTES_MAX_WORKERS", "8"))
 
+# FX pairs shown in the ticker carousel, in Yahoo's "<BASE><QUOTE>=X" form.
+# Deliberately NOT watchlist entries: a watchlist ticker is fed to the whole
+# analysis pipeline (technicals, boom score, earnings), none of which means
+# anything for a currency pair. These ride the same keyless quote endpoint and,
+# like the rest of quotes.py, are cached in memory and never persisted.
+FX_PAIRS = [
+    p.strip().upper()
+    for p in os.environ.get("STOCKS_FX_PAIRS", "USDILS=X,EURILS=X,EURUSD=X").split(",")
+    if p.strip()
+]
+
 
 # --- Market sentiment indicators ---
 # Yahoo chart range for VIX daily history.

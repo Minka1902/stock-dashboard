@@ -20,7 +20,11 @@ const NAV_EVENT = "app:navigate";
 /**
  * Parse a location into a route.
  *
- * @returns {{kind: "stock", ticker: string, alertKey: string|null}
+ * `from` is the view the user navigated out of, and is present only when the
+ * stock page was opened in this tab. Its absence is how `leaveStock` knows the
+ * page owns a tab of its own and should close it rather than navigate.
+ *
+ * @returns {{kind: "stock", ticker: string, alertKey: string|null, from: string|null}
  *          |{kind: "view", view: string, known: boolean}}
  */
 export function parseRoute(pathname = window.location.pathname, search = window.location.search) {
@@ -30,7 +34,13 @@ export function parseRoute(pathname = window.location.pathname, search = window.
   if (segments[0] === STOCK_SEGMENT && segments[1]) {
     const raw = decodeURIComponent(segments[1]);
     if (TICKER_RE.test(raw)) {
-      return { kind: "stock", ticker: raw.toUpperCase(), alertKey: params.get("alert") };
+      const from = params.get("from");
+      return {
+        kind: "stock",
+        ticker: raw.toUpperCase(),
+        alertKey: params.get("alert"),
+        from: from && isViewKey(from) ? from : null,
+      };
     }
   }
 
@@ -45,8 +55,11 @@ export function parseRoute(pathname = window.location.pathname, search = window.
 export function routeToPath(route) {
   if (typeof route === "string") return route.startsWith("/") ? route : `/${route}`;
   if (route.kind === "stock") {
-    const q = route.alertKey ? `?alert=${encodeURIComponent(route.alertKey)}` : "";
-    return `/${STOCK_SEGMENT}/${encodeURIComponent(route.ticker)}${q}`;
+    const params = new URLSearchParams();
+    if (route.alertKey) params.set("alert", route.alertKey);
+    if (route.from) params.set("from", route.from);
+    const q = params.toString();
+    return `/${STOCK_SEGMENT}/${encodeURIComponent(route.ticker)}${q ? `?${q}` : ""}`;
   }
   return route.view === DEFAULT_VIEW ? "/" : `/${route.view}`;
 }
@@ -60,24 +73,37 @@ export function navigateTo(route, { replace = false } = {}) {
   window.dispatchEvent(new Event(NAV_EVENT));
 }
 
-/** Go back if there's history to go back to, else replace with a fallback. */
-export function goBack(fallback = { kind: "view", view: DEFAULT_VIEW }) {
-  // history.length > 1 means this tab has somewhere to return to. A ticker tab
-  // opened with target=_blank starts at length 1, so it falls through to the
-  // dashboard instead of leaving the user on a dead end.
-  if (window.history.length > 1) {
-    window.history.back();
-    return;
-  }
-  navigateTo(fallback, { replace: true });
-}
-
 /**
  * Open a ticker's analysis view in a new tab. Called from direct user gestures
  * (clicks) so popup blockers don't interfere.
+ *
+ * Deliberately NOT "noopener": a tab may only close itself if it is
+ * script-closable, and severing the opener relationship also gave up that
+ * right — which is why an earlier attempt at self-closing silently did
+ * nothing. The target is same-origin and built here, so there is no
+ * reverse-tabnabbing exposure to trade away. No `from` param is set; its
+ * absence is what marks this page as owning its tab (see `leaveStock`).
  */
 export function openTickerTab(ticker) {
-  window.open(routeToPath({ kind: "stock", ticker }), "_blank", "noopener");
+  window.open(routeToPath({ kind: "stock", ticker }), "_blank");
+}
+
+/**
+ * Leave the stock page the way it was entered.
+ *
+ * Opened in this tab (`from` is set) → go back to that view. Opened as its own
+ * tab → close the tab. `window.close()` is silently ignored when the browser
+ * refuses, so fall back to the dashboard rather than stranding the user on a
+ * page whose only exit did nothing.
+ */
+export function leaveStock(from, fallback = { kind: "view", view: DEFAULT_VIEW }) {
+  if (from && isViewKey(from)) {
+    navigateTo({ kind: "view", view: from }, { replace: true });
+    return;
+  }
+  window.close();
+  // Still here a tick later means close() was refused.
+  window.setTimeout(() => navigateTo(fallback, { replace: true }), 100);
 }
 
 /**

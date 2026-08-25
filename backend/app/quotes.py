@@ -27,6 +27,31 @@ def normalize_market_state(raw) -> str:
     return _STATE_MAP.get(str(raw or "").upper(), "CLOSED")
 
 
+def is_fx(ticker: str) -> bool:
+    """Yahoo spells FX pairs "<BASE><QUOTE>=X" — EURUSD=X, USDILS=X."""
+    return ticker.upper().endswith("=X")
+
+
+def fx_label(ticker: str) -> str:
+    """"USDILS=X" -> "USD/ILS". Falls back to the raw symbol if it isn't a
+    plain six-letter pair (Yahoo also carries things like "ILS=X")."""
+    base = ticker.upper().removesuffix("=X")
+    if len(base) == 6 and base.isalpha():
+        return f"{base[:3]}/{base[3:]}"
+    return ticker.upper()
+
+
+def decorate_fx(quotes: list[LiveQuote]) -> list[LiveQuote]:
+    """Tag FX quotes so the UI can format them and skip them for the session
+    badge. Done here rather than in parse_quote so the pure parser stays
+    symbol-agnostic."""
+    for q in quotes:
+        if is_fx(q.ticker):
+            q.kind = "fx"
+            q.label = fx_label(q.ticker)
+    return quotes
+
+
 def parse_quote(payload: dict, ticker: str, fetched_at: str) -> LiveQuote | None:
     result = (payload.get("chart") or {}).get("result") or []
     if not result:
@@ -163,4 +188,9 @@ def get_quotes(tickers: list[str], ttl_seconds: float | None = None) -> list[Liv
         fetched = fetch_quotes(cold)
         _store(cold, fetched, ttl_seconds)
 
-    return sorted(hits + fetched, key=lambda q: q.ticker)
+    # Return in the order asked for, not alphabetically. The caller decides the
+    # order it wants (the FX strip is configured deliberately, and equities are
+    # pre-sorted), and an alphabetical re-sort here meant a ticker's position in
+    # the carousel depended on which quotes happened to be cache hits.
+    order = {t: i for i, t in enumerate(tickers)}
+    return sorted(hits + fetched, key=lambda q: order.get(q.ticker, len(order)))

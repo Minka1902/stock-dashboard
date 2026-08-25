@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
+import Popover from "./Popover";
 import TickerLabel from "./TickerLabel";
 import { alertIcon } from "../lib/alertMeta";
 import { routeToPath } from "../lib/nav";
@@ -10,10 +11,13 @@ import styles from "./AlertsBell.module.css";
 export default function AlertsBell({ alerts = [], unread = 0, onMarkRead, onOpen }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
+  const popRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
     function onDown(e) {
+      // Portaled to <body>, so it is not inside wrapRef — check it separately.
+      if (popRef.current?.contains(e.target)) return;
       if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
     }
     function onKey(e) { if (e.key === "Escape") setOpen(false); }
@@ -41,8 +45,14 @@ export default function AlertsBell({ alerts = [], unread = 0, onMarkRead, onOpen
         {unread > 0 && <span className={styles.badge}>{unread > 9 ? "9+" : unread}</span>}
       </button>
 
-      {open && (
-        <div className={styles.pop} role="dialog" aria-label="Recent alerts">
+      <Popover
+        open={open}
+        anchorRef={wrapRef}
+        contentRef={popRef}
+        className={styles.pop}
+        role="dialog"
+        aria-label="Recent alerts"
+      >
           <div className={styles.popHead}>
             <span className="caption">Alerts</span>
             {unread > 0 && (
@@ -97,8 +107,7 @@ export default function AlertsBell({ alerts = [], unread = 0, onMarkRead, onOpen
               ))}
             </ul>
           )}
-        </div>
-      )}
+      </Popover>
     </div>
   );
 }

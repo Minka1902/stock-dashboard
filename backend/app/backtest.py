@@ -85,15 +85,25 @@ def track_record(conn, user_id: int, months: int = 12) -> dict:
 
     by_action: dict[str, list[dict]] = {}
     by_kind: dict[str, list[dict]] = {}
+    by_ticker: dict[str, list[dict]] = {}
     for r in rows:
         by_action.setdefault(r.get("action") or "(none)", []).append(r)
         by_kind.setdefault(r.get("kind") or "(none)", []).append(r)
+        if r.get("ticker"):
+            by_ticker.setdefault(r["ticker"], []).append(r)
 
     return {
         "coverage": _coverage([r["for_date"] for r in rows]),
         "overall": bucket("All suggestions", rows),
         "by_action": [bucket(k, v) for k, v in sorted(by_action.items())],
         "by_kind": [bucket(k, v) for k, v in sorted(by_kind.items())],
+        # Per-ticker, busiest first: "which stock is this about" is the first
+        # question the aggregate rows provoke, and the data was already here —
+        # with_outcomes carries the ticker, track_record just discarded it.
+        "by_ticker": [
+            bucket(k, v) for k, v in
+            sorted(by_ticker.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+        ],
         "benchmark": _benchmark(conn, rows),
         # Stated in the payload, not just the UI, so the caveat travels with
         # the numbers wherever they end up.

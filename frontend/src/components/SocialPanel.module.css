@@ -40,6 +40,7 @@
 }
 .table thead th {
   position: sticky;
+  z-index: var(--z-sticky);
   top: 0;
   text-align: left;
   font-size: 11px;

@@ -187,3 +187,49 @@ def test_get_quotes_fetches_only_missing(monkeypatch):
     result = quotes.get_quotes(["AAPL", "MSFT"])
     assert calls == [["AAPL"], ["MSFT"]]
     assert [q.ticker for q in result] == ["AAPL", "MSFT"]
+
+
+# ---------- FX pairs ----------
+
+def test_is_fx_recognises_yahoo_pair_suffix():
+    assert quotes.is_fx("EURUSD=X")
+    assert quotes.is_fx("usdils=x")
+    assert not quotes.is_fx("AAPL")
+    assert not quotes.is_fx("BRK.B")
+
+
+def test_fx_label_splits_a_six_letter_pair():
+    assert quotes.fx_label("USDILS=X") == "USD/ILS"
+    assert quotes.fx_label("EURUSD=X") == "EUR/USD"
+
+
+def test_fx_label_falls_back_for_odd_symbols():
+    """Yahoo also carries shapes like "ILS=X"; better a raw symbol than a
+    mangled slash."""
+    assert quotes.fx_label("ILS=X") == "ILS=X"
+
+
+def test_decorate_fx_tags_only_currency_quotes():
+    made = [
+        LiveQuote(ticker="AAPL", price=1.0, change_pct=None, previous_close=None,
+                  market_state="LIVE", fetched_at="t"),
+        LiveQuote(ticker="EURUSD=X", price=1.09, change_pct=None, previous_close=None,
+                  market_state="LIVE", fetched_at="t"),
+    ]
+    out = quotes.decorate_fx(made)
+    assert (out[0].kind, out[0].label) == ("equity", "")
+    assert (out[1].kind, out[1].label) == ("fx", "EUR/USD")
+
+
+def test_get_quotes_preserves_requested_order(monkeypatch):
+    """Position in the carousel must not depend on which quotes were cached."""
+    quotes._cache.clear()
+    monkeypatch.setattr(quotes, "fetch_quotes", lambda ts: [
+        LiveQuote(ticker=t, price=1.0, change_pct=None, previous_close=None,
+                  market_state="LIVE", fetched_at=FETCHED)
+        for t in ts
+    ])
+    asked = ["ZZZ", "AAA", "MMM"]
+    assert [q.ticker for q in quotes.get_quotes(asked, ttl_seconds=60)] == asked
+    # Second call is served from cache — same order, not alphabetical.
+    assert [q.ticker for q in quotes.get_quotes(asked, ttl_seconds=60)] == asked

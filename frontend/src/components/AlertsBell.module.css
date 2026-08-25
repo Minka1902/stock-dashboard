@@ -43,18 +43,16 @@
   box-shadow: 0 0 8px var(--accent-glow);
 }
 
+/* Position, z-index and max-height come from Popover, which also owns the
+   entrance/exit animation — hence no `animation` here. */
 .pop {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
   width: min(360px, 84vw);
   background: var(--surface-3);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
-  box-shadow: var(--shadow);
-  z-index: 60;
-  overflow: hidden;
-  animation: rise var(--dur-2) var(--ease-out-expo);
+  box-shadow: var(--shadow-lg);
+  transform-origin: top right;
+  overflow: hidden auto;
 }
 
 .popHead {

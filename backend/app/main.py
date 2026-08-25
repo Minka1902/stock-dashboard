@@ -667,16 +667,21 @@ def live_quotes(user=Depends(auth.get_current_user)):
     # Clock-based session authority so the UI flips at 9:30 ET even when quotes
     # are cached/empty or Yahoo's per-quote marketState lags.
     status = market_status()
-    if not tickers:
-        return {"as_of": now, "market_status": status, "quotes": []}
     # Cache slightly under the configured poll cadence so each client poll gets
     # at most one fresh Yahoo fetch, shared across concurrent clients.
     interval = db.get_app_settings(conn).quotes_refresh_seconds
     ttl = min(config.QUOTES_TTL_SECONDS, max(5, interval - 5))
+    # FX rides the same endpoint and cache but is appended, not merged into the
+    # watchlist: a watchlist ticker is fed to technicals, boom score and
+    # earnings, and none of those mean anything for a currency pair. The strip
+    # is still worth showing when the user holds nothing.
+    fx = quotes.decorate_fx(quotes.get_quotes(config.FX_PAIRS, ttl_seconds=ttl)) \
+        if config.FX_PAIRS else []
+    equities = quotes.get_quotes(tickers, ttl_seconds=ttl) if tickers else []
     return {
         "as_of": now,
         "market_status": status,
-        "quotes": [q.model_dump() for q in quotes.get_quotes(tickers, ttl_seconds=ttl)],
+        "quotes": [q.model_dump() for q in [*equities, *fx]],
     }
 
 

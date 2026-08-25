@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
-import { prefersReducedMotion } from "../lib/motionConfig";
+import Popover from "./Popover";
 import styles from "./MenuButton.module.css";
 
 /**
@@ -29,6 +28,9 @@ export default function MenuButton({
   useEffect(() => {
     if (!open) return undefined;
     const onDown = (e) => {
+      // The menu is portaled to <body>, so it is NOT inside wrapRef — check it
+      // separately or every click on a menu item would close the menu first.
+      if (menuRef.current?.contains(e.target)) return;
       if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
     };
     const onKey = (e) => {
@@ -46,12 +48,19 @@ export default function MenuButton({
     };
   }, [open]);
 
-  // Focus the first item on open so the menu is immediately keyboard-operable.
-  useEffect(() => {
-    if (!open) return;
-    const first = menuRef.current?.querySelector('[role="menuitem"]:not([disabled])');
-    first?.focus();
-  }, [open]);
+  /**
+   * Focus the first item as soon as the menu exists, so the menu is
+   * immediately keyboard-operable.
+   *
+   * A callback ref rather than an effect keyed on `open`: Popover measures its
+   * anchor in a layout effect, so on the render where `open` first flips true
+   * the menu is not mounted yet and such an effect would find nothing. This
+   * fires exactly when the node attaches.
+   */
+  const attachMenu = useCallback((node) => {
+    menuRef.current = node;
+    node?.querySelector('[role="menuitem"]:not([disabled])')?.focus();
+  }, []);
 
   const onMenuKeyDown = (e) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
@@ -82,24 +91,19 @@ export default function MenuButton({
         {glyph}
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            id={menuId}
-            ref={menuRef}
-            className={styles.menu}
-            data-align={align}
-            role="menu"
-            onKeyDown={onMenuKeyDown}
-            initial={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: -6 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: -6 }}
-            transition={{ duration: prefersReducedMotion() ? 0 : 0.16, ease: [0.22, 1, 0.36, 1] }}
-          >
-            {typeof children === "function" ? children(close) : children}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <Popover
+        open={open}
+        anchorRef={wrapRef}
+        align={align}
+        className={styles.menu}
+        id={menuId}
+        contentRef={attachMenu}
+        data-align={align}
+        role="menu"
+        onKeyDown={onMenuKeyDown}
+      >
+        {typeof children === "function" ? children(close) : children}
+      </Popover>
     </div>
   );
 }

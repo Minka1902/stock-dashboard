@@ -42,7 +42,7 @@ import BackToTop from "./components/BackToTop";
 import Tour from "./components/Tour";
 import { TOURS } from "./lib/tours";
 import { AnimatePresence, motion } from "motion/react";
-import { goBack, navigateTo, openTickerTab } from "./lib/nav";
+import { leaveStock, navigateTo, openTickerTab } from "./lib/nav";
 import { DEFAULT_VIEW, TITLES } from "./lib/routes";
 import { prefersReducedMotion } from "./lib/motionConfig";
 import styles from "./App.module.css";
@@ -183,12 +183,13 @@ export default function App({ auth }) {
   // Guided tour: which view's tour is currently running (null = none).
   const [tourView, setTourView] = useState(null);
 
-  // Back out of the detail page. history.back() keeps the browser's own notion
-  // of "back" intact; goBack() falls back to the dashboard when this tab was
-  // opened straight onto a ticker and has nothing to return to.
-  // (The old code called window.close() first, which never worked: openTickerTab
-  // passes "noopener", so the tab has a null opener and the browser refuses.)
-  const closeDetail = useCallback(() => goBack(), []);
+  // Back out of the detail page, the same way it was entered. Opened in this
+  // tab from a panel, it returns to that panel; opened as its own tab from
+  // openTickerTab, it closes the tab. `?from=` carries which case this is —
+  // see leaveStock. (window.close() used to be a no-op here because
+  // openTickerTab passed "noopener", which forfeits the right to self-close.)
+  const detailFrom = route.kind === "stock" ? route.from : null;
+  const closeDetail = useCallback(() => leaveStock(detailFrom), [detailFrom]);
 
   // Cmd/Ctrl+K toggles the command palette (palette mounts only while open).
   useEffect(() => {
@@ -232,8 +233,11 @@ export default function App({ auth }) {
    */
   const openAlert = useCallback((alert) => {
     markAlertsRead([alert.dedup_key]).catch(() => {});
-    navigateTo({ kind: "stock", ticker: alert.ticker, alertKey: alert.dedup_key });
-  }, [markAlertsRead]);
+    // `from` is what sends Back to this view rather than closing the tab.
+    navigateTo({
+      kind: "stock", ticker: alert.ticker, alertKey: alert.dedup_key, from: view,
+    });
+  }, [markAlertsRead, view]);
 
   // Only auto-run tours for a genuinely first-time account. Captured once at
   // mount (App mounts only when authed, so auth.user is present) so the value
@@ -290,6 +294,11 @@ export default function App({ auth }) {
     { id: "x",           label: "X Watch",          hint: "tracked accounts", icon: "x", run: () => navigate("x") },
     { id: "info",        label: "Info",             hint: "modules, sources & glossary", icon: "info", run: () => navigate("info") },
     { id: "settings",    label: "Settings",         hint: "config", icon: "settings", run: () => navigate("settings") },
+    // Sits with Info and Settings, and only for admins — same grouping and the
+    // same gate as the account menu.
+    ...(auth?.user?.is_admin
+      ? [{ id: "server", label: "Server", hint: "health & errors", icon: "layers", run: () => navigate("server") }]
+      : []),
     { id: "refresh",     label: "Refresh all sources", hint: "sync now", icon: "refresh", run: () => refresh() },
     { id: "theme",       label: "Toggle theme", hint: theme === "dark" ? "to light" : "to dark", icon: theme === "dark" ? "sun" : "moon", run: () => toggle() },
     { id: "dyslexia",    label: "Dyslexia-friendly mode", hint: settings.dyslexia ? "on" : "off", icon: "book", run: () => setSetting("dyslexia", !settings.dyslexia) },
@@ -300,7 +309,7 @@ export default function App({ auth }) {
       {/* While a ticker is open the analysis page is the whole screen: no rail,
           no marquee, no top bar. Its own Back button is the way out (Task 19). */}
       {!detailTicker && (
-        <Sidebar view={view} onNavigate={navigate} isAdmin={Boolean(auth?.user?.is_admin)} />
+        <Sidebar view={view} onNavigate={navigate} />
       )}
 
       <main className={styles.main}>

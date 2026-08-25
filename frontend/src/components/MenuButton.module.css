@@ -22,19 +22,19 @@
 .trigger[aria-expanded="true"] { color: var(--accent); background: var(--surface-2); border-color: var(--border); }
 .trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* Position, z-index and max-height come from Popover, which renders this to
+   <body> and anchors it to the trigger. Only appearance belongs here. */
 .menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  z-index: 60;
   min-width: 190px;
   padding: var(--s-2);
   border-radius: var(--r-md);
   border: 1px solid var(--border);
   background: var(--surface);
-  box-shadow: var(--shadow-lg, 0 16px 40px -12px rgba(0, 0, 0, 0.5));
+  box-shadow: var(--shadow-lg);
+  overflow-y: auto;
 }
-.menu[data-align="end"] { right: 0; transform-origin: top right; }
-.menu[data-align="start"] { left: 0; transform-origin: top left; }
+.menu[data-align="end"] { transform-origin: top right; }
+.menu[data-align="start"] { transform-origin: top left; }
 
 .item {
   display: flex;
@@ -59,6 +59,9 @@
 .item[data-tone="danger"] { color: var(--negative); }
 .item[data-tone="danger"] svg { color: var(--negative); }
 .item[data-tone="danger"]:hover:not(:disabled) { background: var(--negative-weak); }
+
+/* The currently-selected option in a picker menu. */
+.item[data-tone="active"] { color: var(--accent); background: var(--accent-weak); }
 
 .groupLabel {
   padding: var(--s-2) 10px 4px;
