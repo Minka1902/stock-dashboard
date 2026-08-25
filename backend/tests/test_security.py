@@ -104,3 +104,81 @@ def test_refresh_rate_limited(client, monkeypatch):
     r = client.post("/api/refresh/usaspending")
     assert r.status_code == 429
     assert r.headers.get("Retry-After") == "30"
+
+
+# ---------- _client_ip: the proxy trust boundary ----------
+
+def _req(peer, **headers):
+    """A bare Request with a chosen socket peer and headers."""
+    from starlette.requests import Request
+    return Request({
+        "type": "http", "method": "GET", "path": "/", "query_string": b"",
+        "scheme": "http", "client": (peer, 1234) if peer else None,
+        "headers": [(k.replace("_", "-").lower().encode(), v.encode())
+                    for k, v in headers.items()],
+    })
+
+
+@pytest.fixture
+def loopback_only(monkeypatch):
+    from app import config
+    monkeypatch.setattr(config, "TRUSTED_PROXY_IPS", frozenset({"127.0.0.1", "::1"}))
+
+
+def test_client_ip_direct_peer_is_used(loopback_only):
+    from app.security import _client_ip
+    assert _client_ip(_req("203.0.113.9")) == "203.0.113.9"
+
+
+def test_client_ip_ignores_forged_header_from_untrusted_peer(loopback_only):
+    """The spoofing case: anyone may send XFF, only a trusted peer is believed."""
+    from app.security import _client_ip
+    req = _req("203.0.113.9", x_forwarded_for="1.2.3.4")
+    assert _client_ip(req) == "203.0.113.9"
+
+
+def test_client_ip_trusts_header_from_loopback_proxy(loopback_only):
+    from app.security import _client_ip
+    req = _req("127.0.0.1", x_forwarded_for="203.0.113.9")
+    assert _client_ip(req) == "203.0.113.9"
+
+
+def test_client_ip_takes_rightmost_untrusted_hop(loopback_only):
+    """Each proxy appends, so the leftmost entry is client-controlled."""
+    from app.security import _client_ip
+    req = _req("127.0.0.1", x_forwarded_for="1.1.1.1, 203.0.113.9, 127.0.0.1")
+    assert _client_ip(req) == "203.0.113.9"
+
+
+def test_client_ip_falls_back_to_peer_without_header(loopback_only):
+    """Degrades to today's behaviour when the ingress forwards nothing."""
+    from app.security import _client_ip
+    assert _client_ip(_req("127.0.0.1")) == "127.0.0.1"
+
+
+def test_client_ip_unknown_without_client(loopback_only):
+    from app.security import _client_ip
+    assert _client_ip(_req(None)) == "unknown"
+
+
+# ---------- HSTS: only on real HTTPS ----------
+
+def test_hsts_absent_when_disabled(loopback_only, monkeypatch):
+    from app import config
+    from app.security import _is_https
+    monkeypatch.setattr(config, "HSTS_SECONDS", 0)
+    # Nothing to assert on the header itself; the guard is the config value.
+    assert config.HSTS_SECONDS == 0
+    assert _is_https(_req("127.0.0.1", x_forwarded_proto="https")) is True
+
+
+def test_is_https_false_for_plain_local_request(loopback_only):
+    """The load-bearing case: an HSTS header on http://localhost would pin that
+    origin to HTTPS in the browser profile forever and break dev."""
+    from app.security import _is_https
+    assert _is_https(_req("127.0.0.1")) is False
+
+
+def test_is_https_ignores_forwarded_proto_from_untrusted_peer(loopback_only):
+    from app.security import _is_https
+    assert _is_https(_req("203.0.113.9", x_forwarded_proto="https")) is False

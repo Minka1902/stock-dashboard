@@ -116,6 +116,51 @@ port instead:
 The Vite proxy follows `-ApiPort` automatically. Or stop the service first with
 `.\windows\service-control.ps1 -Stop`.
 
+## Reaching it from the internet
+
+The service stays bound to `127.0.0.1`. A tunnel dials loopback, so nothing about
+the bind changes — there is no firewall rule, no port-forward, and the dashboard
+is never on your LAN.
+
+[Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel) gives a
+stable `https://<machine>.<tailnet>.ts.net` on the free plan, with a cert issued
+for you:
+
+```powershell
+winget install --id Tailscale.Tailscale -e
+tailscale up                       # authenticates this machine
+tailscale serve --bg 8000          # tailnet-only first — verify before going public
+tailscale funnel --bg 8000         # public 443 -> http://127.0.0.1:8000
+tailscale funnel status            # prints the public URL
+```
+
+Then re-run the installer with that URL (re-running is the normal upgrade path):
+
+```powershell
+.\windows\install-service.ps1 -PublicOrigin https://<machine>.<tailnet>.ts.net
+```
+
+`-PublicOrigin` derives everything that has to agree with it: `STOCKS_CORS_ORIGINS`
+(public origin **first**, `127.0.0.1` kept second for the desktop shell),
+`STOCKS_OAUTH_REDIRECT_BASE`, `STOCKS_COOKIE_SECURE=1`, `STOCKS_HSTS_SECONDS`, and
+`STOCKS_TRUSTED_PROXY_IPS`. It also generates an invite code into `service.env` and
+prints it once. **Set the origin with this flag, not by hand in `service.env`** —
+the ordering rule below is invisible and breaks OAuth silently when violated.
+
+Two things that will quietly kill the tunnel months later:
+
+- **Node key expiry** (default ~180 days). Disable it for this machine in the
+  Tailscale admin console, or the URL simply stops resolving one day.
+- **The PC sleeping.** Set the power plan to never sleep.
+
+Off switch: `tailscale funnel --https=443 off`.
+
+Once a public origin is set, account creation needs the invite code — the login
+page being reachable is not the same as signups being open. This covers the OAuth
+callback too, which is a second, equally public account factory: with a code
+configured, social login links to accounts that already exist but never creates
+one. See `backend/app/registration.py`.
+
 ## Why it's configured the way it is
 
 | Setting | Why |
@@ -124,7 +169,7 @@ The Vite proxy follows `-ApiPort` automatically. Or stop the service first with
 | `AppParameters ... --no-supervise` | Runs uvicorn **in-process**. `run_server.py`'s own restart loop is bypassed because NSSM already restarts on crash, and two supervisors would fight over the port. |
 | `AppNoConsole 0`, `AppStopMethodSkip 0`, `AppStopMethodConsole 20000` | These three are what make a graceful stop work. `app/main.py`'s lifespan ends with `PRAGMA wal_checkpoint(TRUNCATE)`; without the Ctrl-C path every stop becomes a `TerminateProcess` and the WAL is left uncheckpointed. `AppNoConsole 1` silently disables it. |
 | `AppExit Default Restart`, `AppRestartDelay 5000`, `AppThrottle 10000` | Restart on crash, with backoff for a process that dies immediately (almost always misconfiguration). |
-| Bound to `127.0.0.1` | A LocalSystem service on `0.0.0.0` would expose the dashboard to the LAN. Loopback needs no firewall rule. |
+| Bound to `127.0.0.1` | A LocalSystem service on `0.0.0.0` would expose the dashboard to the LAN. Loopback needs no firewall rule — and it stays loopback even when the app is public, because the tunnel dials it from this machine. |
 | `STOCKS_CORS_ORIGINS` app origin **first** | `routes_oauth.py::_frontend_origin()` reuses `CORS_ORIGINS[0]` as the post-login redirect target. If it isn't first, a completed OAuth login redirects to a different host — a different cookie jar — and the session appears to vanish. **Don't reorder it.** |
 | `127.0.0.1`, never `localhost` | uvicorn binds IPv4 only, and Windows resolves `localhost` to `::1` first. They're also separate cookie jars. |
 | `ObjectName LocalSystem` | Simplest thing that works. Note this process fetches and parses untrusted remote content (RSS, SEC filings, a FINRA XLS via `xlrd`/`openpyxl`) — see the hardening note below. |
@@ -134,6 +179,18 @@ The Vite proxy follows `-ApiPort` automatically. Or stop the service first with
 **Service starts, then stops immediately.** Read `logs\service-stderr.log`
 first. Import-time failures never reach `backend.log` — the commonest is a bad
 `STOCKS_CORS_ORIGINS` (a `*` entry raises `ValueError` at import, by design).
+The other is `STOCKS_REGISTRATION=invite` with no `STOCKS_INVITE_CODE`, which
+also raises at import: an empty code would compare equal to an empty submission
+and open registration to anyone with the URL.
+
+**"I can't create a second account."** That's the invite gate, not a bug — a
+public origin sets `STOCKS_REGISTRATION=invite`. The code is in
+`windows\service.env`. To reopen signups entirely, delete both
+`STOCKS_REGISTRATION` and `STOCKS_INVITE_CODE` from that file and restart.
+
+**Public URL stopped working after months.** Almost certainly Tailscale node key
+expiry. `tailscale status` will say so; disable key expiry for this machine in
+the admin console.
 
 **Dashboard loads but the page is blank.** The SPA mount is a silent no-op when
 `frontend\dist\index.html` is missing. Rebuild the frontend and restart.

@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from app import auth, db
-from app.security import rate_limit
+from app import auth, config, db, registration
+from app.security import limiter, rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,10 @@ MAX_CHALLENGE_ATTEMPTS = 5
 class Credentials(BaseModel):
     email: str
     password: str
+
+
+class RegisterBody(Credentials):
+    invite_code: str = ""
 
 
 class CodeBody(BaseModel):
@@ -50,8 +54,19 @@ def build_router(conn) -> APIRouter:
         with attempts_lock:
             challenge_attempts.pop(token_hash, None)
 
-    @router.post("/register", dependencies=[Depends(rate_limit("auth_register", 3, 3600))])
-    def register(body: Credentials, response: Response):
+    @router.get("/registration")
+    def registration_mode():
+        """Whether to offer a sign-up tab, and whether it needs a code."""
+        return {"mode": config.REGISTRATION_MODE}
+
+    # The IP bucket is a coarse global backstop, not the real limit: behind an
+    # ingress that does not forward client IPs every caller shares it, and a
+    # tight ceiling would lock *everyone* out. See the per-email bucket in
+    # login() for the protection that survives a shared IP.
+    @router.post("/register", dependencies=[Depends(rate_limit("auth_register", 20, 3600))])
+    def register(body: RegisterBody, response: Response):
+        # Gate first: a stranger should not learn the validation rules.
+        registration.assert_may_register(body.invite_code)
         email = body.email.strip().lower()
         if "@" not in email or len(email) < 5 or len(email) > 254:
             raise HTTPException(status_code=400, detail="invalid email")
@@ -85,7 +100,7 @@ def build_router(conn) -> APIRouter:
         uri = auth.provisioning_uri(secret, user.email)
         return {"otpauth_uri": uri, "qr_png": auth.qr_data_uri(uri), "secret": secret}
 
-    @router.post("/totp/enable", dependencies=[Depends(rate_limit("auth_totp", 10, 60))])
+    @router.post("/totp/enable", dependencies=[Depends(rate_limit("auth_totp", 60, 60))])
     def totp_enable(body: CodeBody, request: Request, response: Response):
         session = auth.get_pending_session(
             conn, request, (auth.STATE_SETUP, auth.STATE_PENDING))
@@ -103,10 +118,21 @@ def build_router(conn) -> APIRouter:
         auth.set_session_cookie(response, token)
         return {"user": user.public(), "recovery_codes": codes}
 
-    @router.post("/login", dependencies=[Depends(rate_limit("auth_login", 5, 60))])
+    @router.post("/login", dependencies=[Depends(rate_limit("auth_login", 60, 60))])
     def login(body: Credentials, response: Response):
         db.purge_expired_sessions(conn, _now_iso())
         email = body.email.strip().lower()
+        # Keyed on the account under attack, not the caller's address. Behind a
+        # tunnel that does not forward the client IP an IP-keyed bucket is a
+        # global one, where 5 wrong guesses would lock out every user; this
+        # throttles exactly the account being guessed at.
+        retry_after = limiter.check("auth_login_email", email, 5, 60)
+        if retry_after is not None:
+            raise HTTPException(
+                status_code=429,
+                detail="too many requests",
+                headers={"Retry-After": str(int(retry_after))},
+            )
         user = db.get_user_by_email(conn, email)
         # Constant response shape for wrong email vs wrong password.
         if user is None or not auth.verify_password(user.password_hash, body.password):
@@ -120,7 +146,7 @@ def build_router(conn) -> APIRouter:
         auth.set_session_cookie(response, token, max_age=None)
         return {"status": "totp_required"}
 
-    @router.post("/totp/verify", dependencies=[Depends(rate_limit("auth_totp", 10, 60))])
+    @router.post("/totp/verify", dependencies=[Depends(rate_limit("auth_totp", 60, 60))])
     def totp_verify(body: CodeBody, request: Request, response: Response):
         session = auth.get_pending_session(conn, request, (auth.STATE_PENDING,))
         user = db.get_user(conn, session.user_id)
@@ -137,7 +163,7 @@ def build_router(conn) -> APIRouter:
         auth.set_session_cookie(response, token)
         return {"user": user.public()}
 
-    @router.post("/recovery", dependencies=[Depends(rate_limit("auth_totp", 10, 60))])
+    @router.post("/recovery", dependencies=[Depends(rate_limit("auth_totp", 60, 60))])
     def recovery(body: CodeBody, request: Request, response: Response):
         session = auth.get_pending_session(conn, request, (auth.STATE_PENDING,))
         user = db.get_user(conn, session.user_id)

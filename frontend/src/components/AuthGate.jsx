@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { totpSetup, getOAuthProviders, oauthStartUrl } from "../api";
+import { totpSetup, getOAuthProviders, getRegistrationMode, oauthStartUrl } from "../api";
 import styles from "./AuthGate.module.css";
 
 const PROVIDER_LABEL = { github: "GitHub", google: "Google", facebook: "Facebook" };
@@ -50,15 +50,26 @@ function CodeInput({ value, onChange, autoFocus }) {
 }
 
 function LoginRegister({ auth, busy, run }) {
-  const [mode, setMode] = useState("login");
+  const [picked, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [providers, setProviders] = useState([]);
+  // Assume open until told otherwise, so a failed probe never hides the tab
+  // on a local install where signup is fine.
+  const [signup, setSignup] = useState("open");
 
   useEffect(() => {
     getOAuthProviders().then((d) => setProviders(d.providers || [])).catch(() => {});
+    getRegistrationMode().then((d) => setSignup(d.mode || "open")).catch(() => {});
   }, []);
+
+  // When the server refuses signups there is nothing to show but a sign-in box.
+  // Derived rather than an effect: if the mode probe lands while the register
+  // tab is open, the form falls back to login on that same render.
+  const tabs = signup === "closed" ? ["login"] : ["login", "register"];
+  const mode = tabs.includes(picked) ? picked : "login";
 
   const submit = (e) => {
     e.preventDefault();
@@ -66,13 +77,15 @@ function LoginRegister({ auth, busy, run }) {
       run(() => Promise.reject(new Error("passwords do not match")));
       return;
     }
-    run(() => (mode === "login" ? auth.login(email, password) : auth.register(email, password)));
+    run(() => (mode === "login"
+      ? auth.login(email, password)
+      : auth.register(email, password, inviteCode)));
   };
 
   return (
     <form onSubmit={submit}>
       <div className={styles.tabs} role="tablist">
-        {["login", "register"].map((m) => (
+        {tabs.map((m) => (
           <button
             key={m} type="button" role="tab" aria-selected={mode === m}
             className={styles.tab} data-active={mode === m ? "yes" : "no"}
@@ -91,6 +104,10 @@ function LoginRegister({ auth, busy, run }) {
       {mode === "register" && (
         <Field label="Confirm password" type="password" value={confirm} required
                autoComplete="new-password" onChange={(e) => setConfirm(e.target.value)} />
+      )}
+      {mode === "register" && signup === "invite" && (
+        <Field label="Invite code" type="text" value={inviteCode} required
+               autoComplete="off" onChange={(e) => setInviteCode(e.target.value)} />
       )}
       <button className={styles.primary} disabled={busy}>
         {mode === "login" ? "Continue" : "Create account"}

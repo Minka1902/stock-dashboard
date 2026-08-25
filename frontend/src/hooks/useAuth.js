@@ -30,8 +30,8 @@ export default function useAuth() {
     return r;
   }, []);
 
-  const register = useCallback(async (email, password) => {
-    const r = await api.register(email, password);
+  const register = useCallback(async (email, password, inviteCode) => {
+    const r = await api.register(email, password, inviteCode);
     setStatus("totp_setup");
     return r;
   }, []);

@@ -54,6 +54,40 @@ if "*" in CORS_ORIGINS:
 # Set to 1 when serving over HTTPS so session cookies are marked Secure.
 COOKIE_SECURE = os.environ.get("STOCKS_COOKIE_SECURE", "0") in ("1", "true", "True")
 
+# IPs whose X-Forwarded-For we believe (see app/security.py::_client_ip). The
+# only proxy we ever expect is one terminating TLS on this machine — Tailscale
+# Funnel, nginx, Caddy — so loopback is the default and anything else is opt-in.
+# run_server.py passes the same list to uvicorn's ProxyHeadersMiddleware, so
+# both layers agree on one trust boundary.
+TRUSTED_PROXY_IPS = frozenset(
+    p.strip()
+    for p in os.environ.get("STOCKS_TRUSTED_PROXY_IPS", "127.0.0.1,::1").split(",")
+    if p.strip()
+)
+
+# Strict-Transport-Security max-age, in seconds; 0 disables the header. Only
+# ever sent on requests that actually arrived over HTTPS — an HSTS header on
+# http://localhost would pin that origin to HTTPS in the browser profile
+# permanently and break local dev in a way that is very hard to diagnose.
+HSTS_SECONDS = int(os.environ.get("STOCKS_HSTS_SECONDS", "0"))
+
+# Who may create an account: "open" (anyone), "invite" (must present
+# STOCKS_INVITE_CODE), "closed" (nobody). Being reachable and being open for
+# signup are separate decisions — see app/registration.py.
+REGISTRATION_MODE = os.environ.get("STOCKS_REGISTRATION", "open").strip().lower()
+if REGISTRATION_MODE not in ("open", "invite", "closed"):
+    raise ValueError(
+        "STOCKS_REGISTRATION must be one of: open, invite, closed "
+        f"(got {REGISTRATION_MODE!r})"
+    )
+INVITE_CODE = os.environ.get("STOCKS_INVITE_CODE", "")
+if REGISTRATION_MODE == "invite" and not INVITE_CODE:
+    raise ValueError(
+        "STOCKS_REGISTRATION=invite requires STOCKS_INVITE_CODE. An empty code "
+        "would compare equal to an empty submission and open registration to "
+        "anyone with the URL."
+    )
+
 # Lifetime of a fully-authenticated session. Default 14 days.
 SESSION_TTL_SECONDS = int(os.environ.get("STOCKS_SESSION_TTL_SECONDS", str(14 * 86400)))
 # Lifetime of the short-lived session between password check and TOTP entry.

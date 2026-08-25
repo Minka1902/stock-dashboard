@@ -21,7 +21,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 
-from app import auth, config, db
+from app import auth, config, db, registration
 from app.models import OAuthIdentity
 
 logger = logging.getLogger(__name__)
@@ -142,6 +142,14 @@ def _resolve_user(conn, provider: str, provider_user_id: str, email: str):
     if user is None:
         if not email:
             raise ValueError("provider did not return a verified email")
+        if not registration.may_register():
+            # Social login LINKS to an account; it does not create one unless
+            # registration is open. Without this a stranger's Google account
+            # becomes an account here just because the callback is reachable —
+            # the exact hole the /register gate closes on the other path. There
+            # is nowhere to type an invite code in an OAuth round trip, so
+            # invite/closed both reduce OAuth to link-only.
+            raise registration.RegistrationClosed()
         first = db.count_users(conn) == 0
         unusable = auth.hash_password(secrets.token_urlsafe(32))
         user = db.create_user(conn, email, unusable, _now_iso(), is_admin=first)
@@ -202,6 +210,11 @@ def build_router(conn) -> APIRouter:
             if not provider_user_id:
                 return _fail_redirect("identity")
             user = _resolve_user(conn, provider, provider_user_id, email)
+        except registration.RegistrationClosed:
+            # Caught before the broad clause below, which would otherwise
+            # report the misleading reason "exchange".
+            logger.info("oauth signup refused for %s: registration closed", provider)
+            return _fail_redirect("registration_closed")
         except (httpx.HTTPError, ValueError, KeyError) as exc:
             logger.warning("oauth callback failed for %s: %s", provider, exc)
             return _fail_redirect("exchange")

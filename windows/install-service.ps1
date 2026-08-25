@@ -44,7 +44,8 @@ param(
     [string]$NssmSha256,
     [switch]$TrustNssmDownload,
     [switch]$SkipBuild,
-    [switch]$ImportExistingDb
+    [switch]$ImportExistingDb,
+    [string]$PublicOrigin
 )
 
 #Requires -Version 5.1
@@ -60,6 +61,17 @@ Write-Host '  Signal - install Windows service' -ForegroundColor Cyan
 Write-Host ''
 
 Assert-Admin
+
+if ($PublicOrigin) {
+    $PublicOrigin = $PublicOrigin.TrimEnd('/')
+    if ($PublicOrigin -notmatch '^https://[A-Za-z0-9.-]+$') {
+        Fail '-PublicOrigin must be a bare https origin.' @(
+            'Example: https://box.tailnet-name.ts.net',
+            'No path, no trailing slash, no port. It becomes both the OAuth',
+            'redirect base and the first CORS origin, and providers compare',
+            'the redirect URI byte-for-byte.')
+    }
+}
 
 # ---------------------------------------------------------------- preflight --
 if (-not (Test-Path $Python)) {
@@ -121,6 +133,28 @@ if (-not (Test-Path $EnvFile)) {
     Write-Step 'secrets' 'created windows\service.env from the example'
 } else {
     Write-Step 'secrets' 'windows\service.env (existing)'
+}
+
+# A public origin means anyone can reach the login page, so account creation
+# gets its own gate. The code lives in service.env (gitignored, and already
+# merged into the env block below) rather than a parameter, so it never lands
+# in PowerShell history.
+$script:NewInviteCode = ''
+if ($PublicOrigin -and (Read-ServiceEnv).Keys -notcontains 'STOCKS_INVITE_CODE') {
+    $bytes = New-Object byte[] 18
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $script:NewInviteCode = [Convert]::ToBase64String($bytes).
+        TrimEnd('=').Replace('+', '-').Replace('/', '_')
+    Add-Content -Path $EnvFile -Encoding utf8 -Value @(
+        '',
+        '# Added by install-service.ps1 -PublicOrigin.',
+        '# The dashboard is reachable by anyone with the URL; creating an',
+        '# account additionally needs this code. Without it POST',
+        '# /api/auth/register returns 403 and OAuth links to existing accounts',
+        '# only. Delete both lines to reopen registration.',
+        'STOCKS_REGISTRATION=invite',
+        "STOCKS_INVITE_CODE=$script:NewInviteCode")
+    Write-Step 'registration' 'invite code generated into windows\service.env'
 }
 
 # ------------------------------------------------------------- existing DB ---
@@ -210,6 +244,18 @@ $envPairs = [ordered]@{
     'STOCKS_CORS_ORIGINS'        = $origin
     'STOCKS_OAUTH_REDIRECT_BASE' = $origin
 }
+if ($PublicOrigin) {
+    # Public origin FIRST, for the _frontend_origin reason above: it has to be
+    # the origin the browser is actually on. 127.0.0.1 stays second so the
+    # Electron desktop shell (desktop\src\config.js APP_ORIGIN) keeps working.
+    $envPairs['STOCKS_CORS_ORIGINS']        = "$PublicOrigin,$origin"
+    $envPairs['STOCKS_OAUTH_REDIRECT_BASE'] = $PublicOrigin
+    # TLS is terminated by the tunnel, so the cookie can and must be Secure.
+    $envPairs['STOCKS_COOKIE_SECURE']       = '1'
+    $envPairs['STOCKS_HSTS_SECONDS']        = '31536000'
+    # The tunnel dials loopback; only its X-Forwarded-For is believed.
+    $envPairs['STOCKS_TRUSTED_PROXY_IPS']   = '127.0.0.1,::1'
+}
 foreach ($kv in (Read-ServiceEnv).GetEnumerator()) { $envPairs[$kv.Key] = $kv.Value }
 $envArgs = @($envPairs.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" })
 Invoke-Nssm $nssm set $ServiceName AppEnvironmentExtra @envArgs | Out-Null
@@ -244,6 +290,10 @@ Write-Host ''
 Write-Host '  Installed.' -ForegroundColor Green
 Write-Host ''
 Write-Step 'url'      $origin
+if ($PublicOrigin) {
+    Write-Step 'public url' $PublicOrigin 'Cyan'
+    Write-Step 'signups'    'invite code required'
+}
 Write-Step 'service'  "$ServiceName (delayed auto-start, LocalSystem)"
 Write-Step 'status'   $health.status $(if ($health.status -eq 'ok') { 'Green' } else { 'Yellow' })
 Write-Step 'database' $DbFile
@@ -257,3 +307,9 @@ Write-Host '    .\windows\service-control.ps1 -Logs'
 Write-Host ''
 Write-Host '  It now starts automatically at boot, before you log in.' -ForegroundColor DarkGray
 Write-Host ''
+if ($script:NewInviteCode) {
+    Write-Host '  Invite code (shown once; also in windows\service.env):' -ForegroundColor DarkGray
+    Write-Host "    $script:NewInviteCode" -ForegroundColor Yellow
+    Write-Host '    Anyone creating an account on the public URL must enter it.'
+    Write-Host ''
+}
