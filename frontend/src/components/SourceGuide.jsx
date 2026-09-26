@@ -14,7 +14,8 @@ function SourceRow({ sourceKey, status }) {
   const meta = SOURCE_META[sourceKey];
   const state = status ? sourceState(status.status) : "idle";
   const note = status ? sourceNote(status.status) : null;
-  const isError = state === "error";
+  // Deferred sources get the same disclosure: the reason and next attempt.
+  const isError = state === "error" || state === "deferred";
   const detail = status?.error_detail || status?.status || "";
 
   const copy = async () => {

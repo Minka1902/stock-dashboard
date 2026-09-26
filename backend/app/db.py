@@ -37,6 +37,7 @@ from app.models import (
     SuggestionHistoryEntry,
     SocialSentiment,
     SourceRun,
+    SourceSchedule,
     SourceStatus,
     JobRun,
     SuggestionLogEntry,
@@ -578,7 +579,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
             source       TEXT NOT NULL,
             started_at   TEXT NOT NULL,
             finished_at  TEXT NOT NULL,
-            outcome      TEXT NOT NULL,   -- ok | error | skipped
+            outcome      TEXT NOT NULL,   -- ok | error | deferred (legacy: skipped)
             duration_ms  INTEGER NOT NULL,
             record_count INTEGER NOT NULL DEFAULT 0,
             detail       TEXT
@@ -586,7 +587,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS job_runs (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             job_id      TEXT NOT NULL,
-            event       TEXT NOT NULL,    -- executed | error | missed | max_instances
+            event       TEXT NOT NULL,    -- executed | error | coalesced (legacy: missed | max_instances)
             at          TEXT NOT NULL,
             duration_ms INTEGER,
             detail      TEXT
@@ -604,6 +605,20 @@ def init_schema(conn: sqlite3.Connection) -> None:
             source           TEXT NOT NULL DEFAULT 'yahoo',
             fetched_at       TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (ticker, event_date)
+        );
+        -- One row per source (plus 'derived' for boom_score -> alerts): when it
+        -- runs. Seeded from the SOURCES registry cadences; edited on the
+        -- Server page. times/days are comma lists ("06:00,18:00", "mon,fri").
+        CREATE TABLE IF NOT EXISTS source_schedules (
+            source           TEXT PRIMARY KEY,
+            mode             TEXT NOT NULL DEFAULT 'interval',  -- interval | times
+            interval_seconds INTEGER,
+            times            TEXT NOT NULL DEFAULT '',
+            days             TEXT NOT NULL DEFAULT 'mon,tue,wed,thu,fri,sat,sun',
+            tz               TEXT NOT NULL DEFAULT 'UTC',
+            enabled          INTEGER NOT NULL DEFAULT 1,
+            retry_seconds    INTEGER,
+            updated_at       TEXT
         );
         -- The calendar is read by date range far more often than by ticker.
         CREATE INDEX IF NOT EXISTS idx_earnings_date ON earnings(event_date);
@@ -679,6 +694,11 @@ def init_schema(conn: sqlite3.Connection) -> None:
     # Distinct from last_refreshed_at (= last attempt). See SourceStatus in models.py.
     _try_add_column(conn, "source_status", "last_success_at", "TEXT")
     _try_add_column(conn, "source_status", "last_duration_ms", "INTEGER")
+    # When the scheduler tries again after an error/deferral (NULL when healthy).
+    _try_add_column(conn, "source_status", "next_attempt_at", "TEXT")
+    # Per-run traceback (source_status only keeps the latest) and next attempt.
+    _try_add_column(conn, "source_runs", "error_detail", "TEXT")
+    _try_add_column(conn, "source_runs", "next_attempt_at", "TEXT")
     _try_add_column(conn, "portfolio", "category", "TEXT")  # NULL = auto-classified
     _try_add_column(conn, "app_settings", "x_accounts", "TEXT")  # comma list; NULL = env default
     # TA transition snapshot on alert_state (Phase 3 — warn before falls/breakouts).
@@ -1057,14 +1077,15 @@ def update_source_status(
         """
         INSERT INTO source_status
             (source, last_refreshed_at, status, record_count, error_detail,
-             last_success_at, last_duration_ms)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+             last_success_at, last_duration_ms, next_attempt_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
         ON CONFLICT(source) DO UPDATE SET
             last_refreshed_at=excluded.last_refreshed_at,
             status=excluded.status,
             record_count=excluded.record_count,
             error_detail=excluded.error_detail,
             last_duration_ms=excluded.last_duration_ms,
+            next_attempt_at=NULL,
             last_success_at=CASE
                 WHEN excluded.last_success_at IS NOT NULL THEN excluded.last_success_at
                 ELSE source_status.last_success_at
@@ -1083,6 +1104,50 @@ def get_source_statuses(conn: sqlite3.Connection) -> list[SourceStatus]:
     return [SourceStatus(**dict(row)) for row in cur.fetchall()]
 
 
+def mark_source_deferred(
+    conn: sqlite3.Connection,
+    source: str,
+    at: str,
+    status: str,
+    next_attempt_at: str | None,
+    duration_ms: int | None = None,
+) -> None:
+    """Stamp a deferral: the source asked to be retried later.
+
+    Unlike a failure it says nothing bad about the data already stored, so
+    record_count and last_success_at are left alone; only the attempt clock,
+    the status line and the next attempt move.
+    """
+    conn.execute(
+        """
+        INSERT INTO source_status
+            (source, last_refreshed_at, status, record_count, error_detail,
+             last_success_at, last_duration_ms, next_attempt_at)
+        VALUES (?, ?, ?, 0, NULL, NULL, ?, ?)
+        ON CONFLICT(source) DO UPDATE SET
+            last_refreshed_at=excluded.last_refreshed_at,
+            status=excluded.status,
+            error_detail=NULL,
+            last_duration_ms=excluded.last_duration_ms,
+            next_attempt_at=excluded.next_attempt_at
+        """,
+        (source, at, status, duration_ms, next_attempt_at),
+    )
+    conn.commit()
+
+
+def set_source_next_attempt(
+    conn: sqlite3.Connection, source: str, run_id: int | None, at: str | None
+) -> None:
+    """Record when the scheduler will try `source` again, on both the run row
+    and the status row, so the page can say "retrying at 14:30" instead of
+    leaving a failed source looking abandoned."""
+    if run_id is not None:
+        conn.execute("UPDATE source_runs SET next_attempt_at = ? WHERE id = ?", (at, run_id))
+    conn.execute("UPDATE source_status SET next_attempt_at = ? WHERE source = ?", (at, source))
+    conn.commit()
+
+
 # ---------- run history (Server page / diagnostics) ----------
 def record_source_run(
     conn: sqlite3.Connection,
@@ -1093,22 +1158,26 @@ def record_source_run(
     duration_ms: int,
     record_count: int = 0,
     detail: str | None = None,
-) -> None:
-    """Append one source execution, including skips.
+    error_detail: str | None = None,
+    next_attempt_at: str | None = None,
+) -> int:
+    """Append one source execution and return its row id.
 
-    Skips matter most: a throttled source and a healthy one look identical in
-    `source_status`, so without this row "it hasn't fetched in two weeks" is
-    invisible.
+    `detail` is the one-line summary; `error_detail` the full traceback of this
+    particular run (source_status only keeps the most recent one).
     """
-    conn.execute(
+    cur = conn.execute(
         """
         INSERT INTO source_runs
-            (source, started_at, finished_at, outcome, duration_ms, record_count, detail)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            (source, started_at, finished_at, outcome, duration_ms, record_count,
+             detail, error_detail, next_attempt_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (source, started_at, finished_at, outcome, duration_ms, record_count, detail),
+        (source, started_at, finished_at, outcome, duration_ms, record_count,
+         detail, error_detail, next_attempt_at),
     )
     conn.commit()
+    return cur.lastrowid
 
 
 def get_source_runs(
@@ -1125,16 +1194,20 @@ def get_source_runs(
 
 
 def get_source_run_stats(conn: sqlite3.Connection) -> dict[str, dict]:
-    """Per-source run counters and durations, keyed by source name."""
+    """Per-source run counters and durations, keyed by source name.
+
+    Durations only count runs that actually fetched (ok/error); a deferral and
+    a legacy skip return immediately and would drag the averages down.
+    """
     cur = conn.execute(
         """
         SELECT source,
-               COUNT(*)                                        AS runs_total,
-               SUM(CASE WHEN outcome = 'ok'      THEN 1 ELSE 0 END) AS runs_ok,
-               SUM(CASE WHEN outcome = 'error'   THEN 1 ELSE 0 END) AS runs_error,
-               SUM(CASE WHEN outcome = 'skipped' THEN 1 ELSE 0 END) AS runs_skipped,
-               AVG(CASE WHEN outcome != 'skipped' THEN duration_ms END) AS avg_duration_ms,
-               MAX(CASE WHEN outcome != 'skipped' THEN duration_ms END) AS max_duration_ms
+               COUNT(*)                                              AS runs_total,
+               SUM(CASE WHEN outcome = 'ok'       THEN 1 ELSE 0 END) AS runs_ok,
+               SUM(CASE WHEN outcome = 'error'    THEN 1 ELSE 0 END) AS runs_error,
+               SUM(CASE WHEN outcome = 'deferred' THEN 1 ELSE 0 END) AS runs_deferred,
+               AVG(CASE WHEN outcome IN ('ok', 'error') THEN duration_ms END) AS avg_duration_ms,
+               MAX(CASE WHEN outcome IN ('ok', 'error') THEN duration_ms END) AS max_duration_ms
         FROM source_runs
         GROUP BY source
         """
@@ -1157,9 +1230,77 @@ def record_job_run(
     conn.commit()
 
 
-def get_job_runs(conn: sqlite3.Connection, limit: int = 100) -> list[JobRun]:
-    cur = conn.execute("SELECT * FROM job_runs ORDER BY id DESC LIMIT ?", (limit,))
+def get_job_runs(
+    conn: sqlite3.Connection, limit: int = 100, job_id: str | None = None
+) -> list[JobRun]:
+    if job_id:
+        cur = conn.execute(
+            "SELECT * FROM job_runs WHERE job_id = ? ORDER BY id DESC LIMIT ?", (job_id, limit))
+    else:
+        cur = conn.execute("SELECT * FROM job_runs ORDER BY id DESC LIMIT ?", (limit,))
     return [JobRun(**dict(row)) for row in cur.fetchall()]
+
+
+# ---------- per-source schedules ----------
+def _schedule_from_row(row) -> SourceSchedule:
+    d = dict(row)
+    return SourceSchedule(
+        source=d["source"],
+        mode=d["mode"],
+        interval_seconds=d["interval_seconds"],
+        times=[t for t in (d["times"] or "").split(",") if t],
+        days=[x for x in (d["days"] or "").split(",") if x],
+        tz=d["tz"],
+        enabled=bool(d["enabled"]),
+        retry_seconds=d["retry_seconds"],
+        updated_at=d["updated_at"],
+    )
+
+
+def _schedule_params(s: SourceSchedule) -> tuple:
+    return (s.source, s.mode, s.interval_seconds, ",".join(s.times), ",".join(s.days),
+            s.tz, 1 if s.enabled else 0, s.retry_seconds, s.updated_at)
+
+
+def seed_source_schedules(conn: sqlite3.Connection, schedules: list[SourceSchedule]) -> None:
+    """Insert default rows for sources that have none. Never overwrites an
+    existing row, so an admin's edit survives every restart."""
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO source_schedules
+            (source, mode, interval_seconds, times, days, tz, enabled, retry_seconds, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [_schedule_params(s) for s in schedules],
+    )
+    conn.commit()
+
+
+def upsert_source_schedule(conn: sqlite3.Connection, s: SourceSchedule) -> None:
+    conn.execute(
+        """
+        INSERT INTO source_schedules
+            (source, mode, interval_seconds, times, days, tz, enabled, retry_seconds, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(source) DO UPDATE SET
+            mode=excluded.mode, interval_seconds=excluded.interval_seconds,
+            times=excluded.times, days=excluded.days, tz=excluded.tz,
+            enabled=excluded.enabled, retry_seconds=excluded.retry_seconds,
+            updated_at=excluded.updated_at
+        """,
+        _schedule_params(s),
+    )
+    conn.commit()
+
+
+def get_source_schedules(conn: sqlite3.Connection) -> dict[str, SourceSchedule]:
+    cur = conn.execute("SELECT * FROM source_schedules ORDER BY source")
+    return {row["source"]: _schedule_from_row(row) for row in cur.fetchall()}
+
+
+def get_source_schedule(conn: sqlite3.Connection, source: str) -> SourceSchedule | None:
+    row = conn.execute("SELECT * FROM source_schedules WHERE source = ?", (source,)).fetchone()
+    return _schedule_from_row(row) if row else None
 
 
 def prune_history(

@@ -23,12 +23,23 @@ LOG_DIR = Path(os.environ.get("STOCKS_LOG_DIR") or (Path(__file__).resolve().par
 LOG_MAX_BYTES = int(os.environ.get("STOCKS_LOG_MAX_BYTES", str(5 * 1024 * 1024)))
 LOG_BACKUP_COUNT = int(os.environ.get("STOCKS_LOG_BACKUP_COUNT", "5"))
 
-# How long a job may start late and still run. APScheduler's own default is 1
-# second (BackgroundScheduler -> base.py:909), which silently *drops* any job
-# delayed by a blocked thread pool or a sleeping laptop. 5 minutes means a late
-# run still happens; coalesce=True keeps a backlog from firing N times at once.
-SCHEDULER_MISFIRE_GRACE_SECONDS = int(
-    os.environ.get("STOCKS_SCHEDULER_MISFIRE_GRACE_SECONDS", "300"))
+# Scheduling (one APScheduler job per source; see app/schedules.py).
+# misfire_grace_time is None on every job: a job delayed by a busy refresh
+# thread or a sleeping laptop runs late rather than being dropped. (APScheduler's
+# own default is 1 second, which silently drops it.)
+#
+# First runs after startup (and after a schedule edit) are held back at least
+# this long, staggered one second per source, so a restart never stampedes the
+# single refresh thread and a test client never triggers real network fetches.
+SCHEDULER_STARTUP_DELAY_SECONDS = int(
+    os.environ.get("STOCKS_SCHEDULER_STARTUP_DELAY_SECONDS", "30"))
+# boom_score -> alerts is one "derived" step. After any upstream source
+# succeeds it is pulled forward to run this many seconds later, so a burst of
+# sources finishing together coalesces into one recompute.
+DERIVED_DEBOUNCE_SECONDS = int(os.environ.get("STOCKS_DERIVED_DEBOUNCE_SECONDS", "30"))
+# Timezone new schedule rows are created in (only matters for "at times" mode
+# and day filters). Editable per source on the Server page.
+SCHEDULE_DEFAULT_TZ = os.environ.get("STOCKS_SCHEDULE_TZ", "Asia/Jerusalem")
 
 # Retention for the run-history tables that feed the Server page. They are
 # append-only and would otherwise grow without bound.
@@ -93,7 +104,9 @@ SESSION_TTL_SECONDS = int(os.environ.get("STOCKS_SESSION_TTL_SECONDS", str(14 * 
 # Lifetime of the short-lived session between password check and TOTP entry.
 PENDING_SESSION_TTL_SECONDS = int(os.environ.get("STOCKS_PENDING_SESSION_TTL_SECONDS", "300"))
 
-# How often the scheduler re-runs fast ingestion, in seconds. Default 3 min.
+# Default cadence for sources without a slower one of their own (and for the
+# derived boom_score -> alerts step), in seconds. Default 3 min. Only seeds the
+# per-source schedule rows; each is then editable on the Server page.
 REFRESH_INTERVAL_SECONDS = int(os.environ.get("STOCKS_REFRESH_SECONDS", "180"))
 
 # How many days back to pull contracts on each run.

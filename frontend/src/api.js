@@ -53,7 +53,21 @@ export const getSources = () => getJSON("/api/sources");
 // Admin-only server introspection (the Server page).
 export const getServerOverview = () => getJSON("/api/server/overview");
 export const getServerSources = () => getJSON("/api/server/sources");
-export const getServerEvents = (limit = 60) => getJSON(`/api/server/events?limit=${limit}`);
+// `filter` = { kind: "source" | "job", id } narrows the log server-side
+// ("Show similar"), so the page gets a full page of that one thing.
+export const getServerEvents = (limit = 60, filter = null) => {
+  const q = new URLSearchParams({ limit: String(limit) });
+  if (filter?.kind) q.set("kind", filter.kind);
+  if (filter?.id) q.set("id", filter.id);
+  return getJSON(`/api/server/events?${q}`);
+};
+export const getServerSourceRuns = (source, limit = 10) =>
+  getJSON(`/api/server/sources/${encodeURIComponent(source)}/runs?limit=${limit}`);
+export const getServerSchedules = () => getJSON("/api/server/schedules");
+export const putServerSchedule = (source, patch) =>
+  request(`/api/server/schedules/${encodeURIComponent(source)}`, { method: "PUT", body: patch });
+export const runScheduleNow = (source) =>
+  request(`/api/server/schedules/${encodeURIComponent(source)}/run-now`, { method: "POST" });
 export const getNews = () => getJSON("/api/news");
 export const getTrades = () => getJSON("/api/trades");
 export const getWatchlist = (listId) =>

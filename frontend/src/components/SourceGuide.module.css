@@ -43,6 +43,12 @@
   box-shadow: 0 0 0 3px var(--negative-weak);
 }
 
+.item[data-state="deferred"] .dot {
+  background: var(--caution);
+  box-shadow: 0 0 0 3px var(--caution-weak);
+}
+.item[data-state="deferred"] .err { color: var(--caution); }
+
 .text {
   display: flex;
   flex-direction: column;

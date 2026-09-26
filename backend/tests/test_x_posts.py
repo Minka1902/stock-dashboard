@@ -223,20 +223,11 @@ def test_x_posts_registered_with_hourly_interval():
     assert spec.store is db.upsert_x_posts
 
 
-def test_x_posts_refresh_skipped_within_the_hour(conn):
-    """A second refresh inside the hourly window must not re-fetch the accounts."""
-    calls = 0
+def test_x_posts_schedule_is_seeded_hourly():
+    """The hourly cadence now lives in the per-source schedule row seeded from
+    the registry, so a stray edit can't make it poll every 180s."""
+    from app import main as main_module, schedules
 
-    def fetch():
-        nonlocal calls
-        calls += 1
-        return [_post("realDonaldTrump", "1", "$AAPL run", "2026-07-23T00:00:00+00:00", tickers="AAPL")]
-
-    ingest.run_source(conn, "x_posts", fetch, db.upsert_x_posts,
-                      min_interval_seconds=config.X_MIN_INTERVAL_SECONDS)
-    assert calls == 1
-    assert len(db.get_x_posts(conn)) == 1
-
-    ingest.run_source(conn, "x_posts", fetch, db.upsert_x_posts,
-                      min_interval_seconds=config.X_MIN_INTERVAL_SECONDS)
-    assert calls == 1  # gate skipped the fetch; still only one call
+    rows = {r.source: r for r in schedules.defaults_from_specs(
+        main_module.build_sources(main_module.conn), config.REFRESH_INTERVAL_SECONDS, "UTC")}
+    assert rows["x_posts"].interval_seconds == 3600

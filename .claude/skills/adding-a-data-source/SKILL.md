@@ -6,7 +6,10 @@ description: Step-by-step checklist for adding a new market-data source to the d
 # Adding a new data source
 
 The whole pipeline hangs off the `SOURCES` registry in `app/main.py`:
-`name -> (fetch_callable, store_fn, min_interval_seconds | None)`.
+`name -> SourceSpec(fetch, store, min_interval, retry_interval, force_on_daily)` (plain
+3-tuples still work). The cadence fields only seed the source's `source_schedules` row; the
+per-source scheduler job (`src:<name>`) then follows that row, which admins edit on the
+Server page. A new source gets its row automatically on the next startup.
 
 1. `app/sources/<name>.py` with `fetch(...) -> list[<Model>]` (pure parse helpers kept
    separate from the throttled HTTP, so they can be unit-tested without network).
@@ -20,14 +23,12 @@ The whole pipeline hangs off the `SOURCES` registry in `app/main.py`:
    (state + `Promise.all` load), add the source name to `EXTERNAL_SOURCES` there, and add
    a panel/view.
 
-## Ordering matters
+## Ordering
 
-`SOURCES` is a dict and insertion order is load order:
-
-- `boom_score` is a *pure DB computation* (no network) and must run **after** every source
-  it reads.
-- `alerts` must run **last** — it diffs the freshly computed boom scores against the prior
-  `alert_state` snapshot to fire transition events exactly once (deduped by `dedup_key`).
+Each source runs on its own schedule; registry order is only the startup order. `boom_score`
+and `alerts` are the **derived** step (`schedules.DERIVED_MEMBERS`): they run together, in
+that order, after upstream sources succeed — so a source Boom Score reads needs no
+ordering work, and must never be added to `DERIVED_MEMBERS`.
 
 ## Non-negotiables
 
@@ -36,5 +37,7 @@ The whole pipeline hangs off the `SOURCES` registry in `app/main.py`:
 - Never fabricate or placeholder a value. If the upstream is unavailable, let the source
   record an error status so the UI can show it. That is the core product principle and it
   applies to every new source without exception.
-- Use `min_interval_seconds` for slow or rate-limited upstreams rather than letting them
-  run every refresh cycle.
+- Give slow or rate-limited upstreams a `min_interval` (and a shorter `retry_interval`) so
+  their seeded schedule is polite. If the upstream says "come back later" (a 429 cooldown),
+  raise `ingest.SourceDeferred(reason, retry_after_seconds)` — it is recorded as a visible
+  `deferred` run with its next attempt, not an error and never a silent skip.

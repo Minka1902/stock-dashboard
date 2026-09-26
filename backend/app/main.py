@@ -1,4 +1,5 @@
 """FastAPI surface + scheduler wiring."""
+import itertools
 import json
 import logging
 import platform
@@ -19,16 +20,17 @@ from apscheduler.events import (
     EVENT_JOB_MAX_INSTANCES,
     EVENT_JOB_MISSED,
 )
+from apscheduler.executors.pool import BasePoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, backtest, chart_data, config, db, ingest, notify, quotes, report, routes_auth, routes_oauth, search, sentiment, suggestion_history, suggestions, themes
+from app import analysis, analyze, auth, backtest, chart_data, config, db, ingest, notify, quotes, report, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
@@ -89,7 +91,13 @@ def news_fetch(conn):
     # watchlist could make the news step outlast the whole refresh interval.
     tickers = tickers[: config.NEWS_MAX_TICKERS]
     names = db.get_company_names(conn, tickers)
-    return macro + gdelt.fetch_for_tickers(tickers, names, config.NEWS_PER_TICKER_LIMIT)
+    tagged = gdelt.fetch_for_tickers(tickers, names, config.NEWS_PER_TICKER_LIMIT)
+    if gdelt._in_cooldown():
+        # Real articles, but the per-ticker pass stopped early on a 429: say so
+        # rather than letting a partial run read as a complete one.
+        return ingest.FetchResult(
+            macro + tagged, note="partial: GDELT rate-limited the per-ticker pass")
+    return macro + tagged
 
 
 def trades_fetch(conn):
@@ -233,12 +241,15 @@ class SourceSpec(NamedTuple):
     positional shape, so plain 3-tuples in the registry below still work and are
     normalized into a SourceSpec by ``build_sources``.
 
-    retry_interval: how soon to retry after a *failure*. Without this, a long
-    min_interval doubles as a long retry gate, so one bad fetch silences the
-    source for the entire window.
-    force_on_daily: whether the daily deep run may bypass the throttle. False for
-    sources whose upstream publishes slowly or rate-limits us hard — forcing
-    those daily just burns the quota and re-records the same error.
+    min_interval / retry_interval: the *default* cadence and error-retry for
+    this source. They only seed its `source_schedules` row (app/schedules.py);
+    from then on the row — editable on the Server page — is what the scheduler
+    follows. min_interval None means "the fast default"
+    (config.REFRESH_INTERVAL_SECONDS). A source with a min_interval also
+    declines non-forced manual refreshes while it is fresh (politeness).
+    force_on_daily: whether the daily deep run re-runs it. False for sources
+    whose upstream publishes slowly or rate-limits us hard — hitting those an
+    extra time daily just burns the quota and re-records the same error.
     """
 
     fetch: object
@@ -253,8 +264,9 @@ def build_sources(conn):
 
     Fetch closures reference the module-global fetcher names (so tests can still
     monkeypatch them) and pass in `conn`; store fns take the connection from
-    ingest.run_source. Ordering matters: boom_score is a pure DB computation and
-    must run after every source it reads; alerts must run last (diffs boom_score).
+    ingest.run_source. Order is the startup run order. boom_score and alerts are
+    not scheduled on their own: they run together, in that order, as the
+    "derived" step after upstream sources succeed (schedules.DERIVED).
     """
     raw = {
         "usaspending": (lambda: contracts_fetch(conn), db.upsert_contracts, None),
@@ -284,12 +296,14 @@ def build_sources(conn):
         "analyst":        (lambda: analyst_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_analyst_signals, None),
         "fundamentals":   (lambda: fundamentals_fetch(conn), _store_fundamentals, None),
         "x_posts":        (lambda: x_posts_fetch(conn), db.upsert_x_posts, config.X_MIN_INTERVAL_SECONDS),
-        "earnings":       (lambda: earnings_fetch(conn), db.upsert_earnings, config.EARNINGS_MIN_INTERVAL_SECONDS),
+        "earnings":       SourceSpec(lambda: earnings_fetch(conn), db.upsert_earnings,
+                                     config.EARNINGS_MIN_INTERVAL_SECONDS,
+                                     retry_interval=config.EARNINGS_RETRY_INTERVAL_SECONDS),
         "seasonality":    (lambda: seasonality_fetch(conn), db.upsert_seasonality, config.SEASONALITY_MIN_INTERVAL_SECONDS),
         "boom_score":     (lambda: score_fetch(conn), db.upsert_boom_scores, None),
         "ohlc":           (lambda: ohlc_fetch(conn), db.upsert_ohlc, config.OHLC_MIN_INTERVAL_SECONDS),  # 2y history barely moves intraday
         "analysis":       (lambda: analysis_fetch(conn), db.upsert_analyses, config.ANALYSIS_MIN_INTERVAL_SECONDS),  # after ohlc; cheap DB+quote read
-        "alerts":         (lambda: alerts_source.detect(conn), db.upsert_alerts, None),  # must be last (diffs boom_score)
+        "alerts":         (lambda: alerts_source.detect(conn), db.upsert_alerts, None),  # derived: after boom_score
     }
     return {
         name: spec if isinstance(spec, SourceSpec) else SourceSpec(*spec)
@@ -301,44 +315,276 @@ def build_sources(conn):
 # connection; API read routes use `conn`.
 SOURCES = build_sources(refresh_conn)
 
-# misfire_grace_time defaults to ONE second in APScheduler (base.py:909), which
-# silently drops any job delayed past it — a sleeping laptop or a busy thread
-# pool is enough, and the app then stops updating until it is restarted, with no
-# trace. 5 minutes lets a late job still run; coalesce collapses a backlog into
-# one run; max_instances=1 keeps two refresh cycles off the same connection.
+# ---------- scheduling: one job per source on one serial refresh thread ----------
+#
+# Every source has its own APScheduler job (`src:<name>`) driven by its row in
+# `source_schedules` (app/schedules.py). The schedule is the only gate: a job
+# that fires always fetches, and every non-run is visible —
+#   * queued: all jobs share ONE refresh thread, so a job due while another is
+#     fetching waits its turn and runs late (misfire_grace_time=None: never
+#     dropped). The Server page lists what is waiting.
+#   * coalesced: a job that fires while its previous run is still queued or
+#     running is merged into it (max_instances=1) and recorded as such.
+#   * deferred: the source asked to be retried later (GDELT's 429 cooldown);
+#     its next run moves to the time it named.
+#   * error: recorded with the full traceback; the next run moves to
+#     now + the schedule's retry.
+# boom_score -> alerts run as one "derived" job, pulled forward (debounced)
+# after any upstream success, and on their own schedule row as well.
+
+# Manual work (POST /api/refresh, run-now) is submitted straight to this pool,
+# which is also the scheduler's "refresh" executor — so scheduled and manual
+# runs are serialized on the same single thread and never write refresh_conn
+# concurrently.
+_refresh_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="refresh")
+
+# Work waiting for the refresh thread: key -> {id, source, trigger, queued_at,
+# scheduled_for}. Scheduled jobs are keyed by job id, manual ones uniquely.
+_QUEUED: dict[str, dict] = {}
+# Last finished scheduled run per job id -> (duration_ms, started_late_seconds).
+_JOB_TIMING: dict[str, tuple[int, float | None]] = {}
+_JOB_LOCK = threading.Lock()
+_MANUAL_SEQ = itertools.count(1)
+
+# A job that starts this much later than it was scheduled gets a note saying so.
+_LATE_NOTE_SECONDS = 60
+
+
+class _RefreshPoolExecutor(BasePoolExecutor):
+    """APScheduler executor over `_refresh_executor`.
+
+    Sharing the pool is what serializes scheduled and manual runs. Hooking the
+    submit step records a job as queued *before* the pool can start it, which
+    the scheduler's own SUBMITTED event (dispatched afterwards) cannot do.
+    """
+
+    def __init__(self, pool):
+        super().__init__(pool)
+
+    def _do_submit_job(self, job, run_times):
+        with _JOB_LOCK:
+            _QUEUED[job.id] = {
+                "id": job.id,
+                "source": job.name,
+                "trigger": "scheduled",
+                "queued_at": datetime.now(timezone.utc),
+                "scheduled_for": run_times[-1] if run_times else None,
+            }
+        super()._do_submit_job(job, run_times)
+
+
 scheduler = BackgroundScheduler(
+    executors={"refresh": _RefreshPoolExecutor(_refresh_executor)},
     job_defaults={
         "coalesce": True,
         "max_instances": 1,
-        "misfire_grace_time": config.SCHEDULER_MISFIRE_GRACE_SECONDS,
-    }
+        # None = a late job runs late instead of being dropped. APScheduler's
+        # default of 1 second silently dropped any job delayed by a busy pool
+        # or a sleeping laptop.
+        "misfire_grace_time": None,
+    },
 )
-
-# Ingestion is single-flight. The interval refresh and the daily deep run are
-# separate jobs that can otherwise interleave, both driving refresh_conn.
-_REFRESH_LOCK = threading.Lock()
-
-# Manual /api/refresh work runs here instead of on the request thread. A slow
-# source (margin_debt: 3 tiers x 30s timeout; technical: 30s x N tickers) would
-# otherwise hold an HTTP request open for minutes and starve the single worker.
-_refresh_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="refresh")
 
 _STARTED_AT = time.time()
 
 
-def _refresh_all():
-    if not _REFRESH_LOCK.acquire(blocking=False):
-        logger.info("refresh_all skipped: a refresh cycle is already running")
-        return
+def _job_id(name: str) -> str:
+    return f"src:{name}"
+
+
+def _schedule_names() -> list[str]:
+    """Schedule rows in run order: every source except the derived members,
+    then the derived step itself."""
+    names = [n for n in SOURCES if n not in schedules.DERIVED_MEMBERS]
+    return names + [schedules.DERIVED]
+
+
+def _status_for(name: str, statuses: dict):
+    """The status row that drives a schedule's clock (derived -> boom_score)."""
+    return statuses.get(schedules.DERIVED_MEMBERS[0] if name == schedules.DERIVED else name)
+
+
+def _timed_job(job_id: str, fn, *args):
+    """Wrapper every scheduled job runs through: marks it started (no longer
+    queued) and records its duration and lateness for the job event."""
+    started_wall = datetime.now(timezone.utc)
+    started = time.monotonic()
+    with _JOB_LOCK:
+        entry = _QUEUED.pop(job_id, None)
+    scheduled_for = entry.get("scheduled_for") if entry else None
+    late = (started_wall - scheduled_for).total_seconds() if scheduled_for else None
     try:
-        for name, spec in SOURCES.items():
-            ingest.run_source(
-                refresh_conn, name, spec.fetch, spec.store,
-                min_interval_seconds=spec.min_interval,
-                retry_interval_seconds=spec.retry_interval,
-            )
+        return fn(*args)
     finally:
-        _REFRESH_LOCK.release()
+        with _JOB_LOCK:
+            _JOB_TIMING[job_id] = (int((time.monotonic() - started) * 1000), late)
+
+
+def _run_derived() -> None:
+    """boom_score reads every other source; alerts diffs boom_score. In order."""
+    for name in schedules.DERIVED_MEMBERS:
+        spec = SOURCES[name]
+        ingest.run_source(refresh_conn, name, spec.fetch, spec.store)
+
+
+def _run_source_now(name: str) -> None:
+    """Run one source (or the derived step) and let its outcome set its clock."""
+    if name == schedules.DERIVED:
+        _run_derived()
+        return
+    spec = SOURCES[name]
+    result = ingest.run_source(refresh_conn, name, spec.fetch, spec.store)
+    try:
+        _after_run(name, result)
+    except Exception:  # noqa: BLE001 - bookkeeping must never fail the run
+        logger.exception("post-run scheduling for %s failed", name)
+
+
+def _set_next_run(job_id: str, when: datetime) -> None:
+    """Move an enabled job's next run. A paused (disabled) job stays paused."""
+    job = scheduler.get_job(job_id)
+    if job is None or getattr(job, "next_run_time", None) is None:
+        return
+    scheduler.modify_job(job_id, next_run_time=when)
+
+
+def _after_run(name: str, result: "ingest.RunResult", request_derived: bool = True) -> None:
+    """Outcome drives the clock: ok -> one interval (or the next time slot)
+    after this success; error -> now + retry; deferred -> the time the source
+    asked for. Errors and deferrals get that time written onto their run row,
+    so the page can say when the next attempt is."""
+    if name in schedules.DERIVED_MEMBERS:
+        return
+    if request_derived and (result.outcome == "ok" or result.record_count):
+        _request_derived()
+    sched = db.get_source_schedule(refresh_conn, name)
+    if sched is None:
+        return
+    statuses = {s.source: s for s in db.get_source_statuses(refresh_conn)}
+    due = schedules.next_due(sched, statuses.get(name), datetime.now(timezone.utc))
+    if result.outcome in ("error", "deferred"):
+        db.set_source_next_attempt(
+            refresh_conn, name, result.run_id, due.isoformat(timespec="seconds"))
+    _set_next_run(_job_id(name), due)
+
+
+def _request_derived() -> None:
+    """Pull the derived step forward to run shortly after fresh upstream data.
+
+    Debounced: it only ever moves *earlier*, to now + DERIVED_DEBOUNCE_SECONDS,
+    so a burst of sources finishing together coalesces into one recompute. If a
+    derived run is already waiting on the refresh thread it will run after this
+    source anyway, so nothing needs to move.
+    """
+    job_id = _job_id(schedules.DERIVED)
+    with _JOB_LOCK:
+        if any(e["source"] == schedules.DERIVED for e in _QUEUED.values()):
+            return
+    job = scheduler.get_job(job_id)
+    current = getattr(job, "next_run_time", None) if job else None
+    if current is None:
+        return  # not installed yet, or disabled by an admin
+    target = datetime.now(timezone.utc) + timedelta(seconds=config.DERIVED_DEBOUNCE_SECONDS)
+    if current > target:
+        scheduler.modify_job(job_id, next_run_time=target)
+
+
+def _enqueue(name: str, trigger: str = "manual"):
+    """Queue a one-off run of `name` on the refresh thread (not via the
+    scheduler, so a disabled schedule stays disabled)."""
+    key = f"{trigger}:{name}:{next(_MANUAL_SEQ)}"
+    with _JOB_LOCK:
+        _QUEUED[key] = {
+            "id": key, "source": name, "trigger": trigger,
+            "queued_at": datetime.now(timezone.utc), "scheduled_for": None,
+        }
+
+    def body():
+        with _JOB_LOCK:
+            _QUEUED.pop(key, None)
+        _run_source_now(name)
+
+    return _refresh_executor.submit(body)
+
+
+def _queued_snapshot() -> list[dict]:
+    now = datetime.now(timezone.utc)
+    with _JOB_LOCK:
+        entries = list(_QUEUED.values())
+    out = []
+    for e in sorted(entries, key=lambda x: x["queued_at"]):
+        out.append({
+            "id": e["id"],
+            "source": e["source"],
+            "trigger": e["trigger"],
+            "queued_at": e["queued_at"].isoformat(timespec="seconds"),
+            "scheduled_for": e["scheduled_for"].isoformat(timespec="seconds")
+            if e["scheduled_for"] else None,
+            "waiting_seconds": round((now - e["queued_at"]).total_seconds(), 1),
+        })
+    return out
+
+
+def _first_run_time(sched, status, now: datetime, stagger: int = 0) -> datetime:
+    """When an (enabled) schedule should next fire, honouring its history, but
+    never sooner than the startup floor — staggered so startup keeps the
+    registry's order on the single refresh thread."""
+    floor = now + timedelta(seconds=config.SCHEDULER_STARTUP_DELAY_SECONDS + stagger)
+    return max(schedules.next_due(sched, status, now), floor)
+
+
+def _load_schedules() -> dict:
+    """Seed missing rows from the registry, then read them back. A row that no
+    longer validates (hand-edited DB) falls back to its default, loudly."""
+    defaults = {
+        s.source: s for s in schedules.defaults_from_specs(
+            SOURCES, config.REFRESH_INTERVAL_SECONDS, config.SCHEDULE_DEFAULT_TZ)
+    }
+    db.seed_source_schedules(conn, list(defaults.values()))
+    rows = db.get_source_schedules(conn)
+    out = {}
+    for name in _schedule_names():
+        row = rows.get(name) or defaults[name]
+        try:
+            out[name] = schedules.validate(row)
+        except ValueError as exc:
+            logger.error("schedule for %s is invalid (%s); using the default", name, exc)
+            out[name] = defaults[name]
+    return out
+
+
+def _install_source_jobs() -> None:
+    scheds = _load_schedules()
+    statuses = {s.source: s for s in db.get_source_statuses(conn)}
+    now = datetime.now(timezone.utc)
+    for i, name in enumerate(_schedule_names()):
+        sched = scheds[name]
+        first = _first_run_time(sched, _status_for(name, statuses), now, stagger=i) \
+            if sched.enabled else None
+        scheduler.add_job(
+            _timed_job,
+            schedules.build_trigger(sched),
+            args=[_job_id(name), _run_source_now, name],
+            id=_job_id(name),
+            name=name,
+            executor="refresh",
+            next_run_time=first,
+            replace_existing=True,
+        )
+
+
+def _apply_schedule(sched) -> None:
+    """Re-arm a source's job after an edit (no-op before the scheduler has jobs)."""
+    job_id = _job_id(sched.source)
+    if scheduler.get_job(job_id) is None:
+        return
+    trigger = schedules.build_trigger(sched)
+    if not sched.enabled:
+        scheduler.modify_job(job_id, trigger=trigger, next_run_time=None)
+        return
+    statuses = {s.source: s for s in db.get_source_statuses(conn)}
+    nxt = _first_run_time(sched, _status_for(sched.source, statuses), datetime.now(timezone.utc))
+    scheduler.modify_job(job_id, trigger=trigger, next_run_time=nxt)
 
 
 def _snapshot_suggestion_history(for_date: str) -> None:
@@ -365,15 +611,8 @@ def _send_daily_digest():
         logger.exception("daily digest delivery failed")
 
 
-def parse_analysis_time(value: str) -> tuple[int, int]:
-    """Validate "HH:MM" (24h) and return (hour, minute). Raises ValueError."""
-    parts = value.strip().split(":")
-    if len(parts) != 2:
-        raise ValueError("time must be HH:MM")
-    hour, minute = int(parts[0]), int(parts[1])
-    if not (0 <= hour <= 23 and 0 <= minute <= 59):
-        raise ValueError("time must be HH:MM in 24h range")
-    return hour, minute
+# Kept under its old name: the settings route and tests validate with it.
+parse_analysis_time = schedules.parse_hhmm
 
 
 def analysis_trigger(settings: AppSettings) -> CronTrigger:
@@ -386,22 +625,29 @@ def analysis_trigger(settings: AppSettings) -> CronTrigger:
 
 
 def _run_daily_analysis():
-    """Scheduled deep run: refresh every source, recompute analyses, boom scores
+    """Scheduled deep run: refresh the sources, recompute analyses, boom scores
     and alerts, then deliver the digest for the relevant trading session.
 
-    Sources marked ``force_on_daily=False`` keep their throttle here. Forcing a
-    slowly-published or hard-rate-limited upstream once a day just burns quota
-    and re-records the same error — and it would defeat every long cadence the
-    registry declares.
+    Runs on the refresh thread, so it queues behind (never interleaves with)
+    the per-source jobs. Sources marked ``force_on_daily=False`` (slowly
+    published or hard rate-limited upstreams) are left to their own schedule
+    rather than being hit an extra time; a disabled schedule stays disabled.
     """
-    with _REFRESH_LOCK:
-        for name, spec in SOURCES.items():
-            ingest.run_source(
-                refresh_conn, name, spec.fetch, spec.store,
-                min_interval_seconds=spec.min_interval,
-                retry_interval_seconds=spec.retry_interval,
-                force=spec.force_on_daily,
-            )
+    scheds = db.get_source_schedules(refresh_conn)
+    for name, spec in SOURCES.items():
+        if name in schedules.DERIVED_MEMBERS or not spec.force_on_daily:
+            continue
+        sched = scheds.get(name)
+        if sched is not None and not sched.enabled:
+            continue
+        result = ingest.run_source(refresh_conn, name, spec.fetch, spec.store)
+        try:
+            _after_run(name, result, request_derived=False)
+        except Exception:  # noqa: BLE001
+            logger.exception("post-run scheduling for %s failed", name)
+    derived = scheds.get(schedules.DERIVED)
+    if derived is None or derived.enabled:
+        _run_derived()
     settings = db.get_app_settings(refresh_conn)
     try:
         today = datetime.now(ZoneInfo(settings.analysis_tz)).date()
@@ -416,30 +662,50 @@ def _run_daily_analysis():
 _JOB_EVENT_NAMES = {
     EVENT_JOB_EXECUTED: "executed",
     EVENT_JOB_ERROR: "error",
+    # Cannot happen with misfire_grace_time=None; mapped so old rows still read.
     EVENT_JOB_MISSED: "missed",
-    EVENT_JOB_MAX_INSTANCES: "max_instances",
+    # Not a drop: the fire is merged into the run already queued/running.
+    EVENT_JOB_MAX_INSTANCES: "coalesced",
 }
 
 
 def _on_job_event(event):
-    """Persist every scheduler outcome, including the silent ones.
+    """Persist every scheduler outcome that is not already a source_runs row.
 
-    'missed' and 'max_instances' are the two that matter: APScheduler only logs
-    them, and this app's logs used to go to a console window that no longer
-    exists. A job quietly not running is exactly the failure we couldn't see.
+    A per-source job's normal execution is recorded by its source_runs row, so
+    only its exceptional events (error, coalesced, started late) are written
+    here; every other job's execution is written with its duration.
     """
     name = _JOB_EVENT_NAMES.get(event.code, str(event.code))
+    duration_ms = late = None
+    if event.code in (EVENT_JOB_EXECUTED, EVENT_JOB_ERROR):
+        with _JOB_LOCK:
+            timing = _JOB_TIMING.pop(event.job_id, None)
+            _QUEUED.pop(event.job_id, None)
+        if timing:
+            duration_ms, late = timing
+
     detail = None
     if getattr(event, "exception", None) is not None:
         detail = "".join(
             traceback.format_exception(
                 type(event.exception), event.exception, event.exception.__traceback__)
-        )[-2000:]
+        )[-4000:]
         logger.error("job %s raised", event.job_id, exc_info=event.exception)
-    elif name in ("missed", "max_instances"):
-        logger.warning("job %s %s", event.job_id, name)
+    elif name == "coalesced":
+        detail = ("fired while this job's previous run was still queued or running "
+                  "on the refresh thread; merged into that run rather than started twice")
+        logger.info("job %s coalesced", event.job_id)
+    elif name == "missed":
+        logger.warning("job %s missed", event.job_id)
+    elif late is not None and late >= _LATE_NOTE_SECONDS:
+        detail = f"started {int(late)}s after its scheduled time (queued behind other work)"
+
+    if name == "executed" and str(event.job_id).startswith("src:") and detail is None:
+        return
     try:
-        db.record_job_run(refresh_conn, event.job_id, name, _now_iso(), detail=detail)
+        db.record_job_run(
+            refresh_conn, event.job_id, name, _now_iso(), duration_ms=duration_ms, detail=detail)
     except Exception:  # noqa: BLE001 - diagnostics must never break the scheduler
         logger.exception("failed to record job run for %s", event.job_id)
 
@@ -467,26 +733,23 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _add_timed_job(fn, trigger, job_id: str) -> None:
+    scheduler.add_job(
+        _timed_job, trigger, args=[job_id, fn], id=job_id, name=job_id,
+        executor="refresh", replace_existing=True,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     scheduler.add_listener(
         _on_job_event,
         EVENT_JOB_EXECUTED | EVENT_JOB_ERROR | EVENT_JOB_MISSED | EVENT_JOB_MAX_INSTANCES,
     )
-    scheduler.add_job(
-        _refresh_all,
-        "interval",
-        seconds=config.REFRESH_INTERVAL_SECONDS,
-        id="refresh_all",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        _prune_history,
-        CronTrigger(hour=3, minute=17),
-        id="prune_history",
-        replace_existing=True,
-    )
-    scheduler.add_job(
+    _install_source_jobs()
+    # Everything that writes through refresh_conn runs on the refresh thread.
+    _add_timed_job(_prune_history, CronTrigger(hour=3, minute=17), "prune_history")
+    _add_timed_job(
         _send_daily_digest,
         CronTrigger(
             day_of_week="mon-fri",
@@ -494,24 +757,30 @@ async def lifespan(app: FastAPI):
             minute=config.DIGEST_MINUTE,
             timezone=ZoneInfo(config.DIGEST_TZ),
         ),
-        id="daily_digest",
-        replace_existing=True,
+        "daily_digest",
     )
-    scheduler.add_job(
-        _run_daily_analysis,
-        analysis_trigger(db.get_app_settings(conn)),
-        id="daily_analysis",
-        replace_existing=True,
-    )
+    _add_timed_job(
+        _run_daily_analysis, analysis_trigger(db.get_app_settings(conn)), "daily_analysis")
     scheduler.start()
     yield
-    # Drain rather than abandon: an ingestion job killed mid-write leaves the WAL
-    # to grow unchecked (it was 7.5 MB uncheckpointed before this).
+    # Stop firing, drop work that has not started yet (a restart re-derives
+    # every source's next run from its history, so nothing is lost), then drain
+    # the run in progress: an ingestion job killed mid-write leaves the WAL to
+    # grow unchecked (it was 7.5 MB uncheckpointed before this).
+    #
+    # The drain must happen BEFORE scheduler.shutdown(): that call holds the
+    # scheduler's job-store lock while it waits for executors, and a finishing
+    # run re-arms its own job through that same lock (_after_run) — waiting
+    # inside shutdown() deadlocks.
+    try:
+        scheduler.pause()
+    except Exception:  # noqa: BLE001 - never started (e.g. startup failed)
+        pass
+    _refresh_executor.shutdown(wait=True, cancel_futures=True)
     try:
         scheduler.shutdown(wait=True)
     except Exception:  # noqa: BLE001
         logger.exception("scheduler shutdown failed")
-    _refresh_executor.shutdown(wait=True, cancel_futures=True)
     for label, connection in (("request", conn), ("refresh", refresh_conn)):
         try:
             connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -1417,6 +1686,15 @@ def _db_stats() -> dict:
     return out
 
 
+def _iso(dt: datetime | None) -> str | None:
+    return dt.isoformat(timespec="seconds") if dt else None
+
+
+def _job_next_run(job_id: str) -> str | None:
+    job = scheduler.get_job(job_id)
+    return _iso(getattr(job, "next_run_time", None)) if job else None
+
+
 @app.get("/api/server/overview")
 def server_overview(user=Depends(_require_admin)):
     jobs = []
@@ -1436,80 +1714,176 @@ def server_overview(user=Depends(_require_admin)):
         "process": _process_stats(),
         "db": _db_stats(),
         "scheduler": {"running": scheduler.running, "jobs": jobs},
-        # What the ingestion worker is doing at this exact moment.
+        # What the ingestion worker is doing at this exact moment...
         "running_sources": ingest.running_sources(),
-        "refresh_interval_seconds": config.REFRESH_INTERVAL_SECONDS,
+        # ...and what is waiting its turn on the single refresh thread.
+        "queued": _queued_snapshot(),
     }
+
+
+def _schedule_payload(sched) -> dict:
+    row = sched.model_dump()
+    row["description"] = schedules.describe(sched)
+    row["next_run_at"] = _job_next_run(_job_id(sched.source))
+    row["members"] = list(schedules.DERIVED_MEMBERS) if sched.source == schedules.DERIVED else []
+    return row
 
 
 @app.get("/api/server/sources")
 def server_sources(user=Depends(_require_admin)):
-    """Per-source health: status, both clocks, run counters and the next gate."""
+    """Every registered source — including ones that have never run — with its
+    status, both clocks, run counters, schedule and next run."""
     stats = db.get_source_run_stats(conn)
+    statuses = {s.source: s for s in db.get_source_statuses(conn)}
+    scheds = db.get_source_schedules(conn)
     running = ingest.running_sources()
-    now = datetime.now(timezone.utc)
+    queued = {e["source"] for e in _queued_snapshot()}
     out = []
-    for status in db.get_source_statuses(conn):
-        spec = SOURCES.get(status.source)
-        row = status.model_dump()
-        row.update(stats.get(status.source, {}))
-        row["min_interval_seconds"] = spec.min_interval if spec else None
-        row["retry_interval_seconds"] = spec.retry_interval if spec else None
-        row["force_on_daily"] = spec.force_on_daily if spec else None
-        row["running_for_seconds"] = running.get(status.source)
-
-        # When this source is next allowed to run. Without it, a source that is
-        # silently throttled is indistinguishable from one that is broken.
-        failed = (status.status or "").startswith("error")
-        gate = (spec.retry_interval or spec.min_interval) if (spec and failed) else (
-            spec.min_interval if spec else None)
-        anchor = status.last_refreshed_at if failed else (
-            status.last_success_at or status.last_refreshed_at)
-        next_at = None
-        if gate and anchor:
-            try:
-                parsed = datetime.fromisoformat(anchor)
-                if parsed.tzinfo is None:
-                    parsed = parsed.replace(tzinfo=timezone.utc)
-                next_at = (parsed + timedelta(seconds=gate)).isoformat(timespec="seconds")
-            except (ValueError, TypeError):
-                next_at = None
-        row["next_eligible_at"] = next_at
-        row["eligible_now"] = next_at is None or next_at <= now.isoformat(timespec="seconds")
+    for name, spec in SOURCES.items():
+        sched_name = schedules.DERIVED if name in schedules.DERIVED_MEMBERS else name
+        status = statuses.get(name)
+        row = {
+            "source": name, "status": None, "last_refreshed_at": None,
+            "record_count": None, "error_detail": None, "last_success_at": None,
+            "last_duration_ms": None, "next_attempt_at": None,
+        }
+        if status is not None:
+            row.update(status.model_dump())
+        row.update(stats.get(name, {}))
+        row["never_run"] = status is None
+        sched = scheds.get(sched_name)
+        row["schedule"] = (
+            {**sched.model_dump(), "description": schedules.describe(sched)} if sched else None)
+        row["next_run_at"] = _job_next_run(_job_id(sched_name))
+        row["force_on_daily"] = spec.force_on_daily
+        row["running_for_seconds"] = running.get(name)
+        row["queued"] = sched_name in queued or name in queued
         out.append(row)
     return out
 
 
+@app.get("/api/server/sources/{source_name}/runs")
+def server_source_runs(source_name: str, limit: int = 10, user=Depends(_require_admin)):
+    """One source's recent runs, each with its own full traceback."""
+    if source_name not in SOURCES:
+        raise HTTPException(status_code=404, detail="unknown source")
+    limit = max(1, min(limit, 100))
+    return [r.model_dump() for r in db.get_source_runs(conn, source_name, limit=limit)]
+
+
 @app.get("/api/server/events")
-def server_events(limit: int = 60, user=Depends(_require_admin)):
-    """Recent source runs and scheduler job events, newest first, interleaved."""
+def server_events(
+    limit: int = 60,
+    kind: str | None = None,
+    event_id: str | None = Query(None, alias="id"),
+    user=Depends(_require_admin),
+):
+    """Recent source runs and scheduler job events, newest first, interleaved.
+
+    `kind` (source | job) and `id` (a source name or job id) narrow it on the
+    server, so "show similar" gets a full page of that one thing rather than
+    whatever happened to be in the last page.
+    """
+    if kind not in (None, "", "source", "job"):
+        raise HTTPException(status_code=400, detail="kind must be 'source' or 'job'")
     limit = max(1, min(limit, 300))
     events = []
-    for run in db.get_source_runs(conn, limit=limit):
-        events.append({
-            "kind": "source", "at": run.finished_at, "id": run.source,
-            "outcome": run.outcome, "duration_ms": run.duration_ms,
-            "record_count": run.record_count, "detail": run.detail,
-        })
-    for job in db.get_job_runs(conn, limit=limit):
-        events.append({
-            "kind": "job", "at": job.at, "id": job.job_id,
-            "outcome": job.event, "duration_ms": job.duration_ms,
-            "record_count": None, "detail": job.detail,
-        })
+    if kind in (None, "", "source"):
+        for run in db.get_source_runs(conn, source=event_id or None, limit=limit):
+            events.append({
+                "key": f"source:{run.id}", "kind": "source", "at": run.finished_at,
+                "id": run.source, "outcome": run.outcome, "duration_ms": run.duration_ms,
+                "record_count": run.record_count, "detail": run.detail,
+                "next_attempt_at": run.next_attempt_at,
+                "has_error_detail": bool(run.error_detail),
+            })
+    if kind in (None, "", "job"):
+        for job in db.get_job_runs(conn, limit=limit, job_id=event_id or None):
+            events.append({
+                "key": f"job:{job.id}", "kind": "job", "at": job.at, "id": job.job_id,
+                "outcome": job.event, "duration_ms": job.duration_ms,
+                "record_count": None, "detail": job.detail,
+                "next_attempt_at": None, "has_error_detail": False,
+            })
     events.sort(key=lambda e: e["at"] or "", reverse=True)
     return events[:limit]
 
 
-def _run_source_job(source_name: str, spec: "SourceSpec", force: bool) -> None:
-    """Body of a queued manual refresh. Runs on the refresh executor."""
-    with _REFRESH_LOCK:
-        ingest.run_source(
-            refresh_conn, source_name, spec.fetch, spec.store,
-            min_interval_seconds=spec.min_interval,
-            retry_interval_seconds=spec.retry_interval,
-            force=force,
-        )
+# ---------- per-source schedules (admin) ----------
+class ScheduleUpdate(BaseModel):
+    mode: str | None = None
+    interval_seconds: int | None = None
+    times: list[str] | None = None
+    days: list[str] | None = None
+    tz: str | None = None
+    enabled: bool | None = None
+    retry_seconds: int | None = None
+
+
+@app.get("/api/server/schedules")
+def get_schedules(user=Depends(_require_admin)):
+    scheds = db.get_source_schedules(conn)
+    return [_schedule_payload(scheds[n]) for n in _schedule_names() if n in scheds]
+
+
+@app.put("/api/server/schedules/{source_name}")
+def put_schedule(source_name: str, item: ScheduleUpdate, user=Depends(_require_admin)):
+    if source_name not in _schedule_names():
+        raise HTTPException(status_code=404, detail="unknown schedule")
+    current = db.get_source_schedule(conn, source_name)
+    if current is None:
+        raise HTTPException(status_code=404, detail="unknown schedule")
+    changes = item.model_dump(exclude_unset=True)
+    # An explicit null retry means "back to the default"; any other null is ignored.
+    changes = {k: v for k, v in changes.items() if v is not None or k == "retry_seconds"}
+    try:
+        updated = schedules.validate(current.model_copy(update=changes))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    updated = updated.model_copy(update={"updated_at": _now_iso()})
+    db.upsert_source_schedule(conn, updated)
+    try:
+        _apply_schedule(updated)
+    except Exception:  # noqa: BLE001 - the row is saved; the job re-arms on restart
+        logger.exception("re-arming %s after a schedule edit failed", source_name)
+    return _schedule_payload(updated)
+
+
+@app.post("/api/server/schedules/{source_name}/run-now", status_code=202)
+def run_schedule_now(source_name: str, user=Depends(_require_admin)):
+    """Run once now, on the refresh thread, without touching the schedule."""
+    if source_name not in _schedule_names():
+        raise HTTPException(status_code=404, detail="unknown schedule")
+    _enqueue(source_name, "run-now")
+    return {"source": source_name, "queued": True}
+
+
+def _manual_refresh_gate(source_name: str) -> tuple[str, str] | None:
+    """(why, next run) when a non-forced manual refresh should not run now.
+
+    Only sources with a politeness cadence (a registry min_interval: GDELT,
+    margin_debt, congress, ...) are gated, and only until their schedule says
+    they are due. The answer goes back in the response — nothing is queued and
+    no run row is written, so there is no silent skip.
+    """
+    spec = SOURCES[source_name]
+    if spec.min_interval is None or source_name in schedules.DERIVED_MEMBERS:
+        return None
+    sched = db.get_source_schedule(conn, source_name)
+    status = {s.source: s for s in db.get_source_statuses(conn)}.get(source_name)
+    if sched is None or status is None:
+        return None
+    now = datetime.now(timezone.utc)
+    due = schedules.next_due(sched, status, now)
+    if due <= now:
+        return None
+    state = status.status or ""
+    when = due.isoformat(timespec="seconds")
+    if state.startswith("deferred"):
+        return f"deferred until {when}: {state.removeprefix('deferred: ')}", when
+    if state.startswith("error"):
+        return f"failed recently; the retry is scheduled for {when}", when
+    return f"up to date (last success {status.last_success_at}); next scheduled run {when}", when
 
 
 @app.post(
@@ -1522,29 +1896,28 @@ def refresh(source_name: str, force: bool = False, user=Depends(auth.get_current
 
     This used to run the fetch inline on the request thread. A slow source
     (margin_debt is 3 tiers x a 30s timeout; technical is 30s x N tickers,
-    sequentially) then held the request open for minutes while contending with
-    the scheduler for the refresh connection — and the dashboard fires 19 of
-    these at once. To a user, a single worker tied up like that is
-    indistinguishable from a dead server.
+    sequentially) then held the request open for minutes — and the dashboard
+    fires 19 of these at once. The work now goes to the single refresh thread
+    that the scheduler also uses, so it never races a scheduled run.
 
-    `force=1` bypasses the throttle and is admin-only: it is the one path that
-    can hammer a rate-limited upstream on demand.
+    A source that is fresh on its politeness cadence answers `queued: false`
+    with the reason and its next scheduled run. `force=1` bypasses that and is
+    admin-only: it is the one path that can hammer a rate-limited upstream.
     """
     if source_name not in SOURCES:
         raise HTTPException(status_code=404, detail="unknown source")
     if force and not user.is_admin:
         raise HTTPException(status_code=403, detail="admin only")
-    spec = SOURCES[source_name]
-    _refresh_executor.submit(_run_source_job, source_name, spec, force)
-    # .get(): a source that has never run and is currently throttled has no
-    # source_status row at all, which used to raise KeyError here -> 500.
+    # .get(): a source that has never run has no source_status row at all.
     statuses = {s.source: s for s in db.get_source_statuses(refresh_conn)}
     current = statuses.get(source_name)
-    return {
-        "source": source_name,
-        "queued": True,
-        "status": current.model_dump() if current else None,
-    }
+    payload = {"source": source_name, "status": current.model_dump() if current else None}
+    gate = None if force else _manual_refresh_gate(source_name)
+    if gate:
+        reason, due = gate
+        return {**payload, "queued": False, "reason": reason, "next_run_at": due}
+    _enqueue(source_name, "manual")
+    return {**payload, "queued": True}
 
 
 # ---------- single-port static serving (serve the built frontend `dist/`) ----------

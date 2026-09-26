@@ -126,9 +126,13 @@ export const MODULE_SOURCE = {
 };
 
 // "ok" or "ok (fallback: …)" both mean the source delivered real data.
+// "deferred: …" means the source asked to be retried later (e.g. a rate
+// limit): not a failure, not fresh either — shown in amber, never as an error.
 export function sourceState(status) {
   if (!status) return "error";
-  return status === "ok" || status.startsWith("ok (") ? "ok" : "error";
+  if (status === "ok" || status.startsWith("ok (")) return "ok";
+  if (status.startsWith("deferred")) return "deferred";
+  return "error";
 }
 
 // The parenthetical note carried by an "ok (…)" fallback status, else null.
@@ -142,8 +146,13 @@ export function sourceNote(status) {
 // component render-purity checks). `status` is a GET /api/sources entry.
 export function sourceStale(status, maxAgeHours = 24) {
   if (!status) return false; // unknown → don't suppress
-  if (sourceState(status.status) === "error") return true;
-  if (!status.last_refreshed_at) return true;
-  const ageH = (Date.now() - Date.parse(status.last_refreshed_at)) / 3600000;
+  const state = sourceState(status.status);
+  if (state === "error") return true;
+  // A deferral re-stamps the attempt clock, so judge its age by the data.
+  const stamp = state === "deferred"
+    ? status.last_success_at || status.last_refreshed_at
+    : status.last_refreshed_at;
+  if (!stamp) return true;
+  const ageH = (Date.now() - Date.parse(stamp)) / 3600000;
   return Number.isFinite(ageH) && ageH > maxAgeHours;
 }

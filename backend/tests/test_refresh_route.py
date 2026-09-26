@@ -52,15 +52,21 @@ def test_refresh_returns_202_and_queues(client):
     assert len(client.get("/api/contracts").json()) == 1
 
 
-def test_refresh_reports_null_status_for_a_never_run_source(client):
+def test_refresh_reports_null_status_for_a_never_run_source(client, app_module):
     """A source with no status row yet must not blow up the response.
 
     The handler builds its payload before the queued job runs, so on the very
     first call there is no source_status row to report — indexing it would 500.
     """
-    resp = client.post("/api/refresh/margin_debt")
-    assert resp.status_code == 202
-    assert resp.json()["status"] is None
+    spec = app_module.SOURCES["margin_debt"]
+    app_module.SOURCES["margin_debt"] = spec._replace(fetch=lambda: [])  # no network
+    try:
+        resp = client.post("/api/refresh/margin_debt")
+        assert resp.status_code == 202
+        assert resp.json()["status"] is None
+        drain_refresh()
+    finally:
+        app_module.SOURCES["margin_debt"] = spec
 
 
 def test_refresh_unknown_source_is_404(client):
@@ -111,7 +117,11 @@ def test_force_requires_admin(client, app_module):
     drain_refresh()
 
 
-def test_force_bypasses_the_throttle(client, app_module):
+def test_fresh_rate_limited_source_declines_with_a_reason(client, app_module):
+    """The dashboard's refresh button fires every source at once. A source with
+    a politeness cadence (GDELT is daily) that is still fresh answers with why
+    and when it runs next — it is not queued, and no silent 'skipped' run is
+    written. An admin can still force it."""
     calls = 0
 
     def counting():
@@ -119,23 +129,46 @@ def test_force_bypasses_the_throttle(client, app_module):
         calls += 1
         return []
 
-    spec = app_module.SOURCES["usaspending"]
-    app_module.SOURCES["usaspending"] = spec._replace(
-        fetch=counting, min_interval=3600)
+    spec = app_module.SOURCES["gdelt"]
+    app_module.SOURCES["gdelt"] = spec._replace(fetch=counting)
     try:
-        client.post("/api/refresh/usaspending")
+        first = client.post("/api/refresh/gdelt").json()
+        drain_refresh()
+        assert first["queued"] is True and calls == 1
+
+        second = client.post("/api/refresh/gdelt").json()  # fresh now
         drain_refresh()
         assert calls == 1
+        assert second["queued"] is False
+        assert "up to date" in second["reason"]
+        assert second["next_run_at"]
+        outcomes = [r.outcome for r in db.get_source_runs(app_module.conn, "gdelt")]
+        assert outcomes == ["ok"]  # no 'skipped' row
 
-        client.post("/api/refresh/usaspending")  # throttled
-        drain_refresh()
-        assert calls == 1
-
-        client.post("/api/refresh/usaspending?force=1")  # admin force
+        client.post("/api/refresh/gdelt?force=1")  # admin force
         drain_refresh()
         assert calls == 2
     finally:
-        app_module.SOURCES["usaspending"] = spec
+        app_module.SOURCES["gdelt"] = spec
+
+
+def test_fast_sources_always_queue(client, app_module):
+    calls = 0
+
+    def counting():
+        nonlocal calls
+        calls += 1
+        return []
+
+    spec = app_module.SOURCES["vix"]
+    app_module.SOURCES["vix"] = spec._replace(fetch=counting)
+    try:
+        for _ in range(2):
+            assert client.post("/api/refresh/vix").json()["queued"] is True
+            drain_refresh()
+        assert calls == 2
+    finally:
+        app_module.SOURCES["vix"] = spec
 
 
 def test_source_spec_defaults_preserve_tuple_shape(app_module):
@@ -158,9 +191,10 @@ def test_health_is_public_and_reports_checks(app_module):
 
 def test_scheduler_job_defaults_are_not_apscheduler_defaults(app_module):
     """APScheduler defaults to misfire_grace_time=1, which silently drops a job
-    delayed by a sleeping machine or a busy pool."""
+    delayed by a sleeping machine or a busy pool. Queue instead."""
     defaults = app_module.scheduler._job_defaults
-    assert defaults["misfire_grace_time"] >= 300
+    # None = never drop a late run; it runs late instead (task 9).
+    assert defaults["misfire_grace_time"] is None
     assert defaults["coalesce"] is True
     assert defaults["max_instances"] == 1
 
@@ -171,10 +205,10 @@ def test_job_events_are_recorded(app_module):
 
     class _Event:
         code = EVENT_JOB_MISSED
-        job_id = "refresh_all"
+        job_id = "daily_analysis"
         exception = None
 
     app_module._on_job_event(_Event())
     runs = db.get_job_runs(app_module.refresh_conn)
-    assert runs[0].job_id == "refresh_all"
+    assert runs[0].job_id == "daily_analysis"
     assert runs[0].event == "missed"

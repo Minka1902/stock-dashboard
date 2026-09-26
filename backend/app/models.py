@@ -54,24 +54,50 @@ class SourceStatus(BaseModel):
     # min_interval after a single failure, which is how margin_debt went quiet.
     last_success_at: str | None = None
     last_duration_ms: int | None = None
+    # When the scheduler will try again after an error or a deferral. None
+    # while healthy (the schedule's normal next run applies).
+    next_attempt_at: str | None = None
 
 
 class SourceRun(BaseModel):
-    """One recorded execution of a source — including skips.
+    """One recorded execution of a source.
 
-    Skips are recorded too. A source that is silently throttled looks identical
-    to a healthy one in `source_status`; the run log is what makes "it hasn't
-    actually fetched in two weeks" visible.
+    Outcomes are ok | error | deferred. `skipped` only appears on rows written
+    before the per-source scheduler existed: the schedule is now the only gate,
+    so a scheduled run always fetches. `error_detail` keeps the full traceback
+    for *this* run (source_status only holds the latest one).
     """
 
     id: int
     source: str
     started_at: str
     finished_at: str
-    outcome: str        # "ok" | "error" | "skipped"
+    outcome: str        # "ok" | "error" | "deferred" (legacy rows: "skipped")
     duration_ms: int
     record_count: int
     detail: str | None = None
+    error_detail: str | None = None
+    next_attempt_at: str | None = None
+
+
+class SourceSchedule(BaseModel):
+    """When one source (or the derived boom_score -> alerts step) runs.
+
+    mode "interval": every `interval_seconds`, optionally only on `days`.
+    mode "times": at each HH:MM in `times`, on `days`, wall-clock in `tz`.
+    `retry_seconds`: how soon to try again after an error (None -> default,
+    see schedules.retry_after_seconds).
+    """
+
+    source: str
+    mode: str = "interval"
+    interval_seconds: int | None = None
+    times: list[str] = []
+    days: list[str] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    tz: str = "UTC"
+    enabled: bool = True
+    retry_seconds: int | None = None
+    updated_at: str | None = None
 
 
 class JobRun(BaseModel):

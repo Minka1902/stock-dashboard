@@ -211,6 +211,11 @@
   box-shadow: 0 0 0 3px var(--negative-weak);
 }
 
+.cardSource[data-state="deferred"] .sourceDot {
+  background: var(--caution);
+  box-shadow: 0 0 0 3px var(--caution-weak);
+}
+
 .glossary {
   margin: 0;
   display: flex;
