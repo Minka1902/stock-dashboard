@@ -162,9 +162,18 @@ function Invoke-Tool {
         Pop-Location
         $ErrorActionPreference = $prev
     }
-    $lines = @($out | ForEach-Object { "$_" } | Where-Object { $_.Trim() })
+    # Stringify (stderr arrives as ErrorRecords), strip ANSI colour codes, and
+    # drop the empty-stderr placeholders 5.1 renders as RemoteException.
+    $lines = @($out | ForEach-Object { ("$_" -replace "\x1b\[[0-9;]*[A-Za-z]", '').TrimEnd() } |
+               Where-Object { $_.Trim() -and $_ -ne 'System.Management.Automation.RemoteException' })
     foreach ($l in $lines) { Add-Log "    $l" }
-    $script:LastTail = (@($lines | Select-Object -Last 3) -join ' | ')
+    # For the UI: the first few lines that look like the actual error, not a
+    # stack trace; fall back to the last lines of output.
+    $errLines = @($lines | Where-Object {
+        $_ -match '(?i)(error|fatal|failed|unexpected|cannot|not found|denied|conflict|abort)' -and
+        $_ -notmatch '^\s*at\s' -and $_ -notmatch 'Getter' })
+    $pick = if ($errLines.Count) { $errLines | Select-Object -First 4 } else { $lines | Select-Object -Last 3 }
+    $script:LastTail = (@($pick | ForEach-Object { $_.Trim() }) -join ' | ')
     if ($null -eq $code) { $code = 0 }
     return $code
 }
@@ -282,6 +291,11 @@ function Invoke-Rollback {
 }
 
 # --------------------------------------------------------------- main ----
+# Plain, UTF-8 tool output: npm/vite colour and box-drawing characters are
+# noise in a log file and in the UI's one-line failure reason.
+$env:NO_COLOR = '1'
+$env:FORCE_COLOR = '0'
+try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false) } catch { }
 Add-Log "worker started: repo=$RepoRoot mode=$Mode previous=$PreviousCommit skipRestart=$SkipRestart"
 Save-Status
 
