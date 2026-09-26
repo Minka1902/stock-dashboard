@@ -65,7 +65,7 @@
 
 .earningsWarn {
   font-size: 11px;
-  color: oklch(0.72 0.15 60);
+  color: var(--caution);
   cursor: help;
 }
 
@@ -86,7 +86,7 @@
   background: var(--text-faint);
 }
 .bar[data-tone="high"]  { background: var(--positive); }
-.bar[data-tone="mid"]   { background: oklch(0.72 0.15 60); }
+.bar[data-tone="mid"]   { background: var(--caution); }
 .bar[data-tone="low"]   { background: var(--accent); }
 .bar[data-tone="faint"] { background: var(--text-faint); }
 .bar[data-tone="neg"]   { background: var(--negative); }
@@ -99,7 +99,7 @@
   color: var(--text-muted);
 }
 .scoreBadge[data-tone="high"]  { color: var(--positive); }
-.scoreBadge[data-tone="mid"]   { color: oklch(0.72 0.15 60); }
+.scoreBadge[data-tone="mid"]   { color: var(--caution); }
 .scoreBadge[data-tone="low"]   { color: var(--accent); }
 .scoreBadge[data-tone="neg"]   { color: var(--negative); }
 
@@ -113,7 +113,7 @@
   white-space: nowrap;
 }
 .tier[data-tone="high"]  { background: var(--positive-weak); color: var(--positive); }
-.tier[data-tone="mid"]   { background: oklch(0.95 0.05 60); color: oklch(0.55 0.15 60); }
+.tier[data-tone="mid"]   { background: var(--caution-weak); color: var(--caution); }
 .tier[data-tone="low"]   { background: var(--accent-weak); color: var(--accent); }
 .tier[data-tone="neg"]   { background: var(--negative-weak); color: var(--negative); }
 
@@ -125,7 +125,7 @@
 .mixedWarn {
   font-size: 13px;
   cursor: help;
-  color: oklch(0.72 0.15 60);
+  color: var(--caution);
 }
 
 .chips {
@@ -193,7 +193,7 @@
   border-radius: var(--r-sm);
   border: none;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
   cursor: pointer;
 }

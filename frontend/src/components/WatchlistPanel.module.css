@@ -107,7 +107,7 @@
   cursor: pointer;
 }
 .confirmCancel { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
-.confirmGo { border: 1px solid transparent; background: var(--negative); color: #10131a; font-weight: 600; }
+.confirmGo { border: 1px solid transparent; background: var(--negative); color: var(--on-negative); font-weight: 600; }
 .confirmCancel:hover { border-color: var(--border-strong); }
 .confirmGo:hover { filter: brightness(1.08); }
 
@@ -151,7 +151,7 @@
   border-radius: var(--r-sm);
   border: none;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
   cursor: pointer;
 }
@@ -190,7 +190,7 @@
    background it would be transparent and the rows beneath would show through. */
 .item[data-dragging="true"] {
   background: var(--surface-3);
-  box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
+  box-shadow: var(--shadow-lg);
   border-radius: var(--r-sm);
   cursor: grabbing;
 }

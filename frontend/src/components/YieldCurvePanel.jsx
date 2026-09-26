@@ -12,6 +12,9 @@ import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import styles from "./YieldCurvePanel.module.css";
 
+// Recharts draws its hover cursor in #ccc unless told otherwise.
+const CURSOR = { stroke: "var(--border-strong)" };
+
 const TOOLTIP_STYLE = {
   background: "var(--surface-2)",
   border: "1px solid var(--border)",
@@ -93,6 +96,7 @@ export default function YieldCurvePanel({ data, loading, busy, onRefresh, compac
                 />
                 <Tooltip
                   contentStyle={TOOLTIP_STYLE}
+                  cursor={CURSOR}
                   formatter={(v) => [`${v != null ? v.toFixed(2) : "—"}%`, "Spread"]}
                   labelFormatter={(l) => l}
                 />

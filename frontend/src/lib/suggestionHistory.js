@@ -13,7 +13,10 @@ export function pctLabel(pct) {
   return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
 }
 
-/** Dot colours for the recharts markers, which can't read CSS custom properties. */
-export const TONE_COLOR = {
-  up: "#4fd6a0", down: "#e5544b", flat: "#8f887e", pending: "#b7b0a6",
+/**
+ * Outcome tone -> theme token for the recharts markers. Resolved to rgb() by
+ * lib/themeColors (useThemeColors) so the dots follow the active theme.
+ */
+export const TONE_TOKEN = {
+  up: "--positive", down: "--negative", flat: "--text-faint", pending: "--text-muted",
 };

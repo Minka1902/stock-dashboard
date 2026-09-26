@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Icon from "./Icon";
+import SelectMenu from "./SelectMenu";
 import { useProfile } from "../hooks/useProfile";
 import { initialsFor, gradientFor } from "../lib/avatar";
 import { sendTestSuggestions } from "../api";
@@ -227,30 +228,24 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
               />
             </div>
             <div className={styles.field}>
-              <label className={styles.fieldLabel} htmlFor="analysis-tz">Timezone</label>
-              <select
-                id="analysis-tz"
-                className={styles.input}
+              {/* SelectMenu, not a native <select>: the native option list is
+                  OS chrome and ignores the app theme. */}
+              <span className={styles.fieldLabel} aria-hidden="true">Timezone</span>
+              <SelectMenu
+                label="Timezone"
                 value={appSettings.analysis_tz}
-                onChange={(e) => updateApp({ analysis_tz: e.target.value })}
-              >
-                {tzOptions.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+                options={tzOptions}
+                onChange={(v) => updateApp({ analysis_tz: v })}
+              />
             </div>
             <div className={styles.field}>
-              <label className={styles.fieldLabel} htmlFor="quote-interval">Live price refresh</label>
-              <select
-                id="quote-interval"
-                className={styles.input}
-                value={appSettings.quotes_refresh_seconds}
-                onChange={(e) => updateApp({ quotes_refresh_seconds: Number(e.target.value) })}
-              >
-                {QUOTE_INTERVALS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+              <span className={styles.fieldLabel} aria-hidden="true">Live price refresh</span>
+              <SelectMenu
+                label="Live price refresh"
+                value={Number(appSettings.quotes_refresh_seconds)}
+                options={QUOTE_INTERVALS}
+                onChange={(v) => updateApp({ quotes_refresh_seconds: Number(v) })}
+              />
             </div>
           </div>
           <div className={styles.actions}>

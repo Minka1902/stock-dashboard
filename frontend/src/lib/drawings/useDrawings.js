@@ -18,7 +18,7 @@ const EMPTY = [];
  * primitive layer, so they're unaffected by indicator toggles or the PLAN
  * overlay, and survive the series rebuild that every pref change triggers.
  */
-export function useDrawings({ ticker, chartRef, elRef, mainSeriesRef, seriesEpoch, enabled }) {
+export function useDrawings({ ticker, chartRef, elRef, mainSeriesRef, seriesEpoch, enabled, colors }) {
   const [tool, setTool] = useState(null);        // null = select/pan
   // Stamped with the ticker its shapes belong to, so switching stocks shows an
   // empty chart immediately without a synchronous reset inside an effect.
@@ -33,9 +33,15 @@ export function useDrawings({ ticker, chartRef, elRef, mainSeriesRef, seriesEpoc
   const toolRef = useRef(null);
   const pendingRef = useRef(null);   // first click of a two-point shape
   const dragRef = useRef(null);      // { id, handle, moved, last }
+  const colorsRef = useRef(colors);  // theme colours, resolved by the host
 
   useEffect(() => { shapesRef.current = shapes; }, [shapes]);
   useEffect(() => { toolRef.current = tool; }, [tool]);
+  // Theme change: recolour the live primitive (a fresh one picks it up below).
+  useEffect(() => {
+    colorsRef.current = colors;
+    primitiveRef.current?.setColors(colors);
+  }, [colors]);
 
   // --- load: newest copy wins, a local copy survives a failed push ---
   useEffect(() => {
@@ -65,6 +71,7 @@ export function useDrawings({ ticker, chartRef, elRef, mainSeriesRef, seriesEpoc
     if (!enabled || !series || !chart) return undefined;
     const primitive = new DrawingPrimitive();
     primitiveRef.current = primitive;
+    primitive.setColors(colorsRef.current);
     series.attachPrimitive(primitive);
     primitive.setShapes(shapesRef.current);
     return () => {

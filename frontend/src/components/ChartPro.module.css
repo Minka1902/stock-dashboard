@@ -195,10 +195,10 @@
   margin: 0;
   padding-top: 2px;
 }
-.key span[data-c="info"] { color: #57a5e0; }
-.key span[data-c="accent"] { color: #f0b429; }
-.key span[data-c="muted"] { color: #8f887e; }
-.key span[data-c="neg"] { color: #e5544b; }
-.key span[data-c="pos"] { color: #4fd6a0; }
-.key span[data-c="cmp"] { color: #c084fc; }
+.key span[data-c="info"] { color: var(--chart-info); }
+.key span[data-c="accent"] { color: var(--chart-accent); }
+.key span[data-c="muted"] { color: var(--chart-muted); }
+.key span[data-c="neg"] { color: var(--chart-down); }
+.key span[data-c="pos"] { color: var(--chart-up); }
+.key span[data-c="cmp"] { color: var(--chart-compare); }
 .keyNote { color: var(--text-faint); }

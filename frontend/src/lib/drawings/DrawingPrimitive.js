@@ -9,9 +9,15 @@
  *   { id, kind: "trendline"|"ray"|"zone"|"text", points: [{time, price}], text? }
  */
 
-const ACCENT = "#f0b429";
-const SELECTED = "#57a5e0";
-const ZONE_FILL = "rgba(240, 180, 41, 0.12)";
+// Theme colours arrive through setColors() (resolved from the --draw-* tokens
+// by ChartPro via lib/themeColors). These neutral fallbacks only paint if a
+// shape is drawn before the host has supplied them.
+const DEFAULT_COLORS = {
+  stroke: "rgb(128, 128, 128)",
+  selected: "rgb(96, 150, 220)",
+  fill: "rgba(128, 128, 128, 0.12)",
+  label: "rgb(20, 20, 20)",
+};
 const HANDLE_R = 4;
 export const HIT_TOLERANCE = 7; // px — generous enough for a trackpad
 
@@ -32,6 +38,7 @@ export class DrawingPrimitive {
     this._series = null;
     this._chart = null;
     this._requestUpdate = null;
+    this._colors = DEFAULT_COLORS;
     // IPrimitivePaneView: `renderer` and `zOrder` are methods, not properties.
     // The array identity is kept stable — the library caches on it.
     const renderer = { draw: (target) => this._draw(target) };
@@ -68,6 +75,8 @@ export class DrawingPrimitive {
   setShapes(shapes) { this._shapes = shapes || []; this.redraw(); }
   setSelected(id) { this._selectedId = id; this.redraw(); }
   setDraft(shape) { this._draft = shape; this.redraw(); }
+  /** { stroke, selected, fill, label } as canvas-safe colour strings. */
+  setColors(colors) { this._colors = { ...DEFAULT_COLORS, ...(colors || {}) }; this.redraw(); }
   redraw() {
     if (this._dead) return;
     try { this._requestUpdate?.(); } catch { this._dead = true; }
@@ -139,8 +148,9 @@ export class DrawingPrimitive {
         const pts = shape.points.map((pt) => this.toScreen(pt));
         if (!pts.length || pts.some((p) => p == null)) continue;
         const selected = shape.id === this._selectedId;
-        const color = shape.color || ACCENT;
-        const stroke = selected ? SELECTED : color;
+        const theme = this._colors;
+        const color = shape.color || theme.stroke;
+        const stroke = selected ? theme.selected : color;
 
         ctx.save();
         ctx.lineWidth = selected ? 2.5 : 1.8;
@@ -165,14 +175,14 @@ export class DrawingPrimitive {
           ctx.globalAlpha = 0.9;
           ctx.fillRect(pts[0].x, pts[0].y - 8, w, 16);
           ctx.globalAlpha = 1;
-          ctx.fillStyle = "#10131a";
+          ctx.fillStyle = theme.label;
           ctx.fillText(label, pts[0].x + 5, pts[0].y + 3.5);
         } else if (shape.kind === "zone" && pts.length === 2) {
           const x = Math.min(pts[0].x, pts[1].x);
           const y = Math.min(pts[0].y, pts[1].y);
           const w = Math.abs(pts[1].x - pts[0].x);
           const h = Math.abs(pts[1].y - pts[0].y);
-          ctx.fillStyle = shape.fill || ZONE_FILL;
+          ctx.fillStyle = shape.fill || theme.fill;
           ctx.fillRect(x, y, w, h);
           ctx.strokeRect(x, y, w, h);
         } else if (shape.kind === "text") {
@@ -186,7 +196,7 @@ export class DrawingPrimitive {
         // endpoint handles, only while selected
         if (selected && shape.kind !== "text") {
           ctx.setLineDash([]);
-          ctx.fillStyle = SELECTED;
+          ctx.fillStyle = theme.selected;
           for (const q of pts) {
             ctx.beginPath();
             ctx.arc(q.x, q.y, HANDLE_R, 0, Math.PI * 2);
