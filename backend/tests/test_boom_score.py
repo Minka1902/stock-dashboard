@@ -535,3 +535,48 @@ def test_seasonal_tailwind_not_fired_with_too_few_years(score_conn):
     _seed_seasonality(score_conn, returns=(0.05, 0.05))  # strong but only 2 samples
     scores = boom_score_source.compute_all(["GME"], score_conn)
     assert scores[0].seasonal_tailwind is False
+
+
+# ---------- TASE listings: non-applicable components + renormalization ----------
+
+def test_us_ticker_has_nothing_excluded(score_conn):
+    _add_ticker(score_conn, "GME")
+    s = boom_score_source.compute_all(["GME"], score_conn)[0]
+    assert json.loads(s.not_applicable) == []
+    assert s.score_note == ""
+
+
+def test_tase_ticker_excludes_us_only_components_and_explains(score_conn):
+    t = "TEVA.TA"
+    _add_ticker(score_conn, t)
+    # Stray US-only rows must not score for a Tel Aviv listing.
+    _add_insider_buy(score_conn, t, accession="A1")
+    _add_insider_buy(score_conn, t, accession="A2")
+    _add_congress_purchase(score_conn, t)
+    _add_short(score_conn, t, squeeze=True)
+    s = boom_score_source.compute_all([t], score_conn)[0]
+    na = json.loads(s.not_applicable)
+    assert set(na) >= {"insider_cluster_buy", "insider_cluster_sell", "congress_buy",
+                       "congress_sale", "contracts_catalyst", "short_squeeze"}
+    comps = json.loads(s.components)
+    assert not (set(comps) & set(na))
+    assert s.insider_cluster_buy is False and s.congress_buy is False
+    assert s.score == 0
+    assert "TASE" in s.score_note and "renormal" in s.score_note.lower()
+
+
+def test_tase_score_is_rescaled_to_the_full_range(score_conn):
+    """Golden cross alone (+20) on a TASE stock is worth proportionally more,
+    because fewer bullish components can ever fire there."""
+    t = "LUMI.TA"
+    _add_ticker(score_conn, t)
+    _add_technical(score_conn, ticker=t, golden_cross=True, rsi14=60.0, high_52w=500.0)
+    s = boom_score_source.compute_all([t], score_conn)[0]
+    comps = json.loads(s.components)
+    assert comps == {"golden_cross": 20}            # raw points are kept for display
+    bull_all = sum(v for v in boom_score_source.WEIGHTS.values() if v > 0)
+    bull_ok = bull_all - sum(boom_score_source.WEIGHTS[k]
+                             for k in boom_score_source.TASE_NOT_APPLICABLE
+                             if boom_score_source.WEIGHTS[k] > 0)
+    assert s.score == round(20 * bull_all / bull_ok)
+    assert s.score > 20

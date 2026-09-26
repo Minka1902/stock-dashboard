@@ -131,8 +131,9 @@ No root package manager, so the companions copy rather than share:
   Routes needing the user take `Depends(auth.get_current_user)`.
 - **Per-user tables**: `watchlists` (named lists, PK `id`), `watchlist` (items, PK
   `(watchlist_id, ticker)` — `user_id` is denormalized onto each row), `portfolio` (PK
-  `(user_id, ticker)`), `notify_profile`
-  (PK `user_id`), `alert_reads`. **Shared**: all market-data tables, `stock_analysis` (stored
+  `(user_id, ticker)`, each row has a native `currency`), `notify_profile`
+  (PK `user_id`, carries `base_currency`), `alert_reads`, `fx_watch` (carousel FX pairs, PK
+  `(user_id, pair)`). **Shared**: all market-data tables, `stock_analysis` (stored
   *unsized*; `analysis.apply_sizing` personalizes at read time), `app_settings` (PUT is
   admin-only). The first registered account becomes admin and claims legacy `user_id=0` rows
   (`db.claim_legacy_rows`); old single-user DBs are rebuilt in place by `init_schema`.
@@ -146,7 +147,7 @@ No root package manager, so the companions copy rather than share:
   must call it. A third creation path that forgets to is the regression to watch for.
   Deliberately no first-user bootstrap exemption: it would be a race between the operator and
   the first stranger to load the URL, and the winner gets `is_admin` plus `claim_legacy_rows`.
-- `db.delete_user` sweeps all eleven per-user tables explicitly (incl. `drawings` and `drawing_drafts`). Only `sessions`,
+- `db.delete_user` sweeps all twelve per-user tables explicitly (incl. `drawings`, `drawing_drafts` and `fx_watch`). Only `sessions`,
   `recovery_codes` and `oauth_identities` declare `ON DELETE CASCADE`, so deleting the `users`
   row alone strands the rest under an id SQLite may reissue. Keep `_PER_USER_TABLES` in step
   with the schema.

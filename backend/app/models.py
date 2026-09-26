@@ -150,8 +150,12 @@ class LiveQuote(BaseModel):
     # "equity" | "fx". FX quotes come from the same endpoint but need different
     # display: more decimals, and they must not drive the market-open badge,
     # since currencies trade ~24/5 and would report REGULAR at 3am.
-    kind: str = "equity"
-    label: str = ""             # display name; "USD/ILS" for USDILS=X
+    kind: str = "equity"        # "equity" | "fx" | "index"
+    label: str = ""             # display name; "USD/ILS" for USDILS=X, "TA-35"
+    # Major-unit ISO currency of every price above ("ILS" for TASE — Yahoo's
+    # ILA agorot are divided out in app/currency.py before this is built).
+    currency: str | None = None
+    market: str = "US"          # "US" | "TASE" | "FX" | "OTHER" (symbol convention)
 
 
 class FearGreedSnapshot(BaseModel):
@@ -304,6 +308,11 @@ class BoomScore(BaseModel):
     # risk / meta flags
     earnings_soon: bool = False
     mixed_signals: bool = False
+    # JSON list of component keys that cannot apply to this listing (e.g. SEC
+    # insider / congress / federal-contract signals for a TASE stock) and a
+    # plain-language note on how the score was renormalized because of it.
+    not_applicable: str = "[]"
+    score_note: str = ""
 
 
 class Fundamentals(BaseModel):
@@ -381,8 +390,9 @@ class Seasonality(BaseModel):
 class Holding(BaseModel):
     ticker: str        # PRIMARY KEY (single-user portfolio)
     shares: float
-    avg_cost: float
+    avg_cost: float    # in `currency` (the position's native trading currency)
     added_at: str
+    currency: str = "USD"  # ISO code; legacy rows predate the column -> USD
 
 
 class NotifyProfile(BaseModel):
@@ -391,9 +401,11 @@ class NotifyProfile(BaseModel):
     email_enabled: bool = False
     sms_enabled: bool = False
     # Position sizing (Trading & risk settings). risk_pct clamped 0.1–10 in the API.
-    account_size: float | None = None
+    account_size: float | None = None   # in base_currency
     risk_pct: float = 1.0
     updated_at: str = ""
+    # Currency the portfolio totals (and account_size) are expressed in.
+    base_currency: str = "USD"          # "USD" | "ILS"
 
 
 class AppSettings(BaseModel):
@@ -614,6 +626,11 @@ class StockAnalysis(BaseModel):
     suggested_shares: int | None = None
     account_size: float | None = None
     risk_pct: float | None = None
+    # Sizing is like-for-like: account_size is in the user's base currency,
+    # risk_per_share in the ticker's; apply_sizing converts one into the other.
+    currency: str | None = None           # the ticker's trading currency
+    account_currency: str | None = None   # the currency account_size is in
+    sizing_note: str = ""                 # e.g. "FX unavailable — not sized"
     evidence: list[Evidence] = []
     reasons: list[str] = []
     disclaimer: str = "Rule-based technical read, not a prediction. Verify before trading."

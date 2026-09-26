@@ -244,3 +244,48 @@ def test_get_extended_unsupported_listing_reports_nothing(monkeypatch):
         "bars": [_bar(1, 10.0, "regular"), _bar(2, 11.0, "post")]})
     out = chart_data.get_extended("TEVA.TA")
     assert out["supported"] is False and out["post"] is None and out["pre"] is None
+
+
+# ---------- currency (WS-B) ----------
+
+def _ila_payload():
+    return {"chart": {"result": [{
+        "meta": {"currency": "ILA"},
+        "timestamp": [1704067200, 1704153600],
+        "indicators": {"quote": [{"open": [11900.0, 12000.0], "high": [12100.0, 12100.0],
+                                  "low": [11800.0, 11950.0], "close": [12000.0, 12050.0],
+                                  "volume": [10, 20]}]},
+    }]}}
+
+
+def test_parse_chart_bars_normalizes_agorot():
+    bars = chart_data.parse_chart_bars(_ila_payload(), intraday=False)
+    assert [b["close"] for b in bars] == [120.0, 120.5]
+    assert bars[0]["volume"] == 10.0
+
+
+def test_fetch_chart_reports_the_major_currency(monkeypatch):
+    class _Resp:
+        def raise_for_status(self): pass
+        def json(self): return _ila_payload()
+
+    class _Client:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url, params=None): return _Resp()
+
+    monkeypatch.setattr(chart_data.httpx, "Client", _Client)
+    out = chart_data.fetch_chart("TEVA.TA", "1d")
+    assert out["currency"] == "ILS"
+    assert out["bars"][-1]["close"] == 120.5
+
+
+def test_get_bars_payload_carries_currency_and_market(monkeypatch):
+    chart_data._cache.clear()
+    monkeypatch.setattr(chart_data, "fetch_chart", lambda t, i, prepost=False: {
+        "bars": [{"time": "2026-01-01", "open": 1, "high": 1, "low": 1, "close": 1, "volume": 0}],
+        "session": None, "currency": None})
+    out = chart_data.get_bars("TEVA.TA", "1d")
+    assert (out["currency"], out["market"]) == ("ILS", "TASE")
+    chart_data._cache.clear()

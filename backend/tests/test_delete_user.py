@@ -22,6 +22,8 @@ PER_USER_TABLES = (
     "alert_reads",
     "suggestion_history",
     "drawings",
+    "drawing_drafts",
+    "fx_watch",
     "sessions",
     "recovery_codes",
     "oauth_identities",
@@ -42,6 +44,8 @@ def _populate(conn, user_id: int, ticker: str) -> None:
         user_id=user_id, ticker=ticker, for_date="2026-01-01", kind="buy",
         action="watch", price=1.0, created_at="t")])
     db.save_drawings(conn, user_id, ticker, [{"type": "line"}], "t")
+    db.create_drawing_draft(conn, user_id, ticker, "d", "", "1d", [], "t")
+    db.set_fx_watch(conn, user_id, ["USDILS=X"])
     conn.execute(
         "INSERT INTO sessions "
         "(token_hash, user_id, state, created_at, expires_at, last_seen_at) "

@@ -97,9 +97,12 @@ def test_quotes_empty_watchlist_and_portfolio(client, monkeypatch):
     resp = client.get("/api/quotes")
     assert resp.status_code == 200
     body = resp.json()
-    assert [q["ticker"] for q in body["quotes"]] == config.FX_PAIRS
-    assert {q["kind"] for q in body["quotes"]} == {"fx"}
+    fx = [q for q in body["quotes"] if q["kind"] == "fx"]
+    assert [q["ticker"] for q in fx] == config.FX_PAIRS
+    # Besides the user's FX pairs, only the market-overview indexes (TA-35).
+    assert {q["kind"] for q in body["quotes"]} == {"fx", "index"}
     assert "as_of" in body
+    assert set(body["market_statuses"]) == {"NYSE", "TASE"}
 
 
 def test_quotes_union_of_watchlist_and_portfolio(client, monkeypatch):
@@ -129,7 +132,8 @@ def test_quotes_keeps_fx_out_of_the_equity_fetch(client, monkeypatch):
     assert equity_calls, requested
     assert not any(t.endswith("=X") for call in equity_calls for t in call)
     fx = [q for q in body["quotes"] if q["kind"] == "fx"]
-    assert [q["label"] for q in fx] == ["USD/ILS", "EUR/ILS", "EUR/USD"]
+    # Seeded per user with dollar and euro against the shekel.
+    assert [q["label"] for q in fx] == ["USD/ILS", "EUR/ILS"]
 
 
 def test_portfolio_add_twice_merges(client):

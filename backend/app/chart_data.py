@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from app import currency
 from app.sources.ohlc import _HEADERS, _URL
 
 # interval -> (yahoo interval, yahoo range, cache ttl seconds, intraday?)
@@ -126,7 +127,8 @@ def parse_chart_bars(payload: dict, intraday: bool) -> list[dict]:
     missing OHLC value are dropped, never interpolated. Intraday bars get a
     `session` tag when the payload's trading periods can place them.
     """
-    result = (payload.get("chart") or {}).get("result") or []
+    # Prices in the major unit: Yahoo's TASE ILA (agorot) become ILS here.
+    result = (currency.normalize_chart_payload(payload).get("chart") or {}).get("result") or []
     if not result:
         return []
     r = result[0]
@@ -176,8 +178,17 @@ def fetch_chart(ticker: str, interval: str, prepost: bool = False) -> dict:
         )
         resp.raise_for_status()
         payload = resp.json()
-        return {"bars": parse_chart_bars(payload, intraday),
-                "session": parse_session_info(payload)}
+        bars = parse_chart_bars(payload, intraday)  # normalizes `payload` in place
+        return {"bars": bars, "session": parse_session_info(payload),
+                "currency": chart_currency(payload, ticker)}
+
+
+def chart_currency(payload: dict, ticker: str) -> str | None:
+    """Major-unit currency of a chart payload, falling back to the symbol's
+    convention (bare -> USD, .TA -> ILS) when Yahoo's meta omits it."""
+    result = (payload.get("chart") or {}).get("result") or []
+    meta = (result[0].get("meta") or {}) if result else {}
+    return currency.quote_currency(meta) or currency.currency_for_symbol(ticker)
 
 
 def fetch_bars(ticker: str, interval: str, prepost: bool = False) -> list[dict]:
@@ -211,6 +222,8 @@ def get_bars(ticker: str, interval: str, prepost: bool = False) -> dict:
         "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "bars": bars,
         "session": fetched.get("session"),
+        "currency": fetched.get("currency") or currency.currency_for_symbol(ticker),
+        "market": currency.market_for_symbol(ticker),
     }
     # Cache only non-empty results so a transient upstream failure doesn't
     # blank the chart for a whole TTL window.

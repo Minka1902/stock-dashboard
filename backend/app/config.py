@@ -175,7 +175,9 @@ ECON_CALENDAR_MIN_INTERVAL_SECONDS = int(
     os.environ.get("STOCKS_ECON_CALENDAR_MIN_INTERVAL_SECONDS", "3600")
 )
 # Comma-separated country allowlist (matches the app's US-equity orientation).
-# Empty string = keep every country.
+# Empty string = keep every country. "Israel" is a valid entry (e.g.
+# "United States,Israel") but only the FMP path carries Israeli releases —
+# the keyless Nasdaq feed has none (checked 2026-09).
 ECON_CALENDAR_COUNTRIES = [
     c.strip()
     for c in os.environ.get("STOCKS_ECON_CALENDAR_COUNTRIES", "United States").split(",")
@@ -205,11 +207,26 @@ QUOTES_MAX_WORKERS = int(os.environ.get("STOCKS_QUOTES_MAX_WORKERS", "8"))
 # analysis pipeline (technicals, boom score, earnings), none of which means
 # anything for a currency pair. These ride the same keyless quote endpoint and,
 # like the rest of quotes.py, are cached in memory and never persisted.
+#
+# These are now only the *seed* for each user's own FX watch list (table
+# fx_watch, edited in Settings): dollar and euro against the shekel.
 FX_PAIRS = [
     p.strip().upper()
-    for p in os.environ.get("STOCKS_FX_PAIRS", "USDILS=X,EURILS=X,EURUSD=X").split(",")
+    for p in os.environ.get("STOCKS_FX_PAIRS", "USDILS=X,EURILS=X").split(",")
     if p.strip()
 ]
+
+# Market-overview indexes appended to every user's carousel, as
+# "SYMBOL=Label" pairs. TA35.TA is the symbol Yahoo actually serves for the
+# TA-35 (^TA35 404s); set STOCKS_TICKER_INDEXES="" to show none.
+TICKER_INDEXES: dict[str, str] = {
+    sym.strip().upper(): (label.strip() or sym.strip().upper())
+    for sym, _, label in (
+        item.partition("=")
+        for item in os.environ.get("STOCKS_TICKER_INDEXES", "TA35.TA=TA-35").split(",")
+        if item.strip()
+    )
+}
 
 
 # --- Market sentiment indicators ---

@@ -55,12 +55,14 @@ _FMP_COUNTRY_NAMES = {
     "FR": "France", "CA": "Canada", "AU": "Australia", "CH": "Switzerland",
     "IT": "Italy", "ES": "Spain", "IN": "India", "BR": "Brazil", "KR": "South Korea",
     "NZ": "New Zealand", "MX": "Mexico", "RU": "Russia", "ZA": "South Africa",
+    "IL": "Israel",
 }
 # Country aliases so an allowlist of "United States" also matches FMP's "US" etc.
 _COUNTRY_ALIASES = {
     "united states": {"united states", "us", "usa", "u.s.", "united states of america"},
     "euro zone": {"euro zone", "eu", "ea", "eurozone"},
     "united kingdom": {"united kingdom", "uk", "gb", "britain"},
+    "israel": {"israel", "il", "isr"},
 }
 
 

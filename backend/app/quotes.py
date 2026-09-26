@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from app import config
+from app import config, currency
 from app.models import LiveQuote
 from app.sources.technical import _YAHOO_HEADERS, _YAHOO_URL
 
@@ -41,18 +41,39 @@ def fx_label(ticker: str) -> str:
     return ticker.upper()
 
 
-def decorate_fx(quotes: list[LiveQuote]) -> list[LiveQuote]:
-    """Tag FX quotes so the UI can format them and skip them for the session
-    badge. Done here rather than in parse_quote so the pure parser stays
-    symbol-agnostic."""
+def decorate(quotes: list[LiveQuote], indexes: dict[str, str] | None = None,
+             tase_status: str | None = None) -> list[LiveQuote]:
+    """Tag quotes for display: FX pairs and market-overview indexes get their
+    kind + label, and every quote its market.
+
+    TASE listings have no pre/after-hours session, so their state comes from
+    the exchange clock (`tase_status`, from market_calendar) rather than
+    Yahoo's marketState, and they never carry an extended-hours move.
+    """
+    indexes = indexes or {}
     for q in quotes:
+        q.market = currency.market_for_symbol(q.ticker)
         if is_fx(q.ticker):
             q.kind = "fx"
             q.label = fx_label(q.ticker)
+        elif q.ticker in indexes:
+            q.kind = "index"
+            q.label = indexes[q.ticker]
+        if q.market == "TASE":
+            q.extended_change_pct = None
+            if tase_status is not None:
+                q.market_state = tase_status
     return quotes
 
 
+def decorate_fx(quotes: list[LiveQuote]) -> list[LiveQuote]:
+    """Back-compat alias: tag FX quotes (see `decorate`)."""
+    return decorate(quotes)
+
+
 def parse_quote(payload: dict, ticker: str, fetched_at: str) -> LiveQuote | None:
+    # TASE prices arrive in ILA (agorot); make every figure below ILS first.
+    currency.normalize_chart_payload(payload)
     result = (payload.get("chart") or {}).get("result") or []
     if not result:
         return None
@@ -95,6 +116,8 @@ def parse_quote(payload: dict, ticker: str, fetched_at: str) -> LiveQuote | None
         regular_price=regular,
         extended_change_pct=extended_change_pct,
         fetched_at=fetched_at,
+        currency=currency.quote_currency(meta) or currency.currency_for_symbol(ticker),
+        market=currency.market_for_symbol(ticker),
     )
 
 

@@ -6,6 +6,7 @@ import re
 import sqlite3
 import sys
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.models import (
@@ -479,6 +480,14 @@ def init_schema(conn: sqlite3.Connection) -> None:
             added_at TEXT NOT NULL,
             PRIMARY KEY (user_id, ticker)
         );
+        -- Per-user FX pairs shown in the ticker carousel ("USDILS=X", ...).
+        -- Seeded lazily from config.FX_PAIRS on first read (get_fx_watch).
+        CREATE TABLE IF NOT EXISTS fx_watch (
+            user_id  INTEGER NOT NULL,
+            pair     TEXT NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (user_id, pair)
+        );
         CREATE TABLE IF NOT EXISTS notify_profile (
             user_id       INTEGER PRIMARY KEY,
             email         TEXT,
@@ -715,6 +724,17 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _try_add_column(conn, "source_runs", "error_detail", "TEXT")
     _try_add_column(conn, "source_runs", "next_attempt_at", "TEXT")
     _try_add_column(conn, "portfolio", "category", "TEXT")  # NULL = auto-classified
+    # Native trading currency of each position. Every row before multi-currency
+    # support was a US listing priced in dollars, so the default is USD.
+    _try_add_column(conn, "portfolio", "currency", "TEXT NOT NULL DEFAULT 'USD'")
+    _try_add_column(conn, "notify_profile", "base_currency", "TEXT NOT NULL DEFAULT 'USD'")
+    # Set once a user's FX watch list has been seeded, so removing every pair
+    # sticks instead of re-seeding the defaults on the next read.
+    _try_add_column(conn, "users", "fx_watch_seeded", "INTEGER NOT NULL DEFAULT 0")
+    # Boom Score: components that can't apply to a listing (TASE has no SEC
+    # Form 4, congress or federal-contract data) and how the score was rescaled.
+    _try_add_column(conn, "boom_scores", "not_applicable", "TEXT NOT NULL DEFAULT '[]'")
+    _try_add_column(conn, "boom_scores", "score_note", "TEXT NOT NULL DEFAULT ''")
     _try_add_column(conn, "app_settings", "x_accounts", "TEXT")  # comma list; NULL = env default
     # TA transition snapshot on alert_state (Phase 3 — warn before falls/breakouts).
     for col, col_def in [
@@ -724,7 +744,36 @@ def init_schema(conn: sqlite3.Connection) -> None:
         ("ta_conviction",      "INTEGER"),
     ]:
         _try_add_column(conn, "alert_state", col, col_def)
+    _migrate_ila_price_rows(conn)
     conn.commit()
+
+
+# Shared market-data tables that hold prices per ticker.
+_PRICE_TABLES = ("ohlc_series", "stock_analysis", "technical_signals", "seasonality")
+
+
+def _migrate_ila_price_rows(conn: sqlite3.Connection) -> None:
+    """One-time: drop TASE (".TA") price rows stored before ILA normalization.
+
+    Yahoo quotes Tel Aviv listings in agorot; since app/currency.py every
+    stored price is in shekels. Rows written earlier would mix units with
+    fresh ones, so they are deleted once (the scheduler re-fetches them) and
+    legacy TASE holdings — which the new portfolio.currency column defaults to
+    USD — are marked ILS. Recorded in `data_migrations` so it never repeats.
+    """
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS data_migrations ("
+        "name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
+    name = "ila_to_ils_2026_09"
+    if conn.execute("SELECT 1 FROM data_migrations WHERE name = ?", (name,)).fetchone():
+        return
+    for table in _PRICE_TABLES:
+        conn.execute(f"DELETE FROM {table} WHERE UPPER(ticker) LIKE '%.TA'")
+    conn.execute("UPDATE portfolio SET currency = 'ILS' WHERE UPPER(ticker) LIKE '%.TA'")
+    conn.execute(
+        "INSERT INTO data_migrations (name, applied_at) VALUES (?, ?)",
+        (name, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+    )
 
 
 # ---------- contracts ----------
@@ -1822,7 +1871,8 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              death_cross, insider_cluster_sell, overbought_rsi, congress_sale,
              analyst_downgrade_cluster, extreme_greed, earnings_soon, mixed_signals,
              vix_spike_contrarian, aaii_bearish_extreme, put_call_fear, aaii_bullish_euphoria,
-             margin_debt_deleveraging, margin_debt_euphoria)
+             margin_debt_deleveraging, margin_debt_euphoria,
+             not_applicable, score_note)
         VALUES
             (:ticker, :computed_at, :score, :components,
              :golden_cross, :rsi_recovery, :insider_cluster_buy, :congress_buy,
@@ -1832,7 +1882,8 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              :death_cross, :insider_cluster_sell, :overbought_rsi, :congress_sale,
              :analyst_downgrade_cluster, :extreme_greed, :earnings_soon, :mixed_signals,
              :vix_spike_contrarian, :aaii_bearish_extreme, :put_call_fear, :aaii_bullish_euphoria,
-             :margin_debt_deleveraging, :margin_debt_euphoria)
+             :margin_debt_deleveraging, :margin_debt_euphoria,
+             :not_applicable, :score_note)
         ON CONFLICT(ticker) DO UPDATE SET
             computed_at=excluded.computed_at, score=excluded.score,
             components=excluded.components,
@@ -1857,7 +1908,9 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
             put_call_fear=excluded.put_call_fear,
             aaii_bullish_euphoria=excluded.aaii_bullish_euphoria,
             margin_debt_deleveraging=excluded.margin_debt_deleveraging,
-            margin_debt_euphoria=excluded.margin_debt_euphoria
+            margin_debt_euphoria=excluded.margin_debt_euphoria,
+            not_applicable=excluded.not_applicable,
+            score_note=excluded.score_note
         """,
         [r.model_dump() for r in records],
     )
@@ -2363,8 +2416,8 @@ def upsert_holding(conn: sqlite3.Connection, user_id: int, item: Holding) -> Non
     """
     conn.execute(
         """
-        INSERT INTO portfolio (user_id, ticker, shares, avg_cost, added_at)
-        VALUES (:user_id, :ticker, :shares, :avg_cost, :added_at)
+        INSERT INTO portfolio (user_id, ticker, shares, avg_cost, added_at, currency)
+        VALUES (:user_id, :ticker, :shares, :avg_cost, :added_at, :currency)
         ON CONFLICT(user_id, ticker) DO UPDATE SET
             avg_cost = (portfolio.shares * portfolio.avg_cost
                         + excluded.shares * excluded.avg_cost)
@@ -2377,13 +2430,15 @@ def upsert_holding(conn: sqlite3.Connection, user_id: int, item: Holding) -> Non
 
 
 def replace_holding(
-    conn: sqlite3.Connection, user_id: int, ticker: str, shares: float, avg_cost: float
+    conn: sqlite3.Connection, user_id: int, ticker: str, shares: float, avg_cost: float,
+    currency: str | None = None,
 ) -> None:
-    """Overwrite an existing position outright (the edit/correct path)."""
+    """Overwrite an existing position outright (the edit/correct path).
+    `currency` None keeps the stored one."""
     conn.execute(
-        "UPDATE portfolio SET shares = ?, avg_cost = ? "
+        "UPDATE portfolio SET shares = ?, avg_cost = ?, currency = COALESCE(?, currency) "
         "WHERE user_id = ? AND ticker = ?",
-        (shares, avg_cost, user_id, ticker),
+        (shares, avg_cost, currency, user_id, ticker),
     )
     conn.commit()
 
@@ -2396,7 +2451,8 @@ def remove_holding(conn: sqlite3.Connection, user_id: int, ticker: str) -> None:
 
 def get_portfolio(conn: sqlite3.Connection, user_id: int) -> list[Holding]:
     cur = conn.execute(
-        "SELECT ticker, shares, avg_cost, added_at FROM portfolio "
+        "SELECT ticker, shares, avg_cost, added_at, "
+        "COALESCE(currency, 'USD') AS currency FROM portfolio "
         "WHERE user_id = ? ORDER BY ticker ASC",
         (user_id,),
     )
@@ -2515,6 +2571,7 @@ def get_notify_profile(conn: sqlite3.Connection, user_id: int) -> NotifyProfile:
         account_size=d.get("account_size"),
         risk_pct=d.get("risk_pct") if d.get("risk_pct") is not None else 1.0,
         updated_at=d.get("updated_at") or "",
+        base_currency=d.get("base_currency") or "USD",
     )
 
 
@@ -2522,13 +2579,13 @@ def upsert_notify_profile(conn: sqlite3.Connection, user_id: int,
                           profile: NotifyProfile) -> None:
     conn.execute(
         """
-        INSERT INTO notify_profile (user_id, email, phone, email_enabled, sms_enabled, account_size, risk_pct, updated_at)
-        VALUES (:user_id, :email, :phone, :email_enabled, :sms_enabled, :account_size, :risk_pct, :updated_at)
+        INSERT INTO notify_profile (user_id, email, phone, email_enabled, sms_enabled, account_size, risk_pct, updated_at, base_currency)
+        VALUES (:user_id, :email, :phone, :email_enabled, :sms_enabled, :account_size, :risk_pct, :updated_at, :base_currency)
         ON CONFLICT(user_id) DO UPDATE SET
             email=excluded.email, phone=excluded.phone,
             email_enabled=excluded.email_enabled, sms_enabled=excluded.sms_enabled,
             account_size=excluded.account_size, risk_pct=excluded.risk_pct,
-            updated_at=excluded.updated_at
+            updated_at=excluded.updated_at, base_currency=excluded.base_currency
         """,
         {
             "user_id": user_id,
@@ -2539,9 +2596,52 @@ def upsert_notify_profile(conn: sqlite3.Connection, user_id: int,
             "account_size": profile.account_size,
             "risk_pct": profile.risk_pct,
             "updated_at": profile.updated_at,
+            "base_currency": profile.base_currency or "USD",
         },
     )
     conn.commit()
+
+
+# ---------- FX watch list (per user) ----------
+
+def get_fx_watch(conn: sqlite3.Connection, user_id: int,
+                 seed: list[str] | tuple[str, ...] = ()) -> list[str]:
+    """The user's FX pairs in display order.
+
+    First read seeds `seed` (config.FX_PAIRS) and marks the account seeded, so
+    a user who later removes every pair gets an empty list, not the defaults
+    back. Accounts with no `users` row (tests) simply re-seed each time.
+    """
+    rows = conn.execute(
+        "SELECT pair FROM fx_watch WHERE user_id = ? ORDER BY position, pair",
+        (user_id,),
+    ).fetchall()
+    if rows:
+        return [r[0] for r in rows]
+    seeded = conn.execute(
+        "SELECT fx_watch_seeded FROM users WHERE id = ?", (user_id,)).fetchone()
+    if seeded is not None and seeded[0]:
+        return []
+    pairs = list(dict.fromkeys(seed))
+    _write_fx_watch(conn, user_id, pairs)
+    return pairs
+
+
+def _write_fx_watch(conn: sqlite3.Connection, user_id: int, pairs: list[str]) -> None:
+    conn.execute("DELETE FROM fx_watch WHERE user_id = ?", (user_id,))
+    conn.executemany(
+        "INSERT INTO fx_watch (user_id, pair, position) VALUES (?, ?, ?)",
+        [(user_id, p, i) for i, p in enumerate(pairs)],
+    )
+    conn.execute("UPDATE users SET fx_watch_seeded = 1 WHERE id = ?", (user_id,))
+    conn.commit()
+
+
+def set_fx_watch(conn: sqlite3.Connection, user_id: int, pairs: list[str]) -> list[str]:
+    """Replace the user's FX pairs (order = display order). Caller validates."""
+    pairs = list(dict.fromkeys(pairs))
+    _write_fx_watch(conn, user_id, pairs)
+    return pairs
 
 
 # ---------- app settings (single row) ----------
@@ -2894,6 +2994,7 @@ _PER_USER_TABLES = (
     "suggestion_history",
     "drawings",
     "drawing_drafts",
+    "fx_watch",
     "sessions",
     "recovery_codes",
     "oauth_identities",

@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 from zoneinfo import ZoneInfo
 
 from apscheduler.events import (
@@ -30,7 +30,7 @@ from pydantic import BaseModel
 
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, backtest, chart_data, config, db, ingest, notify, quotes, report, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
+from app import analysis, analyze, auth, backtest, chart_data, config, currency, db, ingest, notify, quotes, report, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
@@ -44,7 +44,9 @@ except ImportError:  # pragma: no cover - exercised by monkeypatching psutil=Non
     psutil = None
 from app.security import SecurityHeadersMiddleware, rate_limit
 from app.validation import clean_ticker
-from app.market_calendar import is_trading_day, market_status, next_trading_day
+from app.market_calendar import (
+    exchange_for_ticker, is_trading_day, market_status, market_statuses, next_trading_day,
+)
 from app.models import AppSettings, Holding, NotifyProfile, WatchItem
 from app.sources import edgar, gdelt, usaspending
 import app.sources.yield_curve as yield_curve_source
@@ -260,6 +262,10 @@ class SourceSpec(NamedTuple):
     force_on_daily: bool = True
 
 
+def _us_only(tickers: list[str]) -> list[str]:
+    return [t for t in tickers if currency.market_for_symbol(t) == "US"]
+
+
 def build_sources(conn):
     """Registry bound to a connection: name -> SourceSpec.
 
@@ -292,7 +298,9 @@ def build_sources(conn):
                                   retry_interval=config.MARGIN_DEBT_RETRY_INTERVAL_SECONDS,
                                   force_on_daily=False),
         "congress":       (lambda: congress_source.fetch(config.CONGRESS_LOOKBACK_DAYS), db.upsert_congress_trades, config.CONGRESS_MIN_INTERVAL_SECONDS),
-        "short_interest": (lambda: short_interest_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_short_interest, None),
+        # Short interest is a US-listing dataset: TASE (and other non-US)
+        # symbols are left out rather than recorded as failures.
+        "short_interest": (lambda: short_interest_source.fetch(_us_only(db.get_all_watched_tickers(conn))), db.upsert_short_interest, None),
         "social":         (lambda: social_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_social_sentiment, None),
         "analyst":        (lambda: analyst_source.fetch(db.get_all_watched_tickers(conn)), db.upsert_analyst_signals, None),
         "fundamentals":   (lambda: fundamentals_fetch(conn), _store_fundamentals, None),
@@ -942,24 +950,84 @@ def live_quotes(user=Depends(auth.get_current_user)):
     )
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     # Clock-based session authority so the UI flips at 9:30 ET even when quotes
-    # are cached/empty or Yahoo's per-quote marketState lags.
-    status = market_status()
+    # are cached/empty or Yahoo's per-quote marketState lags. `market_status`
+    # stays the US session (the extension and older clients read it);
+    # `market_statuses` adds TASE, whose listings take their state from it.
+    statuses = market_statuses()
+    status = statuses["NYSE"]
     # Cache slightly under the configured poll cadence so each client poll gets
     # at most one fresh Yahoo fetch, shared across concurrent clients.
     interval = db.get_app_settings(conn).quotes_refresh_seconds
     ttl = min(config.QUOTES_TTL_SECONDS, max(5, interval - 5))
-    # FX rides the same endpoint and cache but is appended, not merged into the
-    # watchlist: a watchlist ticker is fed to technicals, boom score and
-    # earnings, and none of those mean anything for a currency pair. The strip
-    # is still worth showing when the user holds nothing.
-    fx = quotes.decorate_fx(quotes.get_quotes(config.FX_PAIRS, ttl_seconds=ttl)) \
-        if config.FX_PAIRS else []
+    # FX and the market-overview indexes ride the same endpoint and cache but
+    # are appended, not merged into the watchlist: a watchlist ticker is fed to
+    # technicals, boom score and earnings, and none of those mean anything for
+    # a currency pair. The FX pairs are the user's own watch list (seeded with
+    # USD/ILS and EUR/ILS); the strip is worth showing even with no holdings.
+    fx_pairs = db.get_fx_watch(conn, user.id, seed=config.FX_PAIRS)
+    indexes = config.TICKER_INDEXES
+    fx = quotes.get_quotes(fx_pairs, ttl_seconds=ttl) if fx_pairs else []
+    idx = quotes.get_quotes(list(indexes), ttl_seconds=ttl) if indexes else []
     equities = quotes.get_quotes(tickers, ttl_seconds=ttl) if tickers else []
+    decorated = quotes.decorate([*equities, *idx, *fx], indexes=indexes,
+                                tase_status=statuses["TASE"])
     return {
         "as_of": now,
         "market_status": status,
-        "quotes": [q.model_dump() for q in [*equities, *fx]],
+        "market_statuses": statuses,
+        "quotes": [q.model_dump() for q in decorated],
     }
+
+
+# ---------- FX watch list (per user) + conversion rates ----------
+class FxWatchUpdate(BaseModel):
+    pairs: list[str] = []
+
+
+_MAX_FX_PAIRS = 12
+
+
+@app.get("/api/fx-watch")
+def get_fx_watch(user=Depends(auth.get_current_user)):
+    return {
+        "pairs": db.get_fx_watch(conn, user.id, seed=config.FX_PAIRS),
+        "currencies": list(currency.ISO_CURRENCIES),
+    }
+
+
+@app.put("/api/fx-watch")
+def put_fx_watch(body: FxWatchUpdate, user=Depends(auth.get_current_user)):
+    """Replace the user's carousel FX pairs; list order is display order."""
+    pairs = [str(p).strip().upper() for p in body.pairs]
+    if len(pairs) > _MAX_FX_PAIRS:
+        raise HTTPException(status_code=400, detail=f"at most {_MAX_FX_PAIRS} FX pairs")
+    bad = [p for p in pairs if not currency.is_valid_fx_pair(p)]
+    if bad:
+        raise HTTPException(
+            status_code=400,
+            detail=f"invalid FX pair(s): {', '.join(bad)} — use two different ISO codes, e.g. USDILS=X",
+        )
+    return {"pairs": db.set_fx_watch(conn, user.id, pairs),
+            "currencies": list(currency.ISO_CURRENCIES)}
+
+
+@app.get("/api/fx/rates")
+def fx_rates(base: str | None = None, currencies: str = "",
+             user=Depends(auth.get_current_user)):
+    """Multipliers turning each currency into `base` (default: the user's base
+    currency; currencies default to those in their portfolio). A missing rate
+    is null and listed in `unavailable` — the UI leaves that money out of the
+    converted total and says so. Rates are live Yahoo quotes, never defaults."""
+    base = (base or db.get_notify_profile(conn, user.id).base_currency or "USD").upper()
+    if base not in currency.ISO_CURRENCIES:
+        raise HTTPException(status_code=400, detail="unknown base currency")
+    wanted = [c.strip().upper() for c in currencies.split(",") if c.strip()]
+    if not wanted:
+        wanted = sorted({h.currency for h in db.get_portfolio(conn, user.id)})
+    wanted = [c for c in wanted if c in currency.ISO_CURRENCIES][:10]
+    out = currency.rates_to_base(base, wanted)
+    out["as_of"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return out
 
 
 @app.get("/api/congress-trades")
@@ -1038,12 +1106,12 @@ def sparklines(tickers: str = "", range: str = "1m"):
 
 # ---------- search & on-demand analysis (any ticker) ----------
 @app.get("/api/search", dependencies=[Depends(rate_limit("search", 30, 60))])
-def search_stocks(q: str = ""):
+def search_stocks(q: str = "", market: Literal["all", "us", "tase"] = "all"):
     q = q.strip()
     if not (1 <= len(q) <= 40):
         raise HTTPException(status_code=400, detail="query must be 1-40 characters")
     try:
-        return search.search(q)
+        return search.search(q, market=market)
     except Exception:
         logger.warning("stock search failed for %r", q, exc_info=True)
         raise HTTPException(status_code=502, detail="search unavailable")
@@ -1060,10 +1128,10 @@ def analyze_ticker(ticker: str, user=Depends(auth.get_current_user)):
         raise HTTPException(status_code=502, detail="analysis data unavailable")
     a = result["analysis"]
     if a is not None:
-        profile = db.get_notify_profile(conn, user.id)
-        a = analysis.apply_sizing(a, profile.account_size, profile.risk_pct)
+        a = _sized(a, db.get_notify_profile(conn, user.id))
     return {
         "analysis": a.model_dump() if a else None,
+        "market": _market_payload(t),
         "daily": [b.model_dump() for b in result["daily"]],
         "weekly": [b.model_dump() for b in result["weekly"]],
         "source": result["source"],
@@ -1084,6 +1152,55 @@ def analyze_ticker(ticker: str, user=Depends(auth.get_current_user)):
             {**al.model_dump(), "explain": alerts_source.ALERT_MEANING.get(al.type)}
             for al in db.get_alerts_for(conn, user.id, t)
         ],
+    }
+
+
+def _sized(a, profile):
+    """Apply the user's sizing like-for-like: account size is in their base
+    currency, prices in the ticker's (converted with live FX, or left
+    unsized with a note when no rate is available)."""
+    return analysis.apply_sizing(a, profile.account_size, profile.risk_pct,
+                                 account_currency=profile.base_currency)
+
+
+_NOT_APPLICABLE_TASE = [
+    {"source": "edgar", "label": "SEC Form 4 insider trades",
+     "why": "Form 4 is a US SEC filing; Israeli insiders report to the ISA instead."},
+    {"source": "congress", "label": "Congressional trades",
+     "why": "US Congress disclosures cover US-listed securities."},
+    {"source": "usaspending", "label": "US federal contracts",
+     "why": "USAspending awards are matched to US-listed contractors."},
+    {"source": "short_interest", "label": "Short interest",
+     "why": "Short-interest figures come from US (FINRA-reported) data."},
+]
+
+
+def _ticker_currency(ticker: str) -> str | None:
+    """Trading currency: the symbol convention first (no network), else the
+    live quote's currency for markets the app doesn't model."""
+    ccy = currency.currency_for_symbol(ticker)
+    if ccy:
+        return ccy
+    try:
+        got = quotes.get_quotes([ticker])
+    except Exception:
+        return None
+    return got[0].currency if got else None
+
+
+def _market_payload(ticker: str) -> dict:
+    """Which market a ticker trades on, in what currency, and which of the
+    app's sources simply don't exist there (shown as "not applicable", never
+    as an error or an empty panel)."""
+    mkt = currency.market_for_symbol(ticker)
+    exchange = exchange_for_ticker(ticker)
+    return {
+        "market": mkt,
+        "exchange": exchange,
+        "currency": _ticker_currency(ticker),
+        "extended_hours": mkt == "US",
+        "session": market_status(exchange=exchange) if exchange else None,
+        "not_applicable": _NOT_APPLICABLE_TASE if mkt == "TASE" else [],
     }
 
 
@@ -1165,7 +1282,7 @@ def company_names(user=Depends(auth.get_current_user)):
 def analyses(user=Depends(auth.get_current_user)):
     profile = db.get_notify_profile(conn, user.id)
     return [
-        analysis.apply_sizing(a, profile.account_size, profile.risk_pct).model_dump()
+        _sized(a, profile).model_dump()
         for a in db.get_all_analyses(conn)
     ]
 
@@ -1206,8 +1323,7 @@ def analysis_detail(ticker: str, user=Depends(auth.get_current_user)):
     t = clean_ticker(ticker)
     a = db.get_analysis(conn, t)
     if a is not None:
-        profile = db.get_notify_profile(conn, user.id)
-        a = analysis.apply_sizing(a, profile.account_size, profile.risk_pct)
+        a = _sized(a, db.get_notify_profile(conn, user.id))
     return {
         "analysis": a.model_dump() if a else None,
         "daily": [b.model_dump() for b in db.get_ohlc(conn, t, "daily")],
@@ -1219,7 +1335,17 @@ def analysis_detail(ticker: str, user=Depends(auth.get_current_user)):
 class HoldingCreate(BaseModel):
     ticker: str
     shares: float
-    avg_cost: float
+    avg_cost: float           # in `currency`
+    currency: str | None = None  # None = detect (symbol convention, then Yahoo)
+
+
+def _clean_currency(code: str | None) -> str | None:
+    if code is None:
+        return None
+    c = code.strip().upper()
+    if c not in currency.ISO_CURRENCIES:
+        raise HTTPException(status_code=400, detail=f"unknown currency {code!r}")
+    return c
 
 
 def _portfolio_out(user_id: int) -> list[dict]:
@@ -1234,7 +1360,8 @@ def _portfolio_out(user_id: int) -> list[dict]:
         else:
             sector, industry = fund_map.get(h.ticker, (None, None))
             category, source = themes.classify(h.ticker, sector, industry), "auto"
-        out.append({**h.model_dump(), "category": category, "category_source": source})
+        out.append({**h.model_dump(), "category": category, "category_source": source,
+                    "market": currency.market_for_symbol(h.ticker)})
     return out
 
 
@@ -1248,9 +1375,23 @@ def add_holding(item: HoldingCreate, user=Depends(auth.get_current_user)):
     ticker = clean_ticker(item.ticker)
     if item.shares <= 0 or item.avg_cost < 0:
         raise HTTPException(status_code=400, detail="shares must be > 0 and avg_cost >= 0")
+    held = {h.ticker: h for h in db.get_portfolio(conn, user.id)}
+    requested = _clean_currency(item.currency)
+    if ticker in held:
+        # A merge averages cost, which is only meaningful in one currency.
+        if requested and requested != held[ticker].currency:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{ticker} is held in {held[ticker].currency}; edit the position "
+                       f"to change its currency instead of adding in {requested}",
+            )
+        ccy = held[ticker].currency
+    else:
+        ccy = requested or _ticker_currency(ticker) or "USD"
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     db.upsert_holding(conn, user.id, Holding(
         ticker=ticker, shares=item.shares, avg_cost=item.avg_cost, added_at=now,
+        currency=ccy,
     ))
     return _portfolio_out(user.id)
 
@@ -1258,6 +1399,7 @@ def add_holding(item: HoldingCreate, user=Depends(auth.get_current_user)):
 class HoldingReplace(BaseModel):
     shares: float
     avg_cost: float
+    currency: str | None = None  # None keeps the stored currency
 
 
 @app.put("/api/portfolio/{ticker}")
@@ -1269,7 +1411,8 @@ def edit_holding(ticker: str, item: HoldingReplace, user=Depends(auth.get_curren
     held = {h.ticker for h in db.get_portfolio(conn, user.id)}
     if t not in held:
         raise HTTPException(status_code=404, detail="ticker not in portfolio")
-    db.replace_holding(conn, user.id, t, item.shares, item.avg_cost)
+    db.replace_holding(conn, user.id, t, item.shares, item.avg_cost,
+                       _clean_currency(item.currency))
     return _portfolio_out(user.id)
 
 
@@ -1308,6 +1451,7 @@ class ProfileUpdate(BaseModel):
     sms_enabled: bool | None = None
     account_size: float | None = None
     risk_pct: float | None = None
+    base_currency: str | None = None  # "USD" | "ILS"
 
 
 @app.get("/api/profile")
@@ -1331,15 +1475,36 @@ def put_profile(item: ProfileUpdate, user=Depends(auth.get_current_user)):
         raise HTTPException(status_code=400, detail="account_size must be >= 0")
     risk_pct = item.risk_pct if item.risk_pct is not None else cur.risk_pct
     risk_pct = max(0.1, min(10.0, risk_pct if risk_pct else 1.0))
+    base_currency = (item.base_currency or cur.base_currency or "USD").upper()
+    if base_currency not in currency.BASE_CURRENCIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"base_currency must be one of {', '.join(currency.BASE_CURRENCIES)}")
+    # account_size is expressed in the base currency, so switching base carries
+    # the stored amount across at the live rate — unless this same request sets
+    # a new size explicitly. No rate: the number is kept and the note says so.
+    note = ""
+    old_base = (cur.base_currency or "USD").upper()
+    if (base_currency != old_base and item.account_size is None
+            and account_size):
+        rate = currency.fx_rate(old_base, base_currency)
+        if rate:
+            converted = round(account_size * rate, 2)
+            note = (f"Account size converted {account_size:,.0f} {old_base} → "
+                    f"{converted:,.0f} {base_currency} at {rate:.4f} (live Yahoo FX).")
+            account_size = converted
+        else:
+            note = (f"FX unavailable ({old_base}→{base_currency}): account size kept at "
+                    f"{account_size:,.0f}, now read as {base_currency} — check it in Settings.")
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     db.upsert_notify_profile(conn, user.id, NotifyProfile(
         email=email, phone=phone,
         email_enabled=bool(email_enabled and email),
         sms_enabled=bool(sms_enabled and phone),
         account_size=account_size, risk_pct=risk_pct,
-        updated_at=now,
+        updated_at=now, base_currency=base_currency,
     ))
-    return db.get_notify_profile(conn, user.id).model_dump()
+    return {**db.get_notify_profile(conn, user.id).model_dump(), "note": note}
 
 
 # ---------- app settings (analysis schedule + refresh cadence) ----------

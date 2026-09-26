@@ -17,6 +17,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import httpx
 
+from app import currency
 from app.models import Seasonality
 
 _YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
@@ -189,8 +190,9 @@ def compute_anchors(series: list[tuple[date, float]], today: date) -> list[dict]
 
 
 def _parse_series(payload: dict) -> list[tuple[date, float]]:
-    """Extract sorted (date, close) pairs from a Yahoo chart payload."""
-    result = (payload.get("chart") or {}).get("result") or []
+    """Extract sorted (date, close) pairs from a Yahoo chart payload (major
+    currency units: TASE agorot are divided into shekels first)."""
+    result = (currency.normalize_chart_payload(payload).get("chart") or {}).get("result") or []
     if not result:
         return []
     r0 = result[0]
