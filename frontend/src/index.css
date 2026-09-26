@@ -129,6 +129,32 @@ body {
   --info-weak: oklch(0.74 0.11 232 / 0.16);
   --shadow: 0 1px 0 oklch(1 0 0 / 0.04) inset, 0 12px 34px oklch(0 0 0 / 0.5);
   --shadow-lg: 0 1px 0 oklch(1 0 0 / 0.05) inset, 0 20px 48px oklch(0 0 0 / 0.62);
+  /* Mid-range / "watch" tone, between positive and negative. */
+  --caution: oklch(0.72 0.15 60);
+  --caution-weak: oklch(0.72 0.15 60 / 0.18);
+  /* Text on a solid accent / negative fill (primary buttons, badges). */
+  --on-accent: oklch(0.16 0.01 80);
+  --on-negative: oklch(0.16 0.01 80);
+  --switch-knob: oklch(0.97 0.004 80);
+  --scrim: oklch(0 0 0 / 0.5);
+  --scrim-strong: oklch(0 0 0 / 0.62);
+  /* Chart & canvas tokens. lightweight-charts and the drawing layer paint on
+     <canvas>, so they read these through lib/themeColors.js (which converts
+     oklch to rgb) rather than through CSS. Every palette defines all of them. */
+  --chart-text: var(--text-muted);
+  --chart-grid: var(--grid);
+  --chart-border: var(--border);
+  --chart-crosshair: oklch(0.72 0.010 80 / 0.55);
+  --chart-up: var(--positive);
+  --chart-down: var(--negative);
+  --chart-accent: var(--accent);
+  --chart-info: var(--info);
+  --chart-muted: oklch(0.62 0.012 80);
+  --chart-compare: oklch(0.74 0.17 305);
+  --draw-stroke: var(--accent);
+  --draw-selected: var(--info);
+  --draw-fill: oklch(0.82 0.145 75 / 0.12);
+  --draw-label: var(--on-accent);
 }
 
 /* ---------- Light theme (fallback) ---------- */
@@ -158,6 +184,27 @@ body {
   --info-weak: oklch(0.52 0.12 232 / 0.14);
   --shadow: 0 1px 2px oklch(0.6 0.02 80 / 0.18), 0 12px 30px oklch(0.6 0.02 80 / 0.16);
   --shadow-lg: 0 2px 4px oklch(0.6 0.02 80 / 0.16), 0 20px 44px oklch(0.6 0.02 80 / 0.22);
+  --caution: oklch(0.60 0.16 52);
+  --caution-weak: oklch(0.58 0.16 45 / 0.14);
+  --on-accent: oklch(0.18 0.02 70);
+  --on-negative: oklch(0.99 0.003 80);
+  --switch-knob: oklch(1 0 0);
+  --scrim: oklch(0.2 0.02 80 / 0.4);
+  --scrim-strong: oklch(0.2 0.02 80 / 0.55);
+  --chart-text: var(--text-muted);
+  --chart-grid: oklch(0 0 0 / 0.07);
+  --chart-border: var(--border);
+  --chart-crosshair: oklch(0.46 0.022 80 / 0.55);
+  --chart-up: var(--positive);
+  --chart-down: var(--negative);
+  --chart-accent: var(--accent);
+  --chart-info: var(--info);
+  --chart-muted: oklch(0.58 0.018 80);
+  --chart-compare: oklch(0.52 0.20 305);
+  --draw-stroke: var(--accent);
+  --draw-selected: var(--info);
+  --draw-fill: oklch(0.62 0.15 68 / 0.14);
+  --draw-label: var(--on-accent);
 }
 
 /* ---------- Retro theme (purple-phosphor terminal) ----------
@@ -189,6 +236,29 @@ body {
   --info-weak: oklch(0.82 0.13 200 / 0.16);
   --shadow: 0 1px 0 oklch(0.74 0.18 300 / 0.06) inset, 0 12px 34px oklch(0 0.02 300 / 0.55);
   --shadow-lg: 0 1px 0 oklch(0.74 0.18 300 / 0.08) inset, 0 20px 48px oklch(0 0.02 300 / 0.66);
+  /* Negative is already amber here, so "caution" moves to a phosphor yellow. */
+  --caution: oklch(0.86 0.15 105);
+  --caution-weak: oklch(0.86 0.15 105 / 0.16);
+  --on-accent: oklch(0.15 0.03 300);
+  --on-negative: oklch(0.15 0.03 300);
+  --switch-knob: oklch(0.96 0.03 300);
+  --scrim: oklch(0.08 0.03 300 / 0.55);
+  --scrim-strong: oklch(0.08 0.03 300 / 0.68);
+  --chart-text: var(--text-muted);
+  --chart-grid: var(--grid);
+  --chart-border: var(--border);
+  --chart-crosshair: oklch(0.77 0.06 300 / 0.6);
+  --chart-up: var(--positive);
+  --chart-down: var(--negative);
+  --chart-accent: var(--accent);
+  --chart-info: var(--info);
+  --chart-muted: oklch(0.64 0.07 300);
+  /* The accent is already violet here, so the SPY overlay goes phosphor pink. */
+  --chart-compare: oklch(0.80 0.15 350);
+  --draw-stroke: var(--accent);
+  --draw-selected: var(--info);
+  --draw-fill: oklch(0.74 0.17 300 / 0.14);
+  --draw-label: var(--on-accent);
 }
 
 /* ---------- Warm theme (cream / amber paper) ---------- */
@@ -218,6 +288,27 @@ body {
   --info-weak: oklch(0.52 0.12 232 / 0.14);
   --shadow: 0 1px 2px oklch(0.55 0.04 60 / 0.20), 0 12px 30px oklch(0.55 0.04 60 / 0.16);
   --shadow-lg: 0 2px 4px oklch(0.55 0.04 60 / 0.18), 0 20px 44px oklch(0.55 0.04 60 / 0.22);
+  --caution: oklch(0.58 0.12 90);
+  --caution-weak: oklch(0.58 0.12 90 / 0.16);
+  --on-accent: oklch(0.22 0.03 60);
+  --on-negative: oklch(0.99 0.01 85);
+  --switch-knob: oklch(0.995 0.01 85);
+  --scrim: oklch(0.25 0.03 60 / 0.4);
+  --scrim-strong: oklch(0.25 0.03 60 / 0.55);
+  --chart-text: var(--text-muted);
+  --chart-grid: oklch(0.45 0.05 60 / 0.10);
+  --chart-border: var(--border);
+  --chart-crosshair: oklch(0.48 0.034 62 / 0.55);
+  --chart-up: var(--positive);
+  --chart-down: var(--negative);
+  --chart-accent: var(--accent);
+  --chart-info: var(--info);
+  --chart-muted: oklch(0.58 0.030 66);
+  --chart-compare: oklch(0.50 0.18 320);
+  --draw-stroke: var(--accent);
+  --draw-selected: var(--info);
+  --draw-fill: oklch(0.60 0.15 55 / 0.14);
+  --draw-label: var(--on-accent);
 }
 
 body {

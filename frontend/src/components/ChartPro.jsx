@@ -11,21 +11,32 @@ import {
 } from "../lib/indicators";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import { useDrawings } from "../lib/drawings/useDrawings";
+import { useThemeColors, withAlpha } from "../lib/themeColors";
 import styles from "./ChartPro.module.css";
 
 // lightweight-charts renders to canvas and cannot parse oklch(), so the chart
-// uses fixed hex/rgb colors tuned to the dark "amber terminal" palette rather
-// than reading the oklch CSS tokens.
-const COLORS = {
-  text: "#b7b0a6",
-  grid: "rgba(255,255,255,0.06)",
-  border: "rgba(255,255,255,0.12)",
-  up: "#4fd6a0",       // positive / mint
-  down: "#e5544b",     // negative / crimson
-  accent: "#f0b429",   // amber
-  info: "#57a5e0",     // cool blue
-  muted: "#8f887e",    // warm gray
-  compare: "#c084fc",  // SPY overlay (violet, distinct from every indicator)
+// colours come from the --chart-* tokens in index.css resolved to rgb() by
+// useThemeColors — and re-resolved whenever the app theme changes.
+const CHART_TOKENS = {
+  text: "--chart-text",
+  grid: "--chart-grid",
+  border: "--chart-border",
+  crosshair: "--chart-crosshair",
+  up: "--chart-up",           // positive
+  down: "--chart-down",       // negative
+  accent: "--chart-accent",
+  info: "--chart-info",
+  muted: "--chart-muted",
+  compare: "--chart-compare", // SPY overlay / VWAP, distinct from every indicator
+  labelBg: "--surface-3",     // crosshair axis-label background
+};
+
+// User drawings (lib/drawings) — same resolution, separate roles.
+const DRAW_TOKENS = {
+  stroke: "--draw-stroke",
+  selected: "--draw-selected",
+  fill: "--draw-fill",
+  label: "--draw-label",
 };
 
 const TIMEFRAMES = [
@@ -145,6 +156,22 @@ function loadPrefs() {
   }
 }
 
+/**
+ * The chart-level (not per-series) options that depend on the theme. Applied
+ * with chart.applyOptions right after creation and again on every theme
+ * change, so the chart — and the user's zoom/pan — survives switching themes.
+ */
+function chartThemeOptions(c) {
+  const line = { color: c.crosshair, labelBackgroundColor: c.labelBg };
+  return {
+    layout: { textColor: c.text, panes: { separatorColor: c.border } },
+    grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+    rightPriceScale: { borderColor: c.border },
+    timeScale: { borderColor: c.border },
+    crosshair: { vertLine: line, horzLine: line },
+  };
+}
+
 function monoFont() {
   const v = getComputedStyle(document.documentElement).getPropertyValue("--mono").trim();
   return v || "monospace";
@@ -187,6 +214,13 @@ function rightScaleOf(pane) {
  */
 export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   const elRef = useRef(null);
+  // rgb() strings for the current theme; a new object on every theme change.
+  const colors = useThemeColors(CHART_TOKENS);
+  const drawColors = useThemeColors(DRAW_TOKENS);
+  // Read by the series rebuild and the crosshair legend, so a theme change
+  // doesn't have to re-run either of them.
+  const colorsRef = useRef(colors);
+  const recolorRef = useRef([]);       // (colors) => void, one per themed object
   const [prefs, setPrefs] = useState(loadPrefs);
   // Viewport-aware chart height: fill the space below the toolbar/legend down
   // to the bottom of the viewport, clamped to [280, `height`] so the chart +
@@ -281,17 +315,16 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       width: el.clientWidth,
       layout: {
         background: { color: "transparent" },
-        textColor: COLORS.text,
         fontFamily: monoFont(),
         fontSize: 11,
         attributionLogo: false,
-        panes: { separatorColor: COLORS.border, enableResize: false },
+        panes: { enableResize: false },
       },
-      grid: { vertLines: { color: COLORS.grid }, horzLines: { color: COLORS.grid } },
-      rightPriceScale: { borderColor: COLORS.border },
-      timeScale: { borderColor: COLORS.border, rightOffset: 4, secondsVisible: false },
+      timeScale: { rightOffset: 4, secondsVisible: false },
       crosshair: { mode: 0 },
     });
+    // Colours are applied by the theme effect below, which runs right after
+    // this one on mount and again on every theme change.
     chartRef.current = chart;
 
     // The crosshair handler reads live maps/overlays from refs so it never has
@@ -311,7 +344,10 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       const overlays = [];
       for (const o of overlayRef.current) {
         const d = param.seriesData.get(o.series);
-        if (d && d.value != null) overlays.push({ label: o.label, color: o.color, value: d.value });
+        // Stored as a palette key so the legend follows a theme change.
+        if (d && d.value != null) {
+          overlays.push({ label: o.label, color: colorsRef.current[o.colorKey], value: d.value });
+        }
       }
       setLegend({ ...b, changePct, overlays });
     };
@@ -397,6 +433,24 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ---- theme changes: recolour everything in place ----
+  // Neither the chart nor its series are recreated: chart-level colours go
+  // through chart.applyOptions, and every series / price line / marker set the
+  // rebuild below created registered a recolour callback in recolorRef, which
+  // re-applies its colours through its own applyOptions (or setData/setMarkers
+  // for per-point colours). A rebuild would also work, but it re-lays-out the
+  // sub-panes, so a theme switch would visibly jump the pane heights.
+  // Declared before the rebuild effect so colorsRef is current when both run.
+  useEffect(() => {
+    colorsRef.current = colors;
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.applyOptions(chartThemeOptions(colors));
+    for (const recolor of recolorRef.current) {
+      try { recolor(colors); } catch { /* series already removed */ }
+    }
+  }, [colors]);
+
   // ---- height changes: just resize, never rebuild ----
   useEffect(() => { chartRef.current?.applyOptions({ height: chartHeight }); }, [chartHeight]);
 
@@ -453,79 +507,100 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     overlayRef.current = [];
     const track = (s) => { seriesRef.current.push(s); return s; };
 
+    // Theme colours. Everything coloured below is created with `c`, and
+    // registers how to recolour itself in `recolor`, which the theme effect
+    // replays with the new palette — so a theme switch never rebuilds series.
+    const c = colorsRef.current;
+    const recolor = [];
+    recolorRef.current = recolor;
+    /** addSeries + track, with `colorFn(palette)` supplying the colour options. */
+    const addThemed = (type, opts, colorFn, pane) => {
+      const s = track(chart.addSeries(type, { ...opts, ...colorFn(c) }, pane));
+      recolor.push((cc) => s.applyOptions(colorFn(cc)));
+      return s;
+    };
+    /** createPriceLine, recoloured the same way. */
+    const themedPriceLine = (s, opts, colorKey) => {
+      const line = s.createPriceLine({ ...opts, color: c[colorKey] });
+      recolor.push((cc) => line.applyOptions({ color: cc[colorKey] }));
+    };
+    /** Per-point colours live in the data, so those series re-set their data. */
+    const themedData = (s, dataFn) => {
+      s.setData(dataFn(c));
+      recolor.push((cc) => s.setData(dataFn(cc)));
+    };
+
     // main series by chart type
     let main;
-    const upDown = {
-      upColor: COLORS.up, downColor: COLORS.down, borderVisible: false,
-      wickUpColor: COLORS.up, wickDownColor: COLORS.down,
-    };
+    const upDown = (p) => ({
+      upColor: p.up, downColor: p.down, wickUpColor: p.up, wickDownColor: p.down,
+    });
     const ohlcData = displayBars.map((b) => ({
       time: b.time, open: b.open, high: b.high, low: b.low, close: b.close,
     }));
     const closeData = displayBars.map((b) => ({ time: b.time, value: b.close }));
     if (prefs.type === "hollow") {
-      main = track(chart.addSeries(CandlestickSeries, {
-        ...upDown,
-        upColor: "transparent", borderVisible: true,
-        borderUpColor: COLORS.up, borderDownColor: COLORS.down,
+      main = addThemed(CandlestickSeries, { borderVisible: true }, (p) => ({
+        ...upDown(p), upColor: "transparent", borderUpColor: p.up, borderDownColor: p.down,
       }));
       main.setData(ohlcData);
     } else if (prefs.type === "bars") {
-      main = track(chart.addSeries(BarSeries, { upColor: COLORS.up, downColor: COLORS.down, thinBars: false }));
+      main = addThemed(BarSeries, { thinBars: false }, (p) => ({ upColor: p.up, downColor: p.down }));
       main.setData(ohlcData);
     } else if (prefs.type === "line") {
-      main = track(chart.addSeries(LineSeries, { color: COLORS.accent, lineWidth: 2 }));
+      main = addThemed(LineSeries, { lineWidth: 2 }, (p) => ({ color: p.accent }));
       main.setData(closeData);
     } else if (prefs.type === "area") {
-      main = track(chart.addSeries(AreaSeries, {
-        lineColor: COLORS.accent, lineWidth: 2,
-        topColor: "rgba(240,180,41,0.28)", bottomColor: "rgba(240,180,41,0.02)",
+      main = addThemed(AreaSeries, { lineWidth: 2 }, (p) => ({
+        lineColor: p.accent,
+        topColor: withAlpha(p.accent, 0.28), bottomColor: withAlpha(p.accent, 0.02),
       }));
       main.setData(closeData);
     } else if (prefs.type === "baseline") {
-      main = track(chart.addSeries(BaselineSeries, {
+      main = addThemed(BaselineSeries, {
         baseValue: { type: "price", price: displayBars[0].close },
-        topLineColor: COLORS.up, bottomLineColor: COLORS.down,
-        topFillColor1: "rgba(79,214,160,0.22)", topFillColor2: "rgba(79,214,160,0.02)",
-        bottomFillColor1: "rgba(229,84,75,0.02)", bottomFillColor2: "rgba(229,84,75,0.22)",
+      }, (p) => ({
+        topLineColor: p.up, bottomLineColor: p.down,
+        topFillColor1: withAlpha(p.up, 0.22), topFillColor2: withAlpha(p.up, 0.02),
+        bottomFillColor1: withAlpha(p.down, 0.02), bottomFillColor2: withAlpha(p.down, 0.22),
       }));
       main.setData(closeData);
     } else {
-      main = track(chart.addSeries(CandlestickSeries, upDown));
+      main = addThemed(CandlestickSeries, { borderVisible: false }, upDown);
       main.setData(ohlcData);
     }
 
     // The price series is what user drawings anchor to (see useDrawings).
     mainSeriesRef.current = main;
 
-    // A tracked line series; `label` (if given) registers it for the crosshair legend.
-    const addLine = (data, color, label, width = 1, style) => {
+    // A tracked line series in palette colour `colorKey`; `label` (if given)
+    // registers it for the crosshair legend.
+    const addLine = (data, colorKey, label, width = 1, style) => {
       if (data.length < 2) return;
-      const s = track(chart.addSeries(LineSeries, {
-        color, lineWidth: width, priceLineVisible: false,
+      const s = addThemed(LineSeries, {
+        lineWidth: width, priceLineVisible: false,
         lastValueVisible: false, crosshairMarkerVisible: true,
         ...(style != null ? { lineStyle: style } : {}),
-      }));
+      }, (p) => ({ color: p[colorKey] }));
       s.setData(data);
-      if (label) overlayRef.current.push({ series: s, label, color });
+      if (label) overlayRef.current.push({ series: s, label, colorKey });
     };
 
     // overlays computed from the *raw* bars (indicator math on real OHLC)
-    if (ma) for (const def of MA_DEFS) addLine(smaSeries(bars, def.n), COLORS[def.key], `SMA ${def.n}`, def.n >= 150 ? 2 : 1);
-    if (ema) for (const def of EMA_DEFS) addLine(emaSeries(bars, def.n), COLORS[def.key], `EMA ${def.n}`, 1, LineStyle.Dotted);
+    if (ma) for (const def of MA_DEFS) addLine(smaSeries(bars, def.n), def.key, `SMA ${def.n}`, def.n >= 150 ? 2 : 1);
+    if (ema) for (const def of EMA_DEFS) addLine(emaSeries(bars, def.n), def.key, `EMA ${def.n}`, 1, LineStyle.Dotted);
     if (bb) {
       const bands = bollingerSeries(bars);
-      addLine(bands.upper, COLORS.muted, "BB upper", 1, LineStyle.Dashed);
-      addLine(bands.middle, COLORS.muted, "BB mid", 1);
-      addLine(bands.lower, COLORS.muted, "BB lower", 1, LineStyle.Dashed);
+      addLine(bands.upper, "muted", "BB upper", 1, LineStyle.Dashed);
+      addLine(bands.middle, "muted", "BB mid", 1);
+      addLine(bands.lower, "muted", "BB lower", 1, LineStyle.Dashed);
     }
-    if (vwap && intraday) addLine(vwapSeries(bars), COLORS.compare, "VWAP", 2);
+    if (vwap && intraday) addLine(vwapSeries(bars), "compare", "VWAP", 2);
 
     // SPY comparison (percent scale set in the options effect)
     if (prefs.compare && compareBars && compareBars.length > 1) {
-      const cmp = track(chart.addSeries(LineSeries, {
-        color: COLORS.compare, lineWidth: 2, priceLineVisible: false, title: "SPY",
-      }));
+      const cmp = addThemed(LineSeries, { lineWidth: 2, priceLineVisible: false, title: "SPY" },
+        (p) => ({ color: p.compare }));
       cmp.setData(compareBars.map((b) => ({ time: b.time, value: b.close })));
     }
 
@@ -538,21 +613,20 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
         priceFormat: { type: "volume" }, priceLineVisible: false,
         lastValueVisible: true, title: "Vol",
       }, paneIndex));
-      volS.setData(displayBars.map((b) => ({
+      themedData(volS, (p) => displayBars.map((b) => ({
         time: b.time, value: b.volume,
-        color: (b.close >= b.open ? COLORS.up : COLORS.down) + "88",
+        color: withAlpha(b.close >= b.open ? p.up : p.down, 0.53),
       })));
       chart.panes()[paneIndex]?.setHeight?.(PANE_HEIGHTS.vol);
     }
     if (rsi) {
       paneIndex += 1;
-      const rsiS = track(chart.addSeries(LineSeries, {
-        color: COLORS.info, lineWidth: 2, priceLineVisible: false,
-        lastValueVisible: true, title: "RSI 14",
-      }, paneIndex));
+      const rsiS = addThemed(LineSeries, {
+        lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: "RSI 14",
+      }, (p) => ({ color: p.info }), paneIndex);
       rsiS.setData(rsiSeries(bars));
-      rsiS.createPriceLine({ price: 70, color: COLORS.down, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true });
-      rsiS.createPriceLine({ price: 30, color: COLORS.up, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true });
+      themedPriceLine(rsiS, { price: 70, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true }, "down");
+      themedPriceLine(rsiS, { price: 30, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true }, "up");
       chart.panes()[paneIndex]?.setHeight?.(PANE_HEIGHTS.rsi);
     }
     if (macd) {
@@ -561,18 +635,16 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       const histSeries = track(chart.addSeries(HistogramSeries, {
         priceLineVisible: false, lastValueVisible: false,
       }, paneIndex));
-      histSeries.setData(hist.map((p) => ({
-        ...p, color: (p.value >= 0 ? COLORS.up : COLORS.down) + "88",
+      themedData(histSeries, (p) => hist.map((pt) => ({
+        ...pt, color: withAlpha(pt.value >= 0 ? p.up : p.down, 0.53),
       })));
-      const macdLine = track(chart.addSeries(LineSeries, {
-        color: COLORS.accent, lineWidth: 2, priceLineVisible: false,
-        lastValueVisible: true, title: "MACD",
-      }, paneIndex));
+      const macdLine = addThemed(LineSeries, {
+        lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: "MACD",
+      }, (p) => ({ color: p.accent }), paneIndex);
       macdLine.setData(macdData);
-      const sigLine = track(chart.addSeries(LineSeries, {
-        color: COLORS.info, lineWidth: 1, priceLineVisible: false,
-        lastValueVisible: true, title: "Signal",
-      }, paneIndex));
+      const sigLine = addThemed(LineSeries, {
+        lineWidth: 1, priceLineVisible: false, lastValueVisible: true, title: "Signal",
+      }, (p) => ({ color: p.info }), paneIndex);
       sigLine.setData(signal);
       chart.panes()[paneIndex]?.setHeight?.(PANE_HEIGHTS.macd);
     }
@@ -582,15 +654,15 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       // Horizontal S/R — round-number levels get a distinct dotted/muted style.
       for (const l of (analysis.support || [])) {
         const round = l.source === "round";
-        main.createPriceLine({ price: l.price, color: round ? COLORS.muted : COLORS.up, lineWidth: 1,
+        themedPriceLine(main, { price: l.price, lineWidth: 1,
           lineStyle: round ? LineStyle.Dotted : LineStyle.Dashed, axisLabelVisible: true,
-          title: round ? `S ⌾ ${l.price}` : `S ${l.touches}x` });
+          title: round ? `S ⌾ ${l.price}` : `S ${l.touches}x` }, round ? "muted" : "up");
       }
       for (const l of (analysis.resistance || [])) {
         const round = l.source === "round";
-        main.createPriceLine({ price: l.price, color: round ? COLORS.muted : COLORS.down, lineWidth: 1,
+        themedPriceLine(main, { price: l.price, lineWidth: 1,
           lineStyle: round ? LineStyle.Dotted : LineStyle.Dashed, axisLabelVisible: true,
-          title: round ? `R ⌾ ${l.price}` : `R ${l.touches}x` });
+          title: round ? `R ⌾ ${l.price}` : `R ${l.touches}x` }, round ? "muted" : "down");
       }
       // Diagonal trendlines as two-point line series (dashed when broken).
       const lastBar = displayBars[displayBars.length - 1];
@@ -600,35 +672,40 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
           pts.push({ time: lastBar.time, value: tl.current_value });
         }
         if (pts.length >= 2) {
-          const tlS = track(chart.addSeries(LineSeries, {
-            color: tl.kind === "support" ? COLORS.up : COLORS.down,
+          const tlS = addThemed(LineSeries, {
             lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
             crosshairMarkerVisible: false,
             lineStyle: tl.broken ? LineStyle.Dashed : LineStyle.Solid,
-          }));
+          }, (p) => ({ color: tl.kind === "support" ? p.up : p.down }));
           tlS.setData(pts);
         }
       }
-      if (analysis.entry) main.createPriceLine({ price: analysis.entry, color: COLORS.accent, lineWidth: 1, title: "entry" });
-      if (analysis.stop) main.createPriceLine({ price: analysis.stop, color: COLORS.down, lineWidth: 2, title: "stop" });
-      if (analysis.target) main.createPriceLine({ price: analysis.target, color: COLORS.up, lineWidth: 2, title: "3R" });
+      if (analysis.entry) themedPriceLine(main, { price: analysis.entry, lineWidth: 1, title: "entry" }, "accent");
+      if (analysis.stop) themedPriceLine(main, { price: analysis.stop, lineWidth: 2, title: "stop" }, "down");
+      if (analysis.target) themedPriceLine(main, { price: analysis.target, lineWidth: 2, title: "3R" }, "up");
 
-      const markers = [];
-      for (const p of (analysis.patterns || [])) {
-        for (const pv of (p.pivots || [])) {
-          markers.push({ time: pv.date, position: "aboveBar", color: COLORS.accent, shape: "circle", text: pv.role });
+      const buildMarkers = (p) => {
+        const markers = [];
+        for (const pat of (analysis.patterns || [])) {
+          for (const pv of (pat.pivots || [])) {
+            markers.push({ time: pv.date, position: "aboveBar", color: p.accent, shape: "circle", text: pv.role });
+          }
         }
+        for (const g of (analysis.gaps || [])) {
+          if (g.filled) continue;
+          markers.push({
+            time: g.date, position: g.kind === "up" ? "belowBar" : "aboveBar",
+            color: g.kind === "up" ? p.up : p.down,
+            shape: g.kind === "up" ? "arrowUp" : "arrowDown", text: "gap",
+          });
+        }
+        return markers.sort((a, b) => (a.time < b.time ? -1 : 1));
+      };
+      const markers = buildMarkers(c);
+      if (markers.length) {
+        const markerApi = createSeriesMarkers(main, markers);
+        recolor.push((cc) => markerApi.setMarkers(buildMarkers(cc)));
       }
-      for (const g of (analysis.gaps || [])) {
-        if (g.filled) continue;
-        markers.push({
-          time: g.date, position: g.kind === "up" ? "belowBar" : "aboveBar",
-          color: g.kind === "up" ? COLORS.up : COLORS.down,
-          shape: g.kind === "up" ? "arrowUp" : "arrowDown", text: "gap",
-        });
-      }
-      markers.sort((a, b) => (a.time < b.time ? -1 : 1));
-      if (markers.length) createSeriesMarkers(main, markers);
     }
 
     // refresh the crosshair legend maps + reset the resting legend to the last bar
@@ -667,6 +744,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     mainSeriesRef,
     seriesEpoch,
     enabled: hasData,
+    colors: drawColors,
   });
 
   const toneOf = (b) => (b && b.close >= b.open ? "pos" : "neg");

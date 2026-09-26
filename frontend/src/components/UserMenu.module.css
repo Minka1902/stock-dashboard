@@ -23,7 +23,7 @@
   display: grid;
   place-items: center;
   border-radius: 50%;
-  color: #10131a;
+  color: var(--on-accent);
   font-weight: 800;
   letter-spacing: 0.02em;
   flex: none;

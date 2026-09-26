@@ -12,6 +12,9 @@ import CollapseToggle from "./CollapseToggle";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./FearGreedPanel.module.css";
 
+// Recharts draws its hover cursor in #ccc unless told otherwise.
+const CURSOR = { stroke: "var(--border-strong)" };
+
 const TOOLTIP_STYLE = {
   background: "var(--surface-2)",
   border: "1px solid var(--border)",
@@ -119,6 +122,7 @@ export default function FearGreedPanel({ data, loading, busy, onRefresh, compact
                 />
                 <Tooltip
                   contentStyle={TOOLTIP_STYLE}
+                  cursor={CURSOR}
                   formatter={(v, _n, props) => [
                     `${Math.round(v)} — ${props.payload?.rating ?? ""}`,
                     "Score",

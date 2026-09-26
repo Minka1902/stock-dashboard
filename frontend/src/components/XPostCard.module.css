@@ -19,7 +19,7 @@
 .avatar {
   display: grid;
   place-items: center;
-  color: #10131a;
+  color: var(--on-accent);
   font-weight: 800;
   font-size: 13px;
   letter-spacing: 0.02em;

@@ -35,7 +35,7 @@
   place-items: center;
   border-radius: var(--r-pill);
   background: var(--accent);
-  color: oklch(0.16 0.01 80);
+  color: var(--on-accent);
   font-family: var(--mono);
   font-size: 10px;
   font-weight: 700;

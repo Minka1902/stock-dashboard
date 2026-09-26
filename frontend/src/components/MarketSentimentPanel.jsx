@@ -11,6 +11,9 @@ import { openTickerTab } from "../lib/nav";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import styles from "./MarketSentimentPanel.module.css";
 
+// Recharts draws its hover cursor in #ccc unless told otherwise.
+const CURSOR = { stroke: "var(--border-strong)" };
+
 const TOOLTIP_STYLE = {
   background: "var(--surface-3)",
   border: "1px solid var(--border-strong)",
@@ -91,7 +94,7 @@ function Sparkline({ data, dataKey, id, refs = [], lines }) {
               <Line key={ln.dataKey} type="monotone" dataKey={ln.dataKey} stroke={ln.color}
                     strokeWidth={1.6} dot={false} isAnimationActive={false} />
             ))}
-            <Tooltip contentStyle={TOOLTIP_STYLE} labelFormatter={(_l, p) => p?.[0]?.payload?.date ?? ""} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} cursor={CURSOR} labelFormatter={(_l, p) => p?.[0]?.payload?.date ?? ""} />
           </LineChart>
         ) : (
           <AreaChart data={data} margin={{ top: 4, right: 2, bottom: 2, left: 2 }}>
@@ -106,7 +109,7 @@ function Sparkline({ data, dataKey, id, refs = [], lines }) {
             ))}
             <Area type="monotone" dataKey={dataKey} stroke="var(--accent)" strokeWidth={1.8}
                   fill={`url(#${id})`} dot={false} isAnimationActive={false} />
-            <Tooltip contentStyle={TOOLTIP_STYLE} labelFormatter={(_l, p) => p?.[0]?.payload?.date ?? ""} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} cursor={CURSOR} labelFormatter={(_l, p) => p?.[0]?.payload?.date ?? ""} />
           </AreaChart>
         )}
       </ResponsiveContainer>

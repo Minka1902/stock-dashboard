@@ -59,7 +59,9 @@ export default function MenuButton({
    */
   const attachMenu = useCallback((node) => {
     menuRef.current = node;
-    node?.querySelector('[role="menuitem"]:not([disabled])')?.focus();
+    // In a picker, start on the current choice (as a native <select> does).
+    (node?.querySelector('[role="menuitem"][data-tone="active"]:not([disabled])')
+      || node?.querySelector('[role="menuitem"]:not([disabled])'))?.focus();
   }, []);
 
   const onMenuKeyDown = (e) => {
