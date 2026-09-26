@@ -187,6 +187,23 @@ def test_seed_is_idempotent_and_never_overwrites_an_edit(conn):
     assert got.interval_seconds == 900
 
 
+def test_seed_refreshes_rows_nobody_edited(conn):
+    """A row still carrying an old seeded default (updated_at NULL: no admin
+    ever saved it) follows the registry's new default — e.g. margin_debt went
+    from every 14 days to a Monday 06:00 slot, and existing installs must pick
+    that up rather than keep the stale seed forever."""
+    db.seed_source_schedules(conn, [_sched(source="margin_debt", interval_seconds=14 * 86400)])
+    new_default = _sched(source="margin_debt", mode="times", times=["06:00"], days=["mon"],
+                         tz="Asia/Jerusalem", retry_seconds=21600)
+    db.seed_source_schedules(conn, [new_default])
+    got = db.get_source_schedules(conn)["margin_debt"]
+    assert got.mode == "times"
+    assert got.times == ["06:00"]
+    assert got.days == ["mon"]
+    assert got.tz == "Asia/Jerusalem"
+    assert got.updated_at is None  # still a default, so it keeps following the registry
+
+
 def test_schedule_round_trips_lists(conn):
     s = _sched(source="margin_debt", mode="times", times=["06:00", "18:00"],
                days=["mon", "thu"], tz="Asia/Jerusalem", enabled=False, retry_seconds=21600)

@@ -674,6 +674,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         ("officers_json",   "TEXT NOT NULL DEFAULT ''"),
         ("insider_pct",     "REAL"),
         ("institution_pct", "REAL"),
+        ("financial_currency", "TEXT"),
     ]:
         _try_add_column(conn, "fundamentals", col, col_def)
 
@@ -1327,13 +1328,21 @@ def _schedule_params(s: SourceSchedule) -> tuple:
 
 
 def seed_source_schedules(conn: sqlite3.Connection, schedules: list[SourceSchedule]) -> None:
-    """Insert default rows for sources that have none. Never overwrites an
-    existing row, so an admin's edit survives every restart."""
+    """Insert default rows for sources that have none, and refresh rows that
+    are still an untouched default (updated_at NULL — only an admin save via
+    the Server page stamps it). An admin's edit is never overwritten and
+    survives every restart; a stale seed follows the registry's new default
+    (margin_debt moved from every 14 days to a Monday 06:00 slot)."""
     conn.executemany(
         """
-        INSERT OR IGNORE INTO source_schedules
+        INSERT INTO source_schedules
             (source, mode, interval_seconds, times, days, tz, enabled, retry_seconds, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(source) DO UPDATE SET
+            mode=excluded.mode, interval_seconds=excluded.interval_seconds,
+            times=excluded.times, days=excluded.days, tz=excluded.tz,
+            enabled=excluded.enabled, retry_seconds=excluded.retry_seconds
+        WHERE source_schedules.updated_at IS NULL AND excluded.updated_at IS NULL
         """,
         [_schedule_params(s) for s in schedules],
     )
@@ -2070,12 +2079,12 @@ def upsert_fundamentals(conn: sqlite3.Connection, records: list[Fundamentals]) -
             (ticker, fetched_at, sector, industry, pe_ratio, forward_pe,
              peg_ratio, pb_ratio, revenue_growth, profit_margin, market_cap,
              name, website, country, city, employees, summary, officers_json,
-             insider_pct, institution_pct)
+             insider_pct, institution_pct, financial_currency)
         VALUES
             (:ticker, :fetched_at, :sector, :industry, :pe_ratio, :forward_pe,
              :peg_ratio, :pb_ratio, :revenue_growth, :profit_margin, :market_cap,
              :name, :website, :country, :city, :employees, :summary, :officers_json,
-             :insider_pct, :institution_pct)
+             :insider_pct, :institution_pct, :financial_currency)
         ON CONFLICT(ticker) DO UPDATE SET
             fetched_at=excluded.fetched_at, sector=excluded.sector,
             industry=excluded.industry, pe_ratio=excluded.pe_ratio,
@@ -2085,7 +2094,8 @@ def upsert_fundamentals(conn: sqlite3.Connection, records: list[Fundamentals]) -
             name=excluded.name, website=excluded.website, country=excluded.country,
             city=excluded.city, employees=excluded.employees, summary=excluded.summary,
             officers_json=excluded.officers_json, insider_pct=excluded.insider_pct,
-            institution_pct=excluded.institution_pct
+            institution_pct=excluded.institution_pct,
+            financial_currency=excluded.financial_currency
         """,
         [r.model_dump() for r in records],
     )
