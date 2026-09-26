@@ -34,7 +34,7 @@ from app import analysis, analyze, auth, backtest, chart_data, config, db, inges
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
-from app import routes_update, updater
+from app import routes_chart, routes_update, updater
 
 # Optional: the Server page degrades to "unavailable" rather than reporting
 # zeros, which would look identical to a genuinely idle machine.
@@ -828,6 +828,8 @@ app.add_middleware(
 app.include_router(routes_auth.build_router(conn))
 app.include_router(routes_oauth.build_router(conn))
 app.include_router(routes_update.build_router())
+# Chart workspace extras (drawing drafts, extended-hours print).
+app.include_router(routes_chart.build_router(conn))
 
 
 @app.exception_handler(Exception)

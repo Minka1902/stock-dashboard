@@ -227,3 +227,19 @@ export const applyUpdate = () => request("/api/update/apply", { method: "POST" }
 // Public liveness probe; its `commit` changes once a restarted server is
 // running the updated code.
 export const getHealth = () => getJSON("/api/health");
+
+// ---------- chart workspace: extended-hours print + drawing drafts ----------
+// Latest pre-market / after-hours print for the D/W/M chart's price lines.
+export const getChartExtended = (ticker) =>
+  getJSON(`/api/chart/${encodeURIComponent(ticker)}/extended`);
+// Named per-user snapshots of a ticker's drawings.
+export const listDrawingDrafts = (ticker) =>
+  getJSON(`/api/drawings/${encodeURIComponent(ticker)}/drafts`);
+export const createDrawingDraft = (ticker, { title, description = "", timeframe = "", shapes = [] }) =>
+  request(`/api/drawings/${encodeURIComponent(ticker)}/drafts`, {
+    method: "POST", body: { title, description, timeframe, shapes },
+  });
+export const updateDrawingDraft = (id, patch) =>
+  request(`/api/drawings/drafts/${encodeURIComponent(id)}`, { method: "PUT", body: patch });
+export const deleteDrawingDraft = (id) =>
+  request(`/api/drawings/drafts/${encodeURIComponent(id)}`, { method: "DELETE" });

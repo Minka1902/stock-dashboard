@@ -422,6 +422,21 @@ def init_schema(conn: sqlite3.Connection) -> None:
             updated_at TEXT NOT NULL,
             PRIMARY KEY (user_id, ticker)
         );
+        -- Named snapshots of a ticker's drawings ("drafts"), many per
+        -- (user, ticker). Like `drawings`, the shapes are opaque client JSON.
+        CREATE TABLE IF NOT EXISTS drawing_drafts (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL,
+            ticker      TEXT NOT NULL,
+            title       TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            timeframe   TEXT NOT NULL DEFAULT '',
+            shapes_json TEXT NOT NULL DEFAULT '[]',
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_drawing_drafts_owner
+            ON drawing_drafts (user_id, ticker);
         CREATE TABLE IF NOT EXISTS company_holders (
             ticker      TEXT NOT NULL,
             kind        TEXT NOT NULL DEFAULT 'institution',
@@ -2101,6 +2116,86 @@ def save_drawings(
     conn.commit()
 
 
+# ---- drawing drafts: named per-user snapshots of a ticker's drawings ----
+_DRAFT_COLS = "id, ticker, title, description, timeframe, shapes_json, created_at, updated_at"
+
+
+def _draft_row(row: sqlite3.Row) -> dict:
+    d = dict(row)
+    try:
+        d["shapes"] = json.loads(d.pop("shapes_json"))
+    except (json.JSONDecodeError, TypeError):
+        d["shapes"] = []
+    return d
+
+
+def list_drawing_drafts(conn: sqlite3.Connection, user_id: int, ticker: str) -> list[dict]:
+    """A user's drafts for one ticker, newest first."""
+    cur = conn.execute(
+        f"SELECT {_DRAFT_COLS} FROM drawing_drafts WHERE user_id = ? AND ticker = ?"
+        " ORDER BY updated_at DESC, id DESC",
+        (user_id, ticker.upper()),
+    )
+    return [_draft_row(r) for r in cur.fetchall()]
+
+
+def get_drawing_draft(conn: sqlite3.Connection, user_id: int, draft_id: int) -> dict | None:
+    """One draft, or None when it doesn't exist *or belongs to someone else* —
+    callers answer both with the same 404 so ids don't leak across accounts."""
+    row = conn.execute(
+        f"SELECT {_DRAFT_COLS} FROM drawing_drafts WHERE id = ? AND user_id = ?",
+        (draft_id, user_id),
+    ).fetchone()
+    return _draft_row(row) if row else None
+
+
+def create_drawing_draft(
+    conn: sqlite3.Connection, user_id: int, ticker: str, title: str,
+    description: str, timeframe: str, shapes: list, now: str,
+) -> dict:
+    cur = conn.execute(
+        "INSERT INTO drawing_drafts (user_id, ticker, title, description, timeframe,"
+        " shapes_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (user_id, ticker.upper(), title, description, timeframe, json.dumps(shapes), now, now),
+    )
+    conn.commit()
+    return get_drawing_draft(conn, user_id, cur.lastrowid)
+
+
+def update_drawing_draft(
+    conn: sqlite3.Connection, user_id: int, draft_id: int, now: str, *,
+    title: str | None = None, description: str | None = None,
+    timeframe: str | None = None, shapes: list | None = None,
+) -> dict | None:
+    """Patch the given fields of an owned draft. None if not found/not owned."""
+    sets, params = [], []
+    for col, val in (("title", title), ("description", description), ("timeframe", timeframe)):
+        if val is not None:
+            sets.append(f"{col} = ?")
+            params.append(val)
+    if shapes is not None:
+        sets.append("shapes_json = ?")
+        params.append(json.dumps(shapes))
+    sets.append("updated_at = ?")
+    params.append(now)
+    cur = conn.execute(
+        f"UPDATE drawing_drafts SET {', '.join(sets)} WHERE id = ? AND user_id = ?",
+        (*params, draft_id, user_id),
+    )
+    conn.commit()
+    if cur.rowcount == 0:
+        return None
+    return get_drawing_draft(conn, user_id, draft_id)
+
+
+def delete_drawing_draft(conn: sqlite3.Connection, user_id: int, draft_id: int) -> bool:
+    cur = conn.execute(
+        "DELETE FROM drawing_drafts WHERE id = ? AND user_id = ?", (draft_id, user_id),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
 def upsert_company_holders(conn: sqlite3.Connection, records: list[CompanyHolder]) -> None:
     conn.executemany(
         """
@@ -2798,6 +2893,7 @@ _PER_USER_TABLES = (
     "alert_reads",
     "suggestion_history",
     "drawings",
+    "drawing_drafts",
     "sessions",
     "recovery_codes",
     "oauth_identities",
