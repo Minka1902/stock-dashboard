@@ -554,6 +554,9 @@ app.add_middleware(
 
 app.include_router(routes_auth.build_router(conn))
 app.include_router(routes_oauth.build_router(conn))
+# Chart workspace extras (drawing drafts, extended-hours print) — own module.
+from app import routes_chart  # noqa: E402
+app.include_router(routes_chart.build_router(conn))
 
 
 @app.exception_handler(Exception)

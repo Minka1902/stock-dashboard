@@ -136,7 +136,7 @@ No root package manager, so the companions copy rather than share:
   must call it. A third creation path that forgets to is the regression to watch for.
   Deliberately no first-user bootstrap exemption: it would be a race between the operator and
   the first stranger to load the URL, and the winner gets `is_admin` plus `claim_legacy_rows`.
-- `db.delete_user` sweeps all ten per-user tables explicitly. Only `sessions`,
+- `db.delete_user` sweeps all eleven per-user tables explicitly (incl. `drawings` and `drawing_drafts`). Only `sessions`,
   `recovery_codes` and `oauth_identities` declare `ON DELETE CASCADE`, so deleting the `users`
   row alone strands the rest under an id SQLite may reissue. Keep `_PER_USER_TABLES` in step
   with the schema.
