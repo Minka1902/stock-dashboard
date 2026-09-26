@@ -61,6 +61,7 @@ C:\ProgramData\SignalDashboard\
   logs\backend.log(.1-.5)   the app's own rotating log
   logs\service-stdout.log   uvicorn stdout, rotated by NSSM
   logs\service-stderr.log   import-time tracebacks  <- read this one first
+  ms-playwright\            headless Chromium for the margin-debt fetch
 ```
 
 ACL'd to SYSTEM + Administrators by the installer. Secrets live in
@@ -82,7 +83,41 @@ environment block; edit the file and `-Restart` to apply.
 
 These are set by the installer and must **not** be duplicated in `service.env`:
 `STOCKS_DB_PATH`, `STOCKS_LOG_DIR`, `STOCKS_STATIC_DIR`, `STOCKS_CORS_ORIGINS`,
-`STOCKS_OAUTH_REDIRECT_BASE`.
+`STOCKS_OAUTH_REDIRECT_BASE`, `PLAYWRIGHT_BROWSERS_PATH`.
+
+## Headless browser (margin debt)
+
+FINRA's Cloudflare front refuses plain HTTP clients (the Query API answers 401,
+the statistics page 403), so the `margin_debt` source's last tier loads the page
+in a real headless Chromium via Playwright and downloads the workbook through
+the same browser context. It runs weekly, so it costs one Chromium launch a
+week, about 15 seconds.
+
+Playwright's default browser cache is `%LOCALAPPDATA%\ms-playwright` of
+whoever ran `playwright install`, and **LocalSystem never looks there**. So
+the installer:
+
+1. runs `python -m playwright install chromium` with
+   `PLAYWRIGHT_BROWSERS_PATH=C:\ProgramData\SignalDashboard\ms-playwright`, and
+2. sets that same `PLAYWRIGHT_BROWSERS_PATH` in the service's environment block.
+
+This step warns rather than failing the install, because only that one tier
+depends on it. Skip it with `-SkipBrowserInstall`. If the browser is missing, the
+source status on the Server page reads `headless browser not installed — run: …`
+and names the path. To install it later, elevated:
+
+```powershell
+$env:PLAYWRIGHT_BROWSERS_PATH = 'C:\ProgramData\SignalDashboard\ms-playwright'
+.\backend\.venv\Scripts\python.exe -m playwright install chromium
+.\windows\service-control.ps1 -Restart
+```
+
+After upgrading the `playwright` package in `requirements.txt`, re-run the
+installer (or the commands above). Each Playwright release pins its own browser
+build, and until you do, the tier reports it as not installed.
+
+A dev instance (`start.ps1`) uses the per-user cache instead. There, run
+`.venv\Scripts\python.exe -m playwright install chromium` once from `backend\`.
 
 ## Two databases
 
@@ -216,6 +251,12 @@ ACL grant on the data directory:
 nssm set SignalDashboard ObjectName "NT AUTHORITY\LocalService"
 icacls C:\ProgramData\SignalDashboard /grant "NT AUTHORITY\LocalService:(OI)(CI)M"
 ```
+
+The margin-debt tier adds to this. Once a week it runs a headless Chromium that
+executes finra.org's JavaScript under the service account, and Playwright launches
+Chromium without its sandbox by default. That's one more reason to prefer
+`LocalService`. The browser directory is under the same data root, so the grant
+above already covers it.
 
 Also worth knowing: `service.env` is plaintext and readable by any local
 administrator. That is the same trust level as the service itself, so it's

@@ -86,6 +86,19 @@ def test_defaults_are_seeded_from_the_registry_cadences():
     assert rows[schedules.DERIVED].interval_seconds == 180
 
 
+def test_margin_debt_seeds_weekly_monday_morning_slot():
+    class Spec:
+        min_interval = 7 * 86400
+        retry_interval = 21600
+
+    rows = {s.source: s for s in schedules.defaults_from_specs({"margin_debt": Spec()}, 180, "UTC")}
+    md = schedules.validate(rows["margin_debt"])
+    assert md.mode == "times"
+    assert md.times == ["06:00"] and md.days == ["mon"]
+    assert md.tz == "Asia/Jerusalem"
+    assert md.retry_seconds == 21600
+
+
 # ------------------------------------------------------------------ triggers
 def test_interval_trigger_fires_after_the_interval():
     trig = schedules.build_trigger(_sched(interval_seconds=600))

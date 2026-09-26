@@ -4,6 +4,15 @@ import pytest
 from app.models import MarginDebtPoint
 from app.sources import margin_debt
 
+
+@pytest.fixture(autouse=True)
+def _no_real_browser(monkeypatch):
+    """No test may launch Chromium or reach FINRA. Tests that exercise the
+    browser tier replace these stubs with their own."""
+    def _blocked(*a, **kw):
+        raise RuntimeError("browser disabled in tests")
+    monkeypatch.setattr(margin_debt, "_run_browser_session", _blocked)
+
 SAMPLE_HTML = """
 <html><body>
 <h1>Margin Statistics</h1>
@@ -235,12 +244,12 @@ def test_configured_workbook_url_is_used_when_the_page_is_blocked(monkeypatch):
     assert any(u.endswith(".xlsx") for u in client.requested)
 
 
-def test_margin_debt_cadence_is_fortnightly_with_a_short_retry():
+def test_margin_debt_cadence_is_weekly_with_a_short_retry():
     """Cadence is about when we ASK; the retry gate is a separate clock, so one
-    401 can't freeze the source for the full fortnight."""
+    401 can't freeze the source for the full week."""
     from app import config as app_config
 
-    assert app_config.MARGIN_DEBT_MIN_INTERVAL_SECONDS == 14 * 86400
+    assert app_config.MARGIN_DEBT_MIN_INTERVAL_SECONDS == 7 * 86400
     assert app_config.MARGIN_DEBT_RETRY_INTERVAL_SECONDS < 86400
 
 
@@ -252,3 +261,144 @@ def test_margin_debt_and_gdelt_are_not_forced_by_the_daily_run():
     for name in ("margin_debt", "gdelt"):
         assert sources[name].force_on_daily is False, name
         assert sources[name].retry_interval is not None, name
+
+
+# ---- tier 4: headless browser ------------------------------------------------
+# The Playwright layer (_run_browser_session) is mocked; these cover what we do
+# with its output and how its failures are reported.
+
+def _xlsx(rows):
+    import io
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for row in rows:
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _fake_browser(monkeypatch, html="", workbook=None, wb_error=None):
+    calls = []
+
+    def _session(api, timeout_s):
+        calls.append(timeout_s)
+        return html, workbook, wb_error
+
+    monkeypatch.setattr(margin_debt, "_import_playwright", lambda: object())
+    monkeypatch.setattr(margin_debt, "_run_browser_session", _session)
+    return calls
+
+
+def test_browser_tier_prefers_the_workbook(monkeypatch):
+    from datetime import datetime as dt
+    book = _xlsx([["Month", "Debit Balances"],
+                  [dt(2026, 7, 1), 1_417_225], [dt(2026, 8, 1), 1_453_832]])
+    _fake_browser(monkeypatch, html=SAMPLE_HTML, workbook=book)
+
+    points = margin_debt.fetch_via_browser()
+    assert [(p.month, p.debit_balances) for p in points] == [
+        ("2026-07", 1_417_225.0), ("2026-08", 1_453_832.0)]
+    assert points.note == "source: headless browser (workbook)"
+
+
+def test_browser_tier_falls_back_to_the_page_table(monkeypatch):
+    _fake_browser(monkeypatch, html=SAMPLE_HTML, workbook=None, wb_error="HTTP 404")
+
+    points = margin_debt.fetch_via_browser()
+    by_month = {p.month: p.debit_balances for p in points}
+    assert by_month["2026-05"] == 1_050_123.0
+    assert "page table" in points.note and "HTTP 404" in points.note
+
+
+def test_browser_tier_unreadable_workbook_still_uses_the_table(monkeypatch):
+    _fake_browser(monkeypatch, html=SAMPLE_HTML, workbook=b"not an xlsx")
+    points = margin_debt.fetch_via_browser()
+    assert points and "page table" in points.note
+
+
+def test_browser_tier_with_nothing_parseable_raises(monkeypatch):
+    _fake_browser(monkeypatch, html="<p>nothing</p>", workbook=None,
+                  wb_error="no link found on page")
+    with pytest.raises(RuntimeError, match="no rows parsed"):
+        margin_debt.fetch_via_browser()
+
+
+def test_fetch_uses_the_browser_when_every_http_tier_is_blocked(monkeypatch):
+    client = _BlockedClient()
+    monkeypatch.setattr(margin_debt.httpx, "Client", _client_factory(client))
+    monkeypatch.setattr(margin_debt.config, "MARGIN_DEBT_WORKBOOK_URL", "")
+    _fake_browser(monkeypatch, html=SAMPLE_HTML, wb_error="HTTP 403")
+
+    points = margin_debt.fetch()
+    assert len(points) == 5
+    assert points.note.startswith("source: headless browser")
+
+
+def test_missing_playwright_package_is_a_clear_error(monkeypatch):
+    import sys
+    # A None entry in sys.modules makes `import` raise ImportError.
+    monkeypatch.setitem(sys.modules, "playwright", None)
+    monkeypatch.setitem(sys.modules, "playwright.async_api", None)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        margin_debt.fetch_via_browser()
+    msg = str(excinfo.value)
+    assert msg.startswith("headless browser not installed — run: ")
+    assert "pip install playwright" in msg
+    assert "playwright install chromium" in msg
+
+
+def test_missing_browser_binary_maps_to_the_install_command(monkeypatch):
+    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+    exc = Exception(
+        "BrowserType.launch: Executable doesn't exist at C:/pw/chrome.exe\n"
+        "╔════╗\n║ Looks like Playwright was just installed ║")
+    assert margin_debt.describe_browser_error(exc) == (
+        "headless browser not installed — run: "
+        r".venv\Scripts\python.exe -m playwright install chromium")
+
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", r"C:\ProgramData\SignalDashboard\ms-playwright")
+    assert r"PLAYWRIGHT_BROWSERS_PATH=C:\ProgramData\SignalDashboard\ms-playwright" in \
+        margin_debt.describe_browser_error(exc)
+
+
+def test_browser_launch_failure_is_reported_not_raised_raw(monkeypatch):
+    def _session(api, timeout_s):
+        raise Exception("BrowserType.launch: Executable doesn't exist at C:/nope\n=====")
+    monkeypatch.setattr(margin_debt, "_import_playwright", lambda: object())
+    monkeypatch.setattr(margin_debt, "_run_browser_session", _session)
+
+    with pytest.raises(RuntimeError, match="headless browser not installed"):
+        margin_debt.fetch_via_browser()
+
+
+def test_describe_browser_error_keeps_the_first_line():
+    exc = Exception("Page.goto: net::ERR_NAME_NOT_RESOLVED\nCall log:\n  - navigating")
+    assert margin_debt.describe_browser_error(exc) == "Page.goto: net::ERR_NAME_NOT_RESOLVED"
+
+
+def test_all_four_tiers_failing_aggregates_every_reason(monkeypatch):
+    client = _BlockedClient()
+    monkeypatch.setattr(margin_debt.httpx, "Client", _client_factory(client))
+    monkeypatch.setattr(margin_debt.config, "MARGIN_DEBT_WORKBOOK_URL", "")
+
+    def _session(api, timeout_s):
+        raise RuntimeError(
+            "page never cleared Cloudflare (HTTP 403, title 'Attention Required! | Cloudflare')")
+    monkeypatch.setattr(margin_debt, "_import_playwright", lambda: object())
+    monkeypatch.setattr(margin_debt, "_run_browser_session", _session)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        margin_debt.fetch()
+    message = str(excinfo.value)
+    for tier in ("api", "page:", "workbook:", "browser: page never cleared Cloudflare"):
+        assert tier in message, tier
+
+
+def test_browser_user_agent_drops_the_headless_token():
+    ua = margin_debt._browser_user_agent("153.0.8010.12")
+    assert "Headless" not in ua
+    assert "Chrome/153.0.0.0" in ua

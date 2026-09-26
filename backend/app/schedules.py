@@ -98,12 +98,28 @@ def validate(s: SourceSchedule) -> SourceSchedule:
     })
 
 
+# Sources whose default is a wall-clock slot rather than an interval.
+# margin_debt: FINRA publishes monthly; one headless-browser fetch a week
+# (Monday 06:00 Israel time) is plenty and keeps Chromium launches rare.
+SEED_TIMES = {
+    "margin_debt": {"times": ["06:00"], "days": ["mon"], "tz": "Asia/Jerusalem"},
+}
+
+
 def defaults_from_specs(specs: dict, refresh_seconds: int, tz: str) -> list[SourceSchedule]:
     """Seed rows from the registry: each source's old min_interval becomes its
-    interval (the fast default otherwise) and retry_interval its retry."""
+    interval (the fast default otherwise) and retry_interval its retry.
+    SEED_TIMES entries seed an at-times row instead."""
     out = []
     for name, spec in specs.items():
         if name in DERIVED_MEMBERS:
+            continue
+        if name in SEED_TIMES:
+            out.append(SourceSchedule(
+                source=name, mode="times", retry_seconds=spec.retry_interval,
+                interval_seconds=max(MIN_INTERVAL_SECONDS, int(spec.min_interval or refresh_seconds)),
+                **SEED_TIMES[name],
+            ))
             continue
         out.append(SourceSchedule(
             source=name, mode="interval",

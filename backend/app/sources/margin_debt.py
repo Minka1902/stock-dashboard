@@ -3,13 +3,19 @@
 Tier 1: the FINRA Query API (public dataset, no auth). Tier 2: the public
 statistics page, with the monthly "Debit Balances in Customers' Securities
 Margin Accounts" figures ($ millions) parsed defensively out of the HTML.
-Tier 3: the Excel workbook linked from that page. Whichever tier succeeds is
-recorded in the source status; if all fail, the combined errors surface via
-the source-status UI. %YoY (the signal input) is computed at read time vs the
-same month a year earlier.
+Tier 3: the Excel workbook linked from that page. Tier 4: a real headless
+Chromium (Playwright) loading the same page and workbook — FINRA's Cloudflare
+front rejects plain HTTP clients (API 401, page 403) but serves a real browser.
+Whichever tier succeeds is recorded in the source status; if all fail, the
+combined errors surface via the source-status UI. %YoY (the signal input) is
+computed at read time vs the same month a year earlier.
 """
+import asyncio
 import io
+import os
 import re
+import sys
+import time
 from datetime import datetime
 
 import httpx
@@ -162,6 +168,172 @@ def parse_workbook(content: bytes) -> list[MarginDebtPoint]:
     return rows_to_points(rows)
 
 
+# ---- Tier 4: headless browser --------------------------------------------------
+#
+# Verified live (2026-09): FINRA's Cloudflare hard-blocks ("Sorry, you have been
+# blocked") a headless Chromium that announces itself as "HeadlessChrome" in its
+# User-Agent, and serves the page normally to the same browser with an ordinary
+# Chrome UA. So the only disguise here is dropping the "Headless" token from the
+# real browser's own version string — no stealth plugins, no captcha solving.
+# If Cloudflare ever escalates to an interactive challenge, this tier fails
+# with the page title in the error rather than working around it.
+
+_INSTALL_CMD = r".venv\Scripts\python.exe -m playwright install chromium"
+_NOT_INSTALLED = "headless browser not installed — run: "
+
+# Challenge interstitials ("Just a moment...") clear themselves; the hard block
+# page ("Attention Required! | Cloudflare") never does. Either way we wait for
+# evidence of the real page: the workbook link or the statistics table text.
+_READY_JS = """() => {
+  if (/just a moment|attention required|checking your browser/i.test(document.title)) return false;
+  if (document.querySelector('a[href*=".xls"]')) return true;
+  const body = document.body ? document.body.innerText : '';
+  return /Debit Balances/i.test(body);
+}"""
+
+
+def _browser_user_agent(version: str) -> str:
+    """The launched browser's real Chrome major, minus the HeadlessChrome token."""
+    major = (version or "").split(".", 1)[0] or "120"
+    if sys.platform == "darwin":
+        platform = "Macintosh; Intel Mac OS X 10_15_7"
+    elif sys.platform.startswith("linux"):
+        platform = "X11; Linux x86_64"
+    else:
+        platform = "Windows NT 10.0; Win64; x64"
+    return (f"Mozilla/5.0 ({platform}) AppleWebKit/537.36 "
+            f"(KHTML, like Gecko) Chrome/{major}.0.0.0 Safari/537.36")
+
+
+def _install_hint() -> str:
+    hint = _NOT_INSTALLED + _INSTALL_CMD
+    browsers_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if browsers_path:
+        # The Windows service installs browsers machine-wide; a plain install
+        # would land in the installing user's profile, which LocalSystem can't see.
+        hint += f" (with PLAYWRIGHT_BROWSERS_PATH={browsers_path} set)"
+    return hint
+
+
+def _import_playwright():
+    """Lazy import so the module (and the other tiers) work without playwright."""
+    try:
+        import playwright.async_api as api
+    except ImportError:
+        raise RuntimeError(
+            _NOT_INSTALLED + r".venv\Scripts\python.exe -m pip install playwright, then "
+            + _INSTALL_CMD) from None
+    return api
+
+
+def describe_browser_error(exc: BaseException) -> str:
+    """Playwright errors are multi-line banners; keep them status-sized, and
+    turn 'no browser binary' into the command that fixes it."""
+    msg = str(exc)
+    if "Executable doesn't exist" in msg or "playwright install" in msg:
+        return _install_hint()
+    first = next((ln.strip() for ln in msg.splitlines() if ln.strip()), type(exc).__name__)
+    return first[:300]
+
+
+async def _browser_session(api, timeout_s: float) -> tuple[str, bytes | None, str | None]:
+    """Load the statistics page in headless Chromium and, if possible, pull the
+    workbook through the same browser context (so Cloudflare's clearance
+    cookies carry). Returns (page_html, workbook_bytes | None, workbook_error)."""
+    deadline = time.monotonic() + timeout_s
+
+    def left_ms() -> float:
+        ms = (deadline - time.monotonic()) * 1000
+        if ms <= 0:
+            raise TimeoutError(f"browser budget of {timeout_s:g}s exhausted")
+        return ms
+
+    async with api.async_playwright() as pw:
+        browser = await pw.chromium.launch(headless=True, timeout=left_ms())
+        try:
+            context = await browser.new_context(
+                user_agent=_browser_user_agent(browser.version),
+                locale="en-US",
+                viewport={"width": 1366, "height": 900},
+            )
+            page = await context.new_page()
+            resp = await page.goto(_URL, wait_until="domcontentloaded", timeout=left_ms())
+            status = resp.status if resp else None
+            try:
+                await page.wait_for_function(_READY_JS, timeout=left_ms())
+            except (api.TimeoutError, TimeoutError):
+                title = await page.title()
+                raise RuntimeError(
+                    f"page never cleared Cloudflare (HTTP {status}, title {title!r})") from None
+            html = await page.content()
+
+            workbook: bytes | None = None
+            wb_error: str | None = None
+            wb_url = config.MARGIN_DEBT_WORKBOOK_URL or find_workbook_url(html)
+            if not wb_url:
+                wb_error = "no link found on page"
+            else:
+                try:
+                    wb_resp = await context.request.get(
+                        wb_url, timeout=left_ms(), headers={"Referer": _URL})
+                    if wb_resp.ok:
+                        workbook = await wb_resp.body()
+                    else:
+                        wb_error = f"HTTP {wb_resp.status}"
+                except Exception as exc:  # the page html is still usable
+                    wb_error = describe_browser_error(exc)
+            return html, workbook, wb_error
+        finally:
+            await browser.close()
+
+
+def _run_browser_session(api, timeout_s: float) -> tuple[str, bytes | None, str | None]:
+    # An explicit loop, not sync_playwright(): the sync API builds its loop from
+    # the global policy, and `uvicorn --reload` on Windows installs
+    # WindowsSelectorEventLoopPolicy, whose loops cannot spawn the browser
+    # subprocess (NotImplementedError). Proactor always can. Runs on the
+    # scheduler/refresh worker thread, which has no loop of its own.
+    loop = asyncio.ProactorEventLoop() if sys.platform == "win32" else asyncio.new_event_loop()
+    try:
+        # Hard ceiling on top of the per-step budgets (launch/close overheads).
+        return loop.run_until_complete(
+            asyncio.wait_for(_browser_session(api, timeout_s), timeout_s + 15))
+    finally:
+        loop.close()
+
+
+def fetch_via_browser() -> FetchResult:
+    """Tier 4. Prefers the workbook (full history back to 1997) and falls back
+    to the page's table (last ~13 months). Raises with a readable reason."""
+    api = _import_playwright()
+    try:
+        html, workbook, wb_error = _run_browser_session(
+            api, config.MARGIN_DEBT_BROWSER_TIMEOUT_SECONDS)
+    except NotImplementedError:  # a RuntimeError subclass with an empty message
+        raise RuntimeError("event loop cannot spawn the browser subprocess") from None
+    except RuntimeError:
+        raise
+    except asyncio.TimeoutError:
+        raise RuntimeError(
+            f"timed out after {config.MARGIN_DEBT_BROWSER_TIMEOUT_SECONDS:g}s") from None
+    except Exception as exc:
+        raise RuntimeError(describe_browser_error(exc)) from None
+
+    if workbook is not None:
+        try:
+            points = parse_workbook(workbook)
+        except Exception as exc:
+            points, wb_error = [], f"unreadable ({exc})"
+        if points:
+            return FetchResult(points, note="source: headless browser (workbook)")
+        wb_error = wb_error or "no valid rows"
+    points = parse_response(html)
+    if points:
+        return FetchResult(
+            points, note=f"source: headless browser (page table; workbook: {wb_error})")
+    raise RuntimeError(f"page loaded but no rows parsed (workbook: {wb_error})")
+
+
 def fetch() -> list[MarginDebtPoint]:
     errors: list[str] = []
     with httpx.Client(timeout=30.0, follow_redirects=True) as client:
@@ -216,6 +388,11 @@ def fetch() -> list[MarginDebtPoint]:
                     "(set STOCKS_MARGIN_DEBT_WORKBOOK_URL to try it directly)")
         except Exception as exc:
             errors.append(f"workbook: {exc}")
+    # Tier 4: a real browser, outside the httpx client so it isn't held open.
+    try:
+        return fetch_via_browser()
+    except Exception as exc:
+        errors.append(f"browser: {exc}")
     raise RuntimeError("; ".join(errors))
 
 
