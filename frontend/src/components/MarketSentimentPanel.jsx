@@ -6,6 +6,9 @@ import Skeleton from "./Skeleton";
 import EmptyState from "./EmptyState";
 import SentimentGauge from "./SentimentGauge";
 import TickerLabel from "./TickerLabel";
+import HintTip from "./Tooltip";
+import InfoTip from "./InfoTip";
+import Term from "./Term";
 import { LEAN_READ, leanLabel, leanTone } from "../lib/lean";
 import { openTickerTab } from "../lib/nav";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
@@ -46,14 +49,16 @@ function PositioningList({ rows, empty, columns }) {
     <ul className={styles.posList}>
       {rows.map((r) => (
         <li key={r.ticker} className={styles.posRow}>
-          <button
-            type="button"
-            className={styles.posSymbolBtn}
-            onClick={() => openTickerTab(r.ticker)}
-            title={`Open ${r.ticker} analysis in a new tab`}
-          >
-            <TickerLabel ticker={r.ticker} className={styles.posSymbol} />
-          </button>
+          <HintTip content={`Open ${r.ticker} analysis in a new tab`}>
+            <button
+              type="button"
+              className={styles.posSymbolBtn}
+              onClick={() => openTickerTab(r.ticker)}
+              aria-label={`Open ${r.ticker} analysis in a new tab`}
+            >
+              <TickerLabel ticker={r.ticker} className={styles.posSymbol} />
+            </button>
+          </HintTip>
           {columns.map((c) => (
             <span key={c.key} className={styles.posVal} data-tone={c.tone?.(r) || ""}>
               {c.render(r)}
@@ -117,18 +122,21 @@ function Sparkline({ data, dataKey, id, refs = [], lines }) {
   );
 }
 
-function Indicator({ caption, threshold, signal, value, sub, note, stale, children }) {
+function Indicator({ caption, term, threshold, signal, value, sub, note, stale, children }) {
   return (
-    <Pane caption={caption} right={<Chip signal={signal} />} className={styles.indicator}>
+    <Pane caption={<>{caption}{term && <> <InfoTip term={term} size={14} /></>}</>}
+          right={<Chip signal={signal} />} className={styles.indicator}>
       <div className={styles.valRow}>
         <span className={styles.val}>{value ?? "--"}</span>
         {sub && <span className={styles.sub}>{sub}</span>}
       </div>
       <span className={styles.threshold}>{threshold}</span>
       {stale && (
-        <span className={styles.staleBadge} data-warn={stale.warn ? "yes" : "no"}>
-          {stale.text}
-        </span>
+        <HintTip content={stale.tip}>
+          <span className={styles.staleBadge} data-warn={stale.warn ? "yes" : "no"} tabIndex={0}>
+            {stale.text}
+          </span>
+        </HintTip>
       )}
       {note && <p className={styles.note}>{note}</p>}
       {children}
@@ -190,6 +198,9 @@ export default function MarketSentimentPanel({
   const aaiiLatest = aaii.reduce((m, s) => (s.week_ending > m ? s.week_ending : m), "");
   const mdLatest = marginDebt.reduce((m, p) => (p.month > m ? p.month : m), "");
   const aaiiStale = staleness(aaiiLatest, { warnDays: 10, label: "week ending" });
+  if (aaiiStale) {
+    aaiiStale.tip = "AAII publishes its sentiment survey weekly (Thursdays). This badge turns amber when the newest week is more than 10 days old.";
+  }
   const mdStale = staleness(mdLatest ? `${mdLatest}-01` : null, { warnDays: 75, label: "data for" });
   if (mdStale) {
     // Say how far behind, not just "stale". FINRA has been returning 401/403,
@@ -199,6 +210,7 @@ export default function MarketSentimentPanel({
     const months = monthsSince(mdLatest);
     const age = months == null ? "" : months <= 1 ? " · current" : ` · ${months} months behind`;
     mdStale.text = `data for ${mdLatest} (monthly)${age}`;
+    mdStale.tip = "FINRA publishes margin statistics monthly, about a month after the month ends — so the latest figure is normally last month's or the one before. Amber when it is more than 75 days old.";
   }
 
   // Composite ledger: the five indicators + their signals.
@@ -273,7 +285,7 @@ export default function MarketSentimentPanel({
 
       {/* 2 — the gauge and the evidence behind the read, side by side. */}
       <div className={styles.hero} data-tour="sentiment-hero">
-        <Pane caption="Fear & Greed Index" right={<span className={styles.paneMeta}>CNN composite</span>} className={styles.gaugePane}>
+        <Pane caption={<>Fear &amp; Greed Index <InfoTip term="fear_greed" size={14} /></>} right={<span className={styles.paneMeta}>CNN composite</span>} className={styles.gaugePane}>
           <SentimentGauge score={fgScore} rating={ind.fear_greed?.rating} />
         </Pane>
 
@@ -281,7 +293,7 @@ export default function MarketSentimentPanel({
           <ul className={styles.ledger}>
             {ledger.map((row) => (
               <li key={row.key} className={styles.ledgerRow}>
-                <span className={styles.ledgerLabel}>{row.label}</span>
+                <span className={styles.ledgerLabel}><Term term={row.key}>{row.label}</Term></span>
                 <span className={styles.ledgerVal}>{row.val ?? "--"}</span>
                 <Chip signal={row.sig} />
               </li>
@@ -299,6 +311,7 @@ export default function MarketSentimentPanel({
        <motion.div variants={staggerItem}>
         <Indicator
           caption="VIX · Volatility"
+          term="vix"
           threshold="≥19 alert · ≥30 extreme"
           signal={ind.vix?.signal}
           value={ind.vix?.value != null ? ind.vix.value.toFixed(1) : null}
@@ -313,6 +326,7 @@ export default function MarketSentimentPanel({
        <motion.div variants={staggerItem}>
         <Indicator
           caption="AAII · Retail survey"
+          term="aaii"
           threshold="crowd bearish → buy"
           signal={ind.aaii?.signal}
           value={ind.aaii?.value ? `${Math.round(ind.aaii.value.bearish)}%` : null}
@@ -329,10 +343,16 @@ export default function MarketSentimentPanel({
        <motion.div variants={staggerItem}>
         <Indicator
           caption="Put / Call ratio"
+          term="put_call"
           threshold="≥1.00 buy · ≤0.80 sell"
           signal={ind.put_call?.signal}
           value={ind.put_call?.value != null ? ind.put_call.value.toFixed(2) : null}
-          sub={ind.put_call?.as_of ? `5d avg · ${ind.put_call.as_of}` : "5-day avg"}
+          sub={(
+            <>
+              <Term tip="Five-day average of the daily put/call ratio">{ind.put_call?.as_of ? "5d avg" : "5-day avg"}</Term>
+              {ind.put_call?.as_of ? ` · ${ind.put_call.as_of}` : ""}
+            </>
+          )}
         >
           <Sparkline data={pcData} dataKey="ratio" id="spPc"
             refs={[{ y: 1.0, color: "var(--positive)" }, { y: 0.8, color: "var(--negative)" }]} />
@@ -342,6 +362,7 @@ export default function MarketSentimentPanel({
        <motion.div variants={staggerItem}>
         <Indicator
           caption="Margin debt · leverage"
+          term="margin_debt"
           threshold="≥45% sell · ≤−20% buy"
           signal={ind.margin_debt?.signal}
           value={ind.margin_debt?.value != null ? `${ind.margin_debt.value >= 0 ? "+" : ""}${ind.margin_debt.value.toFixed(0)}%` : null}
