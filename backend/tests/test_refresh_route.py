@@ -52,15 +52,32 @@ def test_refresh_returns_202_and_queues(client):
     assert len(client.get("/api/contracts").json()) == 1
 
 
-def test_refresh_reports_null_status_for_a_never_run_source(client):
+def test_refresh_reports_null_status_for_a_never_run_source(client, monkeypatch):
     """A source with no status row yet must not blow up the response.
 
     The handler builds its payload before the queued job runs, so on the very
     first call there is no source_status row to report — indexing it would 500.
     """
-    resp = client.post("/api/refresh/margin_debt")
-    assert resp.status_code == 202
-    assert resp.json()["status"] is None
+    # The queued job really runs; keep it off FINRA and out of a headless
+    # Chromium. It is held until the response is checked, so it cannot race
+    # ahead and write a status row first.
+    import threading
+    from app.sources import margin_debt
+
+    release = threading.Event()
+
+    def held_fetch():
+        release.wait(timeout=10)
+        return []
+
+    monkeypatch.setattr(margin_debt, "fetch", held_fetch)
+    try:
+        resp = client.post("/api/refresh/margin_debt")
+        assert resp.status_code == 202
+        assert resp.json()["status"] is None
+    finally:
+        release.set()
+        drain_refresh()  # finish under the stub, before monkeypatch unwinds
 
 
 def test_refresh_unknown_source_is_404(client):

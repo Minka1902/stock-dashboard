@@ -218,14 +218,20 @@ SENT_PC_BUY = float(os.environ.get("STOCKS_SENT_PC_BUY", "1.0"))          # heav
 SENT_PC_SELL = float(os.environ.get("STOCKS_SENT_PC_SELL", "0.8"))        # complacency → sell
 
 # FINRA publishes margin debt monthly, roughly three to four weeks after the
-# month closes, so asking daily only burned requests. Once a fortnight still
-# catches every release well before the next one.
+# month closes, so asking daily only burned requests. Weekly (the intended
+# schedule is Mon 06:00 Asia/Jerusalem) picks up each release within days, and
+# keeps the headless-browser tier to one Chromium launch a week.
 MARGIN_DEBT_MIN_INTERVAL_SECONDS = int(
-    os.environ.get("STOCKS_MARGIN_DEBT_MIN_INTERVAL_SECONDS", str(14 * 86400))
+    os.environ.get("STOCKS_MARGIN_DEBT_MIN_INTERVAL_SECONDS", str(7 * 86400))
+)
+# Total budget for the headless-browser tier (launch + page + Cloudflare
+# clearance + workbook download), in seconds.
+MARGIN_DEBT_BROWSER_TIMEOUT_SECONDS = float(
+    os.environ.get("STOCKS_MARGIN_DEBT_BROWSER_TIMEOUT_SECONDS", "60")
 )
 # Retry cadence after a *failed* fetch, which is a different question from how
-# often fresh data appears: a fortnight-long success interval must not become a
-# fortnight-long outage when FINRA returns a 401/403.
+# often fresh data appears: a week-long success interval must not become a
+# week-long outage when FINRA returns a 401/403.
 MARGIN_DEBT_RETRY_INTERVAL_SECONDS = int(
     os.environ.get("STOCKS_MARGIN_DEBT_RETRY_INTERVAL_SECONDS", "21600")  # 6h
 )
