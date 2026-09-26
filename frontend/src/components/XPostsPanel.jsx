@@ -6,6 +6,7 @@ import { sourceState, sourceNote } from "../lib/sources";
 import { formatRelativeTime } from "../lib/format";
 import { staggerContainer, staggerItem, prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./XPostsPanel.module.css";
+import Tooltip from "./Tooltip";
 
 /**
  * X (Twitter) watch feed. Renders stored posts from the monitored accounts with
@@ -46,16 +47,20 @@ export default function XPostsPanel({ data = [], sources = [], loading, busy, on
             Checked hourly{status?.last_refreshed_at ? ` · updated ${formatRelativeTime(status.last_refreshed_at)}` : ""}
           </p>
         </div>
-        <button className={styles.refresh} onClick={onRefresh} disabled={busy} title="Refresh">
-          <Icon name="refresh" size={15} /> {busy ? "…" : "Refresh"}
-        </button>
+        <Tooltip content={busy ? "Refreshing X Watch…" : "Fetch the latest posts now"}>
+          <button className={styles.refresh} onClick={onRefresh} disabled={busy}>
+            <Icon name="refresh" size={15} /> {busy ? "…" : "Refresh"}
+          </button>
+        </Tooltip>
       </header>
 
       {isDegraded && (
-        <p className={styles.degraded} title={mirrorNote || undefined}>
-          <Icon name="info" size={13} /> Unofficial mirror — set <code>STOCKS_X_BEARER</code> for the
-          official X API. Data shown is real but its provenance is unverified.
-        </p>
+        <Tooltip content={mirrorNote || null}>
+          <p className={styles.degraded}>
+            <Icon name="info" size={13} /> Unofficial mirror — set <code>STOCKS_X_BEARER</code> for the
+            official X API. Data shown is real but its provenance is unverified.
+          </p>
+        </Tooltip>
       )}
 
       {accounts.length > 1 && (

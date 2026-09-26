@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Popover from "../Popover";
+import Tooltip from "../Tooltip";
 import {
   canCopyImage, canShareFile, copyImage, downloadBlob,
 } from "../../lib/chartSnapshot";
@@ -76,13 +77,16 @@ export default function SnapshotMenu({ capture, onToast, disabled }) {
 
   return (
     <>
-      <button ref={btnRef} type="button" className={styles.toolbarBtn} disabled={disabled || busy}
-              aria-haspopup="menu" aria-expanded={open}
-              title="Screenshot the chart as it is now — share, copy or download"
-              onClick={take}>
-        <DrawIcon name="camera" size={15} />
-        <span>{busy ? "Capturing…" : "Snapshot"}</span>
-      </button>
+      <Tooltip side="bottom" disabled={open || busy} content={disabled
+        ? "Snapshot — available once the chart has data"
+        : "Screenshot the chart as it is now — share, copy or download"}>
+        <button ref={btnRef} type="button" className={styles.toolbarBtn} disabled={disabled || busy}
+                aria-haspopup="menu" aria-expanded={open}
+                onClick={take}>
+          <DrawIcon name="camera" size={15} />
+          <span>{busy ? "Capturing…" : "Snapshot"}</span>
+        </button>
+      </Tooltip>
       <Popover open={open} anchorRef={btnRef} contentRef={menuRef} className={styles.menu}
                role="menu" aria-label="Chart snapshot">
         {snap && (
@@ -94,11 +98,14 @@ export default function SnapshotMenu({ capture, onToast, disabled }) {
                   <DrawIcon name="share" size={15} /> Share…
                 </button>
               )}
-              <button type="button" role="menuitem" className={styles.menuItem} disabled={!copyable}
-                      title={copyable ? "Copy the PNG to the clipboard" : "This browser can't put images on the clipboard"}
-                      onClick={() => run("copy")}>
-                <DrawIcon name="copy" size={15} /> Copy image
-              </button>
+              <Tooltip side="left" content={copyable
+                ? "Copy the PNG to the clipboard"
+                : "This browser can't put images on the clipboard — download instead"}>
+                <button type="button" role="menuitem" className={styles.menuItem} disabled={!copyable}
+                        onClick={() => run("copy")}>
+                  <DrawIcon name="copy" size={15} /> Copy image
+                </button>
+              </Tooltip>
               <button type="button" role="menuitem" className={styles.menuItem} onClick={() => run("download")}>
                 <DrawIcon name="download" size={15} /> Download PNG
               </button>

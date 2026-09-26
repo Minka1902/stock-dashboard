@@ -21,6 +21,8 @@ import TextEditor from "./chart/TextEditor";
 import SnapshotMenu from "./chart/SnapshotMenu";
 import DraftsMenu from "./chart/DraftsMenu";
 import ChartToast from "./chart/ChartToast";
+import Tooltip from "./Tooltip";
+import GLOSSARY from "../lib/glossary";
 import { useChartToast } from "./chart/useChartToast";
 import styles from "./ChartPro.module.css";
 
@@ -74,9 +76,13 @@ const SNAP_TOKENS = {
 const isTase = (t) => /\.TA$/i.test(String(t || ""));
 
 const TIMEFRAMES = [
-  { key: "1m", label: "1m" }, { key: "5m", label: "5m" }, { key: "15m", label: "15m" },
-  { key: "1h", label: "1h" }, { key: "1d", label: "D" }, { key: "1wk", label: "W" },
-  { key: "1mo", label: "M" },
+  { key: "1m", label: "1m", name: "1-minute bars" },
+  { key: "5m", label: "5m", name: "5-minute bars" },
+  { key: "15m", label: "15m", name: "15-minute bars" },
+  { key: "1h", label: "1h", name: "1-hour bars" },
+  { key: "1d", label: "D", name: "Daily bars" },
+  { key: "1wk", label: "W", name: "Weekly bars" },
+  { key: "1mo", label: "M", name: "Monthly bars" },
 ];
 const INTRADAY = new Set(["1m", "5m", "15m", "1h"]);
 const INTRADAY_REFRESH_MS = 30000;
@@ -150,14 +156,15 @@ const MA_DEFS = [
 ];
 const EMA_DEFS = [{ n: 9, key: "up" }, { n: 21, key: "compare" }];
 
+// `term` is the lib/glossary.js entry the toolbar tooltip explains it with.
 const IND_DEFS = [
-  { key: "ma", label: "SMA 20/50/150/200" },
-  { key: "ema", label: "EMA 9/21" },
-  { key: "bb", label: "Bollinger (20,2)" },
-  { key: "vwap", label: "VWAP", intradayOnly: true },
+  { key: "ma", label: "SMA 20/50/150/200", term: "moving_average" },
+  { key: "ema", label: "EMA 9/21", term: "ema" },
+  { key: "bb", label: "Bollinger (20,2)", term: "bollinger" },
+  { key: "vwap", label: "VWAP", intradayOnly: true, term: "vwap" },
   { key: "vol", label: "Volume" },
-  { key: "rsi", label: "RSI (14)" },
-  { key: "macd", label: "MACD (12,26,9)" },
+  { key: "rsi", label: "RSI (14)", term: "rsi" },
+  { key: "macd", label: "MACD (12,26,9)", term: "macd" },
 ];
 
 const DEFAULT_PREFS = {
@@ -957,8 +964,11 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       <div className={styles.toolbar} role="toolbar" aria-label="Chart controls">
         <div className={styles.group} role="group" aria-label="Timeframe">
           {TIMEFRAMES.map((t) => (
-            <button key={t.key} className={styles.pill} data-active={prefs.tf === t.key ? "yes" : "no"}
-                    onClick={() => setPref({ tf: t.key })}>{t.label}</button>
+            <Tooltip key={t.key} side="bottom" content={t.name}>
+              <button className={styles.pill} data-active={prefs.tf === t.key ? "yes" : "no"}
+                      aria-pressed={prefs.tf === t.key}
+                      onClick={() => setPref({ tf: t.key })}>{t.label}</button>
+            </Tooltip>
           ))}
         </div>
 
@@ -966,13 +976,12 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
           {CHART_TYPES.map((t) => {
             const active = prefs.type === t.key;
             return (
+              <Tooltip key={t.key} side="bottom" content={t.label}>
               <button
-                key={t.key}
                 type="button"
                 className={styles.segBtn}
                 data-active={active ? "yes" : "no"}
                 onClick={() => setPref({ type: t.key })}
-                title={t.label}
                 aria-label={t.label}
                 aria-pressed={active}
               >
@@ -988,6 +997,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
                 )}
                 <span className={styles.segGlyph}><TypeIcon type={t.key} /></span>
               </button>
+              </Tooltip>
             );
           })}
         </div>
@@ -995,56 +1005,77 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
         <div className={styles.group} role="group" aria-label="Indicators">
           {IND_DEFS.map((d) => {
             const disabled = d.intradayOnly && !intraday;
+            const def = GLOSSARY[d.term]?.short;
             return (
-              <button
-                key={d.key}
-                className={styles.pill}
-                data-active={prefs.inds[d.key] && !disabled ? "yes" : "no"}
-                disabled={disabled}
-                title={disabled ? `${d.label} — intraday timeframes only` : d.label}
-                onClick={() => setPref({ inds: { [d.key]: !prefs.inds[d.key] } })}
-              >
-                {d.key.toUpperCase()}
-              </button>
+              <Tooltip key={d.key} side="bottom" content={(
+                <>
+                  <strong>{d.label}</strong>
+                  {def && <p>{def}</p>}
+                  {disabled && <p>Unavailable on this timeframe — switch to 1m, 5m, 15m or 1h to use it.</p>}
+                </>
+              )}>
+                <button
+                  className={styles.pill}
+                  data-active={prefs.inds[d.key] && !disabled ? "yes" : "no"}
+                  aria-pressed={!!prefs.inds[d.key] && !disabled}
+                  disabled={disabled}
+                  onClick={() => setPref({ inds: { [d.key]: !prefs.inds[d.key] } })}
+                >
+                  {d.key.toUpperCase()}
+                </button>
+              </Tooltip>
             );
           })}
         </div>
 
         <div className={styles.group} role="group" aria-label="Scale and overlays">
-          <button className={styles.pill} data-active={prefs.logScale && !prefs.compare ? "yes" : "no"}
-                  disabled={prefs.compare} title="Logarithmic price scale"
-                  onClick={() => setPref({ logScale: !prefs.logScale })}>LOG</button>
-          <button className={styles.pill} data-active={prefs.compare ? "yes" : "no"}
-                  title="Compare with SPY (percent scale)"
-                  onClick={() => setPref({ compare: !prefs.compare })}>vs SPY</button>
+          <Tooltip side="bottom" content={prefs.compare
+            ? "Logarithmic price scale — off while comparing with SPY, which uses a percent scale"
+            : "Logarithmic price scale: equal distances are equal percentage moves"}>
+            <button className={styles.pill} data-active={prefs.logScale && !prefs.compare ? "yes" : "no"}
+                    aria-pressed={!!prefs.logScale && !prefs.compare}
+                    disabled={prefs.compare}
+                    onClick={() => setPref({ logScale: !prefs.logScale })}>LOG</button>
+          </Tooltip>
+          <Tooltip side="bottom" content="Compare with SPY (S&P 500 ETF) on a percent-change scale">
+            <button className={styles.pill} data-active={prefs.compare ? "yes" : "no"}
+                    aria-pressed={!!prefs.compare}
+                    onClick={() => setPref({ compare: !prefs.compare })}>vs SPY</button>
+          </Tooltip>
           {intraday && extSupported && (
-            <button className={styles.pill} data-active={prefs.prepost ? "yes" : "no"}
-                    aria-pressed={prefs.prepost}
-                    title={prefs.prepost
-                      ? "Showing pre-market and after-hours bars (shaded) — click for the regular session only"
-                      : "Regular session only — click to include pre-market and after-hours bars"}
-                    onClick={() => setPref({ prepost: !prefs.prepost })}>EXT</button>
+            <Tooltip side="bottom" content={prefs.prepost
+              ? "Showing pre-market and after-hours bars (shaded) — click for the regular session only"
+              : "Regular session only — click to include pre-market and after-hours bars"}>
+              <button className={styles.pill} data-active={prefs.prepost ? "yes" : "no"}
+                      aria-pressed={prefs.prepost}
+                      onClick={() => setPref({ prepost: !prefs.prepost })}>EXT</button>
+            </Tooltip>
           )}
           {intraday && !extSupported && (
-            <span className={styles.pillNote} tabIndex={0}
-                  title={isTase(ticker)
-                    ? "Tel Aviv Stock Exchange has no pre-market or after-hours session, so there are no extended-hours bars to show."
-                    : "This market reports no pre-market or after-hours session, so there are no extended-hours bars to show."}>
-              REG ONLY
-            </span>
+            <Tooltip side="bottom" content={isTase(ticker)
+              ? "Tel Aviv Stock Exchange has no pre-market or after-hours session, so there are no extended-hours bars to show."
+              : "This market reports no pre-market or after-hours session, so there are no extended-hours bars to show."}>
+              <span className={styles.pillNote} tabIndex={0}>
+                REG ONLY
+              </span>
+            </Tooltip>
           )}
           {analysis && (
-            <button className={styles.pill} data-active={prefs.overlays ? "yes" : "no"}
-                    title="Analysis overlays: support/resistance, entry/stop/target, patterns (daily)"
-                    onClick={() => setPref({ overlays: !prefs.overlays })}>PLAN</button>
+            <Tooltip side="bottom" content="Analysis overlays: support/resistance, entry/stop/target, patterns (daily)">
+              <button className={styles.pill} data-active={prefs.overlays ? "yes" : "no"}
+                      aria-pressed={!!prefs.overlays}
+                      onClick={() => setPref({ overlays: !prefs.overlays })}>PLAN</button>
+            </Tooltip>
           )}
         </div>
 
         <div className={styles.actions}>
           {!drawing.synced && (
-            <span className={styles.offlineNote} title="Drawings are saved on this device; the server copy will catch up on the next load.">
-              local
-            </span>
+            <Tooltip side="bottom" content="Drawings are saved on this device; the server copy will catch up on the next load.">
+              <span className={styles.offlineNote} tabIndex={0}>
+                local
+              </span>
+            </Tooltip>
           )}
           <DraftsMenu ticker={ticker} tf={prefs.tf} tfLabel={tfLabel} drawing={drawing}
                       onToast={toast.show} onTimeframe={(tf) => setPref({ tf })} disabled={!hasData} />
@@ -1056,10 +1087,11 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
         <div className={styles.legend} aria-live="off">
           <span className={styles.legendTicker}>{ticker}</span>
           {intraday && legend.session && (
-            <span className={styles.sessionTag} data-session={legend.session}
-                  title={legend.session === "pre" ? "Pre-market bar" : legend.session === "post" ? "After-hours bar" : "Regular-session bar"}>
-              {SESSION_LABEL[legend.session]}
-            </span>
+            <Tooltip side="bottom" content={legend.session === "pre" ? "Pre-market bar" : legend.session === "post" ? "After-hours bar" : "Regular-session bar"}>
+              <span className={styles.sessionTag} data-session={legend.session}>
+                {SESSION_LABEL[legend.session]}
+              </span>
+            </Tooltip>
           )}
           <span>O <em data-tone={toneOf(legend)}>{fmt(legend.open)}</em></span>
           <span>H <em data-tone={toneOf(legend)}>{fmt(legend.high)}</em></span>
@@ -1077,16 +1109,18 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
           </span>
           {prefs.compare && <span className={styles.legendCompare}>vs SPY (%)</span>}
           {!intraday && !prefs.compare && extended?.pre && (
-            <span className={styles.extChip} data-session="pre"
-                  title={`Pre-market print at ${new Date(extended.pre.time * 1000).toLocaleString()} (latest 1-minute extended-hours bar)`}>
-              Pre <em>{fmt(extended.pre.price)}</em> · {fmtClock(extended.pre.time)}
-            </span>
+            <Tooltip side="bottom" content={`Pre-market print at ${new Date(extended.pre.time * 1000).toLocaleString()} (latest 1-minute extended-hours bar)`}>
+              <span className={styles.extChip} data-session="pre">
+                Pre <em>{fmt(extended.pre.price)}</em> · {fmtClock(extended.pre.time)}
+              </span>
+            </Tooltip>
           )}
           {!intraday && !prefs.compare && extended?.post && (
-            <span className={styles.extChip} data-session="post"
-                  title={`After-hours print at ${new Date(extended.post.time * 1000).toLocaleString()} (latest 1-minute extended-hours bar)`}>
-              After <em>{fmt(extended.post.price)}</em> · {fmtClock(extended.post.time)}
-            </span>
+            <Tooltip side="bottom" content={`After-hours print at ${new Date(extended.post.time * 1000).toLocaleString()} (latest 1-minute extended-hours bar)`}>
+              <span className={styles.extChip} data-session="post">
+                After <em>{fmt(extended.post.price)}</em> · {fmtClock(extended.post.time)}
+              </span>
+            </Tooltip>
           )}
           {legend.overlays?.map((o) => (
             <span key={o.label} className={styles.overlayChip}>

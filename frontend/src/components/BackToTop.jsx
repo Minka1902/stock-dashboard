@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
+import Tooltip from "./Tooltip";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./BackToTop.module.css";
 
@@ -39,6 +40,7 @@ export default function BackToTop({ scrollRef, threshold = 600 }) {
   return (
     <AnimatePresence>
       {visible && (
+        <Tooltip key="top" side="left" content="Back to top">
         <motion.button
           type="button"
           className={styles.btn}
@@ -51,6 +53,7 @@ export default function BackToTop({ scrollRef, threshold = 600 }) {
         >
           <Icon name="chevronUp" size={20} />
         </motion.button>
+        </Tooltip>
       )}
     </AnimatePresence>
   );

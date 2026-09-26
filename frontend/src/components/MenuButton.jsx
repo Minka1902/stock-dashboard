@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Popover from "./Popover";
+import Tooltip from "./Tooltip";
 import styles from "./MenuButton.module.css";
 
 /**
@@ -80,18 +81,19 @@ export default function MenuButton({
 
   return (
     <div className={`${styles.wrap} ${className}`} ref={wrapRef}>
-      <button
-        type="button"
-        className={styles.trigger}
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        aria-label={label}
-        title={label}
-      >
-        {glyph}
-      </button>
+      <Tooltip content={label} disabled={open}>
+        <button
+          type="button"
+          className={styles.trigger}
+          onClick={() => setOpen((o) => !o)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={open ? menuId : undefined}
+          aria-label={label}
+        >
+          {glyph}
+        </button>
+      </Tooltip>
 
       <Popover
         open={open}

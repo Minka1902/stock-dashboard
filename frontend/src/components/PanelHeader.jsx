@@ -1,4 +1,5 @@
 import Icon from "./Icon";
+import Tooltip from "./Tooltip";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./PanelHeader.module.css";
 
@@ -20,9 +21,11 @@ export default function PanelHeader({
         {asOf && <span className={styles.age}>{formatRelativeTime(asOf)}</span>}
         {right}
         {onRefresh && (
-          <button className={styles.refresh} onClick={onRefresh} disabled={busy} title="Refresh">
-            <span className={busy ? styles.spin : ""}><Icon name="refresh" size={14} /></span>
-          </button>
+          <Tooltip content={busy ? "Refreshing…" : `Refresh ${typeof title === "string" ? title : "this panel"}`}>
+            <button className={styles.refresh} onClick={onRefresh} disabled={busy} aria-label="Refresh">
+              <span className={busy ? styles.spin : ""}><Icon name="refresh" size={14} /></span>
+            </button>
+          </Tooltip>
         )}
         {children}
       </div>

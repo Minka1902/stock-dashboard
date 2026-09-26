@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
 import Popover from "./Popover";
+import Tooltip from "./Tooltip";
 import { initialsFor, gradientFor } from "../lib/avatar";
 import { isUpdateAvailable, useUpdateStatus } from "../hooks/useUpdateStatus";
 import styles from "./UserMenu.module.css";
@@ -44,20 +45,23 @@ export default function UserMenu({ user, onLogout, onNavigate }) {
 
   return (
     <div className={styles.wrap} ref={wrapRef}>
-      <button
-        type="button"
-        className={styles.trigger}
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title={updateAvailable ? `Signed in as ${email} · update available` : `Signed in as ${email}`}
-      >
-        <span className={styles.avatar} style={{ background: gradientFor(email) }} aria-hidden="true">
-          {initialsFor(email)}
-        </span>
-        {updateAvailable && <span className={styles.triggerDot} aria-hidden="true" />}
-        <span className={styles.local}>{local}</span>
-      </button>
+      <Tooltip side="bottom" disabled={open}
+               content={updateAvailable ? `Signed in as ${email} · update available` : `Signed in as ${email}`}>
+        <button
+          type="button"
+          className={styles.trigger}
+          onClick={() => setOpen((o) => !o)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={`Account menu (${email})`}
+        >
+          <span className={styles.avatar} style={{ background: gradientFor(email) }} aria-hidden="true">
+            {initialsFor(email)}
+          </span>
+          {updateAvailable && <span className={styles.triggerDot} aria-hidden="true" />}
+          <span className={styles.local}>{local}</span>
+        </button>
+      </Tooltip>
 
       <Popover open={open} anchorRef={wrapRef} contentRef={menuRef} className={styles.menu} role="menu">
             <div className={styles.identity}>
@@ -78,7 +82,9 @@ export default function UserMenu({ user, onLogout, onNavigate }) {
             <button type="button" role="menuitem" className={styles.item} onClick={() => go("info")}>
               <Icon name="info" size={15} /> Info / Guide
               {updateAvailable && (
-                <span className={styles.updateDot} title="Update available" aria-label="update available" />
+                <Tooltip content="An app update is available — see Info → Updates" side="right">
+                  <span className={styles.updateDot} role="img" aria-label="update available" />
+                </Tooltip>
               )}
             </button>
             {/* Admin-only: exposes the DB path, tracebacks and machine stats.

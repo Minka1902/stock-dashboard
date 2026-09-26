@@ -4,6 +4,9 @@ import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import TickerLabel from "./TickerLabel";
 import styles from "./SocialPanel.module.css";
+import Term from "./Term";
+import Tooltip from "./Tooltip";
+import InfoTip from "./InfoTip";
 
 const COMPACT_LIMIT = 5;
 
@@ -20,8 +23,21 @@ function SkeletonRows({ rows = 6 }) {
 
 function RankChange({ change }) {
   if (change == null) return <span className={styles.muted}>—</span>;
-  if (change > 0) return <span className={styles.rising}>↑{change}</span>;
-  if (change < 0) return <span className={styles.falling}>↓{Math.abs(change)}</span>;
+  const places = (n) => `${n} place${n === 1 ? "" : "s"}`;
+  if (change > 0) {
+    return (
+      <Tooltip content={`Up ${places(change)} in mention rank vs 24 hours ago`}>
+        <span className={styles.rising}>↑{change}</span>
+      </Tooltip>
+    );
+  }
+  if (change < 0) {
+    return (
+      <Tooltip content={`Down ${places(Math.abs(change))} in mention rank vs 24 hours ago`}>
+        <span className={styles.falling}>↓{Math.abs(change)}</span>
+      </Tooltip>
+    );
+  }
   return <span className={styles.muted}>—</span>;
 }
 
@@ -34,7 +50,7 @@ export default function SocialPanel({ data, loading, busy, onRefresh, compact = 
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="WSB Sentiment" />}
         <div>
-          <h2 className={styles.title}>WSB Sentiment</h2>
+          <h2 className={styles.title}>WSB Sentiment <InfoTip term="wsb_rank" /></h2>
           <p className={styles.subtitle}>ApeWisdom · Reddit mentions &amp; rank movement for watchlist tickers</p>
         </div>
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
@@ -54,9 +70,9 @@ export default function SocialPanel({ data, loading, busy, onRefresh, compact = 
             <thead>
               <tr>
                 <th>Ticker</th>
-                <th className={styles.num}>Rank</th>
-                <th className={styles.num}>Mentions</th>
-                <th>Rank Change</th>
+                <th className={styles.num}><Term term="wsb_rank">Rank</Term></th>
+                <th className={styles.num}><Term tip="Mention count across Reddit stock communities, as reported by ApeWisdom (last 24 hours)">Mentions</Term></th>
+                <th><Term tip="Places gained (↑) or lost (↓) in the mention rank vs 24 hours ago">Rank Change</Term></th>
               </tr>
             </thead>
             <tbody>

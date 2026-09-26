@@ -1,5 +1,6 @@
 import MenuButton, { MenuItem } from "./MenuButton";
 import styles from "./SelectMenu.module.css";
+import Tooltip from "./Tooltip";
 
 /**
  * A themed stand-in for a single-value native <select>.
@@ -25,7 +26,7 @@ export default function SelectMenu({ label, value, options, onChange, className 
       className={`${styles.select} ${className}`}
       glyph={(
         <>
-          <span className={styles.value}>{currentLabel}</span>
+          <Tooltip truncate><span className={styles.value}>{currentLabel}</span></Tooltip>
           <svg className={styles.chevron} viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
             <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6"
                   strokeLinecap="round" strokeLinejoin="round" />

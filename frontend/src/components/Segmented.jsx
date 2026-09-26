@@ -1,6 +1,7 @@
 import { useId, useRef } from "react";
 import { motion } from "motion/react";
 import { prefersReducedMotion } from "../lib/motionConfig";
+import Tooltip from "./Tooltip";
 import styles from "./Segmented.module.css";
 
 /**
@@ -52,14 +53,13 @@ export default function Segmented({
       {options.map((o) => {
         const selected = o.value === value;
         return (
+          <Tooltip key={o.value} content={o.title} side="bottom">
           <button
-            key={o.value}
             type="button"
             role="tab"
             data-value={o.value}
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
-            title={o.title}
             className={styles.tab}
             data-active={selected ? "yes" : "no"}
             onClick={() => onChange(o.value)}
@@ -76,6 +76,7 @@ export default function Segmented({
             <span className={styles.label}>{o.label}</span>
             {o.badge != null && <span className={styles.badge}>{o.badge}</span>}
           </button>
+          </Tooltip>
         );
       })}
     </div>

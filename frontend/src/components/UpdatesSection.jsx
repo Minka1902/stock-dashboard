@@ -11,6 +11,7 @@ import {
   useUpdateStatus,
 } from "../hooks/useUpdateStatus";
 import styles from "./UpdatesSection.module.css";
+import Tooltip from "./Tooltip";
 
 const PROGRESS_POLL_MS = 2000;
 const RELOAD_DELAY_S = 5;
@@ -172,14 +173,18 @@ export default function UpdatesSection() {
             <dd>{check?.checked_at ? formatRelativeTime(check.checked_at) : "not yet"}</dd>
           </div>
         </dl>
-        <button
-          type="button"
-          className={styles.secondary}
-          onClick={checkNow}
-          disabled={checking || following}
-        >
-          <Icon name="refresh" size={14} /> {checking ? "Checking GitHub…" : "Check now"}
-        </button>
+        <Tooltip content={following
+          ? "An update is being installed — checking is paused until it finishes"
+          : checking ? "Checking GitHub for new commits…" : "Compare this install with the latest version on GitHub"}>
+          <button
+            type="button"
+            className={styles.secondary}
+            onClick={checkNow}
+            disabled={checking || following}
+          >
+            <Icon name="refresh" size={14} /> {checking ? "Checking GitHub…" : "Check now"}
+          </button>
+        </Tooltip>
       </div>
 
       {(checkError || (error && !data)) && (

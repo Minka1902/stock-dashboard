@@ -3,6 +3,8 @@ import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import styles from "./FundamentalsPanel.module.css";
+import Term from "./Term";
+import Tooltip from "./Tooltip";
 
 const COMPACT_LIMIT = 5;
 
@@ -77,13 +79,13 @@ export default function FundamentalsPanel({ data, loading, busy, onRefresh, comp
               <tr>
                 <th>Ticker</th>
                 <th>Sector</th>
-                <th className={styles.num}>P/E</th>
-                <th className={styles.num}>Fwd P/E</th>
-                <th className={styles.num}>PEG</th>
-                <th className={styles.num}>P/B</th>
-                <th className={styles.num}>Rev Growth</th>
-                <th className={styles.num}>Margin</th>
-                <th className={styles.num}>Mkt Cap</th>
+                <th className={styles.num}><Term term="pe_ratio" tip="This column is the trailing (last 12 months) P/E.">P/E</Term></th>
+                <th className={styles.num}><Term term="pe_ratio" tip="This column is the forward P/E, from analysts' next-12-month estimates.">Fwd P/E</Term></th>
+                <th className={styles.num}><Term term="peg">PEG</Term></th>
+                <th className={styles.num}><Term term="price_to_book">P/B</Term></th>
+                <th className={styles.num}><Term tip="Revenue growth, year over year">Rev Growth</Term></th>
+                <th className={styles.num}><Term tip="Profit margin: net income as a share of revenue">Margin</Term></th>
+                <th className={styles.num}><Term tip="Market capitalisation: share price × shares outstanding">Mkt Cap</Term></th>
               </tr>
             </thead>
             <tbody>
@@ -93,7 +95,7 @@ export default function FundamentalsPanel({ data, loading, busy, onRefresh, comp
                 rows.map((f) => (
                   <tr key={f.ticker}>
                     <td><span className={styles.ticker}>{f.ticker}</span></td>
-                    <td className={styles.sector}>{f.sector || "—"}</td>
+                    <Tooltip truncate><td className={styles.sector}>{f.sector || "—"}</td></Tooltip>
                     <td className={styles.num}>{fmtRatio(f.pe_ratio)}</td>
                     <td className={styles.num}>{fmtRatio(f.forward_pe)}</td>
                     <td className={styles.num}>{f.peg_ratio != null ? f.peg_ratio.toFixed(2) : "—"}</td>

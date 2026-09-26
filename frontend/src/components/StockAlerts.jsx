@@ -5,6 +5,7 @@ import { alertIcon, alertTypeLabel } from "../lib/alertMeta";
 import { formatRelativeTime } from "../lib/format";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./StockAlerts.module.css";
+import Tooltip from "./Tooltip";
 
 /**
  * The alerts fired for this ticker, with what each one is telling you.
@@ -49,14 +50,16 @@ export default function StockAlerts({ alerts = [], ticker, focusKey = null }) {
             data-read={a.read ? "yes" : "no"}
             data-focused={focused ? "yes" : undefined}
           >
-            <span className={styles.severity} data-sev={a.severity} title={`${a.severity} severity`} />
+            <Tooltip content={`${a.severity} severity`} side="left">
+              <span className={styles.severity} data-sev={a.severity} role="img" aria-label={`${a.severity} severity`} />
+            </Tooltip>
             <div className={styles.body}>
               <div className={styles.top}>
                 <Icon name={alertIcon(a.type)} size={13} />
                 <span className={styles.title}>{a.title}</span>
                 <span className={styles.type}>{alertTypeLabel(a.type)}</span>
                 <span className={styles.time}>{formatRelativeTime(a.created_at)}</span>
-                {!a.read && <span className={styles.unread} title="Unread">new</span>}
+                {!a.read && <span className={styles.unread}>new</span>}
               </div>
               <p className={styles.message}>{a.message}</p>
 

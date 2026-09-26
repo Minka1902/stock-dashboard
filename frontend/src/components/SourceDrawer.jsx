@@ -5,7 +5,8 @@ import Icon from "./Icon";
 import { getServerSourceRuns, runScheduleNow } from "../api";
 import { formatRelativeTime, formatUntil } from "../lib/format";
 import { prefersReducedMotion } from "../lib/motionConfig";
-import { sourceState } from "../lib/sources";
+import { STATE_TIP, sourceState } from "../lib/sources";
+import Tooltip from "./Tooltip";
 import styles from "./SourceDrawer.module.css";
 
 const TONE = { ok: "pos", error: "neg", deferred: "caution" };
@@ -28,9 +29,11 @@ function RunRow({ run }) {
     <li className={styles.run}>
       <div className={styles.runHead}>
         <span className={styles.outcome} data-outcome={run.outcome}>{run.outcome}</span>
-        <span className={styles.runWhen} title={stamp(run.finished_at)}>
-          {formatRelativeTime(run.finished_at)}
-        </span>
+        <Tooltip content={stamp(run.finished_at)}>
+          <span className={styles.runWhen}>
+            {formatRelativeTime(run.finished_at)}
+          </span>
+        </Tooltip>
         <span className={styles.runMeta}>{ms(run.duration_ms)} · {run.record_count} rec</span>
         {run.error_detail && (
           <button
@@ -147,21 +150,24 @@ export default function SourceDrawer({ source, onClose }) {
                 <span className="caption">Source</span>
                 <h2 id="source-drawer-title" className={styles.title}>{name}</h2>
               </div>
-              <button
-                ref={closeRef}
-                type="button"
-                className={styles.close}
-                onClick={onClose}
-                aria-label="Close source details"
-              >
-                <Icon name="x" size={14} />
-              </button>
+              <Tooltip side="left" content="Close" shortcut={["Esc"]}>
+                <button
+                  ref={closeRef}
+                  type="button"
+                  className={styles.close}
+                  onClick={onClose}
+                  aria-label="Close source details"
+                >
+                  <Icon name="x" size={14} />
+                </button>
+              </Tooltip>
             </header>
 
             <div className={styles.body}>
               <p className={styles.status} data-tone={TONE[state] || "faint"}>
                 {source.never_run ? "never run" : source.status}
               </p>
+              <p className={styles.stateNote}>{STATE_TIP[source.never_run ? "never" : state]}</p>
 
               <dl className={styles.facts}>
                 <dt>Last success</dt><dd>{source.last_success_at ? formatRelativeTime(source.last_success_at) : "never"}</dd>
@@ -182,9 +188,11 @@ export default function SourceDrawer({ source, onClose }) {
               </dl>
 
               <div className={styles.actions}>
-                <button type="button" className={styles.btn} onClick={copy} disabled={!errorText}>
-                  {copied ? "Copied" : "Copy error"}
-                </button>
+                <Tooltip content={errorText ? "Copy the status and full error details" : "No error to copy — there is no error recorded for this source"}>
+                  <button type="button" className={styles.btn} onClick={copy} disabled={!errorText}>
+                    {copied ? "Copied" : "Copy error"}
+                  </button>
+                </Tooltip>
                 <button
                   type="button"
                   className={styles.btnPrimary}

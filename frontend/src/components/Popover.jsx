@@ -2,6 +2,7 @@ import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { prefersReducedMotion } from "../lib/motionConfig";
+import { dropdownStyle } from "../lib/floating";
 
 /**
  * An anchored popup that is immune to its parent's stacking and clipping.
@@ -21,24 +22,9 @@ import { prefersReducedMotion } from "../lib/motionConfig";
  * to catch inner scrollers) and resize.
  *
  * Anchoring uses `right` rather than a translateX so it does not fight the
- * transform Motion animates.
+ * transform Motion animates. The placement math lives in lib/floating.js,
+ * shared with Tooltip.
  */
-function anchorStyle(anchorEl, align, gap) {
-  const r = anchorEl.getBoundingClientRect();
-  const top = r.bottom + gap;
-  return {
-    position: "fixed",
-    top,
-    // Leave a gutter so a long menu scrolls internally instead of running off
-    // the bottom of the window.
-    maxHeight: `calc(100vh - ${Math.round(top)}px - 16px)`,
-    zIndex: "var(--z-popover)",
-    ...(align === "end"
-      ? { right: Math.max(8, window.innerWidth - r.right) }
-      : { left: Math.max(8, r.left) }),
-  };
-}
-
 export default function Popover({
   open,
   anchorRef,
@@ -57,7 +43,7 @@ export default function Popover({
   useLayoutEffect(() => {
     if (!open) return undefined;
     const place = () => {
-      if (anchorRef.current) setStyle(anchorStyle(anchorRef.current, align, gap));
+      if (anchorRef.current) setStyle(dropdownStyle(anchorRef.current, align, gap));
     };
     place();
     window.addEventListener("resize", place);

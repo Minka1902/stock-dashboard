@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import Popover from "../Popover";
+import Tooltip from "../Tooltip";
 import {
   createDrawingDraft, deleteDrawingDraft, listDrawingDrafts, updateDrawingDraft,
 } from "../../api";
@@ -208,23 +209,29 @@ export default function DraftsMenu({ ticker, tf, tfLabel, drawing, onToast, onTi
 
   return (
     <>
-      <button ref={btnRef} type="button" className={styles.toolbarBtn} disabled={disabled}
-              aria-haspopup="menu" aria-expanded={open}
-              title="Drawing drafts — save the current drawings with a title, or load a saved set"
-              onClick={toggle}>
-        <DrawIcon name="drafts" size={15} />
-        <span>Drafts{drafts?.length ? ` · ${drafts.length}` : ""}</span>
-      </button>
+      <Tooltip side="bottom" disabled={open} content={disabled
+        ? "Drawing drafts — available once the chart has data"
+        : "Drawing drafts — save the current drawings with a title, or load a saved set"}>
+        <button ref={btnRef} type="button" className={styles.toolbarBtn} disabled={disabled}
+                aria-haspopup="menu" aria-expanded={open}
+                onClick={toggle}>
+          <DrawIcon name="drafts" size={15} />
+          <span>Drafts{drafts?.length ? ` · ${drafts.length}` : ""}</span>
+        </button>
+      </Tooltip>
 
       <Popover open={open} anchorRef={btnRef} contentRef={menuRef} className={`${styles.menu} ${styles.draftsMenu}`}
                role="dialog" aria-label={`Drawing drafts for ${ticker}`}>
         <div className={styles.draftsHead}>
           <span>Drafts · {ticker}</span>
-          <button type="button" className={styles.primaryBtn} disabled={drawing.shapes.length === 0}
-                  title={drawing.shapes.length ? "Save what's drawn now as a named draft" : "Draw something first"}
-                  onClick={() => { setDialog({ draft: null }); setConfirm(null); }}>
-            <DrawIcon name="save" size={14} /> Save current…
-          </button>
+          <Tooltip content={drawing.shapes.length
+            ? "Save what's drawn now as a named draft"
+            : "Nothing to save yet — draw on the chart first"}>
+            <button type="button" className={styles.primaryBtn} disabled={drawing.shapes.length === 0}
+                    onClick={() => { setDialog({ draft: null }); setConfirm(null); }}>
+              <DrawIcon name="save" size={14} /> Save current…
+            </button>
+          </Tooltip>
         </div>
         {error && <p className={styles.dialogError}>{error}</p>}
         {drafts === null && !error && <p className={styles.menuNote}>Loading drafts…</p>}
@@ -240,8 +247,8 @@ export default function DraftsMenu({ ticker, tf, tfLabel, drawing, onToast, onTi
                 <motion.li key={d.id} className={styles.draftItem} layout={!reduced}
                            variants={{ hidden: { opacity: 0, y: reduced ? 0 : 4 }, visible: { opacity: 1, y: 0 } }}>
                   <div className={styles.draftText}>
-                    <strong title={d.title}>{d.title}</strong>
-                    {d.description && <p title={d.description}>{d.description}</p>}
+                    <Tooltip truncate><strong>{d.title}</strong></Tooltip>
+                    {d.description && <Tooltip truncate><p>{d.description}</p></Tooltip>}
                     <small>{fmtWhen(d.updated_at)} · {d.timeframe || "—"} · {d.shapes.length} drawing{d.shapes.length === 1 ? "" : "s"}</small>
                   </div>
                   <AnimatePresence mode="wait" initial={false}>
@@ -250,10 +257,12 @@ export default function DraftsMenu({ ticker, tf, tfLabel, drawing, onToast, onTi
                                   initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                                   transition={{ duration: reduced ? 0 : 0.12 }}>
                         <span>The chart has {drawing.shapes.length} drawing{drawing.shapes.length === 1 ? "" : "s"}.</span>
-                        <button type="button" className={styles.primaryBtn} onClick={() => load(d, "replace")}
-                                title="Swap the current drawings for this draft (undoable)">Replace</button>
-                        <button type="button" className={styles.ghostBtn} onClick={() => load(d, "merge")}
-                                title="Add the draft's drawings to the current ones">Merge</button>
+                        <Tooltip content="Swap the current drawings for this draft (undoable)">
+                          <button type="button" className={styles.primaryBtn} onClick={() => load(d, "replace")}>Replace</button>
+                        </Tooltip>
+                        <Tooltip content="Add the draft's drawings to the current ones">
+                          <button type="button" className={styles.ghostBtn} onClick={() => load(d, "merge")}>Merge</button>
+                        </Tooltip>
                         <button type="button" className={styles.ghostBtn} onClick={() => setConfirm(null)}>Cancel</button>
                       </motion.div>
                     ) : pending === "delete" ? (
@@ -268,17 +277,22 @@ export default function DraftsMenu({ ticker, tf, tfLabel, drawing, onToast, onTi
                       <motion.div key="actions" className={styles.draftActions}
                                   initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                                   transition={{ duration: reduced ? 0 : 0.12 }}>
-                        <button type="button" className={styles.ghostBtn} onClick={() => askLoad(d)}
-                                title="Load this draft onto the chart">Load</button>
-                        <button type="button" className={styles.iconBtn} aria-label={`Rename or edit ${d.title}`}
-                                title="Rename / edit" onClick={() => { setDialog({ draft: d }); setConfirm(null); }}>
-                          <DrawIcon name="edit" size={14} />
-                        </button>
-                        <button type="button" className={styles.iconBtn} data-tone="danger"
-                                aria-label={`Delete ${d.title}`} title="Delete draft"
-                                onClick={() => setConfirm({ id: d.id, type: "delete" })}>
-                          <DrawIcon name="trash" size={14} />
-                        </button>
+                        <Tooltip content="Load this draft onto the chart">
+                          <button type="button" className={styles.ghostBtn} onClick={() => askLoad(d)}>Load</button>
+                        </Tooltip>
+                        <Tooltip content="Rename / edit">
+                          <button type="button" className={styles.iconBtn} aria-label={`Rename or edit ${d.title}`}
+                                  onClick={() => { setDialog({ draft: d }); setConfirm(null); }}>
+                            <DrawIcon name="edit" size={14} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip content="Delete draft">
+                          <button type="button" className={styles.iconBtn} data-tone="danger"
+                                  aria-label={`Delete ${d.title}`}
+                                  onClick={() => setConfirm({ id: d.id, type: "delete" })}>
+                            <DrawIcon name="trash" size={14} />
+                          </button>
+                        </Tooltip>
                       </motion.div>
                     )}
                   </AnimatePresence>
