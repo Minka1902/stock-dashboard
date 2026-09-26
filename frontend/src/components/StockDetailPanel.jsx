@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "./Icon";
 import ChartPro from "./ChartPro";
+import CollapsibleSection from "./CollapsibleSection";
 import CompanyInfo from "./CompanyInfo";
 import InsiderTrades from "./InsiderTrades";
 import Skeleton from "./Skeleton";
@@ -27,15 +28,17 @@ function n(v, d = 2) {
   return v == null ? "—" : Number(v).toFixed(d);
 }
 
-function Pane({ caption, right, children }) {
+// Collapsed state lives in settings.collapsedSections under "stock:<id>".
+// Deliberately NOT keyed per ticker: someone who never reads insider trades
+// shouldn't have to collapse that pane again on every stock they open.
+const SECTION_PREFIX = "stock:";
+const sectionKey = (id) => `${SECTION_PREFIX}${id}`;
+
+function Pane({ caption, right, collapsed, onToggle, children }) {
   return (
-    <section className={styles.pane}>
-      <div className={styles.paneHead}>
-        <span className="caption">{caption}</span>
-        {right}
-      </div>
-      <div className={styles.paneBody}>{children}</div>
-    </section>
+    <CollapsibleSection caption={caption} right={right} collapsed={collapsed} onToggle={onToggle}>
+      {children}
+    </CollapsibleSection>
   );
 }
 
@@ -53,7 +56,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   // shows the skeleton again without any synchronous setState in the effect.
   const [result, setResult] = useState(null);
   const [watchBusy, setWatchBusy] = useState(false);
-  const { settings } = useSettingsContext();
+  const { settings, setSetting } = useSettingsContext();
 
   useEffect(() => {
     let alive = true;
@@ -104,6 +107,44 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   const shownPatterns = patternFilter === "all"
     ? allPatterns
     : allPatterns.filter((p) => p.status !== "forming");
+
+  // Every section currently on the page, in render order — drives the
+  // "Collapse all / Expand all" control. Mirrors the conditions in the JSX.
+  const sectionIds = loading ? [] : [
+    "chart",
+    companyInfo.profile !== false && "company",
+    companyInfo.insiders !== false && "insiders",
+    "alerts",
+    "history",
+    anchors.length > 0 && "anchors",
+    xPosts.length > 0 && "xwatch",
+    ...(a ? ["plan", "structure", "patterns", "trendlines", "breakout", "candles", "why"] : []),
+  ].filter(Boolean);
+  const collapsedMap = settings.collapsedSections || {};
+  // Arriving from an alert link (focusAlertKey) the Alerts pane renders open
+  // even if it was collapsed — otherwise the alert you clicked through to
+  // would be hidden. The override ends as soon as the user toggles it (or
+  // uses Collapse all), and the stored preference is never rewritten by it.
+  const [alertsOverrideDone, setAlertsOverrideDone] = useState(null);
+  const forceAlertsOpen = Boolean(focusAlertKey) && alertsOverrideDone !== focusAlertKey;
+  const isCollapsed = (id) =>
+    !(id === "alerts" && forceAlertsOpen) && Boolean(collapsedMap[sectionKey(id)]);
+  const setCollapsed = (ids, value) => {
+    const next = { ...collapsedMap };
+    for (const id of ids) {
+      if (value) next[sectionKey(id)] = true;
+      else delete next[sectionKey(id)];
+    }
+    setSetting("collapsedSections", next);
+    if (ids.includes("alerts")) setAlertsOverrideDone(focusAlertKey);
+  };
+  // Props for one <Pane>: its effective state and a toggle that persists it.
+  const sec = (id) => ({
+    collapsed: isCollapsed(id),
+    onToggle: () => setCollapsed([id], !isCollapsed(id)),
+  });
+  const allCollapsed = sectionIds.length > 0 && sectionIds.every(isCollapsed);
+  const toggleAll = () => setCollapsed(sectionIds, !allCollapsed);
 
   const addToWatchlist = () => {
     setWatchBusy(true);
@@ -156,6 +197,18 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
           </span>
         )}
         <span className={styles.spacer} />
+        {sectionIds.length > 0 && (
+          <button
+            type="button"
+            className={styles.reportBtn}
+            onClick={toggleAll}
+            title={allCollapsed
+              ? "Open every section on this page"
+              : "Fold every section down to its header — remembered across stocks"}
+          >
+            {allCollapsed ? "Expand all" : "Collapse all"}
+          </button>
+        )}
         {canWatch && (
           <button
             type="button"
@@ -203,25 +256,25 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
         <Skeleton w="100%" h="460px" />
       ) : (
         <>
-          <section className={styles.chartPane}>
+          <Pane {...sec("chart")} caption="Chart">
             <ChartPro ticker={ticker} analysis={a} />
-          </section>
+          </Pane>
 
           {companyInfo.profile !== false && (
-            <Pane caption="Company"
+            <Pane {...sec("company")} caption="Company"
                   right={<span className={styles.muted}>who this is · who owns it</span>}>
               <CompanyInfo company={company} ticker={ticker} show={companyInfo} />
             </Pane>
           )}
 
           {companyInfo.insiders !== false && (
-            <Pane caption="Insider trades"
+            <Pane {...sec("insiders")} caption="Insider trades"
                   right={<span className={styles.muted}>SEC Form 4 · newest first</span>}>
               <InsiderTrades trades={insiderTrades} ticker={ticker} />
             </Pane>
           )}
 
-          <Pane caption="Alerts"
+          <Pane {...sec("alerts")} caption="Alerts"
                 right={<span className={styles.muted}>
                   {stockAlerts.length > 0
                     ? `${stockAlerts.length} fired · newest first`
@@ -230,13 +283,13 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
             <StockAlerts alerts={stockAlerts} ticker={ticker} focusKey={focusAlertKey} />
           </Pane>
 
-          <Pane caption="Suggestion history"
+          <Pane {...sec("history")} caption="Suggestion history"
                 right={<span className={styles.muted}>what we said · what happened next</span>}>
             <SuggestionHistoryStrip ticker={ticker} daily={data?.daily || []} />
           </Pane>
 
           {anchors.length > 0 && (
-            <Pane caption="This day in history"
+            <Pane {...sec("anchors")} caption="This day in history"
                   right={<span className={styles.muted}>close on this date, past years</span>}>
               <div className={styles.anchors}>
                 {anchors.map((an) => {
@@ -262,7 +315,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
           )}
 
           {xPosts.length > 0 && (
-            <Pane caption="X Watch"
+            <Pane {...sec("xwatch")} caption="X Watch"
                   right={<span className={styles.muted}>tracked-account posts mentioning {ticker}</span>}>
               <div className={styles.xFeed}>
                 {xPosts.map((p) => (
@@ -287,7 +340,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
         <>
 
           <div className={styles.grid}>
-            <Pane caption="Trade plan" right={a.rr != null && (
+            <Pane {...sec("plan")} caption="Trade plan" right={a.rr != null && (
               <span className={styles.rr} data-tone={a.rr_pass ? "pos" : "neg"}
                     title={a.rr_pass ? "Meets the 3:1 professional threshold" : "Below 3:1 — a known skip"}>
                 {a.rr}:1 {a.rr_pass ? "✓" : "✗ <3"}
@@ -328,7 +381,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
               )}
             </Pane>
 
-            <Pane caption="Structure">
+            <Pane {...sec("structure")} caption="Structure">
               <div className={styles.stats}>
                 <Stat label="Trend" value={a.trend} tone={a.trend === "up" ? "pos" : a.trend === "down" ? "neg" : ""} />
                 <Stat label="MA stack" value={a.ma_alignment.replace("stacked_", "")} />
@@ -367,6 +420,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
             </Pane>
 
             <Pane
+              {...sec("patterns")}
               caption="Patterns"
               right={formingCount > 0 && (
                 <Segmented
@@ -424,7 +478,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
             </Pane>
 
             {/* Trendlines were computed on every analysis and rendered nowhere. */}
-            <Pane caption="Trendlines"
+            <Pane {...sec("trendlines")} caption="Trendlines"
                   right={<span className={styles.muted}>diagonal support &amp; resistance</span>}>
               {(a.trendlines || []).length === 0 ? (
                 <p className={styles.muted}>No trendline has enough touches to be worth drawing.</p>
@@ -443,7 +497,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
               )}
             </Pane>
 
-            <Pane caption="Breakout / breakdown"
+            <Pane {...sec("breakout")} caption="Breakout / breakdown"
                   right={a.breakout && <span className={styles.rr} data-tone={BREAKOUT_TONE[a.breakout.status]}>{a.breakout.status.replace(/_/g, " ")}</span>}>
               {a.breakout ? (
                 <>
@@ -462,7 +516,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
               )}
             </Pane>
 
-            <Pane caption="Candles & volume">
+            <Pane {...sec("candles")} caption="Candles & volume">
               {a.volume ? (
                 <div className={styles.stats}>
                   <Stat label="Vol vs 20d" value={`${n(a.volume.ratio)}×`}
@@ -490,7 +544,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
               )}
             </Pane>
 
-            <Pane caption="Why — the read">
+            <Pane {...sec("why")} caption="Why — the read">
               <ul className={styles.reasons}>
                 {(a.evidence && a.evidence.length
                   ? a.evidence

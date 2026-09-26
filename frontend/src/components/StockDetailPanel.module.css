@@ -95,20 +95,8 @@
   .identity { flex: 1 1 100%; }
 }
 
-/* panes */
-.pane { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
-.paneHead {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--grid);
-}
-.paneBody { padding: var(--s-4); }
-
-/* The chart carries its own toolbar and legend, so it gets the pane surface
-   without a caption head — the ticker is already the page heading. */
-.chartPane {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r-md); overflow: hidden; padding: var(--s-4);
-}
+/* Panes (including the chart) are CollapsibleSection — styles live in
+   CollapsibleSection.module.css. */
 
 .tf { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
 .tfBtn {
