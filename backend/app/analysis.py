@@ -1258,7 +1258,7 @@ def apply_sizing(a: StockAnalysis, account_size: float | None,
         budget = account_size * rate
         out.sizing_note = (
             f"Account {account_size:,.0f} {account_currency} ≈ {budget:,.0f} {ticker_ccy} "
-            f"at {rate:.4f} {account_currency}/{ticker_ccy} (live Yahoo FX).")
+            f"at 1 {account_currency} = {rate:.4f} {ticker_ccy} (live Yahoo FX).")
     out.suggested_shares = int((budget * (risk_pct / 100.0)) / out.risk_per_share)
     return out
 
