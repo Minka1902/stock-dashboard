@@ -8,8 +8,10 @@ import SourceDrawer from "./SourceDrawer";
 import { useServerStatus } from "../hooks/useServerStatus";
 import { formatRelativeTime, formatUntil } from "../lib/format";
 import { prefersReducedMotion } from "../lib/motionConfig";
-import { sourceState } from "../lib/sources";
+import { STATE_TIP, sourceState } from "../lib/sources";
+import Tooltip from "./Tooltip";
 import styles from "./ServerPanel.module.css";
+import Term from "./Term";
 
 const TONE = { ok: "pos", error: "neg", deferred: "caution", never: "faint" };
 
@@ -80,10 +82,13 @@ function Meter({ value, label }) {
     const anim = animate(el, { width: `${pct}%`, duration: 420, ease: "outQuad" });
     return () => anim.pause();
   }, [value]);
+  const text = `${label}: ${value == null ? "—" : `${value.toFixed(0)}%`}`;
   return (
-    <span className={styles.meter} title={`${label}: ${value == null ? "—" : `${value.toFixed(0)}%`}`}>
-      <span ref={ref} className={styles.meterFill} data-hot={(value ?? 0) > 85 ? "yes" : "no"} />
-    </span>
+    <Tooltip content={text}>
+      <span className={styles.meter} role="img" aria-label={text}>
+        <span ref={ref} className={styles.meterFill} data-hot={(value ?? 0) > 85 ? "yes" : "no"} />
+      </span>
+    </Tooltip>
   );
 }
 
@@ -142,9 +147,11 @@ export default function ServerPanel() {
           <span className="caption">Process</span>
           <span className={styles.headRight}>
             v{overview.version} · python {overview.python}
-            <button type="button" className={styles.refresh} onClick={refresh} title="Refresh now">
-              <Icon name="refresh" size={12} />
-            </button>
+            <Tooltip content="Refresh now">
+              <button type="button" className={styles.refresh} onClick={refresh} aria-label="Refresh now">
+                <Icon name="refresh" size={12} />
+              </button>
+            </Tooltip>
           </span>
         </div>
         <div className={styles.body}>
@@ -251,7 +258,9 @@ export default function ServerPanel() {
                 <th scope="col">Source</th><th scope="col">Status</th><th scope="col">Last success</th>
                 <th scope="col">Last try</th><th scope="col" className={styles.num}>Last</th>
                 <th scope="col" className={styles.num}>Avg</th>
-                <th scope="col" className={styles.num} title="ok / error / deferred runs">ok/err/def</th>
+                <th scope="col" className={styles.num}>
+                  <Term tip="Count of runs that ended ok / in error / deferred (waiting on a rate limit)">ok/err/def</Term>
+                </th>
                 <th scope="col">Schedule</th><th scope="col">Next run</th>
               </tr>
             </thead>
@@ -271,15 +280,22 @@ export default function ServerPanel() {
                       {s.source}
                     </td>
                     <td className={styles.status}>
-                      <button
-                        type="button"
-                        className={styles.badge}
-                        data-tone={TONE[state]}
-                        title={`${s.never_run ? "never run" : s.status} — open details`}
-                        onClick={(e) => { e.stopPropagation(); openDrawer(s.source); }}
-                      >
-                        {s.never_run ? "never run" : s.status}
-                      </button>
+                      <Tooltip content={(
+                        <>
+                          <strong>{s.never_run ? "never run" : s.status}</strong>
+                          <p>{STATE_TIP[state]}</p>
+                          <p>Click for run history and details.</p>
+                        </>
+                      )}>
+                        <button
+                          type="button"
+                          className={styles.badge}
+                          data-tone={TONE[state]}
+                          onClick={(e) => { e.stopPropagation(); openDrawer(s.source); }}
+                        >
+                          {s.never_run ? "never run" : s.status}
+                        </button>
+                      </Tooltip>
                     </td>
                     <td>{s.last_success_at ? formatRelativeTime(s.last_success_at) : <em className={styles.never}>never</em>}</td>
                     <td>{s.last_refreshed_at ? formatRelativeTime(s.last_refreshed_at) : "—"}</td>
@@ -320,15 +336,16 @@ export default function ServerPanel() {
                   transition={{ duration: reduced ? 0 : 0.16 }}
                 >
                   {filter.kind} · {filter.id}
-                  <button
-                    type="button"
-                    className={styles.chipX}
-                    onClick={() => applyFilter(null)}
-                    aria-label="Clear filter: show all activity"
-                    title="Show all activity"
-                  >
-                    ×
-                  </button>
+                  <Tooltip content="Clear filter — show all activity">
+                    <button
+                      type="button"
+                      className={styles.chipX}
+                      onClick={() => applyFilter(null)}
+                      aria-label="Clear filter: show all activity"
+                    >
+                      ×
+                    </button>
+                  </Tooltip>
                 </motion.span>
               ) : (
                 <motion.span key="all" initial={false} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -356,40 +373,48 @@ export default function ServerPanel() {
               <tbody>
                 {events.map((e) => (
                   <tr key={e.key}>
-                    <td className={styles.evTime} title={e.at}>{formatRelativeTime(e.at)}</td>
+                    <td className={styles.evTime}>
+                      <Tooltip content={new Date(e.at).toLocaleString()}>
+                        <span>{formatRelativeTime(e.at)}</span>
+                      </Tooltip>
+                    </td>
                     <td className={styles.evKind} data-kind={e.kind}>{e.kind}</td>
                     <td className={styles.srcName}>{e.id}</td>
                     <td>
                       {e.kind === "source" && sourceNames.has(e.id) ? (
-                        <button
-                          type="button"
-                          className={styles.outcome}
-                          data-outcome={e.outcome}
-                          onClick={() => openDrawer(e.id)}
-                          title="Open this source's details"
-                        >
-                          {e.outcome}
-                        </button>
+                        <Tooltip content="Open this source's details">
+                          <button
+                            type="button"
+                            className={styles.outcome}
+                            data-outcome={e.outcome}
+                            onClick={() => openDrawer(e.id)}
+                          >
+                            {e.outcome}
+                          </button>
+                        </Tooltip>
                       ) : (
                         <span className={styles.outcome} data-outcome={e.outcome}>{e.outcome}</span>
                       )}
                     </td>
                     <td className={styles.num}>{ms(e.duration_ms)}</td>
                     <td className={styles.num}>{e.record_count ?? ""}</td>
-                    <td className={styles.evDetail} title={e.detail || ""}>
-                      {e.detail || ""}
-                      {e.next_attempt_at ? ` · next attempt ${formatUntil(e.next_attempt_at)}` : ""}
-                    </td>
+                    <Tooltip truncate>
+                      <td className={styles.evDetail}>
+                        {e.detail || ""}
+                        {e.next_attempt_at ? ` · next attempt ${formatUntil(e.next_attempt_at)}` : ""}
+                      </td>
+                    </Tooltip>
                     <td className={styles.evAct}>
                       {!(filter && filter.kind === e.kind && filter.id === e.id) && (
-                        <button
-                          type="button"
-                          className={styles.similar}
-                          onClick={() => applyFilter({ kind: e.kind, id: e.id })}
-                          title={`Show only ${e.kind} ${e.id}`}
-                        >
-                          Show similar
-                        </button>
+                        <Tooltip content={`Show only ${e.kind} ${e.id}`}>
+                          <button
+                            type="button"
+                            className={styles.similar}
+                            onClick={() => applyFilter({ kind: e.kind, id: e.id })}
+                          >
+                            Show similar
+                          </button>
+                        </Tooltip>
                       )}
                     </td>
                   </tr>

@@ -6,6 +6,7 @@ import { groupByDay, recentDays } from "../lib/calendarGrid";
 import { outcomeTone, pctLabel } from "../lib/suggestionHistory";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./SuggestionHistoryPreview.module.css";
+import Tooltip from "./Tooltip";
 
 const DAYS = 14;
 
@@ -117,12 +118,12 @@ export default function SuggestionHistoryPreview({ onOpenFull }) {
               <span className={styles.dayNum}>{label}</span>
               <span className={styles.dots}>
                 {dayEntries.slice(0, 4).map((e, i) => (
-                  <span
-                    key={i}
-                    className={styles.dot}
-                    data-tone={outcomeTone(e.outcomes?.d7)}
-                    title={`${e.ticker} · ${e.action || e.kind} · ${pctLabel(e.outcomes?.d7)} after 7d`}
-                  />
+                  <Tooltip key={i} content={`${e.ticker} · ${e.action || e.kind} · ${pctLabel(e.outcomes?.d7)} after 7d`}>
+                    <span
+                      className={styles.dot}
+                      data-tone={outcomeTone(e.outcomes?.d7)}
+                    />
+                  </Tooltip>
                 ))}
                 {dayEntries.length > 4 && (
                   <span className={styles.more}>+{dayEntries.length - 4}</span>

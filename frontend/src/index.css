@@ -73,7 +73,8 @@ body {
   --z-raised: 3;    /* in-panel chrome: chart toolbar, section nav */
   --z-popover: 400; /* menus and tooltips anchored to a trigger */
   --z-overlay: 800; /* command palette */
-  --z-tour: 1000;   /* guided-tour spotlight, above everything */
+  --z-tour: 1000;   /* guided-tour spotlight */
+  --z-tooltip: 1100; /* transient hover/focus hints — above everything, incl. the tour */
 
   /* motion */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);

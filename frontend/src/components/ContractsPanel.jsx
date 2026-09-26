@@ -8,6 +8,7 @@ import {
   formatDate,
 } from "../lib/format";
 import styles from "./ContractsPanel.module.css";
+import Tooltip from "./Tooltip";
 
 const COMPACT_LIMIT = 5;
 
@@ -71,24 +72,29 @@ export default function ContractsPanel({ contracts, loading, busy, onRefresh, co
               ) : (
                 rows.map((c) => (
                   <tr key={c.external_id}>
-                    <td className={styles.recipient} title={c.recipient_name}>
-                      {c.recipient_name}
-                    </td>
+                    <Tooltip truncate>
+                      <td className={styles.recipient}>
+                        {c.recipient_name}
+                      </td>
+                    </Tooltip>
                     <td>
-                      <span className={styles.agency} title={c.awarding_agency}>
-                        {c.awarding_agency}
-                      </span>
+                      <Tooltip truncate>
+                        <span className={styles.agency}>
+                          {c.awarding_agency}
+                        </span>
+                      </Tooltip>
                     </td>
-                    <td
-                      className={`${styles.amountCell} ${styles.amount} tabular`}
-                      title={formatCurrencyFull(c.amount)}
-                    >
-                      {formatCurrencyCompact(c.amount)}
+                    <td className={`${styles.amountCell} ${styles.amount} tabular`}>
+                      <Tooltip content={`Exact amount: ${formatCurrencyFull(c.amount)}`}>
+                        <span>{formatCurrencyCompact(c.amount)}</span>
+                      </Tooltip>
                     </td>
                     <td className={styles.muted}>{formatDate(c.start_date)}</td>
-                    <td className={styles.award} title={c.award_id}>
-                      {c.award_id || "—"}
-                    </td>
+                    <Tooltip truncate>
+                      <td className={styles.award}>
+                        {c.award_id || "—"}
+                      </td>
+                    </Tooltip>
                   </tr>
                 ))
               )}

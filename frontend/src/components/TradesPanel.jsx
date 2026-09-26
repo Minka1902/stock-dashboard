@@ -13,6 +13,8 @@ import {
   formatDate,
 } from "../lib/format";
 import styles from "./TradesPanel.module.css";
+import Tooltip from "./Tooltip";
+import InfoTip from "./InfoTip";
 
 const COMPACT_LIMIT = 5;
 
@@ -55,7 +57,7 @@ export default function TradesPanel({ trades, loading, busy, onRefresh, compact 
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Trades" />}
         <div>
-          <h2 className={styles.title}>Insider trades</h2>
+          <h2 className={styles.title}>Insider trades <InfoTip term="form4" /></h2>
           <p className={styles.subtitle}>
             Corporate insiders (SEC Form 4) buying and selling their own stock
           </p>
@@ -89,15 +91,16 @@ export default function TradesPanel({ trades, loading, busy, onRefresh, compact 
                 rows.map((t) => (
                   <motion.tr key={t.accession} variants={staggerItem}>
                     <td>
-                      <a
-                        className={styles.ticker}
-                        href={t.filing_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={`${t.company} — view filing`}
-                      >
-                        {t.ticker || "—"}
-                      </a>
+                      <Tooltip content={`${t.company} — open the Form 4 filing on SEC EDGAR (new tab)`}>
+                        <a
+                          className={styles.ticker}
+                          href={t.filing_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {t.ticker || "—"}
+                        </a>
+                      </Tooltip>
                     </td>
                     <td>
                       <span className={styles.badge} data-tone={typeTone(t.transaction_type)}>
@@ -105,12 +108,16 @@ export default function TradesPanel({ trades, loading, busy, onRefresh, compact 
                       </span>
                     </td>
                     <td className={styles.insider}>
-                      <span className={styles.owner} title={t.owner}>{t.owner}</span>
-                      <span className={styles.role} title={t.role}>{t.role}</span>
+                      <Tooltip truncate><span className={styles.owner}>{t.owner}</span></Tooltip>
+                      <Tooltip truncate><span className={styles.role}>{t.role}</span></Tooltip>
                     </td>
                     <td className={`${styles.num} tabular`}>{formatCount(Math.round(t.shares))}</td>
-                    <td className={`${styles.num} tabular`} title={formatCurrencyFull(t.value)}>
-                      {t.value > 0 ? formatCurrencyCompact(t.value) : "—"}
+                    <td className={`${styles.num} tabular`}>
+                      {t.value > 0 ? (
+                        <Tooltip content={`Exact value: ${formatCurrencyFull(t.value)}`}>
+                          <span>{formatCurrencyCompact(t.value)}</span>
+                        </Tooltip>
+                      ) : "—"}
                     </td>
                     <td className={styles.muted}>{formatDate(t.transaction_date)}</td>
                   </motion.tr>

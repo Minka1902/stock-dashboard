@@ -1,3 +1,4 @@
+import Tooltip from "./Tooltip";
 import styles from "./SortHeader.module.css";
 
 /**
@@ -9,18 +10,21 @@ import styles from "./SortHeader.module.css";
 export default function SortHeader({ label, active, dir, ariaSort, onSort, className = "" }) {
   return (
     <th aria-sort={ariaSort} className={className}>
-      <button
-        type="button"
-        className={styles.btn}
-        data-active={active ? "yes" : "no"}
-        onClick={onSort}
-        title={`Sort by ${label}`}
-      >
-        <span>{label}</span>
-        <span className={styles.caret} aria-hidden="true">
-          {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
-        </span>
-      </button>
+      <Tooltip content={active
+        ? `Sorted by ${label}, ${dir === "asc" ? "ascending" : "descending"} — click to reverse`
+        : `Sort by ${label}`}>
+        <button
+          type="button"
+          className={styles.btn}
+          data-active={active ? "yes" : "no"}
+          onClick={onSort}
+        >
+          <span>{label}</span>
+          <span className={styles.caret} aria-hidden="true">
+            {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
+          </span>
+        </button>
+      </Tooltip>
     </th>
   );
 }

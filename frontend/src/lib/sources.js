@@ -125,6 +125,15 @@ export const MODULE_SOURCE = {
   alerts: { note: "Derived" },
 };
 
+/** Plain-language meaning of each source state, for status badge tooltips. */
+export const STATE_TIP = {
+  ok: "OK — the last refresh succeeded and delivered real data.",
+  error: "Error — the last refresh failed. Nothing was invented; the previous data (if any) is kept.",
+  deferred: "Deferred — the source asked to wait (usually a rate limit). It retries automatically; this is not a failure.",
+  idle: "No data yet — this source has not reported a status.",
+  never: "Never run — this source has not run since it was added. It runs on its schedule.",
+};
+
 // "ok" or "ok (fallback: …)" both mean the source delivered real data.
 // "deferred: …" means the source asked to be retried later (e.g. a rate
 // limit): not a failure, not fresh either — shown in amber, never as an error.

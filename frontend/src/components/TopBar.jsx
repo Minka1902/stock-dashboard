@@ -3,8 +3,9 @@ import Icon from "./Icon";
 import AlertsBell from "./AlertsBell";
 import Popover from "./Popover";
 import UserMenu from "./UserMenu";
+import Tooltip from "./Tooltip";
 import { formatRelativeTime } from "../lib/format";
-import { leanLabel, leanTone } from "../lib/lean";
+import { LEAN_READ, leanLabel, leanTone } from "../lib/lean";
 import styles from "./TopBar.module.css";
 
 // Theme switcher: a trigger button + motion popover of the available themes,
@@ -26,17 +27,18 @@ function ThemeMenu({ theme, themes, onSetTheme }) {
   const isLight = theme === "light" || theme === "warm";
   return (
     <div className={styles.themeWrap} ref={ref}>
-      <button
-        className={styles.iconBtn}
-        onClick={() => setOpen((o) => !o)}
-        title="Change theme"
-        aria-label="Change theme"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        data-active={open ? "yes" : "no"}
-      >
-        <Icon name={isLight ? "sun" : "moon"} size={17} />
-      </button>
+      <Tooltip side="bottom" disabled={open} content="Change theme">
+        <button
+          className={styles.iconBtn}
+          onClick={() => setOpen((o) => !o)}
+          aria-label="Change theme"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          data-active={open ? "yes" : "no"}
+        >
+          <Icon name={isLight ? "sun" : "moon"} size={17} />
+        </button>
+      </Tooltip>
       <Popover open={open} anchorRef={ref} contentRef={menuRef} className={styles.themeMenu} role="menu">
             {themes.map((t) => (
               <button
@@ -80,32 +82,47 @@ export default function TopBar({
     <header className={styles.bar}>
       <div className={styles.left}>
         <h1 className={styles.title}>{title}</h1>
-        <span className={styles.status} data-live={live ? "yes" : "no"}>
-          <span className={styles.dot} />
-          {live ? "LIVE" : "IDLE"}
-          <span className={styles.since}>· {lastRefresh}</span>
-        </span>
+        <Tooltip side="bottom" content={live
+          ? `LIVE — the most recent source refresh (${latest.source}) succeeded ${lastRefresh}.`
+          : latest
+            ? `IDLE — the most recent source refresh (${latest.source}) did not succeed: ${latest.status}. See the Server page for details.`
+            : "IDLE — no source has refreshed yet."}>
+          <span className={styles.status} data-live={live ? "yes" : "no"} tabIndex={0}>
+            <span className={styles.dot} />
+            {live ? "LIVE" : "IDLE"}
+            <span className={styles.since}>· {lastRefresh}</span>
+          </span>
+        </Tooltip>
       </div>
 
       <div className={styles.actions}>
         {lean && (
-          <span className={styles.lean} data-lean={lean} data-tone={leanTone(lean)}>
-            <span className={styles.leanCap}>Lean</span>
-            {leanLabel(lean)}
-          </span>
+          <Tooltip side="bottom" content={(
+            <>
+              <strong>Market lean: {leanLabel(lean)}</strong>
+              <p>{LEAN_READ[lean] || "Composite read of the market sentiment indicators."} It summarises where sentiment indicators sit — it is not a trade instruction.</p>
+            </>
+          )}>
+            <span className={styles.lean} data-lean={lean} data-tone={leanTone(lean)} tabIndex={0}>
+              <span className={styles.leanCap}>Lean</span>
+              {leanLabel(lean)}
+            </span>
+          </Tooltip>
         )}
 
-        <button
-          type="button"
-          className={styles.cmd}
-          onClick={onOpenCommand}
-          aria-label="Open command palette and stock search"
-          title="Jump to a view, or search any stock (Ctrl/Cmd + K)"
-          data-tour="palette"
-        >
-          <Icon name="command" size={13} />
-          <kbd>K</kbd>
-        </button>
+        <Tooltip side="bottom" content="Jump to a view, or search any stock"
+                 shortcut={[["Ctrl", "K"], ["⌘", "K"]]}>
+          <button
+            type="button"
+            className={styles.cmd}
+            onClick={onOpenCommand}
+            aria-label="Open command palette and stock search"
+            data-tour="palette"
+          >
+            <Icon name="command" size={13} />
+            <kbd>K</kbd>
+          </button>
+        </Tooltip>
 
         <span data-tour="alerts">
           <AlertsBell
@@ -117,34 +134,40 @@ export default function TopBar({
         </span>
 
         {hasTour && (
-          <button
-            type="button"
-            className={styles.iconBtn}
-            onClick={onStartTour}
-            title="Take a guided tour of this view"
-            aria-label="Take a guided tour of this view"
-          >
-            <span aria-hidden="true" style={{ fontWeight: 700 }}>?</span>
-          </button>
+          <Tooltip side="bottom" content="Take a guided tour of this view">
+            <button
+              type="button"
+              className={styles.iconBtn}
+              onClick={onStartTour}
+              aria-label="Take a guided tour of this view"
+            >
+              <span aria-hidden="true" style={{ fontWeight: 700 }}>?</span>
+            </button>
+          </Tooltip>
         )}
 
-        <button
-          className={styles.iconBtn}
-          onClick={onToggleDyslexia}
-          title={dyslexia ? "Turn off dyslexia-friendly mode" : "Turn on dyslexia-friendly mode"}
-          aria-label="Toggle dyslexia-friendly mode"
-          aria-pressed={dyslexia}
-          data-active={dyslexia ? "yes" : "no"}
-        >
-          <Icon name="book" size={17} />
-        </button>
+        <Tooltip side="bottom" content={dyslexia ? "Turn off dyslexia-friendly mode" : "Turn on dyslexia-friendly mode"}>
+          <button
+            className={styles.iconBtn}
+            onClick={onToggleDyslexia}
+            aria-label="Dyslexia-friendly mode"
+            aria-pressed={dyslexia}
+            data-active={dyslexia ? "yes" : "no"}
+          >
+            <Icon name="book" size={17} />
+          </button>
+        </Tooltip>
         <ThemeMenu theme={theme} themes={themes} onSetTheme={onSetTheme} />
-        <button className={styles.refresh} onClick={onRefresh} disabled={busy} data-tour="refresh">
-          <span className={busy ? styles.spin : ""}>
-            <Icon name="refresh" size={15} />
-          </span>
-          {busy ? "Syncing" : "Refresh"}
-        </button>
+        <Tooltip side="bottom" content={busy
+          ? "Syncing — a refresh is already running"
+          : "Fetch fresh data from every source now, then reload the dashboard"}>
+          <button className={styles.refresh} onClick={onRefresh} disabled={busy} data-tour="refresh">
+            <span className={busy ? styles.spin : ""}>
+              <Icon name="refresh" size={15} />
+            </span>
+            {busy ? "Syncing" : "Refresh"}
+          </button>
+        </Tooltip>
 
         <UserMenu user={user} onLogout={onLogout} onNavigate={onNavigate} />
       </div>

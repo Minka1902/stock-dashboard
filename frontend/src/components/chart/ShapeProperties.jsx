@@ -4,6 +4,7 @@ import {
   DASHES, DEFAULT_FILL, FILLABLE, PALETTE_KEYS, STROKED, TEXTUAL, TOOL_BY_KEY, WIDTHS,
 } from "../../lib/drawings/tools";
 import DrawIcon from "./DrawIcons";
+import Tooltip from "../Tooltip";
 import styles from "./ChartTools.module.css";
 
 const PALETTE_LABELS = {
@@ -24,6 +25,9 @@ export default function ShapeProperties({ drawing, palette }) {
 
   const set = (patch) => shape && drawing.updateShape(shape.id, patch);
   const activeKey = shape ? (shape.colorKey || (shape.color ? null : "stroke")) : null;
+  // Why a style control is greyed out, appended to its tooltip.
+  const lockedWhy = drawing.lockAll ? " — every drawing is locked from the rail" : " — unlock this drawing first";
+  const tip = (label) => (locked ? `${label}${lockedWhy}` : label);
 
   return (
     <AnimatePresence>
@@ -45,11 +49,13 @@ export default function ShapeProperties({ drawing, palette }) {
           {shape.kind !== "measure" && (
             <div className={styles.swatches} role="radiogroup" aria-label="Colour">
               {PALETTE_KEYS.map((k) => (
-                <button key={k} type="button" role="radio" aria-checked={activeKey === k}
-                        className={styles.swatch} data-active={activeKey === k ? "yes" : "no"}
-                        style={{ "--sw": palette[k] }} disabled={locked}
-                        title={`${PALETTE_LABELS[k]} colour`} aria-label={`${PALETTE_LABELS[k]} colour`}
-                        onClick={() => set({ colorKey: k === "stroke" ? undefined : k, color: undefined })} />
+                <Tooltip key={k} side="bottom" content={tip(`${PALETTE_LABELS[k]} colour`)}>
+                  <button type="button" role="radio" aria-checked={activeKey === k}
+                          className={styles.swatch} data-active={activeKey === k ? "yes" : "no"}
+                          style={{ "--sw": palette[k] }} disabled={locked}
+                          aria-label={`${PALETTE_LABELS[k]} colour`}
+                          onClick={() => set({ colorKey: k === "stroke" ? undefined : k, color: undefined })} />
+                </Tooltip>
               ))}
             </div>
           )}
@@ -61,12 +67,14 @@ export default function ShapeProperties({ drawing, palette }) {
                   // legacy shapes have no width and draw at 1.8px, i.e. "2"
                   const on = Math.round(shape.width ?? 1.8) === w;
                   return (
-                    <button key={w} type="button" role="radio" aria-checked={on}
-                            className={styles.propsBtn} data-active={on ? "yes" : "no"}
-                            disabled={locked} title={`Line width ${w}px`} aria-label={`Line width ${w}`}
-                            onClick={() => set({ width: w })}>
-                      <span className={styles.widthGlyph} style={{ height: w }} />
-                    </button>
+                    <Tooltip key={w} side="bottom" content={tip(`Line width ${w}px`)}>
+                      <button type="button" role="radio" aria-checked={on}
+                              className={styles.propsBtn} data-active={on ? "yes" : "no"}
+                              disabled={locked} aria-label={`Line width ${w}`}
+                              onClick={() => set({ width: w })}>
+                        <span className={styles.widthGlyph} style={{ height: w }} />
+                      </button>
+                    </Tooltip>
                   );
                 })}
               </div>
@@ -74,9 +82,10 @@ export default function ShapeProperties({ drawing, palette }) {
                 {Object.keys(DASHES).map((d) => {
                   const on = (shape.dash || "solid") === d;
                   return (
-                    <button key={d} type="button" role="radio" aria-checked={on}
+                    <Tooltip key={d} side="bottom" content={tip(`${DASH_LABELS[d]} line`)}>
+                    <button type="button" role="radio" aria-checked={on}
                             className={styles.propsBtn} data-active={on ? "yes" : "no"}
-                            disabled={locked} title={`${DASH_LABELS[d]} line`} aria-label={`${DASH_LABELS[d]} line`}
+                            disabled={locked} aria-label={`${DASH_LABELS[d]} line`}
                             onClick={() => set({ dash: d === "solid" ? undefined : d })}>
                       <svg viewBox="0 0 20 6" width="20" height="6" aria-hidden="true">
                         <line x1="1" y1="3" x2="19" y2="3" stroke="currentColor" strokeWidth="1.6"
@@ -84,6 +93,7 @@ export default function ShapeProperties({ drawing, palette }) {
                               strokeDasharray={d === "dashed" ? "4 3" : d === "dotted" ? "0.5 3" : undefined} />
                       </svg>
                     </button>
+                    </Tooltip>
                   );
                 })}
               </div>
@@ -91,7 +101,7 @@ export default function ShapeProperties({ drawing, palette }) {
           )}
 
           {FILLABLE.has(shape.kind) && (
-            <label className={styles.opacity} title="Fill opacity">
+            <label className={styles.opacity}>
               <span>Fill</span>
               <input type="range" min="0" max="1" step="0.05" disabled={locked}
                      aria-label="Fill opacity"
@@ -101,25 +111,33 @@ export default function ShapeProperties({ drawing, palette }) {
           )}
 
           {TEXTUAL.has(shape.kind) && (
-            <button type="button" className={styles.propsBtn} disabled={locked}
-                    title="Edit text (double-click the label)" aria-label="Edit text"
-                    onClick={() => drawing.startEdit(shape.id)}>
-              <DrawIcon name="edit" size={15} />
-            </button>
+            <Tooltip side="bottom" content={tip("Edit text (or double-click the label)")}>
+              <button type="button" className={styles.propsBtn} disabled={locked}
+                      aria-label="Edit text"
+                      onClick={() => drawing.startEdit(shape.id)}>
+                <DrawIcon name="edit" size={15} />
+              </button>
+            </Tooltip>
           )}
 
-          <button type="button" className={styles.propsBtn} data-active={shape.locked ? "yes" : "no"}
-                  aria-pressed={!!shape.locked} disabled={drawing.lockAll}
-                  title={drawing.lockAll ? "Every drawing is locked from the rail" : shape.locked ? "Unlock this drawing" : "Lock this drawing in place"}
-                  aria-label={shape.locked ? "Unlock drawing" : "Lock drawing"}
-                  onClick={() => set({ locked: shape.locked ? undefined : true })}>
-            <DrawIcon name={shape.locked ? "lock" : "unlock"} size={15} />
-          </button>
-          <button type="button" className={styles.propsBtn} data-tone="danger" disabled={locked}
-                  title={locked ? "Unlock to delete" : "Delete drawing (Del)"} aria-label="Delete drawing"
-                  onClick={() => drawing.deleteShape(shape.id)}>
-            <DrawIcon name="trash" size={15} />
-          </button>
+          <Tooltip side="bottom" content={drawing.lockAll
+            ? "Every drawing is locked from the rail — unlock there first"
+            : shape.locked ? "Unlock this drawing" : "Lock this drawing in place"}>
+            <button type="button" className={styles.propsBtn} data-active={shape.locked ? "yes" : "no"}
+                    aria-pressed={!!shape.locked} disabled={drawing.lockAll}
+                    aria-label={shape.locked ? "Unlock drawing" : "Lock drawing"}
+                    onClick={() => set({ locked: shape.locked ? undefined : true })}>
+              <DrawIcon name={shape.locked ? "lock" : "unlock"} size={15} />
+            </button>
+          </Tooltip>
+          <Tooltip side="bottom" shortcut={locked ? undefined : ["Del"]}
+                   content={locked ? `Delete drawing${lockedWhy}` : "Delete drawing"}>
+            <button type="button" className={styles.propsBtn} data-tone="danger" disabled={locked}
+                    aria-label="Delete drawing"
+                    onClick={() => drawing.deleteShape(shape.id)}>
+              <DrawIcon name="trash" size={15} />
+            </button>
+          </Tooltip>
         </motion.div>
       )}
     </AnimatePresence>

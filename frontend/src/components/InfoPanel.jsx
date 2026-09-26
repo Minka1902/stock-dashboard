@@ -210,7 +210,7 @@ export default function InfoPanel({ onNavigate, sources }) {
           <button key={s.id} type="button" className={styles.chip} onClick={() => jump(s.id)}>
             {s.label}
             {s.id === "info-updates" && updateAvailable && (
-              <span className={styles.chipDot} aria-label="update available" />
+              <span className={styles.chipDot} role="img" aria-label="update available" />
             )}
           </button>
         ))}
@@ -242,7 +242,6 @@ export default function InfoPanel({ onNavigate, sources }) {
                       type="button"
                       className={styles.card}
                       onClick={() => onNavigate?.(m.key)}
-                      title={`Go to ${m.name}`}
                     >
                       <span className={styles.cardHead}>
                         <span className={styles.cardIcon}><Icon name={m.icon} size={18} /></span>

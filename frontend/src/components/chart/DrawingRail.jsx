@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { prefersReducedMotion } from "../../lib/motionConfig";
 import { GROUPS, TOOLS, TOOL_BY_KEY } from "../../lib/drawings/tools";
 import DrawIcon from "./DrawIcons";
+import Tooltip from "../Tooltip";
 import styles from "./ChartTools.module.css";
 
 const RAIL_KEY = "chartRailTools";
@@ -15,9 +16,9 @@ function loadRemembered() {
   }
 }
 
-/** "Trend line (Alt+T)" — the shortcut shown wherever the tool is named. */
-function toolTitle(t) {
-  return t.shortcut ? `${t.label} (Alt+${t.shortcut})` : t.label;
+/** Alt+<key> accelerator of a tool, in Tooltip's `shortcut` form. */
+function toolKeys(t) {
+  return t.shortcut ? ["Alt", t.shortcut] : undefined;
 }
 
 const flyoutMotion = (reduced) => ({
@@ -80,13 +81,15 @@ export default function DrawingRail({ drawing, disabled }) {
   return (
     <div ref={railRef} className={styles.rail} role="toolbar" aria-orientation="vertical"
          aria-label="Drawing tools" data-disabled={disabled ? "yes" : "no"}>
-      <button type="button" className={styles.railBtn}
-              data-active={!drawing.tool ? "yes" : "no"}
-              aria-pressed={!drawing.tool}
-              title="Cursor — select, move and pan (Esc)" aria-label="Cursor"
-              onClick={() => drawing.tool && drawing.setTool(drawing.tool)}>
-        <DrawIcon name="cursor" />
-      </button>
+      <Tooltip side="right" content="Cursor — select, move and pan" shortcut={["Esc"]}>
+        <button type="button" className={styles.railBtn}
+                data-active={!drawing.tool ? "yes" : "no"}
+                aria-pressed={!drawing.tool}
+                aria-label="Cursor"
+                onClick={() => drawing.tool && drawing.setTool(drawing.tool)}>
+          <DrawIcon name="cursor" />
+        </button>
+      </Tooltip>
 
       {GROUPS.map((g) => {
         const face = faceOf(g.key);
@@ -95,20 +98,25 @@ export default function DrawingRail({ drawing, disabled }) {
         const items = TOOLS.filter((t) => t.group === g.key);
         return (
           <div key={g.key} className={styles.railGroup}>
-            <button type="button" className={styles.railBtn}
-                    data-active={active ? "yes" : "no"} aria-pressed={active}
-                    disabled={disabled}
-                    title={toolTitle(face)} aria-label={face.label}
-                    onClick={() => drawing.setTool(face.key)}>
-              <DrawIcon name={face.key} />
-            </button>
-            {items.length > 1 && (
-              <button type="button" className={styles.railMore} disabled={disabled}
-                      aria-haspopup="menu" aria-expanded={open}
-                      title={`More ${g.label.toLowerCase()}`} aria-label={`More ${g.label.toLowerCase()}`}
-                      onClick={() => setOpenGroup(open ? null : g.key)}>
-                <DrawIcon name="chevron" size={9} />
+            <Tooltip side="right" shortcut={toolKeys(face)}
+                     content={disabled ? `${face.label} — available once the chart has data` : face.label}>
+              <button type="button" className={styles.railBtn}
+                      data-active={active ? "yes" : "no"} aria-pressed={active}
+                      disabled={disabled}
+                      aria-label={face.label}
+                      onClick={() => drawing.setTool(face.key)}>
+                <DrawIcon name={face.key} />
               </button>
+            </Tooltip>
+            {items.length > 1 && (
+              <Tooltip side="right" disabled={open} content={`More ${g.label.toLowerCase()}`}>
+                <button type="button" className={styles.railMore} disabled={disabled}
+                        aria-haspopup="menu" aria-expanded={open}
+                        aria-label={`More ${g.label.toLowerCase()}`}
+                        onClick={() => setOpenGroup(open ? null : g.key)}>
+                  <DrawIcon name="chevron" size={9} />
+                </button>
+              </Tooltip>
             )}
             <AnimatePresence>
               {open && (
@@ -139,45 +147,61 @@ export default function DrawingRail({ drawing, disabled }) {
 
       <span className={styles.railSep} aria-hidden="true" />
 
-      <button type="button" className={styles.railBtn} data-active={drawing.magnet ? "yes" : "no"}
-              aria-pressed={drawing.magnet} disabled={disabled}
-              title={drawing.magnet ? "Magnet on — points snap to bar open/high/low/close" : "Magnet off — click to snap points to bar open/high/low/close"}
-              aria-label="Magnet: snap to OHLC"
-              onClick={() => drawing.setMagnet(!drawing.magnet)}>
-        <DrawIcon name="magnet" />
-      </button>
-      <button type="button" className={styles.railBtn} data-active={drawing.lockAll ? "yes" : "no"}
-              aria-pressed={drawing.lockAll} disabled={disabled}
-              title={drawing.lockAll ? "Drawings locked — click to allow moving and editing" : "Lock all drawings (no moving or editing)"}
-              aria-label="Lock all drawings"
-              onClick={() => drawing.setLockAll(!drawing.lockAll)}>
-        <DrawIcon name={drawing.lockAll ? "lock" : "unlock"} />
-      </button>
-      <button type="button" className={styles.railBtn} data-active={drawing.hidden ? "yes" : "no"}
-              aria-pressed={drawing.hidden} disabled={disabled}
-              title={drawing.hidden ? "Drawings hidden — click to show them" : "Hide all drawings"}
-              aria-label="Hide all drawings"
-              onClick={() => drawing.setHidden(!drawing.hidden)}>
-        <DrawIcon name={drawing.hidden ? "eyeOff" : "eye"} />
-      </button>
+      <Tooltip side="right" content={drawing.magnet
+        ? "Magnet on — points snap to bar open/high/low/close"
+        : "Magnet off — click to snap points to bar open/high/low/close"}>
+        <button type="button" className={styles.railBtn} data-active={drawing.magnet ? "yes" : "no"}
+                aria-pressed={drawing.magnet} disabled={disabled}
+                aria-label="Magnet: snap to OHLC"
+                onClick={() => drawing.setMagnet(!drawing.magnet)}>
+          <DrawIcon name="magnet" />
+        </button>
+      </Tooltip>
+      <Tooltip side="right" content={drawing.lockAll
+        ? "Drawings locked — click to allow moving and editing"
+        : "Lock all drawings (no moving or editing)"}>
+        <button type="button" className={styles.railBtn} data-active={drawing.lockAll ? "yes" : "no"}
+                aria-pressed={drawing.lockAll} disabled={disabled}
+                aria-label="Lock all drawings"
+                onClick={() => drawing.setLockAll(!drawing.lockAll)}>
+          <DrawIcon name={drawing.lockAll ? "lock" : "unlock"} />
+        </button>
+      </Tooltip>
+      <Tooltip side="right" content={drawing.hidden ? "Drawings hidden — click to show them" : "Hide all drawings"}>
+        <button type="button" className={styles.railBtn} data-active={drawing.hidden ? "yes" : "no"}
+                aria-pressed={drawing.hidden} disabled={disabled}
+                aria-label="Hide all drawings"
+                onClick={() => drawing.setHidden(!drawing.hidden)}>
+          <DrawIcon name={drawing.hidden ? "eyeOff" : "eye"} />
+        </button>
+      </Tooltip>
 
       <span className={styles.railSep} aria-hidden="true" />
 
-      <button type="button" className={styles.railBtn} disabled={disabled || !drawing.canUndo}
-              title="Undo (Ctrl+Z)" aria-label="Undo" onClick={drawing.undo}>
-        <DrawIcon name="undo" />
-      </button>
-      <button type="button" className={styles.railBtn} disabled={disabled || !drawing.canRedo}
-              title="Redo (Ctrl+Y or Ctrl+Shift+Z)" aria-label="Redo" onClick={drawing.redo}>
-        <DrawIcon name="redo" />
-      </button>
-      <button type="button" className={styles.railBtn}
-              disabled={disabled || drawing.shapes.length === 0}
-              title={drawing.shapes.length ? "Remove every drawing on this chart (undo with Ctrl+Z)" : "No drawings to remove"}
-              aria-label="Remove all drawings"
-              onClick={drawing.clearAll}>
-        <DrawIcon name="trash" />
-      </button>
+      <Tooltip side="right" shortcut={["Ctrl", "Z"]}
+               content={drawing.canUndo ? "Undo" : "Undo — nothing to undo yet"}>
+        <button type="button" className={styles.railBtn} disabled={disabled || !drawing.canUndo}
+                aria-label="Undo" onClick={drawing.undo}>
+          <DrawIcon name="undo" />
+        </button>
+      </Tooltip>
+      <Tooltip side="right" shortcut={[["Ctrl", "Y"], ["Ctrl", "Shift", "Z"]]}
+               content={drawing.canRedo ? "Redo" : "Redo — nothing to redo"}>
+        <button type="button" className={styles.railBtn} disabled={disabled || !drawing.canRedo}
+                aria-label="Redo" onClick={drawing.redo}>
+          <DrawIcon name="redo" />
+        </button>
+      </Tooltip>
+      <Tooltip side="right" content={drawing.shapes.length
+        ? "Remove every drawing on this chart (undo with Ctrl+Z)"
+        : "Remove all drawings — there are none on this chart"}>
+        <button type="button" className={styles.railBtn}
+                disabled={disabled || drawing.shapes.length === 0}
+                aria-label="Remove all drawings"
+                onClick={drawing.clearAll}>
+          <DrawIcon name="trash" />
+        </button>
+      </Tooltip>
     </div>
   );
 }

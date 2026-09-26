@@ -13,6 +13,7 @@ import { openTickerTab } from "../lib/nav";
 import { prefersReducedMotion, staggerItem } from "../lib/motionConfig";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./WatchlistPanel.module.css";
+import Tooltip from "./Tooltip";
 
 function changeTone(pct) {
   if (pct == null) return "flat";
@@ -61,8 +62,15 @@ function WatchRow({ item, position, total, onMove, children }) {
  * this handle, which also keeps the row's inline note editor and kebab menu
  * clickable instead of swallowing every press as a drag.
  */
+const MARKET_STATE_TIP = {
+  LIVE: "Regular session open — the price is live.",
+  REGULAR: "Regular session open — the price is live.",
+  CLOSED: "Market closed — showing the last traded price.",
+};
+
 function DragHandle({ controls, ticker, onMove, position, total }) {
   return (
+    <Tooltip content="Drag to reorder — or focus it and use the arrow keys" shortcut={[["↑"], ["↓"]]}>
     <button
       type="button"
       className={styles.handle}
@@ -81,6 +89,7 @@ function DragHandle({ controls, ticker, onMove, position, total }) {
     >
       <Icon name="grip" size={14} />
     </button>
+    </Tooltip>
   );
 }
 
@@ -170,14 +179,15 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
         </div>
         <span className={styles.headerTools}>
           {isCustom && (
-            <button
-              type="button"
-              className={styles.resetOrder}
-              onClick={() => { resetOrder(); setLiveMessage("Order reset to newest first"); }}
-              title="Forget your manual order and go back to newest-added first"
-            >
-              <Icon name="refresh" size={12} /> Reset order
-            </button>
+            <Tooltip content="Forget your manual order and go back to newest-added first">
+              <button
+                type="button"
+                className={styles.resetOrder}
+                onClick={() => { resetOrder(); setLiveMessage("Order reset to newest first"); }}
+              >
+                <Icon name="refresh" size={12} /> Reset order
+              </button>
+            </Tooltip>
           )}
           {items.length > 0 && <SparkRange value={range} onChange={setRange} />}
         </span>
@@ -321,13 +331,14 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
               total={ordered.length}
               onMove={(delta) => handleMove(w.ticker, delta)}
             >
-              <button
-                className={styles.symbolBtn}
-                onClick={() => openTickerTab(w.ticker)}
-                title={`Open ${w.ticker} analysis in a new tab`}
-              >
-                <TickerLabel ticker={w.ticker} className={styles.symbol} />
-              </button>
+              <Tooltip content={`Open ${w.ticker} analysis in a new tab`}>
+                <button
+                  className={styles.symbolBtn}
+                  onClick={() => openTickerTab(w.ticker)}
+                >
+                  <TickerLabel ticker={w.ticker} className={styles.symbol} />
+                </button>
+              </Tooltip>
               <span className={styles.price}>
                 {q && q.price != null ? q.price.toFixed(2) : "—"}
               </span>
@@ -337,12 +348,14 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
                   : "—"}
               </span>
               <ExtHoursBadge quote={q} />
-              <span className={styles.state} data-state={(marketStatus || q?.market_state) ?? "none"}>
-                {(() => {
-                  const eff = marketStatus || q?.market_state;
-                  return eff && eff !== "PRE" && eff !== "POST" ? eff : "";
-                })()}
-              </span>
+              <Tooltip content={MARKET_STATE_TIP[marketStatus || q?.market_state]}>
+                <span className={styles.state} data-state={(marketStatus || q?.market_state) ?? "none"}>
+                  {(() => {
+                    const eff = marketStatus || q?.market_state;
+                    return eff && eff !== "PRE" && eff !== "POST" ? eff : "";
+                  })()}
+                </span>
+              </Tooltip>
               <Sparkline
                 closes={sparks[w.ticker]?.closes}
                 changePct={sparks[w.ticker]?.change_pct}
@@ -366,13 +379,17 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
                   onBlur={commitNote}
                 />
               ) : (
-                <button
-                  className={styles.itemNote}
-                  onClick={() => startNoteEdit(w)}
-                  title={`Edit note for ${w.ticker}`}
-                >
-                  {w.note || "—"}
-                </button>
+                <Tooltip content={w.note ? (
+                  <><strong>Note — click to edit</strong><p>{w.note}</p></>
+                ) : `Add a note for ${w.ticker}`}>
+                  <button
+                    className={styles.itemNote}
+                    onClick={() => startNoteEdit(w)}
+                    aria-label={w.note ? `Edit note for ${w.ticker}: ${w.note}` : `Add a note for ${w.ticker}`}
+                  >
+                    {w.note || "—"}
+                  </button>
+                </Tooltip>
               )}
               <span className={styles.added}>added {formatRelativeTime(w.added_at)}</span>
               <MenuButton label={`Actions for ${w.ticker}`}>

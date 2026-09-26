@@ -10,6 +10,7 @@ import { DAY_NAMES, monthGrid } from "../lib/calendarGrid";
 import { outcomeTone, pctLabel } from "../lib/suggestionHistory";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./SuggestionHistoryPanel.module.css";
+import Tooltip from "./Tooltip";
 
 const MONTH_FMT = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
 
@@ -128,9 +129,9 @@ export default function SuggestionHistoryPanel({ compact = false, ticker = null 
       ) : (
         <>
           <div className={styles.monthBar}>
-            <button className={styles.navBtn} onClick={() => step(-1)} aria-label="Previous month">‹</button>
+            <Tooltip content="Previous month"><button className={styles.navBtn} onClick={() => step(-1)} aria-label="Previous month">‹</button></Tooltip>
             <span className={styles.monthLabel}>{monthLabel}</span>
-            <button className={styles.navBtn} onClick={() => step(1)} aria-label="Next month">›</button>
+            <Tooltip content="Next month"><button className={styles.navBtn} onClick={() => step(1)} aria-label="Next month">›</button></Tooltip>
             <span className={styles.legend}>
               <span className={styles.dot} data-tone="up" /> up
               <span className={styles.dot} data-tone="down" /> down
@@ -148,8 +149,15 @@ export default function SuggestionHistoryPanel({ compact = false, ticker = null 
               const dayRows = byDay.get(cell.iso) || [];
               const isOpen = openDay === cell.iso;
               return (
+                <Tooltip key={cell.iso} disabled={dayRows.length === 0 || isOpen} content={(
+                  <>
+                    <strong>{cell.iso}</strong>
+                    {dayRows.map((e) => (
+                      <p key={e.ticker}>{e.ticker} · {e.action} · 7d {pctLabel(e.outcomes.d7)}</p>
+                    ))}
+                  </>
+                )}>
                 <button
-                  key={cell.iso}
                   className={styles.cell}
                   data-has={dayRows.length ? "yes" : "no"}
                   data-open={isOpen ? "yes" : "no"}
@@ -164,12 +172,12 @@ export default function SuggestionHistoryPanel({ compact = false, ticker = null 
                         key={e.ticker}
                         className={styles.dot}
                         data-tone={outcomeTone(e.outcomes.d7)}
-                        title={`${e.ticker} · ${e.action} · 7d ${pctLabel(e.outcomes.d7)}`}
                       />
                     ))}
                     {dayRows.length > 6 && <span className={styles.more}>+{dayRows.length - 6}</span>}
                   </span>
                 </button>
+                </Tooltip>
               );
             })}
           </div>
@@ -187,13 +195,14 @@ export default function SuggestionHistoryPanel({ compact = false, ticker = null 
                 <ul className={styles.list}>
                   {dayEntries.map((e) => (
                     <li key={e.ticker} className={styles.row}>
-                      <button
-                        className={styles.symbolBtn}
-                        onClick={() => openTickerTab(e.ticker)}
-                        title={`Open ${e.ticker} analysis in a new tab`}
-                      >
-                        <TickerLabel ticker={e.ticker} className={styles.symbol} />
-                      </button>
+                      <Tooltip content={`Open ${e.ticker} analysis in a new tab`}>
+                        <button
+                          className={styles.symbolBtn}
+                          onClick={() => openTickerTab(e.ticker)}
+                        >
+                          <TickerLabel ticker={e.ticker} className={styles.symbol} />
+                        </button>
+                      </Tooltip>
                       <span className={styles.kind}>{e.kind}</span>
                       <span className={styles.action}>{e.action}</span>
                       <span className={styles.price}>

@@ -9,6 +9,7 @@ import XPostCard from "./XPostCard";
 import TickerLabel from "./TickerLabel";
 import Segmented from "./Segmented";
 import MenuButton, { MenuItem, MenuLabel } from "./MenuButton";
+import Tooltip from "./Tooltip";
 import { sourceStale } from "../lib/sources";
 import { SORT_COLUMNS, sourceCounts, unifyFeed } from "../lib/newsSources";
 import { useSortableRows } from "../hooks/useSortableRows";
@@ -44,18 +45,21 @@ function Article({ a, onPickSource }) {
         <span className={styles.thumbFallback}><Icon name="news" size={18} /></span>
       )}
       <div className={styles.body}>
-        <a className={styles.headline} href={a.url} target="_blank" rel="noreferrer">
-          {a.title}
-        </a>
+        <Tooltip truncate content={a.title}>
+          <a className={styles.headline} href={a.url} target="_blank" rel="noreferrer">
+            {a.title}
+          </a>
+        </Tooltip>
         <div className={styles.meta}>
           {a.ticker && <span className={styles.tickerBadge}>{a.ticker}</span>}
-          <button
-            className={styles.domainBtn}
-            onClick={() => onPickSource(String(a.domain || "").replace(/^www\./i, "").toLowerCase())}
-            title={`Show only ${a.domain}`}
-          >
-            {a.domain}
-          </button>
+          <Tooltip content={`Show only ${a.domain}`}>
+            <button
+              className={styles.domainBtn}
+              onClick={() => onPickSource(String(a.domain || "").replace(/^www\./i, "").toLowerCase())}
+            >
+              {a.domain}
+            </button>
+          </Tooltip>
           {a.sourcecountry && <span className={styles.sep}>·</span>}
           {a.sourcecountry && <span>{a.sourcecountry}</span>}
           <span className={styles.sep}>·</span>
@@ -69,19 +73,22 @@ function Article({ a, onPickSource }) {
 function SortButton({ label, sortKey, sort, onSort }) {
   const active = sort?.key === sortKey;
   return (
-    <button
-      type="button"
-      className={styles.sortBtn}
-      data-active={active ? "yes" : "no"}
-      aria-pressed={active}
-      onClick={onSort}
-      title={`Sort by ${label}`}
-    >
-      {label}
-      <span className={styles.caret} aria-hidden="true">
-        {active ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
-      </span>
-    </button>
+    <Tooltip content={active
+      ? `Sorted by ${label}, ${sort.dir === "asc" ? "ascending" : "descending"} — click to reverse`
+      : `Sort by ${label}`}>
+      <button
+        type="button"
+        className={styles.sortBtn}
+        data-active={active ? "yes" : "no"}
+        aria-pressed={active}
+        onClick={onSort}
+      >
+        {label}
+        <span className={styles.caret} aria-hidden="true">
+          {active ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
+        </span>
+      </button>
+    </Tooltip>
   );
 }
 
@@ -234,16 +241,19 @@ export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sour
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
         {!compact && onUpdateNews && (
           <span className={styles.headTools}>
-            <button
-              type="button"
-              className={styles.updateBtn}
-              onClick={update}
-              disabled={fetching}
-              title="Fetch headlines now, bypassing the daily gate"
-            >
-              <Icon name="refresh" size={13} />
-              {fetching ? "Fetching…" : "Update"}
-            </button>
+            <Tooltip side="bottom" content={fetching
+              ? "Fetching headlines — wait for this request to finish"
+              : "Fetch headlines now, bypassing the daily gate"}>
+              <button
+                type="button"
+                className={styles.updateBtn}
+                onClick={update}
+                disabled={fetching}
+              >
+                <Icon name="refresh" size={13} />
+                {fetching ? "Fetching…" : "Update"}
+              </button>
+            </Tooltip>
           </span>
         )}
       </header>
@@ -301,17 +311,18 @@ export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sour
                 All <span className={styles.count}>{byTopic.length}</span>
               </button>
               {shownSources.map((s) => (
-                <button
-                  key={s.source}
-                  type="button"
-                  className={styles.sourceChip}
-                  data-active={source === s.source ? "yes" : "no"}
-                  data-kind={s.kind}
-                  onClick={() => pickSource(s.source)}
-                  title={s.kind === "x" ? `X account ${s.source}` : `Publisher ${s.source}`}
-                >
-                  {s.source} <span className={styles.count}>{s.count}</span>
-                </button>
+                <Tooltip key={s.source}
+                         content={`${s.kind === "x" ? `X account ${s.source}` : `Publisher ${s.source}`} — ${s.count} item${s.count === 1 ? "" : "s"}; click to show only these`}>
+                  <button
+                    type="button"
+                    className={styles.sourceChip}
+                    data-active={source === s.source ? "yes" : "no"}
+                    data-kind={s.kind}
+                    onClick={() => pickSource(s.source)}
+                  >
+                    {s.source} <span className={styles.count}>{s.count}</span>
+                  </button>
+                </Tooltip>
               ))}
               {hiddenSources > 0 && (
                 <button

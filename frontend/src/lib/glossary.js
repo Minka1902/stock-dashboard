@@ -25,9 +25,109 @@ export const GLOSSARY = {
     long: "The Relative Strength Index measures how fast and far price has moved on a 0–100 scale. A reading of 30–50 is treated as an oversold-recovery zone (adds +10); above 70 is overbought and pullback-prone (subtracts 10).",
   },
   macd: {
-    label: "MACD crossover",
-    short: "A momentum trigger — the MACD line crossing above its signal line.",
+    label: "MACD (and crossover)",
+    short: "Momentum from the gap between a 12- and 26-bar average; a cross above its 9-bar signal line flags upward momentum.",
     long: "MACD (Moving Average Convergence Divergence) compares two moving averages to track momentum. When the MACD line crosses above its signal line it flags a fresh shift to upward momentum. Adds +10 to the Boom Score.",
+  },
+  moving_average: {
+    label: "Moving average (SMA / MA)",
+    short: "The average closing price over the last N bars (e.g. MA50, MA200). Smooths day-to-day noise to show the trend.",
+    long: "A simple moving average adds up the closing prices of the last N bars and divides by N. The 50-day (MA50) and 200-day (MA200) averages are the usual medium- and long-term trend references; price above a rising average is read as an uptrend. The golden and death crosses compare these two.",
+  },
+  ema: {
+    label: "Exponential moving average (EMA)",
+    short: "A moving average that weights recent bars more heavily, so it reacts faster than a simple average.",
+    long: "Like a simple moving average, but each older bar counts a little less than the one after it. The chart's 9- and 21-bar EMAs follow short-term swings more closely than the 50/200 averages.",
+  },
+  bollinger: {
+    label: "Bollinger Bands",
+    short: "A 20-bar average with bands 2 standard deviations above and below. Wide bands = volatile; narrow bands = quiet.",
+    long: "Bollinger Bands (20, 2) plot a 20-bar simple moving average with an upper and lower band two standard deviations away. The bands widen when prices swing more and pinch together when the market goes quiet. Price touching a band is not a signal on its own.",
+  },
+  vwap: {
+    label: "VWAP (Volume-Weighted Average Price)",
+    short: "The session's average traded price, weighted by volume at each price. Intraday only; resets every session.",
+    long: "VWAP averages every trade in the session weighted by its size, so heavily traded prices count more. Traders use it as the session's 'fair' reference price. It only has meaning within a single trading day, so the chart shows it on intraday timeframes only.",
+  },
+  r_multiple: {
+    label: "R-multiple / reward-to-risk (R/R)",
+    short: "A trade measured in units of its planned risk. R = distance from entry to stop; R/R 2 means the target is twice that distance.",
+    long: "One R is the amount you would lose if the stop is hit (entry price minus stop price). Reward-to-risk (R/R) divides the distance to the target by that risk, so R/R 2 means the target is two R away. Results are also reported in R — +1.5R is a gain of one and a half times the planned risk. It describes the plan's geometry, not the odds of reaching the target.",
+  },
+  conviction: {
+    label: "Conviction tier",
+    short: "A plain-language band for the Boom Score: Watching (0–25), Interesting (26–50), High Conviction (51–75), Strong Setup (76+).",
+    long: "The Boom Score's band, so a list can be scanned without reading numbers: Watching 0–25, Interesting 26–50, High Conviction 51–75, Strong Setup 76 or more, and Bearish Signals below 0. A higher tier means more independent signals agree right now — it is not a forecast.",
+  },
+  atr: {
+    label: "ATR (Average True Range)",
+    short: "The average size of a day's price range over the last 14 days, including overnight gaps. A volatility yardstick in dollars.",
+    long: "Average True Range measures how much a stock typically moves in a day, counting gaps from the previous close. The analysis uses it to place stops a sensible distance from price and to say how stretched price is from its 20-day average (in ATRs).",
+  },
+  analysis_conviction: {
+    label: "Analysis conviction (conv)",
+    short: "The stock analysis's evidence total, −100 to +100: each technical finding adds or subtracts its weight. 45+ reads Accumulate, −15 or less Reduce, −45 or less Avoid, otherwise Hold.",
+    long: "The per-stock analysis scores each piece of technical evidence it finds — trend, chart patterns, support and trendlines, momentum — with a signed weight, and adds them up (capped at ±100). The total maps to a directive: 45 or more is Accumulate, between −15 and 45 Hold, −15 or less Reduce, −45 or less Avoid. Every contributing finding is listed with it; it is a summary of evidence, not a forecast.",
+  },
+  days_to_cover: {
+    label: "Days to cover (short ratio)",
+    short: "Shares sold short ÷ average daily volume — roughly how many days of normal trading it would take shorts to buy back.",
+    long: "Divides the number of shares sold short by the average number of shares traded per day. A high value means short sellers would need many days of normal volume to close their positions, which can amplify a rise if they are forced to buy.",
+  },
+  form4: {
+    label: "SEC Form 4",
+    short: "The filing company insiders (officers, directors, 10% owners) must submit within two business days of trading their own company's stock.",
+    long: "U.S. securities law requires insiders to report changes in their holdings on Form 4, generally within two business days. The dashboard reads these filings from SEC EDGAR; open-market purchases and sales are the informative ones, while grants and option exercises are often routine.",
+  },
+  put_call: {
+    label: "Put/call ratio",
+    short: "Put options traded ÷ call options traded. Above ~1 means more demand for downside protection; well below 1, more upside bets.",
+    long: "Puts gain when prices fall and calls gain when they rise, so the ratio of put to call volume is a read on how defensive options traders are. Readings are usually compared with their own recent range rather than a fixed line.",
+  },
+  margin_debt: {
+    label: "Margin debt",
+    short: "Money investors have borrowed from brokers against their holdings, reported monthly by FINRA.",
+    long: "FINRA publishes the total debit balances in customers' margin accounts each month. Fast growth shows leverage-fuelled optimism; sharp declines often coincide with forced selling. The figure is released with a lag of several weeks.",
+  },
+  aaii: {
+    label: "AAII sentiment survey",
+    short: "A weekly poll by the American Association of Individual Investors: the share of members bullish, neutral or bearish on the next six months.",
+    long: "Each week AAII asks its members where they think the stock market will be in six months. The bull–bear spread is often read contrarily: extreme pessimism among individual investors has historically come near market lows.",
+  },
+  vix: {
+    label: "VIX (volatility index)",
+    short: "Cboe's measure of the S&P 500 volatility options traders expect over the next 30 days. Higher = more expected turbulence.",
+    long: "The VIX is calculated from S&P 500 option prices and expresses the market's expected 30-day volatility as an annualised percentage. It tends to spike when stocks fall sharply, which is why it is nicknamed the fear gauge.",
+  },
+  extended_hours: {
+    label: "Extended hours (pre-market / after-hours)",
+    short: "Trading before the regular session opens or after it closes. Volume is thin, so prices can jump on little trading.",
+    long: "U.S. stocks also trade roughly 4:00–9:30 a.m. (pre-market) and 4:00–8:00 p.m. ET (after-hours). Fewer participants means wider spreads and moves that may not hold into the regular session. Some exchanges, such as Tel Aviv, have no extended session at all.",
+  },
+  pe_ratio: {
+    label: "P/E ratio",
+    short: "Share price ÷ earnings per share. Trailing uses the last 12 months' reported earnings; forward uses analysts' estimates.",
+    long: "The price-to-earnings ratio says how many dollars investors pay for one dollar of annual profit. It is most useful compared with the same company's history or its sector; it is not meaningful when earnings are negative.",
+  },
+  peg: {
+    label: "PEG ratio",
+    short: "P/E divided by the expected earnings growth rate. Around 1 means the valuation roughly matches expected growth.",
+    long: "PEG adjusts the P/E for growth: a company growing earnings 20% a year on a P/E of 20 has a PEG of 1. It depends entirely on the growth estimate used, so treat it as a rough comparison tool.",
+  },
+  price_to_book: {
+    label: "P/B (price-to-book)",
+    short: "Share price ÷ book value per share (assets minus liabilities).",
+    long: "Compares the market price with the accounting value of the company's net assets. Asset-heavy businesses such as banks are often compared on P/B; for software companies it says little.",
+  },
+  eps: {
+    label: "EPS (earnings per share)",
+    short: "Net profit divided by shares outstanding. 'est.' is analysts' consensus estimate before the report.",
+    long: "Earnings per share is the profit attributable to each share. Around earnings reports the market compares the reported EPS with the consensus estimate; a large surprise either way often moves the price.",
+  },
+  wsb_rank: {
+    label: "Reddit (WSB) mention rank",
+    short: "Where a ticker ranks by mentions across Reddit's stock communities such as r/wallstreetbets (1 = most mentioned), from ApeWisdom. Measures attention, not quality.",
+    long: "ApeWisdom counts ticker mentions across Reddit's investing communities, r/wallstreetbets among them, and ranks them. A climb of five or more places in 24 hours is flagged as a short-horizon signal (+10). It shows a surge of retail attention, which can reverse just as quickly.",
   },
   relative_volume: {
     label: "Relative volume",

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { formatCount, formatCurrencyCompact } from "../lib/format";
+import Tooltip from "./Tooltip";
+import Term from "./Term";
 import styles from "./CompanyInfo.module.css";
 
 const SUMMARY_CLAMP = 320;
@@ -12,11 +14,13 @@ function num(v, digits = 2) {
   return v == null ? "—" : Number(v).toFixed(digits);
 }
 
-function Row({ label, value, title }) {
+// The value cell is ellipsised, so it shows its full text on hover — but only
+// when it is actually cut off.
+function Row({ label, value }) {
   return (
     <div className={styles.row}>
       <span className={styles.rowLabel}>{label}</span>
-      <span className={styles.rowValue} title={title}>{value}</span>
+      <Tooltip truncate><span className={styles.rowValue}>{value}</span></Tooltip>
     </div>
   );
 }
@@ -112,10 +116,10 @@ export default function CompanyInfo({ company, ticker, show = {} }) {
       {wants.valuation && profile && (
         <Section title="Valuation">
           <div className={styles.rows}>
-            <Row label="P/E (trailing)" value={num(profile.pe_ratio)} />
-            <Row label="P/E (forward)" value={num(profile.forward_pe)} />
-            <Row label="PEG" value={num(profile.peg_ratio)} />
-            <Row label="Price / book" value={num(profile.pb_ratio)} />
+            <Row label={<Term term="pe_ratio">P/E (trailing)</Term>} value={num(profile.pe_ratio)} />
+            <Row label={<Term term="pe_ratio">P/E (forward)</Term>} value={num(profile.forward_pe)} />
+            <Row label={<Term term="peg">PEG</Term>} value={num(profile.peg_ratio)} />
+            <Row label={<Term term="price_to_book">Price / book</Term>} value={num(profile.pb_ratio)} />
             <Row label="Revenue growth" value={pct(profile.revenue_growth)} />
             <Row label="Profit margin" value={pct(profile.profit_margin)} />
           </div>
@@ -132,7 +136,7 @@ export default function CompanyInfo({ company, ticker, show = {} }) {
             <ul className={styles.holders}>
               {holders.map((h) => (
                 <li key={h.holder} className={styles.holder}>
-                  <span className={styles.holderName}>{h.holder}</span>
+                  <Tooltip truncate><span className={styles.holderName}>{h.holder}</span></Tooltip>
                   <span className={styles.holderPct}>{pct(h.pct_held, 2)}</span>
                   <span className={styles.holderMeta}>
                     {h.shares != null ? formatCount(h.shares) : "—"} sh
@@ -153,7 +157,7 @@ export default function CompanyInfo({ company, ticker, show = {} }) {
             <ul className={styles.officers}>
               {officers.map((o) => (
                 <li key={o.name} className={styles.officer}>
-                  <span className={styles.officerName}>{o.name}</span>
+                  <Tooltip truncate><span className={styles.officerName}>{o.name}</span></Tooltip>
                   <span className={styles.officerTitle}>{o.title || "—"}</span>
                   <span className={styles.officerMeta}>
                     {o.age ? `age ${o.age}` : ""}

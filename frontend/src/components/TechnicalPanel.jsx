@@ -5,13 +5,21 @@ import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import { formatCurrencyCompact, formatRelativeTime, freshnessTone } from "../lib/format";
 import styles from "./TechnicalPanel.module.css";
+import Tooltip from "./Tooltip";
+import Term from "./Term";
+import { freshnessTip } from "../lib/freshness";
 
 const COMPACT_LIMIT = 5;
 
 function RsiCell({ rsi }) {
   if (rsi == null) return <span className={styles.muted}>—</span>;
   const tone = rsi < 30 ? "oversold" : rsi > 70 ? "overbought" : "neutral";
-  return <span className={styles.rsi} data-tone={tone}>{rsi.toFixed(1)}</span>;
+  const read = tone === "oversold" ? "below 30: oversold" : tone === "overbought" ? "above 70: overbought" : "between 30 and 70";
+  return (
+    <Tooltip content={`RSI ${rsi.toFixed(1)} — ${read}`}>
+      <span className={styles.rsi} data-tone={tone}>{rsi.toFixed(1)}</span>
+    </Tooltip>
+  );
 }
 
 function CrossCell({ golden_cross }) {
@@ -35,13 +43,21 @@ function MacdCell({ macd_crossover, macd }) {
 function VolCell({ rel_volume }) {
   if (rel_volume == null) return <span className={styles.muted}>—</span>;
   const tone = rel_volume > 1.5 ? "pos" : rel_volume < 0.7 ? "neg" : "neutral";
-  return <span className={styles.chg} data-tone={tone}>{rel_volume.toFixed(1)}×</span>;
+  return (
+    <Tooltip content={`Today's volume is ${rel_volume.toFixed(1)}× its average. Above 1.5× reads as strong participation.`}>
+      <span className={styles.chg} data-tone={tone}>{rel_volume.toFixed(1)}×</span>
+    </Tooltip>
+  );
 }
 
 function FreshnessCell({ fetched_at }) {
   const text = formatRelativeTime(fetched_at);
   const tone = freshnessTone(fetched_at);
-  return <span className={styles.freshness} data-tone={tone}>{text}</span>;
+  return (
+    <Tooltip content={freshnessTip(fetched_at)}>
+      <span className={styles.freshness} data-tone={tone}>{text}</span>
+    </Tooltip>
+  );
 }
 
 function MiniSparkline({ pricesJson }) {
@@ -113,16 +129,16 @@ export default function TechnicalPanel({ data, loading, busy, onRefresh, compact
               <tr>
                 <th>Ticker</th>
                 <th className={styles.num}>Price</th>
-                <th className={styles.num}>Chg%</th>
-                <th className={styles.num}>RSI14</th>
-                <th className={styles.num}>MA50</th>
-                <th className={styles.num}>MA200</th>
-                <th>Cross</th>
-                <th>MACD</th>
-                <th className={styles.num}>Vol Ratio</th>
-                <th className={styles.num}>52W Hi</th>
-                <th className={styles.num}>52W Lo</th>
-                <th>Trend</th>
+                <th className={styles.num}><Term tip="Change since the previous close, in percent">Chg%</Term></th>
+                <th className={styles.num}><Term term="rsi" tip="Computed over 14 days.">RSI14</Term></th>
+                <th className={styles.num}><Term term="moving_average" tip="MA50: the 50-day average.">MA50</Term></th>
+                <th className={styles.num}><Term term="moving_average" tip="MA200: the 200-day average.">MA200</Term></th>
+                <th><Term tip="Golden: MA50 is above MA200 (uptrend). Death: MA50 is below MA200 (downtrend).">Cross</Term></th>
+                <th><Term term="macd" tip="Shows “Crossover” when it just crossed its signal line; otherwise the MACD value.">MACD</Term></th>
+                <th className={styles.num}><Term term="relative_volume">Vol Ratio</Term></th>
+                <th className={styles.num}><Term tip="Highest price in the last 52 weeks">52W Hi</Term></th>
+                <th className={styles.num}><Term tip="Lowest price in the last 52 weeks">52W Lo</Term></th>
+                <th><Term tip="Recent closing prices; green if the last is above the first">Trend</Term></th>
                 <th>Updated</th>
               </tr>
             </thead>

@@ -4,6 +4,7 @@ import { openTickerTab } from "../lib/nav";
 import { initialsFor, gradientFor } from "../lib/avatar";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./XPostCard.module.css";
+import Tooltip from "./Tooltip";
 
 const CASHTAG_SPLIT_RE = /(\$[A-Za-z]{1,5})\b/g;
 const CASHTAG_TEST_RE = /^\$[A-Za-z]{1,5}$/;
@@ -17,15 +18,15 @@ function PostText({ text }) {
         if (CASHTAG_TEST_RE.test(part)) {
           const t = part.slice(1).toUpperCase();
           return (
-            <button
-              key={i}
-              type="button"
-              className={styles.cashtag}
-              onClick={() => openTickerTab(t)}
-              title={`Analyze ${t} in a new tab`}
-            >
-              {part}
-            </button>
+            <Tooltip key={i} content={`Analyze ${t} in a new tab`}>
+              <button
+                type="button"
+                className={styles.cashtag}
+                onClick={() => openTickerTab(t)}
+              >
+                {part}
+              </button>
+            </Tooltip>
           );
         }
         return <span key={i}>{part}</span>;
@@ -79,30 +80,32 @@ export default function XPostCard({ post, compact = false }) {
             <span className={styles.time}>{formatRelativeTime(post.posted_at)}</span>
           )}
           {post.url && (
-            <a
-              className={styles.link}
-              href={post.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Open original post"
-            >
-              <Icon name="arrowRight" size={13} />
-            </a>
+            <Tooltip content="Open the original post on X (new tab)">
+              <a
+                className={styles.link}
+                href={post.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Open original post"
+              >
+                <Icon name="arrowRight" size={13} />
+              </a>
+            </Tooltip>
           )}
         </div>
         <PostText text={post.text} />
         {post.tickers && (
           <div className={styles.tickerRow}>
             {post.tickers.split(",").filter(Boolean).map((t) => (
-              <button
-                key={t}
-                type="button"
-                className={styles.tickerChip}
-                onClick={() => openTickerTab(t)}
-                title={`Analyze ${t} in a new tab`}
-              >
-                {t}
-              </button>
+              <Tooltip key={t} content={`Analyze ${t} in a new tab`}>
+                <button
+                  type="button"
+                  className={styles.tickerChip}
+                  onClick={() => openTickerTab(t)}
+                >
+                  {t}
+                </button>
+              </Tooltip>
             ))}
           </div>
         )}

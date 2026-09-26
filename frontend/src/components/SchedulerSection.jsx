@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
+import Tooltip from "./Tooltip";
 import { putServerSchedule, runScheduleNow } from "../api";
 import { formatUntil } from "../lib/format";
 import { prefersReducedMotion } from "../lib/motionConfig";
@@ -100,16 +101,17 @@ function TimesEditor({ times, onCommit, reduced }) {
         {times.map((t) => (
           <motion.span key={t} layout={!reduced} className={styles.chip} {...chipMotion}>
             {t}
-            <button
-              type="button"
-              className={styles.chipX}
-              aria-label={`Remove ${t}`}
-              title={times.length <= 1 ? "A schedule needs at least one time" : `Remove ${t}`}
-              disabled={times.length <= 1}
-              onClick={() => onCommit(times.filter((x) => x !== t))}
-            >
-              ×
-            </button>
+            <Tooltip content={times.length <= 1 ? `Can't remove ${t} — a schedule needs at least one time` : `Remove ${t}`}>
+              <button
+                type="button"
+                className={styles.chipX}
+                aria-label={`Remove ${t}`}
+                disabled={times.length <= 1}
+                onClick={() => onCommit(times.filter((x) => x !== t))}
+              >
+                ×
+              </button>
+            </Tooltip>
           </motion.span>
         ))}
       </AnimatePresence>
@@ -171,11 +173,13 @@ function ScheduleRow({ row, error, note, onSave, onRunNow, reduced }) {
     >
       <div className={styles.name}>
         <span className={styles.src}>{row.source}</span>
-        <span className={styles.desc}>
-          {row.members?.length ? `${row.members.join(" → ")} · ` : ""}
-          {row.description}
-          {row.retry_seconds ? ` · retry ${humanSeconds(row.retry_seconds)}` : ""}
-        </span>
+        <Tooltip truncate>
+          <span className={styles.desc}>
+            {row.members?.length ? `${row.members.join(" → ")} · ` : ""}
+            {row.description}
+            {row.retry_seconds ? ` · retry ${humanSeconds(row.retry_seconds)}` : ""}
+          </span>
+        </Tooltip>
       </div>
 
       <span className={styles.seg} role="group" aria-label={`${row.source} schedule mode`}>
@@ -210,17 +214,17 @@ function ScheduleRow({ row, error, note, onSave, onRunNow, reduced }) {
 
       <span className={styles.days} role="group" aria-label={`${row.source} days`}>
         {DAYS.map(([key, letter, full]) => (
-          <button
-            key={key}
-            type="button"
-            className={styles.day}
-            aria-pressed={row.days.includes(key)}
-            aria-label={full}
-            title={full}
-            onClick={() => toggleDay(key)}
-          >
-            {letter}
-          </button>
+          <Tooltip key={key} content={`${full} — ${row.days.includes(key) ? "runs" : "skipped"}; click to toggle`}>
+            <button
+              type="button"
+              className={styles.day}
+              aria-pressed={row.days.includes(key)}
+              aria-label={full}
+              onClick={() => toggleDay(key)}
+            >
+              {letter}
+            </button>
+          </Tooltip>
         ))}
       </span>
 
@@ -235,9 +239,12 @@ function ScheduleRow({ row, error, note, onSave, onRunNow, reduced }) {
         <span>{row.enabled ? "On" : "Paused"}</span>
       </label>
 
-      <span className={styles.next} title={row.next_run_at || ""}>
-        {!row.enabled ? "paused" : row.next_run_at ? formatUntil(row.next_run_at) : "—"}
-      </span>
+      <Tooltip disabled={!row.enabled || !row.next_run_at}
+               content={row.next_run_at ? `Next run: ${new Date(row.next_run_at).toLocaleString()}` : null}>
+        <span className={styles.next}>
+          {!row.enabled ? "paused" : row.next_run_at ? formatUntil(row.next_run_at) : "—"}
+        </span>
+      </Tooltip>
 
       <button type="button" className={styles.runBtn} onClick={onRunNow}>
         <Icon name="refresh" size={11} /> {note || "Run now"}

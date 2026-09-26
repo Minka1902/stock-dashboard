@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
 import Popover from "./Popover";
+import Tooltip from "./Tooltip";
 import TickerLabel from "./TickerLabel";
 import { alertIcon } from "../lib/alertMeta";
 import { routeToPath } from "../lib/nav";
@@ -33,17 +34,20 @@ export default function AlertsBell({ alerts = [], unread = 0, onMarkRead, onOpen
 
   return (
     <div className={styles.wrap} ref={wrapRef}>
-      <button
-        type="button"
-        className={styles.bell}
-        onClick={() => setOpen((o) => !o)}
-        aria-label={unread > 0 ? `Alerts, ${unread} unread` : "Alerts"}
-        aria-expanded={open}
-        data-unread={unread > 0 ? "yes" : "no"}
-      >
-        <Icon name="bell" size={17} />
-        {unread > 0 && <span className={styles.badge}>{unread > 9 ? "9+" : unread}</span>}
-      </button>
+      <Tooltip side="bottom" disabled={open}
+               content={unread > 0 ? `Alerts — ${unread} unread` : "Alerts"}>
+        <button
+          type="button"
+          className={styles.bell}
+          onClick={() => setOpen((o) => !o)}
+          aria-label={unread > 0 ? `Alerts, ${unread} unread` : "Alerts"}
+          aria-expanded={open}
+          data-unread={unread > 0 ? "yes" : "no"}
+        >
+          <Icon name="bell" size={17} />
+          {unread > 0 && <span className={styles.badge}>{unread > 9 ? "9+" : unread}</span>}
+        </button>
+      </Tooltip>
 
       <Popover
         open={open}
@@ -67,7 +71,10 @@ export default function AlertsBell({ alerts = [], unread = 0, onMarkRead, onOpen
             <ul className={styles.list}>
               {recent.map((a) => (
                 <li key={a.dedup_key} className={styles.item} data-unread={a.read ? "no" : "yes"}>
-                  <span className={styles.dot} data-sev={a.severity} />
+                  <Tooltip content={`${a.severity} severity`} side="left">
+                    <span className={styles.dot} data-sev={a.severity} role="img"
+                          aria-label={`${a.severity} severity`} />
+                  </Tooltip>
                   {/* A real anchor, not a button with onClick: that's what makes
                       Ctrl/Cmd/middle-click open a new tab, and what lets the
                       status bar preview the destination. The handler only
@@ -87,21 +94,22 @@ export default function AlertsBell({ alerts = [], unread = 0, onMarkRead, onOpen
                     <div className={styles.line1}>
                       <TickerLabel ticker={a.ticker} className={styles.symbol} />
                       <Icon name={alertIcon(a.type)} size={13} />
-                      <span className={styles.title}>{a.title}</span>
+                      <Tooltip truncate><span className={styles.title}>{a.title}</span></Tooltip>
                       <span className={styles.time}>{formatRelativeTime(a.created_at)}</span>
                     </div>
                     <p className={styles.message}>{a.message}</p>
                   </a>
                   {!a.read && (
-                    <button
-                      type="button"
-                      className={styles.markOne}
-                      title="Mark this alert read"
-                      aria-label={`Mark "${a.title}" read`}
-                      onClick={() => onMarkRead?.([a.dedup_key])}
-                    >
-                      <Icon name="check" size={13} />
-                    </button>
+                    <Tooltip content="Mark this alert read" side="left">
+                      <button
+                        type="button"
+                        className={styles.markOne}
+                        aria-label={`Mark "${a.title}" read`}
+                        onClick={() => onMarkRead?.([a.dedup_key])}
+                      >
+                        <Icon name="check" size={13} />
+                      </button>
+                    </Tooltip>
                   )}
                 </li>
               ))}

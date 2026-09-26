@@ -2,6 +2,7 @@ import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import { motion } from "motion/react";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./Sparkline.module.css";
+import Tooltip from "./Tooltip";
 
 /**
  * Tiny inline sparkline for a table row. `closes` is a number[] (real closes,
@@ -14,7 +15,11 @@ export default function Sparkline({
 }) {
   if (loading) return <span className={styles.dash} style={{ width }}>···</span>;
   if (error || !closes || closes.length < 2) {
-    return <span className={styles.dash} style={{ width }} title={error ? "No data" : undefined}>—</span>;
+    return (
+      <Tooltip content={error ? "No price history available for this range" : "Not enough price history to draw a trend"}>
+        <span className={styles.dash} style={{ width }}>—</span>
+      </Tooltip>
+    );
   }
   const up = changePct != null ? changePct >= 0 : closes[closes.length - 1] >= closes[0];
   const color = up ? "var(--positive)" : "var(--negative)";
