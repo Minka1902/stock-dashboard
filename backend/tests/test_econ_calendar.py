@@ -86,6 +86,22 @@ def test_parse_nasdaq_uses_curated_importance_and_time():
     assert events[1].time == ""
 
 
+def test_parse_nasdaq_decodes_html_entities():
+    """Nasdaq sends "&nbsp;" for a value that isn't out yet; it must read as
+    missing, not as the literal entity text."""
+    payload = {"data": {"rows": [{
+        "eventName": "FOMC Member Williams Speaks", "country": "United States", "gmt": "04:10",
+        "actual": "&nbsp;", "consensus": "", "previous": "&nbsp;",
+    }, {
+        "eventName": "S&amp;P Global PMI", "country": "United States", "gmt": "13:45",
+        "actual": "52.1", "consensus": "51.8&nbsp;", "previous": "51.5",
+    }]}}
+    speech, pmi = ec.parse_nasdaq(payload, "2026-09-25", "2026-09-25T00:00:00+00:00")
+    assert speech.actual is None and speech.previous is None and speech.forecast is None
+    assert pmi.event == "S&P Global PMI"
+    assert pmi.forecast == "51.8"
+
+
 def test_classify_importance():
     assert ec.classify_importance("FOMC Rate Decision") == "high"
     assert ec.classify_importance("Core CPI (MoM)") == "high"

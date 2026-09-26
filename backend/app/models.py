@@ -339,6 +339,10 @@ class Fundamentals(BaseModel):
     officers_json: str = ""        # JSON list of {name, title, age, pay}
     insider_pct: float | None = None      # fraction held by insiders (0-1)
     institution_pct: float | None = None  # fraction held by institutions (0-1)
+    # ISO code the company reports its financials in (Yahoo financialData
+    # .financialCurrency) — officer pay is in this currency, which for a TASE
+    # listing can be ILS or USD independently of the ₪ share price.
+    financial_currency: str | None = None
 
 
 class SuggestionHistoryEntry(BaseModel):

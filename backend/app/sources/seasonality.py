@@ -30,6 +30,22 @@ _YAHOO_HEADERS = {
 
 _DEFAULT_RANGE = "max"
 
+
+def history_params(range_str: str, now_ts: int | None = None) -> dict:
+    """Yahoo chart query params for daily bars over `range_str`.
+
+    Yahoo silently downgrades ``range=max&interval=1d`` to MONTHLY bars for any
+    ticker with a long history (the response's meta.dataGranularity says
+    "1mo"), which turned every forward-week window and every "this day N years
+    ago" anchor into month-bar arithmetic. An explicit period1=0 → now span
+    keeps the daily granularity, so "max" is asked for that way.
+    """
+    if range_str == "max":
+        if now_ts is None:
+            now_ts = int(datetime.now(timezone.utc).timestamp())
+        return {"interval": "1d", "period1": 0, "period2": now_ts}
+    return {"interval": "1d", "range": range_str}
+
 # Window definitions: (key, label, kind, calendar_days_for_forward)
 _FORWARD_WINDOWS = [
     ("fwd_day", "Next Day", 1),
@@ -196,6 +212,12 @@ def _parse_series(payload: dict) -> list[tuple[date, float]]:
     if not result:
         return []
     r0 = result[0]
+    # Everything below is daily-bar arithmetic; bars of another granularity
+    # (Yahoo downgrades some requests to 1wk/1mo) would give wrong answers
+    # rather than no answer, so they are refused.
+    granularity = (r0.get("meta") or {}).get("dataGranularity")
+    if granularity and granularity != "1d":
+        return []
     timestamps = r0.get("timestamp") or []
     quote = (r0.get("indicators") or {}).get("quote", [{}])[0]
     closes = quote.get("close", [])
@@ -246,7 +268,7 @@ def fetch(tickers: list[str], range_str: str | None = None) -> list[Seasonality]
             try:
                 r = client.get(
                     _YAHOO_URL.format(ticker=ticker),
-                    params={"interval": "1d", "range": rng},
+                    params=history_params(rng),
                     headers=_YAHOO_HEADERS,
                 )
                 r.raise_for_status()

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { currencyForSymbol, formatCount, formatCurrencyCompact, formatMoney } from "../lib/format";
+import { currencyForSymbol, formatCount, formatMoney } from "../lib/format";
 import Tooltip from "./Tooltip";
 import Term from "./Term";
 import styles from "./CompanyInfo.module.css";
@@ -25,6 +25,20 @@ function Row({ label, value }) {
   );
 }
 
+// Officer pay is in the company's reporting currency (Yahoo financialCurrency),
+// which can differ from the listing's: TEVA.TA trades in ₪ but reports in USD,
+// LUMI.TA reports in ILS. When the code isn't known it is USD by Yahoo's
+// convention, and it's spelled out wherever it differs from the share price's
+// currency so a "$" is never read as shekels (or the reverse).
+function officerPayFormatter(profile, ticker) {
+  const payCcy = profile?.financial_currency || "USD";
+  const listingCcy = currencyForSymbol(ticker) || "USD";
+  return (n) => {
+    const money = formatMoney(n, payCcy, { compact: true });
+    return payCcy === listingCcy ? money : `${money} ${payCcy}`;
+  };
+}
+
 function Section({ title, children }) {
   return (
     <div className={styles.section}>
@@ -46,6 +60,7 @@ export default function CompanyInfo({ company, ticker, show = {} }) {
 
   const profile = company?.profile || null;
   const officers = company?.officers || [];
+  const payLabel = officerPayFormatter(profile, ticker);
   const holders = company?.holders || [];
   const name = company?.name || null;
 
@@ -162,7 +177,7 @@ export default function CompanyInfo({ company, ticker, show = {} }) {
                   <span className={styles.officerTitle}>{o.title || "—"}</span>
                   <span className={styles.officerMeta}>
                     {o.age ? `age ${o.age}` : ""}
-                    {o.pay ? `${o.age ? " · " : ""}${formatCurrencyCompact(o.pay)}` : ""}
+                    {o.pay ? `${o.age ? " · " : ""}${payLabel(o.pay)}` : ""}
                   </span>
                 </li>
               ))}

@@ -16,7 +16,7 @@ from app.sources import yahoo
 
 _MODULES = (
     "defaultKeyStatistics,summaryProfile,summaryDetail,assetProfile,price,"
-    "majorHoldersBreakdown,institutionOwnership"
+    "majorHoldersBreakdown,institutionOwnership,financialData"
 )
 _YF_URL = (
     "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
@@ -70,6 +70,13 @@ def _officers(profile: dict) -> str:
     return json.dumps(out) if out else ""
 
 
+def _currency_code(v) -> str | None:
+    """A 3-letter ISO code, or None — never a guess."""
+    if isinstance(v, str) and len(v.strip()) == 3 and v.strip().isalpha():
+        return v.strip().upper()
+    return None
+
+
 def parse_response(payload: dict, ticker: str, fetched_at: str) -> "Fundamentals | None":
     try:
         result = payload["quoteSummary"]["result"]
@@ -86,6 +93,7 @@ def parse_response(payload: dict, ticker: str, fetched_at: str) -> "Fundamentals
     stats = r.get("defaultKeyStatistics") or {}
     price = r.get("price") or {}
     holders = r.get("majorHoldersBreakdown") or {}
+    financial = r.get("financialData") or {}
 
     employees = _raw(profile, "fullTimeEmployees")
 
@@ -111,6 +119,7 @@ def parse_response(payload: dict, ticker: str, fetched_at: str) -> "Fundamentals
         officers_json=_officers(profile),
         insider_pct=_raw(holders, "insidersPercentHeld"),
         institution_pct=_raw(holders, "institutionsPercentHeld"),
+        financial_currency=_currency_code(financial.get("financialCurrency")),
     )
 
 

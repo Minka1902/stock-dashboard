@@ -86,6 +86,31 @@ def test_parse_response_from_yahoo_timestamps():
     assert season.history_years >= 3
 
 
+def test_history_params_asks_for_daily_bars_explicitly_for_max():
+    """range=max makes Yahoo return monthly bars; max is sent as period1/period2."""
+    from app.sources.seasonality import history_params
+    assert history_params("max", now_ts=1_790_000_000) == {
+        "interval": "1d", "period1": 0, "period2": 1_790_000_000}
+    assert history_params("10y") == {"interval": "1d", "range": "10y"}
+
+
+def test_parse_response_refuses_non_daily_bars():
+    """Monthly bars stamped on the 1st would turn anchors into month-start
+    dates with month-end closes — refuse them instead of mis-computing."""
+    series = _daily_series(date(2019, 1, 1), 365 * 6, start_price=50.0, step=0.05)
+    import calendar
+    payload = {
+        "chart": {"result": [{
+            "meta": {"dataGranularity": "1mo"},
+            "timestamp": [calendar.timegm(d.timetuple()) for d, _ in series],
+            "indicators": {"quote": [{"close": [c for _, c in series]}]},
+        }]}
+    }
+    assert parse_response(payload, "x", "2026-06-15T00:00:00+00:00", today=date(2026, 6, 15)) is None
+    payload["chart"]["result"][0]["meta"]["dataGranularity"] = "1d"
+    assert parse_response(payload, "x", "2026-06-15T00:00:00+00:00", today=date(2026, 6, 15)) is not None
+
+
 def test_parse_response_none_on_empty():
     payload = {"chart": {"result": []}}
     assert parse_response(payload, "x", "2026-06-15T00:00:00+00:00") is None

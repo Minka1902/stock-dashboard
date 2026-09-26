@@ -140,6 +140,23 @@ def test_parse_response_extracts_company_profile():
     assert f.sector == "Technology" and f.industry == "Semiconductors"
 
 
+def test_financial_currency_is_parsed_and_absent_stays_none():
+    """Officer pay is reported in the company's financial currency (LUMI.TA:
+    ILS, TEVA.TA: USD) — keep the code so the UI labels pay correctly."""
+    import copy
+    payload = copy.deepcopy(PROFILE_PAYLOAD)
+    assert parse_response(payload, "NVDA", _NOW).financial_currency is None
+    payload["quoteSummary"]["result"][0]["financialData"] = {"financialCurrency": "ils"}
+    assert parse_response(payload, "LUMI.TA", _NOW).financial_currency == "ILS"
+    payload["quoteSummary"]["result"][0]["financialData"] = {"financialCurrency": "shekels"}
+    assert parse_response(payload, "LUMI.TA", _NOW).financial_currency is None
+
+
+def test_financial_currency_roundtrips(conn):
+    db.upsert_fundamentals(conn, [_fundamentals(financial_currency="ILS")])
+    assert db.get_fundamentals_for(conn, "NVDA").financial_currency == "ILS"
+
+
 def test_parse_officers_skips_nameless_and_keeps_order():
     f = parse_response(PROFILE_PAYLOAD, "NVDA", _NOW)
     officers = json.loads(f.officers_json)

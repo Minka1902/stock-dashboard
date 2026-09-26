@@ -13,6 +13,7 @@ Parsing helpers are pure/network-free and unit-tested directly; ``fetch`` does t
 throttled HTTP and never writes to the DB.
 """
 import hashlib
+import html
 from datetime import date, datetime, timedelta, timezone
 
 import httpx
@@ -72,10 +73,13 @@ def _event_id(date_str: str, country: str, event: str) -> str:
 
 
 def _clean_value(val) -> str | None:
-    """Normalize a released/forecast/previous value to a display string or None."""
+    """Normalize a released/forecast/previous value to a display string or None.
+
+    Nasdaq's feed carries HTML entities ("&nbsp;" for a not-yet-released value),
+    so decode them first — otherwise the literal entity reached the UI."""
     if val is None:
         return None
-    s = str(val).strip()
+    s = html.unescape(str(val)).replace(" ", " ").strip()
     if s in ("", "-", "—", "N/A", "n/a"):
         return None
     return s
@@ -138,7 +142,10 @@ def parse_nasdaq(payload: dict, date_str: str, fetched_at: str) -> list[EconEven
     rows = (data or {}).get("rows") or []
     out: list[EconEvent] = []
     for row in rows:
-        event = str(row.get("eventName") or "").strip()
+        raw_event = str(row.get("eventName") or "").strip()
+        # Display text is entity-decoded; the id keeps the raw name so rows
+        # stored before the decode still upsert onto themselves.
+        event = html.unescape(raw_event).strip()
         if not event:
             continue
         country = str(row.get("country") or "").strip()
@@ -146,7 +153,7 @@ def parse_nasdaq(payload: dict, date_str: str, fetched_at: str) -> list[EconEven
         # gmt is like "13:30"; non-time markers ("All Day", "Tentative") -> no time.
         time_str = gmt if (len(gmt) == 5 and gmt[2] == ":") else ""
         out.append(EconEvent(
-            event_id=_event_id(date_str, country, event),
+            event_id=_event_id(date_str, country, raw_event),
             date=date_str, time=time_str, country=country, event=event,
             importance=classify_importance(event), importance_source="curated",
             actual=_clean_value(row.get("actual")),
