@@ -137,7 +137,7 @@ const VIEWS = {
 export default function App({ auth }) {
   const data = useDashboardData();
   const appSettingsApi = useAppSettings();
-  const { quotes, quotesByTicker, asOf, marketStatus } = useLiveQuotes(
+  const { quotes, quotesByTicker, asOf, marketStatus, marketStatuses } = useLiveQuotes(
     (appSettingsApi.appSettings.quotes_refresh_seconds || 30) * 1000,
   );
   const { theme, setTheme, toggle, themes } = useTheme();
@@ -338,7 +338,7 @@ export default function App({ auth }) {
             hasTour={Boolean(TOURS[view]) && !detailTicker}
             onStartTour={() => setTourView(view)}
           />
-          <LiveTicker quotes={quotes} asOf={asOf} marketStatus={marketStatus} />
+          <LiveTicker quotes={quotes} asOf={asOf} marketStatus={marketStatus} marketStatuses={marketStatuses} />
         </div>
         )}
 

@@ -281,3 +281,29 @@
 .anchorClose { font-weight: 600; }
 .anchorDelta[data-tone="pos"] { color: var(--positive); font-size: 0.86em; }
 .anchorDelta[data-tone="neg"] { color: var(--negative); font-size: 0.86em; }
+
+/* TASE listing: market chip beside the price and the "not applicable" note. */
+.marketChip {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: var(--r-xs);
+  color: var(--info);
+  background: var(--info-weak);
+}
+.marketNote {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  margin: var(--s-2) 0 var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid color-mix(in oklab, var(--info) 35%, transparent);
+  border-radius: var(--r-sm);
+  background: var(--info-weak);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.marketNote > svg { flex: none; margin-top: 3px; color: var(--info); }

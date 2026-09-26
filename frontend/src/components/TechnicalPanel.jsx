@@ -3,7 +3,10 @@ import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
-import { formatCurrencyCompact, formatRelativeTime, freshnessTone } from "../lib/format";
+import { currencyForSymbol, formatMoney, formatRelativeTime, freshnessTone } from "../lib/format";
+
+// Per-row prices in the ticker's own currency (₪ for Tel Aviv listings).
+const money = (v, t) => formatMoney(v, currencyForSymbol(t) || "USD", { compact: true });
 import styles from "./TechnicalPanel.module.css";
 import Tooltip from "./Tooltip";
 import Term from "./Term";
@@ -149,7 +152,7 @@ export default function TechnicalPanel({ data, loading, busy, onRefresh, compact
                 rows.map((s) => (
                   <tr key={s.ticker}>
                     <td className={styles.ticker}>{s.ticker}</td>
-                    <td className={`${styles.num} tabular`}>{s.price != null ? formatCurrencyCompact(s.price) : "—"}</td>
+                    <td className={`${styles.num} tabular`}>{s.price != null ? money(s.price, s.ticker) : "—"}</td>
                     <td className={`${styles.num} tabular`}>
                       {s.change_pct != null ? (
                         <span data-tone={s.change_pct >= 0 ? "pos" : "neg"} className={styles.chg}>
@@ -158,13 +161,13 @@ export default function TechnicalPanel({ data, loading, busy, onRefresh, compact
                       ) : "—"}
                     </td>
                     <td className={styles.num}><RsiCell rsi={s.rsi14} /></td>
-                    <td className={`${styles.num} tabular`}>{s.ma50 != null ? formatCurrencyCompact(s.ma50) : "—"}</td>
-                    <td className={`${styles.num} tabular`}>{s.ma200 != null ? formatCurrencyCompact(s.ma200) : "—"}</td>
+                    <td className={`${styles.num} tabular`}>{s.ma50 != null ? money(s.ma50, s.ticker) : "—"}</td>
+                    <td className={`${styles.num} tabular`}>{s.ma200 != null ? money(s.ma200, s.ticker) : "—"}</td>
                     <td><CrossCell golden_cross={s.golden_cross} /></td>
                     <td><MacdCell macd_crossover={s.macd_crossover} macd={s.macd} /></td>
                     <td className={styles.num}><VolCell rel_volume={s.rel_volume} /></td>
-                    <td className={`${styles.num} tabular`}>{s.high_52w != null ? formatCurrencyCompact(s.high_52w) : "—"}</td>
-                    <td className={`${styles.num} tabular`}>{s.low_52w != null ? formatCurrencyCompact(s.low_52w) : "—"}</td>
+                    <td className={`${styles.num} tabular`}>{s.high_52w != null ? money(s.high_52w, s.ticker) : "—"}</td>
+                    <td className={`${styles.num} tabular`}>{s.low_52w != null ? money(s.low_52w, s.ticker) : "—"}</td>
                     <td><MiniSparkline pricesJson={s.prices_json} /></td>
                     <td><FreshnessCell fetched_at={s.fetched_at} /></td>
                   </tr>

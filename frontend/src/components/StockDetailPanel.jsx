@@ -8,9 +8,12 @@ import Skeleton from "./Skeleton";
 import StockAlerts from "./StockAlerts";
 import SuggestionHistoryStrip from "./SuggestionHistoryStrip";
 import Segmented from "./Segmented";
+import Term from "./Term";
 import TickerLabel from "./TickerLabel";
+import Tooltip from "./Tooltip";
 import XPostCard from "./XPostCard";
 import { getAnalyze, analysisReportUrl } from "../api";
+import { currencyForSymbol, formatMoney, formatPrice } from "../lib/format";
 import { useSettingsContext } from "../hooks/useSettingsContext";
 import styles from "./StockDetailPanel.module.css";
 
@@ -23,6 +26,14 @@ const SIGNAL_TONE = { bullish: "pos", bearish: "neg", neutral: "" };
 const BREAKOUT_TONE = {
   confirmed: "pos", approaching: "hold", broke_unconfirmed: "hold", failed: "neg",
 };
+// Conviction bands — mirror backend analysis.py (>=45, <=-15, <=-45).
+const DIRECTIVE_TIP = {
+  Accumulate: "Accumulate: conviction +45 or higher — the evidence leans clearly bullish.",
+  Hold: "Hold: conviction between −15 and +45 — no strong lean either way.",
+  Reduce: "Reduce: conviction −15 or lower — the evidence leans bearish.",
+  Avoid: "Avoid: conviction −45 or lower — the evidence leans clearly bearish.",
+};
+const CCY_NAMES = { USD: "US dollars", ILS: "Israeli shekels", EUR: "euros", GBP: "British pounds" };
 
 function n(v, d = 2) {
   return v == null ? "—" : Number(v).toFixed(d);
@@ -77,6 +88,13 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   const companyInfo = settings.companyInfo || {};
   const lastClose = data?.daily?.length ? data.daily[data.daily.length - 1].close : null;
   const refPrice = a?.price ?? lastClose;
+  // Every price on this page is in the listing's own currency (₪ for TASE —
+  // Yahoo's agorot are divided into shekels server-side).
+  const market = data?.market || null;
+  const ccy = market?.currency || a?.currency || currencyForSymbol(ticker) || "USD";
+  const px = (v) => formatPrice(v, ccy);
+  const isTase = (market?.market || "") === "TASE" || /\.TA$/i.test(ticker);
+  const notApplicable = market?.not_applicable || [];
   // Day change, derived from the same daily bars the chart draws and with the
   // same bar-to-bar formula as ChartPro's legend, so the two can't disagree on
   // the same screen. Not taken from /api/quotes: that only covers watchlist and
@@ -165,30 +183,45 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
           <TickerLabel ticker={ticker} className={styles.ticker} as="h2" />
           {refPrice != null && (
             <span className={styles.priceGroup}>
-              <span className={styles.price}>${n(refPrice)}</span>
-              <span
-                className={styles.change}
-                data-tone={changePct == null ? "flat" : changePct >= 0 ? "pos" : "neg"}
-                title={changePct == null
-                  ? "Not enough daily history to compute a change"
-                  : "Change vs the previous daily close"}
-              >
-                {changePct == null
-                  ? "—"
-                  : `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%`}
-              </span>
+              <span className={styles.price}>{px(refPrice)}</span>
+              <Tooltip content={changePct == null
+                ? "Not enough daily history to compute a change"
+                : "Change vs the previous daily close"}>
+                <span
+                  className={styles.change}
+                  data-tone={changePct == null ? "flat" : changePct >= 0 ? "pos" : "neg"}
+                  tabIndex={0}
+                >
+                  {changePct == null
+                    ? "—"
+                    : `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%`}
+                </span>
+              </Tooltip>
+            </span>
+          )}
+          {isTase && (
+            <span className={styles.marketChip}>
+              <Term term="tase">TASE · {ccy}</Term>
             </span>
           )}
         </span>
         {a && a.recommendation && (
-          <span className={styles.directive} data-tone={RECO_TONE[a.recommendation]}
-                title="Buy / Sell / Hold — the headline call">{a.recommendation.toUpperCase()}</span>
+          <Tooltip content="Buy / Sell / Hold — the headline call">
+            <span className={styles.directive} data-tone={RECO_TONE[a.recommendation]} tabIndex={0}>
+              {a.recommendation.toUpperCase()}
+            </span>
+          </Tooltip>
         )}
-        {a && <span className={styles.directive} data-tone={DIRECTIVE_TONE[a.directive]}
-                    title="Finer-grained directive">{a.directive}</span>}
+        {a && (
+          <Tooltip content={DIRECTIVE_TIP[a.directive] || "Finer-grained directive"}>
+            <span className={styles.directive} data-tone={DIRECTIVE_TONE[a.directive]} tabIndex={0}>
+              {a.directive}
+            </span>
+          </Tooltip>
+        )}
         {a && (
           <span className={styles.conviction}>
-            <span className={styles.convLabel}>conviction</span>
+            <span className={styles.convLabel}><Term term="analysis_conviction">conviction</Term></span>
             <span className={styles.convTrack}>
               <span className={styles.convFill} data-neg={a.conviction < 0 ? "yes" : "no"}
                     style={{ width: `${Math.min(100, Math.abs(a.conviction))}%` }} />
@@ -198,35 +231,35 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
         )}
         <span className={styles.spacer} />
         {sectionIds.length > 0 && (
-          <button
-            type="button"
-            className={styles.reportBtn}
-            onClick={toggleAll}
-            title={allCollapsed
-              ? "Open every section on this page"
-              : "Fold every section down to its header — remembered across stocks"}
-          >
-            {allCollapsed ? "Expand all" : "Collapse all"}
-          </button>
+          <Tooltip content={allCollapsed
+            ? "Open every section on this page"
+            : "Fold every section down to its header — remembered across stocks"}>
+            <button
+              type="button"
+              className={styles.reportBtn}
+              onClick={toggleAll}
+            >
+              {allCollapsed ? "Expand all" : "Collapse all"}
+            </button>
+          </Tooltip>
         )}
         {canWatch && (
-          <button
-            type="button"
-            className={styles.reportBtn}
-            onClick={addToWatchlist}
-            disabled={watchBusy}
-            title="Track this stock: adds it to your watchlist so every signal source covers it"
-          >
-            <Icon name="star" size={13} /> {watchBusy ? "Adding…" : "Watch"}
-          </button>
+          <Tooltip content="Track this stock: adds it to your watchlist so every signal source covers it">
+            <button
+              type="button"
+              className={styles.reportBtn}
+              onClick={addToWatchlist}
+              disabled={watchBusy}
+            >
+              <Icon name="star" size={13} /> {watchBusy ? "Adding…" : "Watch"}
+            </button>
+          </Tooltip>
         )}
         {watched && (
-          <span
-            className={styles.watching}
-            title={memberOf?.length
-              ? `On your ${memberOf.join(", ")} watchlist${memberOf.length > 1 ? "s" : ""}`
-              : "Already on your watchlist"}
-          >
+          <Tooltip content={memberOf?.length
+            ? `On your ${memberOf.join(", ")} watchlist${memberOf.length > 1 ? "s" : ""}`
+            : "Already on your watchlist"}>
+          <span className={styles.watching} tabIndex={0}>
             <Icon name="star" size={13} /> Watching
             {memberOf?.length > 0 && (
               <span className={styles.watchLists}>
@@ -236,21 +269,45 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
               </span>
             )}
           </span>
+          </Tooltip>
         )}
         {a && (
           <span className={styles.reportBtns}>
-            <a className={styles.reportBtn} href={analysisReportUrl(ticker)}
-               title="Download the full analysis as a standalone HTML report">
-              <Icon name="news" size={13} /> Report
-            </a>
-            <a className={styles.reportBtn} href={analysisReportUrl(ticker, { print: true })}
-               target="_blank" rel="noreferrer"
-               title="Open the report print-ready — use the browser dialog to save as PDF">
-              PDF
-            </a>
+            <Tooltip content="Download the full analysis as a standalone HTML report">
+              <a className={styles.reportBtn} href={analysisReportUrl(ticker)}>
+                <Icon name="news" size={13} /> Report
+              </a>
+            </Tooltip>
+            <Tooltip content="Open the report print-ready — use the browser dialog to save as PDF">
+              <a className={styles.reportBtn} href={analysisReportUrl(ticker, { print: true })}
+                 target="_blank" rel="noreferrer">
+                PDF
+              </a>
+            </Tooltip>
           </span>
         )}
       </div>
+
+      {!loading && isTase && (
+        <div className={styles.marketNote} role="note">
+          <Icon name="info" size={14} />
+          <span>
+            Tel Aviv listing — prices in {CCY_NAMES[ccy] || ccy}, no pre-market or after-hours session.
+            {notApplicable.length > 0 && (
+              <>
+                {" "}Not applicable to TASE listings:{" "}
+                {notApplicable.map((na, i) => (
+                  <span key={na.source}>
+                    {i > 0 && ", "}
+                    <Term tip={na.why}>{na.label}</Term>
+                  </span>
+                ))}
+                {" "}— shown as not applicable rather than as missing data; the Boom Score is renormalized over the rest.
+              </>
+            )}
+          </span>
+        </div>
+      )}
 
       {loading ? (
         <Skeleton w="100%" h="460px" />
@@ -269,8 +326,15 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
 
           {companyInfo.insiders !== false && (
             <Pane {...sec("insiders")} caption="Insider trades"
-                  right={<span className={styles.muted}>SEC Form 4 · newest first</span>}>
-              <InsiderTrades trades={insiderTrades} ticker={ticker} />
+                  right={<span className={styles.muted}>{isTase ? "not applicable to TASE listings" : "SEC Form 4 · newest first"}</span>}>
+              {isTase ? (
+                <p className={styles.muted}>
+                  Not applicable: SEC Form 4 covers US-listed companies. Israeli insiders report to the
+                  Israel Securities Authority, which this dashboard does not ingest.
+                </p>
+              ) : (
+                <InsiderTrades trades={insiderTrades} ticker={ticker} />
+              )}
             </Pane>
           )}
 
@@ -301,7 +365,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
                     <div key={`${an.years_ago}`} className={styles.anchor}>
                       <span className={styles.anchorLabel}>{label}</span>
                       <span className={styles.anchorDate}>{an.date}</span>
-                      <span className={styles.anchorClose}>${n(an.close)}</span>
+                      <span className={styles.anchorClose}>{px(an.close)}</span>
                       {delta != null && (
                         <span className={styles.anchorDelta} data-tone={delta >= 0 ? "pos" : "neg"}>
                           {delta >= 0 ? "+" : ""}{delta.toFixed(1)}% since
@@ -341,9 +405,10 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
 
           <div className={styles.grid}>
             <Pane {...sec("plan")} caption="Trade plan" right={a.rr != null && (
-              <span className={styles.rr} data-tone={a.rr_pass ? "pos" : "neg"}
-                    title={a.rr_pass ? "Meets the 3:1 professional threshold" : "Below 3:1 — a known skip"}>
-                {a.rr}:1 {a.rr_pass ? "✓" : "✗ <3"}
+              <span className={styles.rr} data-tone={a.rr_pass ? "pos" : "neg"}>
+                <Term term="r_multiple" tip={a.rr_pass ? "Meets the 3:1 professional threshold." : "Below 3:1 — a known skip."}>
+                  {a.rr}:1 {a.rr_pass ? "✓" : "✗ <3"}
+                </Term>
               </span>
             )}>
               {a.stop == null ? (
@@ -351,29 +416,33 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
               ) : (
                 <>
                   <div className={styles.stats}>
-                    <Stat label="Entry" value={`$${n(a.entry)}`} />
-                    <Stat label={`Stop (${a.stop_basis})`} value={`$${n(a.stop)}`} tone="neg" />
-                    <Stat label="Target 3R" value={`$${n(a.target)}`} tone="pos" />
-                    <Stat label="Risk / share" value={`$${n(a.risk_per_share)}`} tone="neg" />
-                    <Stat label="Reward / share" value={`$${n(a.reward_per_share)}`} tone="pos" />
+                    <Stat label="Entry" value={px(a.entry)} />
+                    <Stat label={`Stop (${a.stop_basis})`} value={px(a.stop)} tone="neg" />
+                    <Stat label="Target 3R" value={px(a.target)} tone="pos" />
+                    <Stat label="Risk / share" value={px(a.risk_per_share)} tone="neg" />
+                    <Stat label="Reward / share" value={px(a.reward_per_share)} tone="pos" />
                     <Stat label="Shares" value={a.suggested_shares ?? "—"} />
                   </div>
                   <div className={styles.stopNote}>
-                    ATR stop ${n(a.stop_atr)} · structure stop ${n(a.stop_structure)} → using the tighter.
+                    ATR stop {px(a.stop_atr)} · structure stop {px(a.stop_structure)} → using the tighter.
                   </div>
                   <div className={styles.ladder}>
                     {a.targets.map((t) => (
-                      <div key={t.r} className={styles.rung} title={t.why}>
-                        <span className={styles.rungR}>{t.r}:1</span>
-                        <span className={styles.rungPrice}>${n(t.price)}</span>
-                        <span className={styles.feas} data-tone={FEAS_TONE[t.feasibility]}>{t.feasibility}</span>
-                        <span className={styles.rungWhy}>{t.why}</span>
-                      </div>
+                      <Tooltip key={t.r} content={t.why}>
+                        <div className={styles.rung} tabIndex={0}>
+                          <span className={styles.rungR}>{t.r}:1</span>
+                          <span className={styles.rungPrice}>{px(t.price)}</span>
+                          <span className={styles.feas} data-tone={FEAS_TONE[t.feasibility]}>{t.feasibility}</span>
+                          <span className={styles.rungWhy}>{t.why}</span>
+                        </div>
+                      </Tooltip>
                     ))}
                   </div>
                   {a.account_size && (
                     <p className={styles.sizeNote}>
-                      Sized to {a.risk_pct}% of ${Number(a.account_size).toLocaleString()} account.
+                      Sized to {a.risk_pct}% of a{" "}
+                      {formatMoney(Number(a.account_size), a.account_currency || ccy, { digits: 0 })} account.
+                      {a.sizing_note && <> {a.sizing_note}</>}
                     </p>
                   )}
                   {a.staging_note && <p className={styles.sizeNote}>{a.staging_note}</p>}
@@ -388,8 +457,9 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
                 <Stat label="MA state" value={(a.ma_state || "mixed").replace(/_/g, " ")}
                       tone={a.ma_state === "healthy_uptrend" || a.ma_state === "reclaiming" ? "pos"
                             : a.ma_state === "topping" || a.ma_state === "breaking_down" ? "neg" : ""} />
-                <Stat label="ATR(14)" value={`$${n(a.atr14)}${a.atr_pct ? ` (${n(a.atr_pct)}%)` : ""}`} />
-                <Stat label="Ext (ATR from MA20)" value={a.ma_extension_atr != null ? `${n(a.ma_extension_atr)}×` : "—"} />
+                <Stat label={<Term term="atr">ATR(14)</Term>} value={`${px(a.atr14)}${a.atr_pct ? ` (${n(a.atr_pct)}%)` : ""}`} />
+                <Stat label={<Term tip="Distance of price from its 20-day average, in ATRs">Ext (ATR from MA20)</Term>}
+                      value={a.ma_extension_atr != null ? `${n(a.ma_extension_atr)}×` : "—"} />
                 <Stat label="MA20 / 50" value={`${n(a.ma20)} / ${n(a.ma50)}`} />
                 <Stat label="MA150 / 200" value={`${n(a.ma150)} / ${n(a.ma200)}`} />
               </div>
@@ -397,13 +467,13 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
                 <div>
                   <span className="caption">Resistance</span>
                   {a.resistance.length ? a.resistance.map((l, i) => (
-                    <span key={i} className={styles.level} data-tone="neg">${n(l.price)} <em>{l.touches}×</em></span>
+                    <span key={i} className={styles.level} data-tone="neg">{px(l.price)} <em>{l.touches}×</em></span>
                   )) : <span className={styles.muted}>none above</span>}
                 </div>
                 <div>
                   <span className="caption">Support</span>
                   {a.support.length ? a.support.map((l, i) => (
-                    <span key={i} className={styles.level} data-tone="pos">${n(l.price)} <em>{l.touches}×</em></span>
+                    <span key={i} className={styles.level} data-tone="pos">{px(l.price)} <em>{l.touches}×</em></span>
                   )) : <span className={styles.muted}>none below</span>}
                 </div>
               </div>
@@ -450,11 +520,13 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
                       <span className={styles.patDir} data-tone={p.direction === "bullish" ? "pos" : p.direction === "bearish" ? "neg" : ""}>{p.direction}</span>
                       <span className={styles.patConf}>{Math.round(p.confidence * 100)}%</span>
                       {p.status === "forming" && (
-                        <span className={styles.patForming} title="The shape is there; the trigger hasn't happened">
-                          forming
-                        </span>
+                        <Tooltip content="The shape is there; the trigger hasn't happened">
+                          <span className={styles.patForming} tabIndex={0}>
+                            forming
+                          </span>
+                        </Tooltip>
                       )}
-                      {p.measured_move && <span className={styles.patMove}>→ ${n(p.measured_move)}</span>}
+                      {p.measured_move && <span className={styles.patMove}>→ {px(p.measured_move)}</span>}
                       <span className={styles.patNote}>{p.note}</span>
                       {/* What's still outstanding. Showing why it isn't a pattern
                           yet is the honest version of "what it's heading towards". */}
@@ -469,7 +541,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
                         </span>
                       )}
                       <span className={styles.patPivots}>
-                        {p.pivots.map((pv, j) => <em key={j}>{pv.role} ${n(pv.price)}</em>)}
+                        {p.pivots.map((pv, j) => <em key={j}>{pv.role} {px(pv.price)}</em>)}
                       </span>
                     </li>
                   ))}
@@ -489,7 +561,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
                       <span className={styles.patName}>{t.kind === "support" ? "Rising support" : "Falling resistance"}</span>
                       <span className={styles.patDir} data-tone={t.kind === "support" ? "pos" : "neg"}>{t.kind}</span>
                       <span className={styles.patConf}>{t.touches} touches</span>
-                      <span className={styles.patMove}>now ≈ ${n(t.current_value)}</span>
+                      <span className={styles.patMove}>now ≈ {px(t.current_value)}</span>
                       {t.broken && <span className={styles.patForming}>broken</span>}
                     </li>
                   ))}
@@ -504,7 +576,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
                   <div className={styles.stats}>
                     <Stat label="Direction" value={a.breakout.direction}
                           tone={a.breakout.direction === "up" ? "pos" : "neg"} />
-                    <Stat label="Level" value={`$${n(a.breakout.level)}`} />
+                    <Stat label="Level" value={px(a.breakout.level)} />
                     <Stat label="From" value={a.breakout.level_source} />
                     <Stat label="Volume" value={a.breakout.volume_confirmed ? "confirmed" : "unconfirmed"}
                           tone={a.breakout.volume_confirmed ? "pos" : ""} />

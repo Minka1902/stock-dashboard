@@ -3,7 +3,7 @@ import { getProfile, saveProfile } from "../api";
 
 const EMPTY = {
   email: "", phone: "", email_enabled: false, sms_enabled: false,
-  account_size: null, risk_pct: 1.0,
+  account_size: null, risk_pct: 1.0, base_currency: "USD",
 };
 
 function fromServer(p) {
@@ -14,6 +14,8 @@ function fromServer(p) {
     sms_enabled: !!p.sms_enabled,
     account_size: p.account_size ?? null,
     risk_pct: p.risk_pct ?? 1.0,
+    // Currency portfolio totals and account_size are expressed in.
+    base_currency: p.base_currency || "USD",
   };
 }
 

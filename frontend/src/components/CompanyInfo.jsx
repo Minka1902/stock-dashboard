@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { formatCount, formatCurrencyCompact } from "../lib/format";
+import { currencyForSymbol, formatCount, formatCurrencyCompact, formatMoney } from "../lib/format";
 import Tooltip from "./Tooltip";
 import Term from "./Term";
 import styles from "./CompanyInfo.module.css";
@@ -96,7 +96,8 @@ export default function CompanyInfo({ company, ticker, show = {} }) {
           )}
           <div className={styles.rows}>
             <Row label="Market cap" value={profile?.market_cap != null
-              ? formatCurrencyCompact(profile.market_cap) : "—"} />
+              // In the listing's currency (Yahoo reports a .TA market cap in shekels).
+              ? formatMoney(profile.market_cap, currencyForSymbol(ticker) || "USD", { compact: true }) : "—"} />
             <Row label="Employees" value={profile?.employees != null
               ? formatCount(profile.employees) : "—"} />
             <Row label="Headquarters" value={location || "—"} />

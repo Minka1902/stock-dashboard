@@ -426,3 +426,11 @@
 @media (prefers-reduced-motion: reduce) {
   .switch, .knob { transition: none; }
 }
+
+/* Admin-only SelectMenus: the wrapper carries the tooltip, the menu is inert. */
+.selectWrap { display: flex; width: 100%; }
+.selectWrap[data-disabled="yes"] > * { pointer-events: none; opacity: 0.55; }
+.adminNote { color: var(--text-faint); font-size: 12.5px; }
+.input:disabled,
+.tagRemove:disabled,
+.ghostBtn:disabled { opacity: 0.55; cursor: not-allowed; }

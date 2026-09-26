@@ -15,6 +15,8 @@ export function useLiveQuotes(refreshMs = DEFAULT_REFRESH_MS) {
   const [quotes, setQuotes] = useState([]);
   const [asOf, setAsOf] = useState(null);
   const [marketStatus, setMarketStatus] = useState(null);
+  // {NYSE, TASE} clock-based sessions; market_status stays the US one.
+  const [marketStatuses, setMarketStatuses] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -22,6 +24,7 @@ export function useLiveQuotes(refreshMs = DEFAULT_REFRESH_MS) {
       setQuotes(data.quotes);
       setAsOf(data.as_of);
       setMarketStatus(data.market_status ?? null);
+      setMarketStatuses(data.market_statuses ?? null);
     } catch {
       // keep showing the last good quotes; next tick retries
     }
@@ -36,9 +39,12 @@ export function useLiveQuotes(refreshMs = DEFAULT_REFRESH_MS) {
     // isn't showing minutes-old prices / a stale session badge.
     const onVisible = () => { if (document.visibilityState === "visible") load(); };
     document.addEventListener("visibilitychange", onVisible);
+    // Settings → "Currencies in the ticker tape" saved: show the new pairs now.
+    window.addEventListener("fxwatch:changed", load);
     return () => {
       clearInterval(id);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("fxwatch:changed", load);
     };
   }, [load, refreshMs]);
 
@@ -47,5 +53,5 @@ export function useLiveQuotes(refreshMs = DEFAULT_REFRESH_MS) {
     [quotes],
   );
 
-  return { quotes, quotesByTicker, asOf, marketStatus };
+  return { quotes, quotesByTicker, asOf, marketStatus, marketStatuses };
 }

@@ -1,9 +1,12 @@
 import { useState } from "react";
 import Icon from "./Icon";
 import SelectMenu from "./SelectMenu";
+import FxWatchEditor from "./FxWatchEditor";
+import Tooltip from "./Tooltip";
 import { useProfile } from "../hooks/useProfile";
 import { initialsFor, gradientFor } from "../lib/avatar";
 import { sendTestSuggestions } from "../api";
+import { currencySymbol, formatMoney } from "../lib/format";
 import styles from "./SettingsPanel.module.css";
 
 function formatMemberSince(iso) {
@@ -83,6 +86,11 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
   const memberSince = formatMemberSince(user?.created_at);
 
   const { profile, update, save } = useProfile();
+  const base = profile.base_currency || "USD";
+  // app_settings PUT is admin-only server-side; say so instead of letting a
+  // non-admin edit and have the save bounce.
+  const isAdmin = Boolean(user?.is_admin);
+  const adminTip = isAdmin ? null : "Only an admin can change this";
   const [saveState, setSaveState] = useState(null); // null | "saving" | "saved" | error string
   const [testState, setTestState] = useState(null); // null | "sending" | results[]
 
@@ -224,6 +232,8 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
                 className={styles.input}
                 type="time"
                 value={appSettings.analysis_time}
+                disabled={!isAdmin}
+                aria-describedby={isAdmin ? undefined : "admin-only-note"}
                 onChange={(e) => updateApp({ analysis_time: e.target.value })}
               />
             </div>
@@ -231,27 +241,41 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
               {/* SelectMenu, not a native <select>: the native option list is
                   OS chrome and ignores the app theme. */}
               <span className={styles.fieldLabel} aria-hidden="true">Timezone</span>
-              <SelectMenu
-                label="Timezone"
-                value={appSettings.analysis_tz}
-                options={tzOptions}
-                onChange={(v) => updateApp({ analysis_tz: v })}
-              />
+              <Tooltip content={adminTip}>
+                <span className={styles.selectWrap} data-disabled={isAdmin ? "no" : "yes"}>
+                  <SelectMenu
+                    label="Timezone"
+                    value={appSettings.analysis_tz}
+                    options={tzOptions}
+                    onChange={(v) => isAdmin && updateApp({ analysis_tz: v })}
+                  />
+                </span>
+              </Tooltip>
             </div>
             <div className={styles.field}>
               <span className={styles.fieldLabel} aria-hidden="true">Live price refresh</span>
-              <SelectMenu
-                label="Live price refresh"
-                value={Number(appSettings.quotes_refresh_seconds)}
-                options={QUOTE_INTERVALS}
-                onChange={(v) => updateApp({ quotes_refresh_seconds: Number(v) })}
-              />
+              <Tooltip content={adminTip}>
+                <span className={styles.selectWrap} data-disabled={isAdmin ? "no" : "yes"}>
+                  <SelectMenu
+                    label="Live price refresh"
+                    value={Number(appSettings.quotes_refresh_seconds)}
+                    options={QUOTE_INTERVALS}
+                    onChange={(v) => isAdmin && updateApp({ quotes_refresh_seconds: Number(v) })}
+                  />
+                </span>
+              </Tooltip>
             </div>
           </div>
           <div className={styles.actions}>
-            <button type="button" className={styles.primaryBtn} onClick={saveSchedule} disabled={schedState === "saving"}>
-              {schedState === "saving" ? "Saving…" : "Save schedule"}
-            </button>
+            <Tooltip content={adminTip}>
+              <button type="button" className={styles.primaryBtn} onClick={saveSchedule}
+                      disabled={!isAdmin || schedState === "saving"}>
+                {schedState === "saving" ? "Saving…" : "Save schedule"}
+              </button>
+            </Tooltip>
+            {!isAdmin && (
+              <span id="admin-only-note" className={styles.adminNote}>Only an admin can change the schedule.</span>
+            )}
             {schedState === "saved" && <span className={styles.ok}>Saved ✓</span>}
             {schedState && schedState !== "saving" && schedState !== "saved" && (
               <span className={styles.err}>{schedState}</span>
@@ -270,7 +294,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
           <legend className={styles.legend}>X Watch accounts</legend>
           <p className={styles.groupHint}>
             Handles the X Watch feed monitors for market-moving posts and cashtags. Applies on the
-            next refresh. (Admin-only; changes are ignored for non-admins.)
+            next refresh.{isAdmin ? "" : " Only an admin can change this list."}
           </p>
           <div className={styles.tagList}>
             {xAccounts.length === 0 && (
@@ -279,14 +303,17 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
             {xAccounts.map((h) => (
               <span key={h} className={styles.tag}>
                 @{h}
-                <button
-                  type="button"
-                  className={styles.tagRemove}
-                  onClick={() => removeXAccount(h)}
-                  aria-label={`Remove @${h}`}
-                >
-                  ×
-                </button>
+                <Tooltip content={isAdmin ? `Remove @${h}` : adminTip}>
+                  <button
+                    type="button"
+                    className={styles.tagRemove}
+                    onClick={() => removeXAccount(h)}
+                    aria-label={`Remove @${h}`}
+                    disabled={!isAdmin}
+                  >
+                    ×
+                  </button>
+                </Tooltip>
               </span>
             ))}
           </div>
@@ -299,16 +326,22 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
                 type="text"
                 placeholder="realDonaldTrump"
                 value={xInput}
+                disabled={!isAdmin}
                 onChange={(e) => setXInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addXAccount(); } }}
               />
             </div>
-            <button type="button" className={styles.ghostBtn} onClick={addXAccount}>Add</button>
+            <Tooltip content={adminTip}>
+              <button type="button" className={styles.ghostBtn} onClick={addXAccount} disabled={!isAdmin}>Add</button>
+            </Tooltip>
           </div>
           <div className={styles.actions}>
-            <button type="button" className={styles.primaryBtn} onClick={saveXAccounts} disabled={xState === "saving"}>
-              {xState === "saving" ? "Saving…" : "Save X accounts"}
-            </button>
+            <Tooltip content={adminTip}>
+              <button type="button" className={styles.primaryBtn} onClick={saveXAccounts}
+                      disabled={!isAdmin || xState === "saving"}>
+                {xState === "saving" ? "Saving…" : "Save X accounts"}
+              </button>
+            </Tooltip>
             {xState === "saved" && <span className={styles.ok}>Saved ✓</span>}
             {xState && xState !== "saving" && xState !== "saved" && (
               <span className={styles.err}>{xState}</span>
@@ -328,14 +361,15 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
           <button type="button" className={styles.primaryBtn} onClick={() => onNavigate?.("info")}>
             Open the Info page
           </button>{" "}
-          <button
-            type="button"
-            className={styles.primaryBtn}
-            onClick={() => setSetting("toursSeen", {})}
-            title="Guided tours will auto-run again the next time you visit each view"
-          >
-            Replay all tours
-          </button>
+          <Tooltip content="Guided tours will auto-run again the next time you visit each view">
+            <button
+              type="button"
+              className={styles.primaryBtn}
+              onClick={() => setSetting("toursSeen", {})}
+            >
+              Replay all tours
+            </button>
+          </Tooltip>
         </fieldset>
 
         {/* Trading & risk: position sizing for each holding's analysis */}
@@ -343,11 +377,13 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
           <legend className={styles.legend}>Trading &amp; risk</legend>
           <p className={styles.groupHint}>
             Sizes positions in each holding's analysis: shares = (risk&nbsp;% × account) ÷ risk-per-share.
-            Risk is capped at 10% per trade.
+            Risk is capped at 10% per trade. The account size is in your base currency ({base} —
+            switch it on the Portfolio page); for a stock in another currency it is converted at the
+            live exchange rate, and left unsized if no rate is available.
           </p>
           <div className={styles.contact}>
             <div className={styles.field}>
-              <label className={styles.fieldLabel} htmlFor="acct-size">Account size ($)</label>
+              <label className={styles.fieldLabel} htmlFor="acct-size">Account size ({currencySymbol(base).trim()} {base})</label>
               <input
                 id="acct-size"
                 className={styles.input}
@@ -379,11 +415,14 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
             </button>
             {profile.account_size ? (
               <span className={styles.ok}>
-                Risking ${Math.round((profile.account_size * (profile.risk_pct || 1)) / 100).toLocaleString()} per trade
+                Risking {formatMoney((profile.account_size * (profile.risk_pct || 1)) / 100, base, { digits: 0 })} per trade
               </span>
             ) : null}
           </div>
         </fieldset>
+
+        {/* Currencies shown in the ticker tape (per user, server-side) */}
+        <FxWatchEditor />
 
         {/* Notifications: email + phone for the daily suggestion digest */}
         <fieldset className={styles.group}>

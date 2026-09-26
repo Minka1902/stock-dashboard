@@ -130,8 +130,9 @@ export const getEarnings = ({ from, to, scope } = {}) => {
 };
 export const getEarningsFor = (ticker) =>
   getJSON(`/api/earnings/${encodeURIComponent(ticker)}`);
-export const searchStocks = (q) =>
-  getJSON(`/api/search?q=${encodeURIComponent(q)}`);
+// market: "all" | "us" | "tase" — one upstream search serves every filter.
+export const searchStocks = (q, market = "all") =>
+  getJSON(`/api/search?q=${encodeURIComponent(q)}${market && market !== "all" ? `&market=${market}` : ""}`);
 export const getAnalyze = (ticker) =>
   getJSON(`/api/analyze/${encodeURIComponent(ticker)}`);
 export const getCompany = (ticker) =>
@@ -149,13 +150,30 @@ export const saveAppSettings = (settings) =>
   request("/api/settings", { method: "PUT", body: settings });
 export const saveProfile = (profile) =>
   request("/api/profile", { method: "PUT", body: profile });
-export const addHolding = (ticker, shares, avg_cost) =>
-  request("/api/portfolio", { method: "POST", body: { ticker, shares, avg_cost } });
-export const updateHolding = (ticker, shares, avg_cost) =>
+// avg_cost is in `currency` (the position's native one). currency null =
+// let the server detect it (".TA" → ILS, bare → USD, else Yahoo).
+export const addHolding = (ticker, shares, avg_cost, currency = null) =>
+  request("/api/portfolio", {
+    method: "POST",
+    body: { ticker, shares, avg_cost, ...(currency ? { currency } : {}) },
+  });
+export const updateHolding = (ticker, shares, avg_cost, currency = null) =>
   request(`/api/portfolio/${encodeURIComponent(ticker)}`, {
     method: "PUT",
-    body: { shares, avg_cost },
+    body: { shares, avg_cost, ...(currency ? { currency } : {}) },
   });
+// Per-user FX pairs for the ticker carousel ("USDILS=X", …), in display order.
+export const getFxWatch = () => getJSON("/api/fx-watch");
+export const saveFxWatch = (pairs) =>
+  request("/api/fx-watch", { method: "PUT", body: { pairs } });
+// Live multipliers into `base`; a null rate means "FX unavailable".
+export const getFxRates = (base, currencies = []) => {
+  const q = new URLSearchParams();
+  if (base) q.set("base", base);
+  if (currencies.length) q.set("currencies", currencies.join(","));
+  const qs = q.toString();
+  return getJSON(`/api/fx/rates${qs ? `?${qs}` : ""}`);
+};
 export const setHoldingCategory = (ticker, category) =>
   request(`/api/portfolio/${encodeURIComponent(ticker)}/category`, {
     method: "PUT",

@@ -11,6 +11,7 @@ import {
   heikinAshi,
 } from "../lib/indicators";
 import { prefersReducedMotion } from "../lib/motionConfig";
+import { currencyForSymbol, currencySymbol } from "../lib/format";
 import { useDrawings } from "../lib/drawings/useDrawings";
 import { SessionPrimitive } from "../lib/drawings/SessionPrimitive";
 import { canvasToBlob, composeSnapshot, snapshotFileName } from "../lib/chartSnapshot";
@@ -74,6 +75,7 @@ const SNAP_TOKENS = {
 
 // Tel Aviv (TASE) listings have no pre-market or after-hours session at all.
 const isTase = (t) => /\.TA$/i.test(String(t || ""));
+const CCY_NAMES = { USD: "US dollars", ILS: "Israeli shekels", EUR: "euros", GBP: "British pounds" };
 
 const TIMEFRAMES = [
   { key: "1m", label: "1m", name: "1-minute bars" },
@@ -288,6 +290,11 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   const [session, setSession] = useState(null);
   // Latest pre-market / after-hours print for the D/W/M price lines.
   const [extended, setExtended] = useState(null);
+  // Currency of every price on this chart, from the chart response (TASE
+  // agorot are already shekels by then); the symbol convention until it lands.
+  const [chartCcy, setChartCcy] = useState(null);
+  const ccy = chartCcy || currencyForSymbol(ticker) || "";
+  const sym = currencySymbol(ccy);
   // Read by the series rebuild and the crosshair legend, so a theme change
   // doesn't have to re-run either of them.
   const colorsRef = useRef(colors);
@@ -349,6 +356,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       const data = await getChart(ticker, prefs.tf, prepostOn);
       setBars(data.bars);
       if (data.session) setSession(data.session);
+      if (data.currency) setChartCcy(data.currency);
       setError(null);
     } catch (e) {
       setError(e.message || "chart data unavailable");
@@ -359,6 +367,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSession(null);
+    setChartCcy(null);
   }, [ticker]);
 
   // ---- D/W/M: the current pre-market / after-hours print (Task 3) ----
@@ -878,7 +887,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
         lines.push(main.createPriceLine({
           price: pt.price, color: colors[colorKey], lineWidth: 1,
           lineStyle: LineStyle.Dashed, axisLabelVisible: true,
-          title: `${label} ${Number(pt.price).toFixed(2)}`,
+          title: `${label} ${sym}${Number(pt.price).toFixed(2)}`,
         }));
       } catch { /* series rebuilt underneath us */ }
     };
@@ -887,7 +896,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     return () => {
       for (const l of lines) { try { main.removePriceLine(l); } catch { /* series gone */ } }
     };
-  }, [extended, seriesEpoch, intraday, prefs.compare, colors]);
+  }, [extended, seriesEpoch, intraday, prefs.compare, colors, sym]);
 
   // User-drawn annotations: their own primitive layer, so they're independent
   // of indicator toggles and of the analysis overlays drawn from the payload.
@@ -933,13 +942,14 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       prefs.overlays && prefs.tf === "1d" && analysis && !prefs.compare && "Plan overlay",
       drawing.shapes.length && !drawing.hidden && `${drawing.shapes.length} drawing${drawing.shapes.length === 1 ? "" : "s"}`,
     ].filter(Boolean);
-    const ext = extended?.post ? `After ${extended.post.price.toFixed(2)}` : extended?.pre ? `Pre ${extended.pre.price.toFixed(2)}` : null;
+    const ext = extended?.post ? `After ${sym}${extended.post.price.toFixed(2)}` : extended?.pre ? `Pre ${sym}${extended.pre.price.toFixed(2)}` : null;
     const now = new Date();
     const out = composeSnapshot(shot, {
       cssWidth: el.clientWidth,
       ticker,
       timeframe: tfLabel,
       price: last?.close ?? null,
+      currencySymbol: prefs.compare ? "" : sym,
       changePct: last && prev && prev.close ? ((last.close - prev.close) / prev.close) * 100 : null,
       stamp: now.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }),
       studies,
@@ -955,7 +965,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     const blob = await canvasToBlob(out);
     return { blob, name: snapshotFileName(ticker, tfLabel, now), title: `${ticker} · ${tfLabel} chart` };
   }, [setSelectedId, prefs, intraday, prepostOn, analysis, drawing.shapes.length, drawing.hidden,
-      extended, ticker, tfLabel, snapColors]);
+      extended, ticker, tfLabel, snapColors, sym]);
 
   const toneOf = (b) => (b && b.close >= b.open ? "pos" : "neg");
 
@@ -1086,6 +1096,11 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       {legend && (
         <div className={styles.legend} aria-live="off">
           <span className={styles.legendTicker}>{ticker}</span>
+          {ccy && !prefs.compare && (
+            <Tooltip side="bottom" content={`Prices in ${CCY_NAMES[ccy] || ccy}${isTase(ticker) ? " — Yahoo's agorot quotes are divided by 100 into shekels" : ""}`}>
+              <span className={styles.legendCcy} tabIndex={0}>{sym.trim()} {ccy}</span>
+            </Tooltip>
+          )}
           {intraday && legend.session && (
             <Tooltip side="bottom" content={legend.session === "pre" ? "Pre-market bar" : legend.session === "post" ? "After-hours bar" : "Regular-session bar"}>
               <span className={styles.sessionTag} data-session={legend.session}>

@@ -258,3 +258,14 @@
 .key span[data-c="pos"] { color: var(--chart-up); }
 .key span[data-c="cmp"] { color: var(--chart-compare); }
 .keyNote { color: var(--text-faint); }
+
+/* Currency of the chart's prices (₪ ILS for Tel Aviv listings). */
+.legendCcy {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 0 5px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}

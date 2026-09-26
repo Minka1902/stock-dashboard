@@ -163,6 +163,14 @@ export default function BoomScorePanel({ data, loading, busy, onRefresh, compact
                       </Tooltip>
                     );
                   })}
+                  {s.score_note && (
+                    <Tooltip content={s.score_note}>
+                      <span className={styles.chip} data-tone="neutral" tabIndex={0}
+                            aria-label={s.score_note}>
+                        TASE · renormalized
+                      </span>
+                    </Tooltip>
+                  )}
                 </div>
               </motion.li>
             );

@@ -61,7 +61,7 @@ export const GLOSSARY = {
   },
   atr: {
     label: "ATR (Average True Range)",
-    short: "The average size of a day's price range over the last 14 days, including overnight gaps. A volatility yardstick in dollars.",
+    short: "The average size of a day's price range over the last 14 days, including overnight gaps. A volatility yardstick in the stock's own currency.",
     long: "Average True Range measures how much a stock typically moves in a day, counting gaps from the previous close. The analysis uses it to place stops a sensible distance from price and to say how stretched price is from its 20-day average (in ATRs).",
   },
   analysis_conviction: {
@@ -183,6 +183,31 @@ export const GLOSSARY = {
     label: "Federal contract catalyst",
     short: "A large new U.S. government award (>$100M) — concrete, booked future revenue.",
     long: "Major federal contracts are real, disclosed future revenue rather than speculation. A new award over $100M in the last 30 days for a watchlist company adds +10 to the Boom Score.",
+  },
+  pl_pct: {
+    label: "P/L %",
+    short: "Profit or loss versus your average cost: (price − avg cost) ÷ avg cost, in the position's own currency.",
+    long: "How far the current price is above (+) or below (−) what you paid on average per share. It is computed in the position's native currency, so exchange-rate moves don't distort a single holding; they only enter the converted totals.",
+  },
+  native_currency: {
+    label: "Native currency",
+    short: "The currency the position trades in. Prices, cost and value on the row are shown in it, unconverted.",
+    long: "Each holding keeps the currency of the market you bought it on — dollars for US listings, shekels for Tel Aviv (.TA) listings. Yahoo quotes TASE prices in agorot (1/100 shekel); the dashboard divides them into shekels everywhere. Only the totals are converted into your base currency, using a live exchange rate.",
+  },
+  base_currency: {
+    label: "Base currency",
+    short: "The single currency your portfolio totals (and account size) are converted into, at live Yahoo exchange rates.",
+    long: "Totals across markets need one currency. Every position is converted into it with the live rate shown under the cards. If a rate can't be fetched, that money is left out of the converted total and listed as \"FX unavailable\" rather than converted at a guessed rate.",
+  },
+  tase: {
+    label: "TASE (Tel Aviv Stock Exchange)",
+    short: "Israel's exchange. Tickers end in .TA and trade in shekels, Monday–Friday (Fridays close early). No pre-market or after-hours session.",
+    long: "Tel Aviv listings use the .TA suffix (e.g. TEVA.TA) and are priced in shekels. Since January 2026 TASE trades Monday to Thursday until about 17:30 and Friday until about 13:50 Israel time. US-only data — SEC Form 4 insider trades, congressional trades, US federal contracts and US short interest — doesn't exist for these listings, so those signals are marked not applicable and the Boom Score is renormalized over the rest.",
+  },
+  fx_pair: {
+    label: "Currency pair",
+    short: "How many units of the second currency one unit of the first buys — USD/ILS 3.65 means $1 = ₪3.65.",
+    long: "Yahoo quotes currency pairs as XXXYYY=X. They trade around the clock on weekdays, so they don't have a market-open badge. Add or reorder the pairs shown in the ticker tape in Settings.",
   },
 };
 

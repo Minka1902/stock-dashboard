@@ -201,3 +201,11 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* Score rescaled because some components can't apply (TASE listings). */
+.chip[data-tone="neutral"] {
+  color: var(--info);
+  background: var(--info-weak);
+  border-color: transparent;
+  cursor: help;
+}

@@ -59,7 +59,8 @@ export function composeSnapshot(shot, info) {
   if (info.price != null) {
     ctx.fillStyle = c.text;
     ctx.font = font(600, 14, ratio, mono);
-    const p = Number(info.price).toFixed(2);
+    // With its currency symbol ("₪120.50" for a TASE listing).
+    const p = `${info.currencySymbol || ""}${Number(info.price).toFixed(2)}`;
     ctx.fillText(p, x, line1);
     x += ctx.measureText(p).width + Math.round(8 * ratio);
     if (info.changePct != null) {
