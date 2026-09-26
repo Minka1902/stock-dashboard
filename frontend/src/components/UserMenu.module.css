@@ -2,6 +2,27 @@
   position: relative;
 }
 
+/* Update-available marker: on the avatar while the menu is closed, and next
+   to "Info / Guide" inside it. */
+.triggerDot,
+.updateDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+  flex: none;
+}
+.triggerDot {
+  position: absolute;
+  top: 1px;
+  left: 23px;
+}
+.updateDot {
+  margin-left: auto;
+  box-shadow: 0 0 0 3px var(--accent-weak);
+}
+
 .trigger {
   display: inline-flex;
   align-items: center;

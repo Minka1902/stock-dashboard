@@ -32,6 +32,7 @@ from app import analysis, analyze, auth, backtest, chart_data, config, db, inges
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
+from app import routes_update, updater  # WS-H: in-app update
 
 # Optional: the Server page degrades to "unavailable" rather than reporting
 # zeros, which would look identical to a genuinely idle machine.
@@ -503,6 +504,7 @@ async def lifespan(app: FastAPI):
         id="daily_analysis",
         replace_existing=True,
     )
+    updater.schedule(scheduler)  # WS-H: 6-hourly GitHub update check
     scheduler.start()
     yield
     # Drain rather than abandon: an ingestion job killed mid-write leaves the WAL
@@ -554,6 +556,7 @@ app.add_middleware(
 
 app.include_router(routes_auth.build_router(conn))
 app.include_router(routes_oauth.build_router(conn))
+app.include_router(routes_update.build_router())  # WS-H: /api/update/*
 
 
 @app.exception_handler(Exception)
@@ -585,6 +588,7 @@ def health():
     return {
         "status": "ok" if all(checks.values()) else "degraded",
         "version": __version__,
+        "commit": updater.STARTUP_COMMIT,
         "uptime_seconds": round(time.time() - _STARTED_AT, 1),
         "checks": checks,
     }
@@ -1429,6 +1433,7 @@ def server_overview(user=Depends(_require_admin)):
         })
     return {
         "version": __version__,
+        "commit": updater.STARTUP_COMMIT,
         "started_at": datetime.fromtimestamp(_STARTED_AT, tz=timezone.utc).isoformat(timespec="seconds"),
         "uptime_seconds": round(time.time() - _STARTED_AT, 1),
         "python": platform.python_version(),

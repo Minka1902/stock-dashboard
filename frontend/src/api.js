@@ -203,3 +203,13 @@ export const useRecoveryCode = (code) =>
 export const markOnboarded = () =>
   request("/api/auth/onboarded", { method: "POST" });
 export const logout = () => request("/api/auth/logout", { method: "POST" });
+
+// ---------- in-app update ----------
+// Status is readable by any signed-in user ("an update is available");
+// apply is admin-only and answers 409 with the reason when it can't run.
+export const getUpdateStatus = (refresh = false) =>
+  getJSON(`/api/update/status${refresh ? "?refresh=true" : ""}`);
+export const applyUpdate = () => request("/api/update/apply", { method: "POST" });
+// Public liveness probe; its `commit` changes once a restarted server is
+// running the updated code.
+export const getHealth = () => getJSON("/api/health");

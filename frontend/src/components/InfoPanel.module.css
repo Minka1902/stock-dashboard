@@ -57,6 +57,15 @@
   color: var(--accent);
   background: var(--accent-weak);
 }
+/* "Update available" marker on the Updates chip. */
+.chipDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-weak);
+}
+
 .chip:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

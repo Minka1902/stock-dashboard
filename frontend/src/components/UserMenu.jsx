@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
 import Popover from "./Popover";
 import { initialsFor, gradientFor } from "../lib/avatar";
+import { isUpdateAvailable, useUpdateStatus } from "../hooks/useUpdateStatus";
 import styles from "./UserMenu.module.css";
 
 /**
@@ -16,6 +17,10 @@ export default function UserMenu({ user, onLogout, onNavigate }) {
   const menuRef = useRef(null);
   const email = user?.email || "";
   const local = email.includes("@") ? email.split("@")[0] : email;
+  // Info / Guide carries the Updates section; a dot here (and on the avatar,
+  // while the menu is closed) says GitHub has something newer.
+  const { data: updateData } = useUpdateStatus();
+  const updateAvailable = isUpdateAvailable(updateData);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -45,11 +50,12 @@ export default function UserMenu({ user, onLogout, onNavigate }) {
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={`Signed in as ${email}`}
+        title={updateAvailable ? `Signed in as ${email} · update available` : `Signed in as ${email}`}
       >
         <span className={styles.avatar} style={{ background: gradientFor(email) }} aria-hidden="true">
           {initialsFor(email)}
         </span>
+        {updateAvailable && <span className={styles.triggerDot} aria-hidden="true" />}
         <span className={styles.local}>{local}</span>
       </button>
 
@@ -71,6 +77,9 @@ export default function UserMenu({ user, onLogout, onNavigate }) {
             </button>
             <button type="button" role="menuitem" className={styles.item} onClick={() => go("info")}>
               <Icon name="info" size={15} /> Info / Guide
+              {updateAvailable && (
+                <span className={styles.updateDot} title="Update available" aria-label="update available" />
+              )}
             </button>
             {/* Admin-only: exposes the DB path, tracebacks and machine stats.
                 The route is gated server-side too — this is just the UI half. */}
