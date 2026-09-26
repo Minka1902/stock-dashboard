@@ -53,6 +53,84 @@ Get-FileHash .\nssm-2.24.zip -Algorithm SHA256
 .\windows\service-control.ps1 -Logs       # follow backend.log
 ```
 
+## Updating from the app
+
+**Info / Guide → Updates** shows the running version and commit, and whether
+`origin/main` on GitHub has anything newer. The server checks every 6 hours
+(`app/updater.py`, first run ~2 minutes after start), caches the result for an
+hour, and **Check now** forces a fresh `git fetch`. When an update is available,
+a dot appears on the account avatar and next to *Info / Guide*. If git is
+missing, or GitHub can't be reached, the section says so. It never reports
+"up to date" when it doesn't actually know.
+
+**Update now** is for admins only. The server refuses it (HTTP 409, with the
+reason shown under the button) unless all of these hold:
+
+- the checkout is on `main`;
+- no *tracked* file has local changes (untracked files are fine);
+- there are no local commits missing from `origin/main`, so a fast-forward is
+  possible;
+- there is something to pull.
+
+It then spawns `windows\update.ps1` detached. The script runs these steps:
+
+1. `git pull --ff-only origin main`
+2. `backend\.venv\Scripts\python.exe -m pip install -r requirements.txt`
+3. `npm install --no-save` then `npm run build` in `frontend\`. It uses
+   `npm install` rather than `npm ci`, because `ci` refuses outright when the
+   lockfile has drifted from `package.json`. `--no-save` keeps npm from
+   rewriting `package-lock.json`, which would leave a tracked change behind and
+   block the next update.
+4. The restart depends on how the backend is running:
+   - **Service:** `Restart-Service SignalDashboard`, then wait until
+     `/api/health` reports the new `commit`.
+   - **Dev** (`start.ps1`): touch `app\version.py` so `uvicorn --reload`
+     reloads now that the new packages are in, and tell the user to reload the
+     page.
+
+The UI follows progress through `GET /api/update/status`. That endpoint stops
+answering while the service restarts, so the UI polls `/api/health` until its
+`commit` changes, then reloads itself.
+
+Progress and logs go to the log directory (`C:\ProgramData\SignalDashboard\logs\`
+for the service, `backend\logs\` in dev):
+
+```
+update-status.json   current/last run: state, per-step state + detail
+update.log           full transcript of every git / pip / npm call
+```
+
+**Rollback.** If any step after the pull fails, the script runs
+`git reset --hard <previous commit>`, reinstalls the old requirements,
+rebuilds the old frontend, and restarts. The UI then shows `rolled_back` with
+the reason. If the rollback itself fails, the state is `failed` and
+`update.log` says what is left to do by hand.
+
+**Service or dev?** The server works this out itself; nothing needs to be
+configured. It is in service mode exactly when the running `SignalDashboard`
+service's PID (`sc queryex`) is one of the Python process's ancestors, because
+NSSM runs Python as its direct child. Otherwise it is in dev mode. Set
+`STOCKS_UPDATE_MODE=service|dev` to override that.
+
+Things worth knowing:
+
+- **pip and loaded DLLs.** A running server holds its compiled extensions
+  open, and Windows won't let pip replace a loaded `.pyd`. In service mode, if
+  pip fails, the script stops the service, retries, and starts it again at the
+  end. Dev mode has nothing safe to stop, so a failure there rolls back.
+- **Surviving the restart.** NSSM stops a service by killing its process
+  *tree*, which it walks by parent PID. The updater relaunches itself once, so
+  its parent is a process that has already exited, and it keeps running while
+  the service stops and starts.
+- **Git ownership.** Every git call passes `-c safe.directory=<repo>`. Without
+  it, git running as LocalSystem refuses a tree owned by your user ("dubious
+  ownership").
+- **PATH.** `git` and `npm` must be on the **machine** PATH, because
+  LocalSystem doesn't see your user PATH. If either is missing, the update
+  fails before anything changes, and the UI says which one.
+- **File ownership.** Files that the service pulls or builds are created by
+  LocalSystem. Your account can still edit them as an administrator.
+
 ## Where things live
 
 ```

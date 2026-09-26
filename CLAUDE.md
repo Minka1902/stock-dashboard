@@ -83,6 +83,16 @@ accounts, separate TOTP). See `windows/README.md`, especially the note that
 `STOCKS_CORS_ORIGINS[0]` doubles as the OAuth post-login redirect target
 (`routes_oauth.py::_frontend_origin`) and must stay the app's own origin.
 
+**In-app update** (Info → Updates): `app/updater.py` compares the checkout against
+`origin/main` using git, with a 6-hourly scheduler job and a 1h cache. `app/routes_update.py`
+serves `GET /api/update/status` to any user. `POST /api/update/apply` is admin-only and refuses
+with 409 unless the checkout is on `main`, has no tracked changes, and can fast-forward. It
+spawns a detached `windows/update.ps1` (pull → pip → npm build → restart, rolling back on
+failure), which writes progress to `<LOG_DIR>/update-status.json`. `/api/health` carries
+`commit`, which is how the UI knows the restarted server is on the new code.
+`backend/app/version.py` is the version source of truth, and `frontend/package.json` mirrors
+it. See `windows/README.md` → "Updating from the app".
+
 ### Desktop app (`desktop/`) — Electron shell
 ```bash
 cd desktop

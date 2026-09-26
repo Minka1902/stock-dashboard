@@ -34,6 +34,7 @@ from app import analysis, analyze, auth, backtest, chart_data, config, db, inges
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
+from app import routes_update, updater
 
 # Optional: the Server page degrades to "unavailable" rather than reporting
 # zeros, which would look identical to a genuinely idle machine.
@@ -761,6 +762,9 @@ async def lifespan(app: FastAPI):
     )
     _add_timed_job(
         _run_daily_analysis, analysis_trigger(db.get_app_settings(conn)), "daily_analysis")
+    # 6-hourly GitHub update check. Runs on the default executor, not the
+    # serial "refresh" one: it only shells out to git and never touches SQLite.
+    updater.schedule(scheduler)
     scheduler.start()
     yield
     # Stop firing, drop work that has not started yet (a restart re-derives
@@ -823,6 +827,7 @@ app.add_middleware(
 
 app.include_router(routes_auth.build_router(conn))
 app.include_router(routes_oauth.build_router(conn))
+app.include_router(routes_update.build_router())
 
 
 @app.exception_handler(Exception)
@@ -854,6 +859,7 @@ def health():
     return {
         "status": "ok" if all(checks.values()) else "degraded",
         "version": __version__,
+        "commit": updater.STARTUP_COMMIT,
         "uptime_seconds": round(time.time() - _STARTED_AT, 1),
         "checks": checks,
     }
@@ -1707,6 +1713,7 @@ def server_overview(user=Depends(_require_admin)):
         })
     return {
         "version": __version__,
+        "commit": updater.STARTUP_COMMIT,
         "started_at": datetime.fromtimestamp(_STARTED_AT, tz=timezone.utc).isoformat(timespec="seconds"),
         "uptime_seconds": round(time.time() - _STARTED_AT, 1),
         "python": platform.python_version(),
