@@ -4,14 +4,24 @@ import {
   AreaSeries, BaselineSeries, LineStyle, PriceScaleMode, createSeriesMarkers,
 } from "lightweight-charts";
 import { AnimatePresence, motion } from "motion/react";
-import { getChart } from "../api";
+import { animate } from "animejs";
+import { getChart, getChartExtended } from "../api";
 import {
   smaSeries, emaSeries, bollingerSeries, rsiSeries, macdSeries, vwapSeries,
   heikinAshi,
 } from "../lib/indicators";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import { useDrawings } from "../lib/drawings/useDrawings";
+import { SessionPrimitive } from "../lib/drawings/SessionPrimitive";
+import { canvasToBlob, composeSnapshot, snapshotFileName } from "../lib/chartSnapshot";
 import { useThemeColors, withAlpha } from "../lib/themeColors";
+import DrawingRail from "./chart/DrawingRail";
+import ShapeProperties from "./chart/ShapeProperties";
+import TextEditor from "./chart/TextEditor";
+import SnapshotMenu from "./chart/SnapshotMenu";
+import DraftsMenu from "./chart/DraftsMenu";
+import ChartToast from "./chart/ChartToast";
+import { useChartToast } from "./chart/useChartToast";
 import styles from "./ChartPro.module.css";
 
 // lightweight-charts renders to canvas and cannot parse oklch(), so the chart
@@ -31,13 +41,37 @@ const CHART_TOKENS = {
   labelBg: "--surface-3",     // crosshair axis-label background
 };
 
-// User drawings (lib/drawings) — same resolution, separate roles.
+// User drawings (lib/drawings) — same resolution, separate roles. The extra
+// keys are the palette a shape can pick from (tools.js PALETTE_KEYS), stored
+// on the shape as a key so it follows the theme.
 const DRAW_TOKENS = {
   stroke: "--draw-stroke",
   selected: "--draw-selected",
   fill: "--draw-fill",
   label: "--draw-label",
+  up: "--chart-up",
+  down: "--chart-down",
+  info: "--chart-info",
+  compare: "--chart-compare",
+  muted: "--chart-muted",
+  text: "--text",
+  surface: "--surface-3",
 };
+
+// The snapshot header strip (lib/chartSnapshot) paints on a canvas too.
+const SNAP_TOKENS = {
+  bg: "--surface",
+  text: "--text",
+  muted: "--text-muted",
+  faint: "--text-faint",
+  up: "--chart-up",
+  down: "--chart-down",
+  accent: "--accent",
+  border: "--border",
+};
+
+// Tel Aviv (TASE) listings have no pre-market or after-hours session at all.
+const isTase = (t) => /\.TA$/i.test(String(t || ""));
 
 const TIMEFRAMES = [
   { key: "1m", label: "1m" }, { key: "5m", label: "5m" }, { key: "15m", label: "15m" },
@@ -133,27 +167,48 @@ const DEFAULT_PREFS = {
   logScale: false,
   compare: false,
   overlays: true,
-  prepost: false,
+  // Extended hours are on by default for intraday timeframes (Task 3).
+  prepost: true,
+  v: 2,
 };
 
 const PREFS_KEY = "chartProPrefs";
 
-// Drawing tools. Glyphs rather than icons so the toolbar keeps one visual
-// language with the existing LOG / PLAN pills.
-const DRAW_TOOLS = [
-  { key: "trendline", glyph: "╱", title: "Trendline — click two points" },
-  { key: "ray", glyph: "―", title: "Horizontal level — click once" },
-  { key: "zone", glyph: "▭", title: "Zone — click two corners" },
-  { key: "text", glyph: "T", title: "Text label — click to place" },
-];
-
 function loadPrefs() {
   try {
     const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
-    return { ...DEFAULT_PREFS, ...raw, inds: { ...DEFAULT_PREFS.inds, ...(raw.inds || {}) } };
+    // v1 stored prepost:false as its default, which would read as an explicit
+    // "off" — re-default it once so EXT starts on as intended.
+    const migrated = raw.v === 2 ? raw : { ...raw, prepost: true, v: 2 };
+    return { ...DEFAULT_PREFS, ...migrated, inds: { ...DEFAULT_PREFS.inds, ...(migrated.inds || {}) } };
   } catch {
     return DEFAULT_PREFS;
   }
+}
+
+/**
+ * Give every pane its height in one pass. Stretch factors are relative, so
+ * setting all of them together (main = whatever is left) is order-independent
+ * — unlike calling setHeight pane by pane while later panes are still being
+ * created, which is what made the sub-panes jump on every rebuild.
+ */
+function applyPaneHeights(chart, subHeights, total) {
+  const panes = chart.panes();
+  if (!panes.length) return;
+  const subs = subHeights.slice(0, panes.length - 1);
+  const used = subs.reduce((a, b) => a + b, 0);
+  const main = Math.max(120, total - used);
+  try {
+    panes[0].setStretchFactor(main);
+    subs.forEach((h, i) => panes[i + 1]?.setStretchFactor(h));
+  } catch { /* pane disposed mid-rebuild */ }
+}
+
+const SESSION_LABEL = { pre: "PRE", regular: "REG", post: "POST" };
+
+function fmtClock(epochSecs) {
+  const d = new Date(epochSecs * 1000);
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 /**
@@ -217,6 +272,15 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   // rgb() strings for the current theme; a new object on every theme change.
   const colors = useThemeColors(CHART_TOKENS);
   const drawColors = useThemeColors(DRAW_TOKENS);
+  const snapColors = useThemeColors(SNAP_TOKENS);
+  const wrapRef = useRef(null);
+  const flashRef = useRef(null);
+  const barsRef = useRef([]);          // bars on screen, for drawing anchors
+  const toast = useChartToast();
+  // Session metadata from the last chart response ({has_extended, ...}).
+  const [session, setSession] = useState(null);
+  // Latest pre-market / after-hours print for the D/W/M price lines.
+  const [extended, setExtended] = useState(null);
   // Read by the series rebuild and the crosshair legend, so a theme change
   // doesn't have to re-run either of them.
   const colorsRef = useRef(colors);
@@ -226,6 +290,8 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   // to the bottom of the viewport, clamped to [280, `height`] so the chart +
   // toolbar + legend fit one screen without page scroll (Task 9).
   const [chartHeight, setChartHeight] = useState(height);
+  const chartHeightRef = useRef(height);
+  const subHeightsRef = useRef([]);    // px heights of VOL/RSI/MACD panes, in order
   const [bars, setBars] = useState(null);      // null = loading, [] = no data
   const [compareBars, setCompareBars] = useState(null);
   const [error, setError] = useState(null);
@@ -265,17 +331,44 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   }, [updating]);
 
   const intraday = INTRADAY.has(prefs.tf);
+  // Extended hours exist for this listing unless it's on TASE or the last
+  // chart response said the exchange reports none (FX, most non-US venues).
+  const extSupported = !isTase(ticker) && session?.has_extended !== false;
+  const prepostOn = intraday && prefs.prepost && extSupported;
 
   // ---- data: bars for the active timeframe (auto-refresh while intraday) ----
   const loadBars = useCallback(async () => {
     try {
-      const data = await getChart(ticker, prefs.tf, INTRADAY.has(prefs.tf) && prefs.prepost);
+      const data = await getChart(ticker, prefs.tf, prepostOn);
       setBars(data.bars);
+      if (data.session) setSession(data.session);
       setError(null);
     } catch (e) {
       setError(e.message || "chart data unavailable");
     }
-  }, [ticker, prefs.tf, prefs.prepost]);
+  }, [ticker, prefs.tf, prepostOn]);
+
+  // A new ticker starts with unknown session support.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSession(null);
+  }, [ticker]);
+
+  // ---- D/W/M: the current pre-market / after-hours print (Task 3) ----
+  // Polled while a daily+ view is open; null whenever there is no current
+  // extended print (regular session, weekend with no post bars, TASE, …).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setExtended(null);
+    if (intraday || isTase(ticker)) return undefined;
+    let alive = true;
+    const load = () => getChartExtended(ticker)
+      .then((d) => { if (alive) setExtended(d?.supported ? d : null); })
+      .catch(() => { if (alive) setExtended(null); });
+    load();
+    const id = setInterval(load, 60000);
+    return () => { alive = false; clearInterval(id); };
+  }, [ticker, intraday]);
 
   useEffect(() => {
     // Intentional: reset to the loading state, kick off the fetch, then poll
@@ -452,7 +545,13 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   }, [colors]);
 
   // ---- height changes: just resize, never rebuild ----
-  useEffect(() => { chartRef.current?.applyOptions({ height: chartHeight }); }, [chartHeight]);
+  useEffect(() => {
+    chartHeightRef.current = chartHeight;
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.applyOptions({ height: chartHeight });
+    applyPaneHeights(chart, subHeightsRef.current, chartHeight);
+  }, [chartHeight]);
 
   // ---- viewport-aware sizing: measure the space under the canvas and clamp ----
   const hasData = !!(bars && bars.length);
@@ -538,15 +637,27 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     const ohlcData = displayBars.map((b) => ({
       time: b.time, open: b.open, high: b.high, low: b.low, close: b.close,
     }));
+    // Extended-session bars (intraday + EXT) are drawn dimmer, per point, so
+    // the regular session reads as the main event (Task 3).
+    const dimExt = prepostOn && displayBars.some((b) => b.session === "pre" || b.session === "post");
+    const EXT_ALPHA = 0.42;
+    const extColors = (b, p, hollow) => {
+      if (!(b.session === "pre" || b.session === "post")) return {};
+      const tone = withAlpha(b.close >= b.open ? p.up : p.down, EXT_ALPHA);
+      return hollow
+        ? { borderColor: tone, wickColor: tone, ...(b.close >= b.open ? {} : { color: tone }) }
+        : { color: tone, borderColor: tone, wickColor: tone };
+    };
+    const ohlcThemed = (hollow) => (p) => displayBars.map((b, i) => ({ ...ohlcData[i], ...extColors(b, p, hollow) }));
     const closeData = displayBars.map((b) => ({ time: b.time, value: b.close }));
     if (prefs.type === "hollow") {
       main = addThemed(CandlestickSeries, { borderVisible: true }, (p) => ({
         ...upDown(p), upColor: "transparent", borderUpColor: p.up, borderDownColor: p.down,
       }));
-      main.setData(ohlcData);
+      if (dimExt) themedData(main, ohlcThemed(true)); else main.setData(ohlcData);
     } else if (prefs.type === "bars") {
       main = addThemed(BarSeries, { thinBars: false }, (p) => ({ upColor: p.up, downColor: p.down }));
-      main.setData(ohlcData);
+      if (dimExt) themedData(main, ohlcThemed(false)); else main.setData(ohlcData);
     } else if (prefs.type === "line") {
       main = addThemed(LineSeries, { lineWidth: 2 }, (p) => ({ color: p.accent }));
       main.setData(closeData);
@@ -567,11 +678,22 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       main.setData(closeData);
     } else {
       main = addThemed(CandlestickSeries, { borderVisible: false }, upDown);
-      main.setData(ohlcData);
+      if (dimExt) themedData(main, ohlcThemed(false)); else main.setData(ohlcData);
     }
 
     // The price series is what user drawings anchor to (see useDrawings).
     mainSeriesRef.current = main;
+    barsRef.current = displayBars;
+
+    // Shaded background behind pre-market / after-hours bars.
+    if (dimExt) {
+      const sessionLayer = new SessionPrimitive();
+      const sessionColors = (p) => ({ pre: withAlpha(p.info, 0.08), post: withAlpha(p.compare, 0.08) });
+      sessionLayer.setColors(sessionColors(c));
+      main.attachPrimitive(sessionLayer);
+      sessionLayer.setBars(displayBars);
+      recolor.push((cc) => sessionLayer.setColors(sessionColors(cc)));
+    }
 
     // A tracked line series in palette colour `colorKey`; `label` (if given)
     // registers it for the crosshair legend.
@@ -607,6 +729,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     // sub-panes — each indicator gets its OWN pane + visible price scale, and
     // shows its current value as an axis label ("tell the data", Task 11).
     let paneIndex = 0;
+    const subHeights = [];
     if (vol) {
       paneIndex += 1;
       const volS = track(chart.addSeries(HistogramSeries, {
@@ -617,7 +740,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
         time: b.time, value: b.volume,
         color: withAlpha(b.close >= b.open ? p.up : p.down, 0.53),
       })));
-      chart.panes()[paneIndex]?.setHeight?.(PANE_HEIGHTS.vol);
+      subHeights.push(PANE_HEIGHTS.vol);
     }
     if (rsi) {
       paneIndex += 1;
@@ -627,7 +750,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       rsiS.setData(rsiSeries(bars));
       themedPriceLine(rsiS, { price: 70, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true }, "down");
       themedPriceLine(rsiS, { price: 30, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true }, "up");
-      chart.panes()[paneIndex]?.setHeight?.(PANE_HEIGHTS.rsi);
+      subHeights.push(PANE_HEIGHTS.rsi);
     }
     if (macd) {
       paneIndex += 1;
@@ -646,8 +769,10 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
         lineWidth: 1, priceLineVisible: false, lastValueVisible: true, title: "Signal",
       }, (p) => ({ color: p.info }), paneIndex);
       sigLine.setData(signal);
-      chart.panes()[paneIndex]?.setHeight?.(PANE_HEIGHTS.macd);
+      subHeights.push(PANE_HEIGHTS.macd);
     }
+    subHeightsRef.current = subHeights;
+    applyPaneHeights(chart, subHeights, chartHeightRef.current);
 
     // analysis overlays (daily view only; hidden in percent-compare mode)
     if (showOverlays) {
@@ -733,7 +858,29 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     // Tell the drawing layer to re-attach to the series we just built.
     setSeriesEpoch((n) => n + 1);
   }, [bars, displayBars, compareBars, analysis, prefs.type, prefs.overlays, prefs.compare,
-      prefs.tf, ticker, intraday, ma, ema, bb, vwap, vol, rsi, macd]);
+      prefs.tf, ticker, intraday, prepostOn, ma, ema, bb, vwap, vol, rsi, macd]);
+
+  // ---- D/W/M: dashed "Pre" / "After" price lines from the real extended print ----
+  useEffect(() => {
+    const main = mainSeriesRef.current;
+    if (!main || intraday || prefs.compare || !extended) return undefined;
+    const lines = [];
+    const add = (pt, label, colorKey) => {
+      if (!pt || pt.price == null) return;
+      try {
+        lines.push(main.createPriceLine({
+          price: pt.price, color: colors[colorKey], lineWidth: 1,
+          lineStyle: LineStyle.Dashed, axisLabelVisible: true,
+          title: `${label} ${Number(pt.price).toFixed(2)}`,
+        }));
+      } catch { /* series rebuilt underneath us */ }
+    };
+    add(extended.pre, "Pre", "info");
+    add(extended.post, "After", "compare");
+    return () => {
+      for (const l of lines) { try { main.removePriceLine(l); } catch { /* series gone */ } }
+    };
+  }, [extended, seriesEpoch, intraday, prefs.compare, colors]);
 
   // User-drawn annotations: their own primitive layer, so they're independent
   // of indicator toggles and of the analysis overlays drawn from the payload.
@@ -745,12 +892,68 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     seriesEpoch,
     enabled: hasData,
     colors: drawColors,
+    barsRef,
+    scopeRef: wrapRef,
   });
+
+  const tfLabel = TIMEFRAMES.find((t) => t.key === prefs.tf)?.label || prefs.tf;
+
+  // ---- snapshot (Task 5): the chart exactly as it is on screen ----
+  const { setSelectedId } = drawing;
+  const captureSnapshot = useCallback(async () => {
+    const chart = chartRef.current;
+    const el = elRef.current;
+    if (!chart || !el) throw new Error("chart not ready");
+    // Selection handles are editing chrome, not part of the picture.
+    setSelectedId(null);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    // addTopLayer=true brings in primitives on the top layer (the drawings);
+    // the crosshair is left out.
+    const shot = chart.takeScreenshot(true, false);
+    const lbars = barsRef.current || [];
+    const last = lbars[lbars.length - 1];
+    const prev = lbars[lbars.length - 2];
+    const studies = [
+      prefs.inds.ma && "SMA 20/50/150/200",
+      prefs.inds.ema && "EMA 9/21",
+      prefs.inds.bb && "BB(20,2)",
+      prefs.inds.vwap && intraday && "VWAP",
+      prefs.inds.vol && "Volume",
+      prefs.inds.rsi && "RSI 14",
+      prefs.inds.macd && "MACD",
+      prefs.compare && "vs SPY %",
+      prepostOn && "incl. pre/after hours",
+      prefs.overlays && prefs.tf === "1d" && analysis && !prefs.compare && "Plan overlay",
+      drawing.shapes.length && !drawing.hidden && `${drawing.shapes.length} drawing${drawing.shapes.length === 1 ? "" : "s"}`,
+    ].filter(Boolean);
+    const ext = extended?.post ? `After ${extended.post.price.toFixed(2)}` : extended?.pre ? `Pre ${extended.pre.price.toFixed(2)}` : null;
+    const now = new Date();
+    const out = composeSnapshot(shot, {
+      cssWidth: el.clientWidth,
+      ticker,
+      timeframe: tfLabel,
+      price: last?.close ?? null,
+      changePct: last && prev && prev.close ? ((last.close - prev.close) / prev.close) * 100 : null,
+      stamp: now.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }),
+      studies,
+      note: ext,
+      colors: snapColors,
+      fontFamily: getComputedStyle(document.body).fontFamily,
+      monoFamily: monoFont(),
+    });
+    // A quick shutter flash on the chart, via animejs (skipped under reduced motion).
+    if (flashRef.current && !prefersReducedMotion()) {
+      animate(flashRef.current, { opacity: [0.5, 0], duration: 420, ease: "outQuad" });
+    }
+    const blob = await canvasToBlob(out);
+    return { blob, name: snapshotFileName(ticker, tfLabel, now), title: `${ticker} · ${tfLabel} chart` };
+  }, [setSelectedId, prefs, intraday, prepostOn, analysis, drawing.shapes.length, drawing.hidden,
+      extended, ticker, tfLabel, snapColors]);
 
   const toneOf = (b) => (b && b.close >= b.open ? "pos" : "neg");
 
   return (
-    <div className={styles.wrap}>
+    <div className={styles.wrap} ref={wrapRef}>
       <div className={styles.toolbar} role="toolbar" aria-label="Chart controls">
         <div className={styles.group} role="group" aria-label="Timeframe">
           {TIMEFRAMES.map((t) => (
@@ -814,10 +1017,21 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
           <button className={styles.pill} data-active={prefs.compare ? "yes" : "no"}
                   title="Compare with SPY (percent scale)"
                   onClick={() => setPref({ compare: !prefs.compare })}>vs SPY</button>
-          {intraday && (
+          {intraday && extSupported && (
             <button className={styles.pill} data-active={prefs.prepost ? "yes" : "no"}
-                    title="Include pre-market / after-hours bars"
+                    aria-pressed={prefs.prepost}
+                    title={prefs.prepost
+                      ? "Showing pre-market and after-hours bars (shaded) — click for the regular session only"
+                      : "Regular session only — click to include pre-market and after-hours bars"}
                     onClick={() => setPref({ prepost: !prefs.prepost })}>EXT</button>
+          )}
+          {intraday && !extSupported && (
+            <span className={styles.pillNote} tabIndex={0}
+                  title={isTase(ticker)
+                    ? "Tel Aviv Stock Exchange has no pre-market or after-hours session, so there are no extended-hours bars to show."
+                    : "This market reports no pre-market or after-hours session, so there are no extended-hours bars to show."}>
+              REG ONLY
+            </span>
           )}
           {analysis && (
             <button className={styles.pill} data-active={prefs.overlays ? "yes" : "no"}
@@ -826,38 +1040,27 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
           )}
         </div>
 
-        <div className={styles.group} role="group" aria-label="Drawing tools">
-          {DRAW_TOOLS.map((t) => (
-            <button
-              key={t.key}
-              className={styles.pill}
-              data-active={drawing.tool === t.key ? "yes" : "no"}
-              title={t.title}
-              aria-pressed={drawing.tool === t.key}
-              onClick={() => drawing.setTool(t.key)}
-            >
-              {t.glyph}
-            </button>
-          ))}
-          <button
-            className={styles.pill}
-            title={drawing.selectedId ? "Delete the selected drawing (Del)" : "Remove every drawing on this chart"}
-            disabled={drawing.shapes.length === 0}
-            onClick={() => (drawing.selectedId ? drawing.deleteSelected() : drawing.clearAll())}
-          >
-            {drawing.selectedId ? "DEL" : "CLR"}
-          </button>
+        <div className={styles.actions}>
           {!drawing.synced && (
-            <span className={styles.offlineNote} title="Saved on this device; the server copy will catch up on the next load.">
+            <span className={styles.offlineNote} title="Drawings are saved on this device; the server copy will catch up on the next load.">
               local
             </span>
           )}
+          <DraftsMenu ticker={ticker} tf={prefs.tf} tfLabel={tfLabel} drawing={drawing}
+                      onToast={toast.show} onTimeframe={(tf) => setPref({ tf })} disabled={!hasData} />
+          <SnapshotMenu capture={captureSnapshot} onToast={toast.show} disabled={!hasData} />
         </div>
       </div>
 
       {legend && (
         <div className={styles.legend} aria-live="off">
           <span className={styles.legendTicker}>{ticker}</span>
+          {intraday && legend.session && (
+            <span className={styles.sessionTag} data-session={legend.session}
+                  title={legend.session === "pre" ? "Pre-market bar" : legend.session === "post" ? "After-hours bar" : "Regular-session bar"}>
+              {SESSION_LABEL[legend.session]}
+            </span>
+          )}
           <span>O <em data-tone={toneOf(legend)}>{fmt(legend.open)}</em></span>
           <span>H <em data-tone={toneOf(legend)}>{fmt(legend.high)}</em></span>
           <span>L <em data-tone={toneOf(legend)}>{fmt(legend.low)}</em></span>
@@ -873,6 +1076,18 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
             )}
           </span>
           {prefs.compare && <span className={styles.legendCompare}>vs SPY (%)</span>}
+          {!intraday && !prefs.compare && extended?.pre && (
+            <span className={styles.extChip} data-session="pre"
+                  title={`Pre-market print at ${new Date(extended.pre.time * 1000).toLocaleString()} (latest 1-minute extended-hours bar)`}>
+              Pre <em>{fmt(extended.pre.price)}</em> · {fmtClock(extended.pre.time)}
+            </span>
+          )}
+          {!intraday && !prefs.compare && extended?.post && (
+            <span className={styles.extChip} data-session="post"
+                  title={`After-hours print at ${new Date(extended.post.time * 1000).toLocaleString()} (latest 1-minute extended-hours bar)`}>
+              After <em>{fmt(extended.post.price)}</em> · {fmtClock(extended.post.time)}
+            </span>
+          )}
           {legend.overlays?.map((o) => (
             <span key={o.label} className={styles.overlayChip}>
               <span className={styles.overlayDot} style={{ background: o.color }} aria-hidden="true" />
@@ -891,8 +1106,21 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
         <div className={styles.message}><p>No {prefs.tf} price history for {ticker}.</p></div>
       ) : null}
 
-      <div className={styles.canvasWrap}>
+      <div className={styles.stage}>
+      <DrawingRail drawing={drawing} disabled={!hasData} />
+      <div className={styles.canvasWrap} data-tool={drawing.tool ? "yes" : "no"}>
         <div ref={elRef} className={styles.canvas} style={{ width: "100%" }} />
+        <ShapeProperties drawing={drawing} palette={drawColors} />
+        {drawing.editing && (
+          <TextEditor
+            key={drawing.editing.shape.id}
+            editing={drawing.editing}
+            onCommit={drawing.commitText}
+            onCancel={drawing.cancelEdit}
+          />
+        )}
+        <span ref={flashRef} className={styles.flash} aria-hidden="true" />
+        <ChartToast toast={toast.toast} onDismiss={toast.dismiss} />
         <AnimatePresence>
           {(updating || bars === null) && !error && (
             <motion.div
@@ -908,6 +1136,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
       </div>
 
       <p className={styles.key}>
