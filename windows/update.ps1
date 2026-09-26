@@ -186,7 +186,7 @@ function Get-GitOutput {
 }
 
 function Install-Deps {
-    $code = Invoke-Tool $Python @('-m', 'pip', 'install', '--disable-pip-version-check',
+    $code = Invoke-Tool $Python @('-m', 'pip', 'install', '--quiet', '--disable-pip-version-check',
                                   '-r', 'requirements.txt') $Backend
     return $code
 }
@@ -194,9 +194,22 @@ function Install-Deps {
 function Build-Frontend {
     # npm install, not npm ci: the lockfile is not always in sync with
     # package.json in this repo, and ci refuses outright when it isn't.
-    $code = Invoke-Tool 'npm.cmd' @('install', '--no-audit', '--no-fund') $Frontend
+    # --no-save stops it rewriting package-lock.json: a modified tracked file
+    # would block the *next* update ("local changes").
+    $code = Invoke-Tool 'npm.cmd' @('install', '--no-save', '--no-audit', '--no-fund') $Frontend
+    Restore-Lockfile
     if ($code -ne 0) { return $code }
     return (Invoke-Tool 'npm.cmd' @('run', 'build') $Frontend)
+}
+
+function Restore-Lockfile {
+    # Belt and braces for --no-save: the tree was clean before the pull (the
+    # backend checks), so any lockfile change is npm's own and safe to drop.
+    $dirty = Get-GitOutput @('status', '--porcelain', '--', 'frontend/package-lock.json')
+    if ($dirty) {
+        Add-Log 'npm modified frontend/package-lock.json; restoring the committed version'
+        [void](Invoke-Git @('checkout', '--', 'frontend/package-lock.json'))
+    }
 }
 
 function Invoke-Restart {

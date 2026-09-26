@@ -76,9 +76,11 @@ It then spawns `windows\update.ps1` detached. The script runs these steps:
 
 1. `git pull --ff-only origin main`
 2. `backend\.venv\Scripts\python.exe -m pip install -r requirements.txt`
-3. `npm install` then `npm run build` in `frontend\`. It uses `npm install`
-   rather than `npm ci`, because `ci` refuses outright when the lockfile has
-   drifted from `package.json`.
+3. `npm install --no-save` then `npm run build` in `frontend\`. It uses
+   `npm install` rather than `npm ci`, because `ci` refuses outright when the
+   lockfile has drifted from `package.json`. `--no-save` keeps npm from
+   rewriting `package-lock.json`, which would leave a tracked change behind and
+   block the next update.
 4. The restart depends on how the backend is running:
    - **Service:** `Restart-Service SignalDashboard`, then wait until
      `/api/health` reports the new `commit`.
