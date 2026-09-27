@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useLayoutEffect, useRef } from "react";
 import { motion } from "motion/react";
 import CollapseToggle from "./CollapseToggle";
 import { prefersReducedMotion } from "../lib/motionConfig";
@@ -31,6 +31,20 @@ export default function CollapsibleSection({
   children,
 }) {
   const uid = useId();
+  const sectionRef = useRef(null);
+  const bodyRef = useRef(null);
+  // Collapsing makes the body inert; if focus was inside it the browser drops
+  // it to <body> and a keyboard user loses their place. Hand it to this
+  // section's own toggle instead — before paint, whichever control collapsed
+  // it (chevron, caption, "Collapse all").
+  useLayoutEffect(() => {
+    if (!collapsed) return;
+    const body = bodyRef.current;
+    const active = document.activeElement;
+    if (body && active && active !== document.body && body.contains(active)) {
+      sectionRef.current?.querySelector("button[aria-controls]")?.focus();
+    }
+  }, [collapsed]);
   const captionId = `${uid}-caption`;
   const bodyId = `${uid}-body`;
   const transition = prefersReducedMotion()
@@ -39,6 +53,7 @@ export default function CollapsibleSection({
 
   return (
     <section
+      ref={sectionRef}
       className={`${styles.section} ${className}`}
       data-collapsed={collapsed ? "yes" : "no"}
     >
@@ -57,6 +72,7 @@ export default function CollapsibleSection({
         {right && <div className={styles.right}>{right}</div>}
       </div>
       <motion.div
+        ref={bodyRef}
         id={bodyId}
         role="region"
         aria-labelledby={captionId}

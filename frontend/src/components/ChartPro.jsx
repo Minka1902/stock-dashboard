@@ -320,6 +320,13 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   const seriesRef = useRef([]);        // every removable series (main + overlays + panes)
   const overlayRef = useRef([]);       // {series,label,color} for the crosshair legend
   const datasetKeyRef = useRef(null);  // `${ticker}|${tf}` — only refit when this changes
+  // Which `${ticker}|${tf}` the bars in state belong to, and which one was
+  // asked for last. Switching timeframe renders once with the previous bars
+  // still in state; building (and fitting) them under the new key left the
+  // real bars to arrive into a stale view — daily bars squeezed into the
+  // right half after a trip through 5m.
+  const barsKeyRef = useRef(null);
+  const wantKeyRef = useRef(null);
   const prevBarsRef = useRef(null);    // identity check: did the bar data actually change?
   const legendMapsRef = useRef({ bars: [], byTime: new Map(), idx: new Map() });
   // The price series drawings anchor to, plus a counter that changes whenever
@@ -352,13 +359,18 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
 
   // ---- data: bars for the active timeframe (auto-refresh while intraday) ----
   const loadBars = useCallback(async () => {
+    const key = `${ticker}|${prefs.tf}`;
+    wantKeyRef.current = key;
     try {
       const data = await getChart(ticker, prefs.tf, prepostOn);
+      if (wantKeyRef.current !== key) return; // a newer timeframe/ticker won
+      barsKeyRef.current = key;
       setBars(data.bars);
       if (data.session) setSession(data.session);
       if (data.currency) setChartCcy(data.currency);
       setError(null);
     } catch (e) {
+      if (wantKeyRef.current !== key) return;
       setError(e.message || "chart data unavailable");
     }
   }, [ticker, prefs.tf, prepostOn]);
@@ -609,6 +621,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
 
     const showOverlays = prefs.overlays && prefs.tf === "1d" && analysis && !prefs.compare;
     const datasetKey = `${ticker}|${prefs.tf}`;
+    if (barsKeyRef.current !== datasetKey) return; // previous timeframe's bars
     const isNewDataset = datasetKeyRef.current !== datasetKey;
     const prevBars = prevBarsRef.current;
     const dataChanged = displayBars !== prevBars;

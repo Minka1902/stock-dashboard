@@ -69,15 +69,13 @@ export default function Tour({ steps, onClose }) {
   }, [index]);
 
   const back = useCallback(() => setIndex((i) => Math.max(0, i - 1)), []);
+  // onClose updates the parent (settings), so it must not run inside a state
+  // updater — React would warn about updating one component while rendering
+  // another. Decide from the current index instead.
   const next = useCallback(() => {
-    setIndex((i) => {
-      if (i + 1 >= usableSteps.length) {
-        onClose();
-        return i;
-      }
-      return i + 1;
-    });
-  }, [usableSteps.length, onClose]);
+    if (index + 1 >= usableSteps.length) onClose();
+    else setIndex(index + 1);
+  }, [index, usableSteps.length, onClose]);
 
   useEffect(() => {
     function onKey(e) {

@@ -1,4 +1,4 @@
-import { Area, AreaChart, ResponsiveContainer } from "recharts";
+import { Area, AreaChart } from "recharts";
 import { motion } from "motion/react";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./Sparkline.module.css";
@@ -33,14 +33,14 @@ export default function Sparkline({
       animate={{ opacity: 1 }}
       transition={{ duration: prefersReducedMotion() ? 0 : 0.25 }}
     >
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 2, right: 0, bottom: 2, left: 0 }}>
-          <Area
-            type="monotone" dataKey="c" stroke={color} strokeWidth={1.5}
-            fill={color} fillOpacity={0.12} dot={false} isAnimationActive={false}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
+      {/* Fixed-size: a ResponsiveContainer here measured -1×-1 on first paint
+          and warned on every row. */}
+      <AreaChart width={width} height={height} data={data} margin={{ top: 2, right: 0, bottom: 2, left: 0 }}>
+        <Area
+          type="monotone" dataKey="c" stroke={color} strokeWidth={1.5}
+          fill={color} fillOpacity={0.12} dot={false} isAnimationActive={false}
+        />
+      </AreaChart>
     </motion.div>
   );
 }

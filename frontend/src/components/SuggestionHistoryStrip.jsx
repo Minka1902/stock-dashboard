@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  CartesianGrid, Line, LineChart, ReferenceDot, ResponsiveContainer, Tooltip, YAxis,
+  CartesianGrid, Line, LineChart, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { getSuggestionHistory } from "../api";
 import { TONE_TOKEN, outcomeTone, pctLabel } from "../lib/suggestionHistory";
@@ -84,6 +84,10 @@ export default function SuggestionHistoryStrip({ ticker, daily = [] }) {
           <ResponsiveContainer width="100%" height={120}>
             <LineChart data={series} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
               <CartesianGrid stroke={c.grid} vertical={false} />
+              {/* Hidden, but it is what maps ReferenceDot's x (a date) onto
+                  the plot: without it the x scale is row indices and no
+                  suggestion marker is ever drawn. */}
+              <XAxis dataKey="date" hide />
               <YAxis
                 domain={["dataMin", "dataMax"]}
                 width={46}
