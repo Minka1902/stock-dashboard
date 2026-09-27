@@ -54,7 +54,7 @@
 .chip:hover,
 .chip[data-active="yes"] {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-weak);
 }
 /* "Update available" marker on the Updates chip. */
@@ -161,7 +161,7 @@
   height: 28px;
   border-radius: var(--r-sm);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
   flex: none;
 }
 
@@ -186,7 +186,7 @@
   padding: 4px 10px;
   border-radius: var(--r-pill);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11.5px;
   font-weight: 600;
 }

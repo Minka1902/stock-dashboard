@@ -18,5 +18,5 @@
 }
 .btn:last-child { border-right: none; }
 .btn:hover { color: var(--text); background: var(--surface-hover); }
-.btn[data-active="yes"] { color: var(--accent); background: var(--accent-weak); }
+.btn[data-active="yes"] { color: var(--accent-text); background: var(--accent-weak); }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

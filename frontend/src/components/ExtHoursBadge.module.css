@@ -12,7 +12,7 @@
 }
 .badge[data-state="PRE"] {
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .badge[data-state="POST"] {
   background: color-mix(in oklab, var(--info) 18%, transparent);

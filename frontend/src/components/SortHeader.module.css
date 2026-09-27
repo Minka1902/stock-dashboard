@@ -15,7 +15,7 @@
   cursor: pointer;
 }
 .btn:hover { color: var(--text); }
-.btn[data-active="yes"] { color: var(--accent); }
+.btn[data-active="yes"] { color: var(--accent-text); }
 
 .caret {
   font-size: 0.85em;

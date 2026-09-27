@@ -282,7 +282,7 @@
   box-shadow: 0 0 0 4px var(--accent-glow);
 }
 .step[data-state="running"] .stepLabel { color: var(--text); font-weight: 600; }
-.step[data-state="running"] .stepState { color: var(--accent); }
+.step[data-state="running"] .stepState { color: var(--accent-text); }
 
 .step[data-state="done"] .stepDot {
   border-color: var(--positive);

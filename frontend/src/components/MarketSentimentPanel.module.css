@@ -75,7 +75,7 @@
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--accent);
+  color: var(--accent-text);
   margin-top: 4px;
 }
 .gaugeEnds {
@@ -210,7 +210,7 @@
   cursor: pointer;
   min-width: 0;
 }
-.posSymbol { font-family: var(--mono); font-weight: 700; color: var(--accent); font-size: 12.5px; }
+.posSymbol { font-family: var(--mono); font-weight: 700; color: var(--accent-text); font-size: 12.5px; }
 .posSymbolBtn:hover .posSymbol { text-decoration: underline; }
 .posSymbolBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs); }
 
@@ -265,7 +265,7 @@
 .note {
   padding: 8px var(--s-4) 0;
   font-size: 11.5px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 /* Data-age badge for weekly/monthly sources; amber when past expected cadence. */
 .staleBadge {
@@ -282,7 +282,7 @@
   width: fit-content;
 }
 .staleBadge[data-warn="yes"] {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent-weak);
 }
 .spark {
@@ -313,7 +313,7 @@
 .chip[data-signal="BUY"] { color: var(--positive); border-color: var(--positive-weak); background: var(--positive-weak); }
 .chip[data-signal="SELL"] { color: var(--negative); border-color: var(--negative-weak); background: var(--negative-weak); }
 .chip[data-signal="EXTREME"] { color: var(--negative); border-color: var(--negative); background: var(--negative-weak); }
-.chip[data-signal="ALERT"] { color: var(--accent); border-color: var(--accent-weak); background: var(--accent-weak); }
+.chip[data-signal="ALERT"] { color: var(--accent-text); border-color: var(--accent-weak); background: var(--accent-weak); }
 .chip[data-signal="NEUTRAL"] { color: var(--text-muted); }
 .chip[data-signal="NO_DATA"] { color: var(--text-faint); }
 
@@ -336,7 +336,7 @@
   border-radius: var(--r-sm);
   border: 1px solid var(--accent-weak);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--mono);
   font-weight: 600;
   cursor: pointer;

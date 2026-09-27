@@ -20,6 +20,25 @@
   src: url("/fonts/atkinson-hyperlegible-bold.woff2") format("woff2");
 }
 
+/* The new-shekel sign (U+20AA) only. The monospace fonts Windows ships
+   (Consolas, Lucida Console, Courier New) draw ₪ at lowercase height, so
+   "₪120.50" reads smaller than "$341.46" beside it. This face serves just
+   that one code point: an upright mono ₪ when one is installed, else the
+   stack's own glyph scaled to digit height. Faces sharing a family and a
+   unicode-range are tried last-declared first, so the unscaled one wins
+   when it exists. */
+@font-face {
+  font-family: "Shekel Mono";
+  src: local("Consolas"), local("Menlo"), local("Courier New");
+  unicode-range: U+20AA;
+  size-adjust: 128%;
+}
+@font-face {
+  font-family: "Shekel Mono";
+  src: local("DejaVu Sans Mono"), local("Noto Sans Mono"), local("Liberation Mono");
+  unicode-range: U+20AA;
+}
+
 *,
 *::before,
 *::after {
@@ -55,7 +74,7 @@ body {
   --s-7: 48px;
 
   /* typography — monospace leads */
-  --mono: ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  --mono: "Shekel Mono", ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", "Roboto Mono", Menlo, Consolas, monospace;
   --sans: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
   /* uppercase terminal caption */
@@ -117,8 +136,11 @@ body {
   --border-strong: oklch(1 0 0 / 0.22);
   --text: oklch(0.945 0.006 80);
   --text-muted: oklch(0.72 0.010 80);
-  --text-faint: oklch(0.56 0.012 80);
+  --text-faint: oklch(0.62 0.012 80);
   --accent: oklch(0.82 0.145 75);
+  /* Accent used as TEXT. Same as --accent on the dark palettes; the light
+     ones need a darker shade to reach 4.5:1 on their pale surfaces. */
+  --accent-text: var(--accent);
   --accent-strong: oklch(0.76 0.16 68);
   --accent-weak: oklch(0.82 0.145 75 / 0.15);
   --accent-glow: oklch(0.82 0.145 75 / 0.35);
@@ -172,16 +194,17 @@ body {
   --border-strong: oklch(0.78 0.014 80);
   --text: oklch(0.24 0.020 80);
   --text-muted: oklch(0.46 0.022 80);
-  --text-faint: oklch(0.60 0.018 80);
+  --text-faint: oklch(0.53 0.018 80);
   --accent: oklch(0.62 0.15 68);
+  --accent-text: oklch(0.48 0.14 64);
   --accent-strong: oklch(0.54 0.16 64);
   --accent-weak: oklch(0.62 0.15 68 / 0.14);
   --accent-glow: oklch(0.62 0.15 68 / 0.30);
-  --positive: oklch(0.56 0.15 158);
+  --positive: oklch(0.48 0.14 158);
   --positive-weak: oklch(0.56 0.15 158 / 0.14);
   --negative: oklch(0.55 0.20 22);
   --negative-weak: oklch(0.55 0.20 22 / 0.12);
-  --info: oklch(0.52 0.12 232);
+  --info: oklch(0.46 0.12 232);
   --info-weak: oklch(0.52 0.12 232 / 0.14);
   --shadow: 0 1px 2px oklch(0.6 0.02 80 / 0.18), 0 12px 30px oklch(0.6 0.02 80 / 0.16);
   --shadow-lg: 0 2px 4px oklch(0.6 0.02 80 / 0.16), 0 20px 44px oklch(0.6 0.02 80 / 0.22);
@@ -226,6 +249,7 @@ body {
   --text-muted: oklch(0.77 0.06 300);
   --text-faint: oklch(0.62 0.07 300);
   --accent: oklch(0.74 0.17 300);
+  --accent-text: var(--accent);
   --accent-strong: oklch(0.68 0.20 300);
   --accent-weak: oklch(0.74 0.17 300 / 0.18);
   --accent-glow: oklch(0.74 0.19 300 / 0.42);
@@ -276,16 +300,17 @@ body {
   --border-strong: oklch(0.76 0.036 70);
   --text: oklch(0.28 0.032 60);
   --text-muted: oklch(0.48 0.034 62);
-  --text-faint: oklch(0.60 0.030 66);
+  --text-faint: oklch(0.52 0.030 66);
   --accent: oklch(0.60 0.15 55);
+  --accent-text: oklch(0.48 0.14 52);
   --accent-strong: oklch(0.52 0.16 50);
   --accent-weak: oklch(0.60 0.15 55 / 0.15);
   --accent-glow: oklch(0.60 0.15 55 / 0.30);
-  --positive: oklch(0.55 0.15 150);
+  --positive: oklch(0.48 0.14 150);
   --positive-weak: oklch(0.55 0.15 150 / 0.14);
   --negative: oklch(0.54 0.20 25);
   --negative-weak: oklch(0.54 0.20 25 / 0.13);
-  --info: oklch(0.52 0.12 232);
+  --info: oklch(0.46 0.12 232);
   --info-weak: oklch(0.52 0.12 232 / 0.14);
   --shadow: 0 1px 2px oklch(0.55 0.04 60 / 0.20), 0 12px 30px oklch(0.55 0.04 60 / 0.16);
   --shadow-lg: 0 2px 4px oklch(0.55 0.04 60 / 0.18), 0 20px 44px oklch(0.55 0.04 60 / 0.22);

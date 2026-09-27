@@ -68,7 +68,7 @@
 .ticker {
   font-family: var(--mono);
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .num {
@@ -128,7 +128,7 @@
   height: 52px;
   border-radius: var(--r-md);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .emptyTitle {

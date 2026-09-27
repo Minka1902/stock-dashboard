@@ -136,7 +136,7 @@
   height: 52px;
   border-radius: var(--r-md);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
   margin-bottom: var(--s-2);
 }
 

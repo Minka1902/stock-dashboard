@@ -47,7 +47,7 @@
 }
 .select > button[aria-expanded="true"] .chevron {
   transform: rotate(180deg);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 @media (prefers-reduced-motion: reduce) {

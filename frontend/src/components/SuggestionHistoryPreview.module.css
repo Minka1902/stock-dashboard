@@ -22,7 +22,7 @@
   border: none;
   background: transparent;
   padding: 0;
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.04em;
@@ -81,7 +81,9 @@
   border-radius: var(--r-sm);
   background: var(--surface-2);
 }
-.day[data-empty="yes"] { opacity: 0.45; }
+/* An empty day recedes through its box, not its text: dimming the whole
+   cell left the date at ~1.9:1. */
+.day[data-empty="yes"] { background: transparent; border-style: dashed; }
 
 .dayNum {
   font-family: var(--mono);

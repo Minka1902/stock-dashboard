@@ -69,7 +69,7 @@
 .provider {
   font-weight: 500;
   font-size: 11px;
-  color: var(--accent);
+  color: var(--accent-text);
   padding: 1px 7px;
   border-radius: var(--r-pill);
   background: var(--accent-weak);
@@ -150,7 +150,7 @@
   font-size: 11.5px;
   cursor: pointer;
 }
-.copyBtn:hover { border-color: var(--accent); color: var(--accent); }
+.copyBtn:hover { border-color: var(--accent); color: var(--accent-text); }
 
 .pre {
   margin: 0;

@@ -55,7 +55,7 @@
 .filing {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: none;
   text-align: right;
 }
