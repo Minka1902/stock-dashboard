@@ -245,14 +245,16 @@ export default function App({ auth }) {
   const [tourAllowed] = useState(() => !auth?.user?.onboarded);
 
   // Auto-run each view's tour the first time it's visited (marked seen on close).
-  // Returning users (onboarded) are never auto-toured.
+  // Returning users (onboarded) are never auto-toured — unless they asked to
+  // replay the tours from Settings.
   useEffect(() => {
-    if (!tourAllowed || loading || detailTicker || !TOURS[view] || settings.toursSeen[view]) {
+    const allowed = tourAllowed || settings.toursReplay;
+    if (!allowed || loading || detailTicker || !TOURS[view] || settings.toursSeen[view]) {
       return undefined;
     }
     const id = setTimeout(() => setTourView(view), 450); // let the panel render first
     return () => clearTimeout(id);
-  }, [tourAllowed, view, loading, detailTicker, settings.toursSeen]);
+  }, [tourAllowed, view, loading, detailTicker, settings.toursSeen, settings.toursReplay]);
 
   const closeTour = () => {
     if (tourView) {

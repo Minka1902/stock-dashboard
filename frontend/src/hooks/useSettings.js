@@ -23,6 +23,9 @@ const DEFAULTS = {
   collapsedSections: {},
   // Map of view key -> true once its guided tour has run (auto-runs once per view).
   toursSeen: {},
+  // Set by Settings → "Replay all tours": lets tours auto-run again for an
+  // account that is already onboarded (they otherwise never auto-run).
+  toursReplay: false,
   // Label tickers by symbol ("NVDA") or company name ("NVIDIA Corporation").
   // Falls back to the symbol wherever no name is stored.
   nameDisplay: "ticker",

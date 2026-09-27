@@ -365,7 +365,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
             <button
               type="button"
               className={styles.primaryBtn}
-              onClick={() => setSetting("toursSeen", {})}
+              onClick={() => { setSetting("toursSeen", {}); setSetting("toursReplay", true); }}
             >
               Replay all tours
             </button>
