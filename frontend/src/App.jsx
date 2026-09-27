@@ -115,19 +115,19 @@ const VIEWS = {
       <SuggestionsPanel data={p.suggestions} loading={p.loading} busy={p.busy} onRefresh={p.refresh} onAddWatch={p.addWatch} compact onViewAll={() => p.navigate("suggestions")} collapsible collapsed={p.isCollapsed("suggestions")} onToggleCollapse={() => p.toggleCollapsed("suggestions")} />
       <StatGrid contracts={p.contracts} sources={p.sources} loading={p.loading} />
       <ContractsPanel contracts={p.contracts} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("contracts")} collapsible collapsed={p.isCollapsed("contracts")} onToggleCollapse={() => p.toggleCollapsed("contracts")} />
+      {/* The technical and short-interest tables are too wide for half a row
+          (they scrolled sideways inside their panels), so they get full rows. */}
+      <TechnicalPanel data={p.signals} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("signals")} collapsible collapsed={p.isCollapsed("signals")} onToggleCollapse={() => p.toggleCollapsed("signals")} />
       <div className={styles.twoCol}>
-        <TechnicalPanel data={p.signals} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("signals")} collapsible collapsed={p.isCollapsed("signals")} onToggleCollapse={() => p.toggleCollapsed("signals")} />
         <SeasonalityPanel data={p.seasonality} settings={p.settings} quotes={p.quotesByTicker} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("seasonality")} collapsible collapsed={p.isCollapsed("seasonality")} onToggleCollapse={() => p.toggleCollapsed("seasonality")} />
+        <FearGreedPanel data={p.fearGreed} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("fear-greed")} collapsible collapsed={p.isCollapsed("fear-greed")} onToggleCollapse={() => p.toggleCollapsed("fear-greed")} />
       </div>
       <div className={styles.twoCol}>
         <YieldCurvePanel data={p.yieldCurve} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("yield-curve")} collapsible collapsed={p.isCollapsed("yield-curve")} onToggleCollapse={() => p.toggleCollapsed("yield-curve")} />
-        <FearGreedPanel data={p.fearGreed} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("fear-greed")} collapsible collapsed={p.isCollapsed("fear-greed")} onToggleCollapse={() => p.toggleCollapsed("fear-greed")} />
-      </div>
-      <CongressPanel data={p.congressTrades} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("congress")} collapsible collapsed={p.isCollapsed("congress")} onToggleCollapse={() => p.toggleCollapsed("congress")} />
-      <div className={styles.twoCol}>
-        <ShortPanel data={p.shortInterest} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("short")} collapsible collapsed={p.isCollapsed("short")} onToggleCollapse={() => p.toggleCollapsed("short")} />
         <SocialPanel data={p.social} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("social")} collapsible collapsed={p.isCollapsed("social")} onToggleCollapse={() => p.toggleCollapsed("social")} />
       </div>
+      <CongressPanel data={p.congressTrades} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("congress")} collapsible collapsed={p.isCollapsed("congress")} onToggleCollapse={() => p.toggleCollapsed("congress")} />
+      <ShortPanel data={p.shortInterest} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("short")} collapsible collapsed={p.isCollapsed("short")} onToggleCollapse={() => p.toggleCollapsed("short")} />
       <AnalystPanel data={p.analyst} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("analyst")} collapsible collapsed={p.isCollapsed("analyst")} onToggleCollapse={() => p.toggleCollapsed("analyst")} />
       <FundamentalsPanel data={p.fundamentals} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("fundamentals")} collapsible collapsed={p.isCollapsed("fundamentals")} onToggleCollapse={() => p.toggleCollapsed("fundamentals")} />
     </>

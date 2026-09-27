@@ -48,15 +48,21 @@
   letter-spacing: 0.01em;
   color: var(--text-faint);
   background: var(--surface-2);
-  padding: 10px var(--s-5);
+  padding: 10px var(--s-2);
   white-space: nowrap;
 }
 
+/* 13 columns: generous side padding on every cell made the table ~1240px
+   wide, so it scrolled sideways inside its panel below ~1500px. Tight inner
+   gutters, the panel's own inset on the outer edges. */
 .table tbody td {
-  padding: 10px var(--s-5);
+  padding: 10px var(--s-2);
   border-top: 1px solid var(--border);
   vertical-align: middle;
 }
+
+.table th:first-child, .table td:first-child { padding-left: var(--s-5); }
+.table th:last-child, .table td:last-child { padding-right: var(--s-5); }
 
 .table tbody tr:nth-child(even) {
   background: color-mix(in oklch, var(--surface-2) 45%, transparent);
