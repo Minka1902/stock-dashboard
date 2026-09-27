@@ -11,6 +11,9 @@
 /** Minimum distance kept between a popup and the viewport edge. */
 export const VIEWPORT_MARGIN = 8;
 
+/** Width a drop-down is assumed to want before it flips its alignment. */
+const ROOMY = 360;
+
 /**
  * Drop-down placement used by Popover: below the anchor, aligned to its start
  * or end edge, with a max height that leaves a gutter at the bottom so a long
@@ -19,14 +22,27 @@ export const VIEWPORT_MARGIN = 8;
 export function dropdownStyle(anchorEl, align, gap) {
   const r = anchorEl.getBoundingClientRect();
   const top = r.bottom + gap;
+  // The popup keeps its anchored edge; its width is capped so the far edge
+  // stays on screen too (a 360px menu anchored near the middle of a phone
+  // used to open half off the left edge).
+  // An end-aligned popup whose anchor sits near the LEFT of a narrow window
+  // (a phone's wrapped top bar) would get only the sliver to its left, so it
+  // flips to start-aligned when that side has more room than the other.
+  const roomEnd = r.right - VIEWPORT_MARGIN;
+  const roomStart = window.innerWidth - r.left - VIEWPORT_MARGIN;
+  const side = align === "end" && roomEnd < ROOMY && roomStart > roomEnd ? "start"
+    : align === "start" && roomStart < ROOMY && roomEnd > roomStart ? "end"
+      : align;
+  const edge = side === "end"
+    ? Math.max(VIEWPORT_MARGIN, window.innerWidth - r.right)
+    : Math.max(VIEWPORT_MARGIN, r.left);
   return {
     position: "fixed",
     top,
     maxHeight: `calc(100vh - ${Math.round(top)}px - 16px)`,
+    maxWidth: `calc(100vw - ${Math.round(edge)}px - ${VIEWPORT_MARGIN}px)`,
     zIndex: "var(--z-popover)",
-    ...(align === "end"
-      ? { right: Math.max(VIEWPORT_MARGIN, window.innerWidth - r.right) }
-      : { left: Math.max(VIEWPORT_MARGIN, r.left) }),
+    ...(side === "end" ? { right: edge } : { left: edge }),
   };
 }
 

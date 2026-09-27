@@ -36,7 +36,7 @@ function humanSeconds(n) {
 }
 
 /** "Every [3] [min|h|d]" — commits on Enter/blur or a unit click. */
-function IntervalEditor({ seconds, onCommit }) {
+function IntervalEditor({ seconds, onCommit, source }) {
   const [draft, setDraft] = useState(null);
   const unit = unitFor(seconds);
   const value = draft ?? String((seconds || 3600) / UNIT_SECONDS[unit]);
@@ -44,7 +44,9 @@ function IntervalEditor({ seconds, onCommit }) {
   const commit = (nextValue, nextUnit) => {
     setDraft(null);
     const n = Number(nextValue);
-    if (!Number.isFinite(n) || n <= 0) return;
+    // Empty/garbage just reverts; a real number — even one below the 1-minute
+    // floor — goes to the server so its reason is shown, not swallowed.
+    if (nextValue === "" || !Number.isFinite(n)) return;
     const secs = Math.round(n * UNIT_SECONDS[nextUnit]);
     if (secs !== seconds) onCommit(secs);
   };
@@ -58,7 +60,7 @@ function IntervalEditor({ seconds, onCommit }) {
         step="1"
         className={styles.num}
         value={value}
-        aria-label="Interval"
+        aria-label={`${source} interval`}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => { if (draft != null) commit(draft, unit); }}
         onKeyDown={(e) => {
@@ -66,7 +68,7 @@ function IntervalEditor({ seconds, onCommit }) {
           if (e.key === "Escape") setDraft(null);
         }}
       />
-      <span className={styles.seg} role="group" aria-label="Interval unit">
+      <span className={styles.seg} role="group" aria-label={`${source} interval unit`}>
         {Object.keys(UNIT_SECONDS).map((u) => (
           <button
             key={u}
@@ -84,7 +86,7 @@ function IntervalEditor({ seconds, onCommit }) {
 }
 
 /** Wall-clock chips (HH:MM) with add/remove. Never lets the last one go. */
-function TimesEditor({ times, onCommit, reduced }) {
+function TimesEditor({ times, onCommit, reduced, source }) {
   const [adding, setAdding] = useState("");
   const add = () => {
     if (!adding) return;
@@ -119,7 +121,7 @@ function TimesEditor({ times, onCommit, reduced }) {
         type="time"
         className={styles.time}
         value={adding}
-        aria-label="Add a time"
+        aria-label={`${source}: add a time`}
         onChange={(e) => setAdding(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") add(); }}
       />
@@ -130,7 +132,7 @@ function TimesEditor({ times, onCommit, reduced }) {
   );
 }
 
-function TzEditor({ tz, onCommit, listId }) {
+function TzEditor({ tz, onCommit, listId, source }) {
   const [draft, setDraft] = useState(null);
   const value = draft ?? tz;
   const commit = () => {
@@ -143,7 +145,7 @@ function TzEditor({ tz, onCommit, listId }) {
       className={styles.tz}
       list={listId}
       value={value}
-      aria-label="Timezone"
+      aria-label={`${source} timezone`}
       spellCheck={false}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
@@ -203,10 +205,11 @@ function ScheduleRow({ row, error, note, onSave, onRunNow, reduced }) {
 
       <div className={styles.when}>
         {isTimes ? (
-          <TimesEditor times={row.times} onCommit={(times) => onSave({ times })} reduced={reduced} />
+          <TimesEditor times={row.times} onCommit={(times) => onSave({ times })} reduced={reduced} source={row.source} />
         ) : (
           <IntervalEditor
             seconds={row.interval_seconds}
+            source={row.source}
             onCommit={(interval_seconds) => onSave({ interval_seconds })}
           />
         )}
@@ -228,7 +231,7 @@ function ScheduleRow({ row, error, note, onSave, onRunNow, reduced }) {
         ))}
       </span>
 
-      <TzEditor tz={row.tz} listId="scheduler-tz-list" onCommit={(tz) => onSave({ tz })} />
+      <TzEditor tz={row.tz} listId="scheduler-tz-list" source={row.source} onCommit={(tz) => onSave({ tz })} />
 
       <label className={styles.switch}>
         <input

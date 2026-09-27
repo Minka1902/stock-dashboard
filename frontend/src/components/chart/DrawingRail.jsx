@@ -42,9 +42,15 @@ const itemVariants = (reduced) => ({
  * the last tool used from it; the chevron opens the full group), then the
  * global toggles — magnet, lock all, hide all — and undo / redo / clear.
  */
+/** Rendered flyout width (min-width 212px + padding/border). */
+const FLYOUT_WIDTH = 230;
+
 export default function DrawingRail({ drawing, disabled }) {
   const [remembered, setRemembered] = useState(loadRemembered);
   const [openGroup, setOpenGroup] = useState(null);
+  // "end" when a flyout opened from here would run past the right edge (the
+  // rail is a horizontal row on phones).
+  const [openAlign, setOpenAlign] = useState("start");
   const railRef = useRef(null);
   const reduced = prefersReducedMotion();
 
@@ -113,14 +119,18 @@ export default function DrawingRail({ drawing, disabled }) {
                 <button type="button" className={styles.railMore} disabled={disabled}
                         aria-haspopup="menu" aria-expanded={open}
                         aria-label={`More ${g.label.toLowerCase()}`}
-                        onClick={() => setOpenGroup(open ? null : g.key)}>
+                        onClick={(e) => {
+                          const r = e.currentTarget.parentElement.getBoundingClientRect();
+                          setOpenAlign(r.left + FLYOUT_WIDTH > window.innerWidth - 8 ? "end" : "start");
+                          setOpenGroup(open ? null : g.key);
+                        }}>
                   <DrawIcon name="chevron" size={9} />
                 </button>
               </Tooltip>
             )}
             <AnimatePresence>
               {open && (
-                <motion.div key="flyout" className={styles.flyout} role="menu"
+                <motion.div key="flyout" className={styles.flyout} role="menu" data-align={openAlign}
                             aria-label={g.label} {...flyoutMotion(reduced)}>
                   <div className={styles.flyoutTitle}>{g.label}</div>
                   <motion.ul className={styles.flyoutList} variants={listVariants(reduced)}

@@ -35,7 +35,7 @@
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 .railBtn:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
-.railBtn[data-active="yes"] { color: var(--accent); background: var(--accent-weak); }
+.railBtn[data-active="yes"] { color: var(--accent-text); background: var(--accent-weak); }
 .railBtn:disabled { opacity: 0.35; cursor: not-allowed; }
 .railBtn:focus-visible, .railMore:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
@@ -58,7 +58,7 @@
   border-radius: 2px;
 }
 .railMore:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
-.railMore[aria-expanded="true"] { color: var(--accent); }
+.railMore[aria-expanded="true"] { color: var(--accent-text); }
 
 .railSep {
   width: 18px;
@@ -105,7 +105,7 @@
   cursor: pointer;
 }
 .flyoutItem:hover { background: var(--surface-hover); color: var(--text); }
-.flyoutItem[data-active="yes"] { color: var(--accent); background: var(--accent-weak); }
+.flyoutItem[data-active="yes"] { color: var(--accent-text); background: var(--accent-weak); }
 .flyoutItem:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .flyoutLabel { flex: 1; }
 
@@ -184,7 +184,7 @@
 }
 .propsGroup .propsBtn { border-radius: 0; }
 .propsBtn:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
-.propsBtn[data-active="yes"] { color: var(--accent); background: var(--accent-weak); }
+.propsBtn[data-active="yes"] { color: var(--accent-text); background: var(--accent-weak); }
 .propsBtn[data-tone="danger"]:hover:not(:disabled) { color: var(--negative); background: var(--negative-weak); }
 .propsBtn:disabled { opacity: 0.35; cursor: not-allowed; }
 .propsBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -249,7 +249,7 @@
   cursor: pointer;
 }
 .toolbarBtn:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
-.toolbarBtn[aria-expanded="true"] { color: var(--accent); background: var(--accent-weak); }
+.toolbarBtn[aria-expanded="true"] { color: var(--accent-text); background: var(--accent-weak); }
 .toolbarBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 .toolbarBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
@@ -442,3 +442,25 @@
   transform-origin: left center;
 }
 .toast[data-tone="error"] .toastBar { background: var(--negative); }
+
+/* Phones: a 36px vertical rail beside the plot left ~150px of chart once the
+   plan's price labels took their share. The rail becomes a wrapping row
+   above the canvas instead, and flyouts drop down from the rail's own left
+   edge so they stay on screen. */
+@media (max-width: 560px) {
+  .rail {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-self: stretch;
+  }
+  .railSep { width: 1px; height: 18px; margin: 0 3px; align-self: center; }
+  .flyout {
+    left: 0;
+    top: calc(100% + 6px);
+    max-width: calc(100vw - 32px);
+    transform-origin: left top;
+  }
+  /* A group near the right edge opens its flyout leftwards (DrawingRail
+     sets data-align when the default would run off screen). */
+  .flyout[data-align="end"] { left: auto; right: 0; transform-origin: right top; }
+}

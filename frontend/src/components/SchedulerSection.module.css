@@ -16,21 +16,24 @@
 .headRight { font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); }
 .muted { margin: var(--s-4); font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
 
-.list { list-style: none; margin: 0; padding: 0; }
+/* Sized by the panel, not the window: the sidebar takes ~210px, so a
+   viewport breakpoint let the one-line grid run at widths it can't fit. */
+.list { list-style: none; margin: 0; padding: 0; container-type: inline-size; }
 .row {
   display: grid;
   grid-template-columns:
-    minmax(150px, 190px) auto minmax(220px, 1fr) auto minmax(130px, 170px) auto 72px auto;
+    minmax(118px, 170px) auto minmax(200px, 1fr) auto minmax(110px, 160px) auto 64px auto;
   align-items: center;
-  gap: var(--s-2) var(--s-3);
+  gap: var(--s-2) var(--s-2);
   padding: var(--s-2) var(--s-4);
   border-bottom: 1px solid var(--grid);
 }
 .row:last-child { border-bottom: none; }
 .row[data-enabled="no"] .name, .row[data-enabled="no"] .when { opacity: 0.55; }
-@media (max-width: 1180px) {
+@container (max-width: 960px) {
   .row { display: flex; flex-wrap: wrap; }
   .name { flex: 1 1 100%; }
+  .row .tz { width: 170px; }
 }
 
 .name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -46,6 +49,9 @@
   border-radius: var(--r-sm);
   overflow: hidden;
   flex: none;
+  /* overflow:hidden drops a grid item's automatic minimum to 0, which let the
+     auto track squeeze the toggle to a sliver. */
+  min-width: max-content;
 }
 .segBtn {
   appearance: none;
@@ -58,8 +64,8 @@
   cursor: pointer;
 }
 .segBtn + .segBtn { border-left: 1px solid var(--border); }
-.segBtn[aria-pressed="true"] { background: var(--accent-weak); color: var(--accent); font-weight: 700; }
-.segBtn:hover { color: var(--accent); }
+.segBtn[aria-pressed="true"] { background: var(--accent-weak); color: var(--accent-text); font-weight: 700; }
+.segBtn:hover { color: var(--accent-text); }
 
 .when { min-width: 0; }
 .word { font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); }
@@ -74,7 +80,7 @@
   border-radius: var(--r-xs);
   padding: 3px 6px;
 }
-.num { width: 64px; }
+.num { width: 56px; }
 .tz { width: 100%; min-width: 120px; }
 .num:focus-visible, .time:focus-visible, .tz:focus-visible {
   outline: 2px solid var(--accent);
@@ -84,7 +90,7 @@
 .chip {
   display: inline-flex; align-items: center; gap: 4px;
   font-family: var(--mono); font-size: 11px; font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-weak);
   border-radius: var(--r-pill);
   padding: 2px 4px 2px 9px;
@@ -109,7 +115,7 @@
   cursor: pointer;
   white-space: nowrap;
 }
-.addBtn:hover:not(:disabled), .runBtn:hover { color: var(--accent); border-color: var(--accent); }
+.addBtn:hover:not(:disabled), .runBtn:hover { color: var(--accent-text); border-color: var(--accent); }
 .addBtn:disabled { opacity: 0.45; cursor: default; }
 
 .days { display: inline-flex; gap: 3px; flex: none; }
@@ -124,7 +130,7 @@
   cursor: pointer;
   padding: 0;
 }
-.day[aria-pressed="true"] { background: var(--accent-weak); color: var(--accent); border-color: var(--accent); }
+.day[aria-pressed="true"] { background: var(--accent-weak); color: var(--accent-text); border-color: var(--accent); }
 
 .switch {
   display: inline-flex; align-items: center; gap: 5px;

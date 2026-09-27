@@ -273,7 +273,12 @@ export default function ServerPanel() {
                     key={s.source}
                     data-state={state}
                     data-clickable={clickable ? "yes" : "no"}
-                    onClick={clickable ? () => openDrawer(s.source) : undefined}
+                    onClick={clickable ? (e) => {
+                      // A row isn't focusable; hand focus to its status button
+                      // so closing the drawer returns there, not to <body>.
+                      e.currentTarget.querySelector("button")?.focus();
+                      openDrawer(s.source);
+                    } : undefined}
                   >
                     <td className={styles.srcName}>
                       {s.running_for_seconds != null && <span className={styles.pulse} />}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, Reorder, motion } from "motion/react";
 import SelectMenu from "./SelectMenu";
+import Icon from "./Icon";
 import Tooltip from "./Tooltip";
 import InfoTip from "./InfoTip";
 import { getFxWatch, saveFxWatch } from "../api";
@@ -106,7 +107,7 @@ export default function FxWatchEditor() {
                 exit={reduced ? { opacity: 0 } : { opacity: 0, x: -16 }}
                 transition={reduced ? { duration: 0 } : undefined}
               >
-                <span className={styles.grip} aria-hidden="true">⋮⋮</span>
+                <span className={styles.grip} aria-hidden="true"><Icon name="grip" size={16} /></span>
                 <span className={styles.pair}>{pairLabel(p)}</span>
                 <span className={styles.symbol}>{p}</span>
                 <span className={styles.actions}>

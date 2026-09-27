@@ -602,7 +602,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
                 type="button"
                 role="radio"
                 aria-checked={settings.nameDisplay === o.value}
-                className={styles.segment}
+                className={styles.segBtn}
                 data-active={settings.nameDisplay === o.value ? "yes" : "no"}
                 onClick={() => setSetting("nameDisplay", o.value)}
               >

@@ -186,9 +186,9 @@ export default function PortfolioPanel({
       // onAdd stores the returned list in the hook; also read it here for the merge note.
       const after = Array.isArray(updated) ? updated.find((h) => h.ticker === t) : null;
       if (existing && after) {
-        setMergeNote(`Merged into existing ${t} — now ${after.shares} sh @ ${formatMoney(after.avg_cost, after.currency)}`);
+        setMergeNote({ ticker: t, text: `Merged into existing ${t} — now ${after.shares} sh @ ${formatMoney(after.avg_cost, after.currency)}` });
       } else if (after) {
-        setMergeNote(`Added ${t} in ${after.currency}${addCcy === "auto" ? " (detected)" : ""}.`);
+        setMergeNote({ ticker: t, text: `Added ${t} in ${after.currency}${addCcy === "auto" ? " (detected)" : ""}.` });
       } else {
         setMergeNote(null);
       }
@@ -230,6 +230,9 @@ export default function PortfolioPanel({
         .map((s) => ({ ccy: s.currency, v: formatMoneySigned(s.value - s.cost, s.currency, { compact: true }) })) },
   ];
   const foreign = summary.byCurrency.filter((s) => s.currency !== base);
+  // Until the first live rates arrive, a converted total would leave the
+  // foreign money out and then jump; show it as pending instead.
+  const fxPending = fx.loading && foreign.length > 0;
   const excludedAmounts = summary.byCurrency.filter((s) => summary.excluded.includes(s.currency));
 
   return (
@@ -289,7 +292,9 @@ export default function PortfolioPanel({
                 <span className={styles.cardLabel}>
                   {c.label} <span className={styles.cardBase}>in {base}</span>
                 </span>
-                {c.value == null ? (
+                {fxPending ? (
+                  <span className={styles.cardValue} aria-busy="true">…</span>
+                ) : c.value == null ? (
                   <span className={styles.cardValue}>—</span>
                 ) : (
                   <span className={styles.cardValue}>
@@ -303,7 +308,7 @@ export default function PortfolioPanel({
                       <span key={s.ccy}>
                         {i > 0 && <span className={styles.dot} aria-hidden="true"> · </span>}
                         <span className={styles.subCcy}>{s.ccy}</span> {s.v}
-                        {summary.excluded.includes(s.ccy) && <span className={styles.subExcl}> (not in total)</span>}
+                        {!fxPending && summary.excluded.includes(s.ccy) && <span className={styles.subExcl}> (not in total)</span>}
                       </span>
                     ))}
                   </span>
@@ -366,7 +371,14 @@ export default function PortfolioPanel({
         </button>
       </form>
       {error && <p className={styles.error}>{error}</p>}
-      {mergeNote && <p className={styles.mergeNote}><Icon name="info" size={13} /> {mergeNote}</p>}
+      {/* Only while that holding is still here — removing it retires the note. */}
+      {mergeNote && portfolio.some((h) => h.ticker === mergeNote.ticker) && (
+        <p className={styles.mergeNote} role="status">
+          <Icon name="info" size={13} /> {mergeNote.text}
+          <button type="button" className={styles.noteClose} onClick={() => setMergeNote(null)}
+                  aria-label="Dismiss note">×</button>
+        </p>
+      )}
 
       {showEmpty ? (
         <div className={styles.empty}>

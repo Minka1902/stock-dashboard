@@ -11,7 +11,7 @@ import { useLocalOrder } from "../hooks/useLocalOrder";
 import { useSparklines } from "../hooks/useSparklines";
 import { openTickerTab } from "../lib/nav";
 import { prefersReducedMotion, staggerItem } from "../lib/motionConfig";
-import { formatRelativeTime } from "../lib/format";
+import { currencyForSymbol, formatPrice, formatRelativeTime } from "../lib/format";
 import styles from "./WatchlistPanel.module.css";
 import Tooltip from "./Tooltip";
 
@@ -340,7 +340,8 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
                 </button>
               </Tooltip>
               <span className={styles.price}>
-                {q && q.price != null ? q.price.toFixed(2) : "—"}
+                {/* In the listing's own currency: ₪ for a TASE symbol. */}
+                {q && q.price != null ? formatPrice(q.price, q.currency || currencyForSymbol(w.ticker) || "USD") : "—"}
               </span>
               <span className={styles.change} data-tone={changeTone(q?.change_pct)}>
                 {q && q.change_pct != null

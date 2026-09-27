@@ -59,7 +59,7 @@
   padding: 5px 12px;
   cursor: pointer;
 }
-.tabWrap[data-active="yes"] .tab { color: var(--accent); font-weight: 600; }
+.tabWrap[data-active="yes"] .tab { color: var(--accent-text); font-weight: 600; }
 .tabMenu { margin-right: 3px; }
 .newTab {
   appearance: none;
@@ -72,7 +72,7 @@
   border-radius: var(--r-pill);
   cursor: pointer;
 }
-.newTab:hover { color: var(--accent); border-color: var(--accent); }
+.newTab:hover { color: var(--accent-text); border-color: var(--accent); }
 .tabInput {
   border: 1px solid var(--accent);
   border-radius: var(--r-pill);
@@ -221,7 +221,7 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: var(--r-xs);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 @media (hover: none) {
   /* No hover on touch — the handle has to be permanently visible. */
@@ -260,12 +260,15 @@
 .symbol {
   font-family: var(--mono);
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
   min-width: 70px;
 }
 
 /* Ticker as a button: opens the chart workspace for that symbol. */
 .symbolBtn {
+  /* The width lives on the button: the label inside is inline, where
+     min-width does nothing, so "TEVA.TA" shifted every column after it. */
+  min-width: 84px;
   appearance: none;
   border: none;
   background: transparent;
@@ -277,7 +280,7 @@
 .symbolBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs); }
 
 .price {
-  min-width: 72px;
+  min-width: 84px;
   text-align: right;
   font-family: var(--mono);
   font-weight: 600;
@@ -306,7 +309,7 @@
 }
 .state[data-state="LIVE"]   { background: var(--positive-weak); color: var(--positive); }
 .state[data-state="PRE"],
-.state[data-state="POST"]   { background: var(--accent-weak); color: var(--accent); }
+.state[data-state="POST"]   { background: var(--accent-weak); color: var(--accent-text); }
 .state[data-state="CLOSED"] { border: 1px solid var(--border); color: var(--text-faint); }
 .state[data-state="none"]   { visibility: hidden; }
 
@@ -366,7 +369,7 @@
   height: 52px;
   border-radius: var(--r-md);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
   margin-bottom: var(--s-2);
 }
 .emptyTitle {

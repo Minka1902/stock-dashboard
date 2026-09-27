@@ -66,19 +66,25 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   // Track which ticker the loaded payload belongs to: switching tickers
   // shows the skeleton again without any synchronous setState in the effect.
   const [result, setResult] = useState(null);
+  const [attempt, setAttempt] = useState(0);
   const [watchBusy, setWatchBusy] = useState(false);
   const { settings, setSetting } = useSettingsContext();
 
   useEffect(() => {
     let alive = true;
     getAnalyze(ticker)
-      .then((d) => { if (alive) setResult({ ticker, data: d }); })
-      .catch(() => { if (alive) setResult({ ticker, data: null }); });
+      .then((d) => { if (alive) setResult({ ticker, attempt, data: d, error: null }); })
+      .catch((err) => {
+        // A failed request is not "no analysis yet": keep the reason (rate
+        // limit, timeout, server error) so the page can say so and retry.
+        if (alive) setResult({ ticker, attempt, data: null, error: err });
+      });
     return () => { alive = false; };
-  }, [ticker]);
+  }, [ticker, attempt]);
 
-  const loading = result?.ticker !== ticker;
+  const loading = result?.ticker !== ticker || result?.attempt !== attempt;
   const data = result?.data;
+  const loadError = loading ? null : result?.error || null;
   const a = data?.analysis;
   const anchors = data?.seasonality_anchors || [];
   const xPosts = data?.x_posts || [];
@@ -389,7 +395,21 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
             </Pane>
           )}
 
-          {!a && (
+          {loadError && (
+            <div className={styles.empty} role="alert">
+              <p className={styles.emptyTitle}>Couldn&apos;t load the analysis for {ticker}</p>
+              <p className={styles.emptyText}>
+                {loadError.status === 429
+                  ? "Too many analysis requests in the last minute — the server is rate-limiting. Wait a moment, then retry."
+                  : `The request failed: ${loadError.message || "unknown error"}.`}
+              </p>
+              <button type="button" className={styles.reportBtn} onClick={() => setAttempt((n) => n + 1)}>
+                <Icon name="refresh" size={13} /> Retry
+              </button>
+            </div>
+          )}
+
+          {!a && !loadError && (
             <div className={styles.empty}>
               <p className={styles.emptyTitle}>No analysis yet for {ticker}</p>
               <p className={styles.emptyText}>

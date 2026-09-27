@@ -85,7 +85,7 @@
 .item > svg:last-child {
   margin-left: auto;
   opacity: 0;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .itemActive {
   background: var(--accent-weak);
@@ -124,6 +124,9 @@
   border-top: 1px solid var(--border);
   margin-top: var(--s-1);
 }
+/* The first heading in the list sits right under the market row's own
+   divider — a second rule there read as a double line. */
+.list > li:first-child .section { border-top: none; margin-top: 0; }
 
 /* Market filter for the stock search. */
 .marketRow {

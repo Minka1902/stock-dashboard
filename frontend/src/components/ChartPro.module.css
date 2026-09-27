@@ -35,7 +35,7 @@
 .pill:last-child { border-right: none; }
 .pill:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
 .pill[data-active="yes"] {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-weak);
 }
 .pill:disabled { opacity: 0.35; cursor: not-allowed; }
@@ -65,7 +65,7 @@
   cursor: pointer;
 }
 .segBtn:hover { color: var(--text); }
-.segBtn[data-active="yes"] { color: var(--accent); }
+.segBtn[data-active="yes"] { color: var(--accent-text); }
 .segBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .segThumb {
   position: absolute;
@@ -104,7 +104,7 @@
 }
 .legend em[data-tone="pos"] { color: var(--positive); }
 .legend em[data-tone="neg"] { color: var(--negative); }
-.legendCompare { color: var(--accent); }
+.legendCompare { color: var(--accent-text); }
 .overlayChip {
   display: inline-flex;
   align-items: center;
@@ -147,7 +147,7 @@
   padding: 2px 7px;
   border-radius: var(--r-xs);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--mono);
   font-size: 9.5px;
   text-transform: uppercase;
@@ -268,4 +268,9 @@
   border-radius: var(--r-xs);
   border: 1px solid var(--border);
   color: var(--text-muted);
+}
+
+/* Phones: the drawing rail sits above the canvas (see ChartTools.module.css). */
+@media (max-width: 560px) {
+  .stage { flex-direction: column; }
 }
