@@ -3,6 +3,7 @@ import functools
 import inspect
 import json
 import re
+import html
 import sqlite3
 import sys
 import threading
@@ -746,6 +747,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     ]:
         _try_add_column(conn, "alert_state", col, col_def)
     _migrate_ila_price_rows(conn)
+    _migrate_econ_entities(conn)
     conn.commit()
 
 
@@ -775,6 +777,42 @@ def _migrate_ila_price_rows(conn: sqlite3.Connection) -> None:
         "INSERT INTO data_migrations (name, applied_at) VALUES (?, ?)",
         (name, datetime.now(timezone.utc).isoformat(timespec="seconds")),
     )
+
+
+def _migrate_econ_entities(conn: sqlite3.Connection) -> None:
+    """One-time: decode HTML entities stored in econ_events before the parser
+    decoded them. Nasdaq sends "&nbsp;" for a value that isn't out yet; past
+    events are never re-fetched, so their rows are fixed in place (same
+    empty → NULL rule as econ_calendar._clean_value)."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS data_migrations ("
+        "name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
+    name = "econ_html_entities_2026_09"
+    if conn.execute("SELECT 1 FROM data_migrations WHERE name = ?", (name,)).fetchone():
+        return
+    rows = conn.execute(
+        "SELECT event_id, event, actual, forecast, previous FROM econ_events "
+        "WHERE event LIKE '%&%;%' OR actual LIKE '%&%;%' "
+        "OR forecast LIKE '%&%;%' OR previous LIKE '%&%;%'"
+    ).fetchall()
+
+    def clean(v):
+        if v is None:
+            return None
+        s = html.unescape(v).replace(" ", " ").strip()
+        return None if s in ("", "-", "—", "N/A", "n/a") else s
+
+    for r in rows:
+        conn.execute(
+            "UPDATE econ_events SET event = ?, actual = ?, forecast = ?, previous = ? "
+            "WHERE event_id = ?",
+            (html.unescape(r[1]).strip() or r[1], clean(r[2]), clean(r[3]), clean(r[4]), r[0]),
+        )
+    conn.execute(
+        "INSERT INTO data_migrations (name, applied_at) VALUES (?, ?)",
+        (name, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+    )
+    conn.commit()
 
 
 # ---------- contracts ----------

@@ -134,3 +134,17 @@ def test_storage_round_trip(conn):
     # upsert is idempotent (PK = event_id) and updates in place
     db.upsert_econ_events(conn, events)
     assert len(db.get_econ_events(conn, days_ahead=4000, days_back=4000)) == 2
+
+
+def test_init_schema_decodes_entities_stored_before_the_fix(conn):
+    """Rows written before the parser decoded entities are fixed once, in place."""
+    conn.execute(
+        "INSERT INTO econ_events (event_id, date, time, country, event, importance, "
+        "importance_source, actual, forecast, previous, source, fetched_at) VALUES "
+        "('e1', '2026-07-07', '', 'United States', 'S&amp;P PMI', 'low', 'curated', "
+        "'&nbsp;', NULL, '51.8&nbsp;', 'nasdaq', '2026-07-08T00:00:00+00:00')")
+    conn.execute("DELETE FROM data_migrations WHERE name = 'econ_html_entities_2026_09'")
+    conn.commit()
+    db.init_schema(conn)
+    row = conn.execute("SELECT event, actual, previous FROM econ_events WHERE event_id = 'e1'").fetchone()
+    assert tuple(row) == ("S&P PMI", None, "51.8")
