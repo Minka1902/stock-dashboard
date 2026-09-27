@@ -252,7 +252,7 @@
   padding-top: 2px;
 }
 .key span[data-c="info"] { color: var(--chart-info); }
-.key span[data-c="accent"] { color: var(--chart-accent); }
+.key span[data-c="accent"] { color: var(--accent-text); }
 .key span[data-c="muted"] { color: var(--chart-muted); }
 .key span[data-c="neg"] { color: var(--chart-down); }
 .key span[data-c="pos"] { color: var(--chart-up); }

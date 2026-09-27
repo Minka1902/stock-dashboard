@@ -316,7 +316,7 @@
   border: 1px solid var(--border);
   color: var(--text-muted);
 }
-.advice em { font-style: normal; font-size: 10px; opacity: 0.85; }
+.advice em { font-style: normal; font-size: 10px; }
 .advice[data-tone="buy"] { color: var(--positive); background: var(--positive-weak); border-color: transparent; }
 .advice[data-tone="hold"] { color: var(--accent-text); background: var(--accent-weak); border-color: transparent; }
 .advice[data-tone="warn"] { color: var(--negative); border-color: var(--negative-weak); }
