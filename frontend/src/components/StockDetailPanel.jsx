@@ -323,76 +323,84 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
             <ChartPro ticker={ticker} analysis={a} />
           </Pane>
 
-          {companyInfo.profile !== false && (
-            <Pane {...sec("company")} caption="Company"
-                  right={<span className={styles.muted}>who this is · who owns it</span>}>
-              <CompanyInfo company={company} ticker={ticker} show={companyInfo} />
+          {/* Without the payload these panes would read "no filings", "nothing
+              has tripped" — claims about data we never received. Only the
+              chart (fetched on its own) and the error are shown. */}
+          {!loadError && (
+            <>
+            {companyInfo.profile !== false && (
+              <Pane {...sec("company")} caption="Company"
+                    right={<span className={styles.muted}>who this is · who owns it</span>}>
+                <CompanyInfo company={company} ticker={ticker} show={companyInfo} />
+              </Pane>
+            )}
+
+            {companyInfo.insiders !== false && (
+              <Pane {...sec("insiders")} caption="Insider trades"
+                    right={<span className={styles.muted}>{isTase ? "not applicable to TASE listings" : "SEC Form 4 · newest first"}</span>}>
+                {isTase ? (
+                  <p className={styles.muted}>
+                    Not applicable: SEC Form 4 covers US-listed companies. Israeli insiders report to the
+                    Israel Securities Authority, which this dashboard does not ingest.
+                  </p>
+                ) : (
+                  <InsiderTrades trades={insiderTrades} ticker={ticker} />
+                )}
+              </Pane>
+            )}
+
+            <Pane {...sec("alerts")} caption="Alerts"
+                  right={<span className={styles.muted}>
+                    {stockAlerts.length > 0
+                      ? `${stockAlerts.length} fired · newest first`
+                      : "nothing has tripped"}
+                  </span>}>
+              <StockAlerts alerts={stockAlerts} ticker={ticker} focusKey={focusAlertKey} />
             </Pane>
-          )}
 
-          {companyInfo.insiders !== false && (
-            <Pane {...sec("insiders")} caption="Insider trades"
-                  right={<span className={styles.muted}>{isTase ? "not applicable to TASE listings" : "SEC Form 4 · newest first"}</span>}>
-              {isTase ? (
-                <p className={styles.muted}>
-                  Not applicable: SEC Form 4 covers US-listed companies. Israeli insiders report to the
-                  Israel Securities Authority, which this dashboard does not ingest.
-                </p>
-              ) : (
-                <InsiderTrades trades={insiderTrades} ticker={ticker} />
-              )}
+            <Pane {...sec("history")} caption="Suggestion history"
+                  right={<span className={styles.muted}>what we said · what happened next</span>}>
+              <SuggestionHistoryStrip ticker={ticker} daily={data?.daily || []} />
             </Pane>
-          )}
 
-          <Pane {...sec("alerts")} caption="Alerts"
-                right={<span className={styles.muted}>
-                  {stockAlerts.length > 0
-                    ? `${stockAlerts.length} fired · newest first`
-                    : "nothing has tripped"}
-                </span>}>
-            <StockAlerts alerts={stockAlerts} ticker={ticker} focusKey={focusAlertKey} />
-          </Pane>
+            {anchors.length > 0 && (
+              <Pane {...sec("anchors")} caption="This day in history"
+                    right={<span className={styles.muted}>close on this date, past years</span>}>
+                <div className={styles.anchors}>
+                  {anchors.map((an) => {
+                    const delta = refPrice && an.close
+                      ? (refPrice / an.close - 1) * 100
+                      : null;
+                    const label = an.years_ago === "max" ? "earliest" : `${an.years_ago}y ago`;
+                    return (
+                      <div key={`${an.years_ago}`} className={styles.anchor}>
+                        <span className={styles.anchorLabel}>{label}</span>
+                        <span className={styles.anchorDate}>{an.date}</span>
+                        <span className={styles.anchorClose}>{px(an.close)}</span>
+                        {delta != null && (
+                          <span className={styles.anchorDelta} data-tone={delta >= 0 ? "pos" : "neg"}>
+                            {delta >= 0 ? "+" : ""}{delta.toFixed(1)}% since
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </Pane>
+            )}
 
-          <Pane {...sec("history")} caption="Suggestion history"
-                right={<span className={styles.muted}>what we said · what happened next</span>}>
-            <SuggestionHistoryStrip ticker={ticker} daily={data?.daily || []} />
-          </Pane>
+            {xPosts.length > 0 && (
+              <Pane {...sec("xwatch")} caption="X Watch"
+                    right={<span className={styles.muted}>tracked-account posts mentioning {ticker}</span>}>
+                <div className={styles.xFeed}>
+                  {xPosts.map((p) => (
+                    <XPostCard key={`${p.account}:${p.post_id}`} post={p} compact />
+                  ))}
+                </div>
+              </Pane>
+            )}
 
-          {anchors.length > 0 && (
-            <Pane {...sec("anchors")} caption="This day in history"
-                  right={<span className={styles.muted}>close on this date, past years</span>}>
-              <div className={styles.anchors}>
-                {anchors.map((an) => {
-                  const delta = refPrice && an.close
-                    ? (refPrice / an.close - 1) * 100
-                    : null;
-                  const label = an.years_ago === "max" ? "earliest" : `${an.years_ago}y ago`;
-                  return (
-                    <div key={`${an.years_ago}`} className={styles.anchor}>
-                      <span className={styles.anchorLabel}>{label}</span>
-                      <span className={styles.anchorDate}>{an.date}</span>
-                      <span className={styles.anchorClose}>{px(an.close)}</span>
-                      {delta != null && (
-                        <span className={styles.anchorDelta} data-tone={delta >= 0 ? "pos" : "neg"}>
-                          {delta >= 0 ? "+" : ""}{delta.toFixed(1)}% since
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </Pane>
-          )}
-
-          {xPosts.length > 0 && (
-            <Pane {...sec("xwatch")} caption="X Watch"
-                  right={<span className={styles.muted}>tracked-account posts mentioning {ticker}</span>}>
-              <div className={styles.xFeed}>
-                {xPosts.map((p) => (
-                  <XPostCard key={`${p.account}:${p.post_id}`} post={p} compact />
-                ))}
-              </div>
-            </Pane>
+            </>
           )}
 
           {loadError && (
