@@ -23,12 +23,23 @@ LOG_DIR = Path(os.environ.get("STOCKS_LOG_DIR") or (Path(__file__).resolve().par
 LOG_MAX_BYTES = int(os.environ.get("STOCKS_LOG_MAX_BYTES", str(5 * 1024 * 1024)))
 LOG_BACKUP_COUNT = int(os.environ.get("STOCKS_LOG_BACKUP_COUNT", "5"))
 
-# How long a job may start late and still run. APScheduler's own default is 1
-# second (BackgroundScheduler -> base.py:909), which silently *drops* any job
-# delayed by a blocked thread pool or a sleeping laptop. 5 minutes means a late
-# run still happens; coalesce=True keeps a backlog from firing N times at once.
-SCHEDULER_MISFIRE_GRACE_SECONDS = int(
-    os.environ.get("STOCKS_SCHEDULER_MISFIRE_GRACE_SECONDS", "300"))
+# Scheduling (one APScheduler job per source; see app/schedules.py).
+# misfire_grace_time is None on every job: a job delayed by a busy refresh
+# thread or a sleeping laptop runs late rather than being dropped. (APScheduler's
+# own default is 1 second, which silently drops it.)
+#
+# First runs after startup (and after a schedule edit) are held back at least
+# this long, staggered one second per source, so a restart never stampedes the
+# single refresh thread and a test client never triggers real network fetches.
+SCHEDULER_STARTUP_DELAY_SECONDS = int(
+    os.environ.get("STOCKS_SCHEDULER_STARTUP_DELAY_SECONDS", "30"))
+# boom_score -> alerts is one "derived" step. After any upstream source
+# succeeds it is pulled forward to run this many seconds later, so a burst of
+# sources finishing together coalesces into one recompute.
+DERIVED_DEBOUNCE_SECONDS = int(os.environ.get("STOCKS_DERIVED_DEBOUNCE_SECONDS", "30"))
+# Timezone new schedule rows are created in (only matters for "at times" mode
+# and day filters). Editable per source on the Server page.
+SCHEDULE_DEFAULT_TZ = os.environ.get("STOCKS_SCHEDULE_TZ", "Asia/Jerusalem")
 
 # Retention for the run-history tables that feed the Server page. They are
 # append-only and would otherwise grow without bound.
@@ -93,7 +104,9 @@ SESSION_TTL_SECONDS = int(os.environ.get("STOCKS_SESSION_TTL_SECONDS", str(14 * 
 # Lifetime of the short-lived session between password check and TOTP entry.
 PENDING_SESSION_TTL_SECONDS = int(os.environ.get("STOCKS_PENDING_SESSION_TTL_SECONDS", "300"))
 
-# How often the scheduler re-runs fast ingestion, in seconds. Default 3 min.
+# Default cadence for sources without a slower one of their own (and for the
+# derived boom_score -> alerts step), in seconds. Default 3 min. Only seeds the
+# per-source schedule rows; each is then editable on the Server page.
 REFRESH_INTERVAL_SECONDS = int(os.environ.get("STOCKS_REFRESH_SECONDS", "180"))
 
 # How many days back to pull contracts on each run.
@@ -162,7 +175,9 @@ ECON_CALENDAR_MIN_INTERVAL_SECONDS = int(
     os.environ.get("STOCKS_ECON_CALENDAR_MIN_INTERVAL_SECONDS", "3600")
 )
 # Comma-separated country allowlist (matches the app's US-equity orientation).
-# Empty string = keep every country.
+# Empty string = keep every country. "Israel" is a valid entry (e.g.
+# "United States,Israel") but only the FMP path carries Israeli releases —
+# the keyless Nasdaq feed has none (checked 2026-09).
 ECON_CALENDAR_COUNTRIES = [
     c.strip()
     for c in os.environ.get("STOCKS_ECON_CALENDAR_COUNTRIES", "United States").split(",")
@@ -192,11 +207,26 @@ QUOTES_MAX_WORKERS = int(os.environ.get("STOCKS_QUOTES_MAX_WORKERS", "8"))
 # analysis pipeline (technicals, boom score, earnings), none of which means
 # anything for a currency pair. These ride the same keyless quote endpoint and,
 # like the rest of quotes.py, are cached in memory and never persisted.
+#
+# These are now only the *seed* for each user's own FX watch list (table
+# fx_watch, edited in Settings): dollar and euro against the shekel.
 FX_PAIRS = [
     p.strip().upper()
-    for p in os.environ.get("STOCKS_FX_PAIRS", "USDILS=X,EURILS=X,EURUSD=X").split(",")
+    for p in os.environ.get("STOCKS_FX_PAIRS", "USDILS=X,EURILS=X").split(",")
     if p.strip()
 ]
+
+# Market-overview indexes appended to every user's carousel, as
+# "SYMBOL=Label" pairs. TA35.TA is the symbol Yahoo actually serves for the
+# TA-35 (^TA35 404s); set STOCKS_TICKER_INDEXES="" to show none.
+TICKER_INDEXES: dict[str, str] = {
+    sym.strip().upper(): (label.strip() or sym.strip().upper())
+    for sym, _, label in (
+        item.partition("=")
+        for item in os.environ.get("STOCKS_TICKER_INDEXES", "TA35.TA=TA-35").split(",")
+        if item.strip()
+    )
+}
 
 
 # --- Market sentiment indicators ---
@@ -218,14 +248,20 @@ SENT_PC_BUY = float(os.environ.get("STOCKS_SENT_PC_BUY", "1.0"))          # heav
 SENT_PC_SELL = float(os.environ.get("STOCKS_SENT_PC_SELL", "0.8"))        # complacency → sell
 
 # FINRA publishes margin debt monthly, roughly three to four weeks after the
-# month closes, so asking daily only burned requests. Once a fortnight still
-# catches every release well before the next one.
+# month closes, so asking daily only burned requests. Weekly (the intended
+# schedule is Mon 06:00 Asia/Jerusalem) picks up each release within days, and
+# keeps the headless-browser tier to one Chromium launch a week.
 MARGIN_DEBT_MIN_INTERVAL_SECONDS = int(
-    os.environ.get("STOCKS_MARGIN_DEBT_MIN_INTERVAL_SECONDS", str(14 * 86400))
+    os.environ.get("STOCKS_MARGIN_DEBT_MIN_INTERVAL_SECONDS", str(7 * 86400))
+)
+# Total budget for the headless-browser tier (launch + page + Cloudflare
+# clearance + workbook download), in seconds.
+MARGIN_DEBT_BROWSER_TIMEOUT_SECONDS = float(
+    os.environ.get("STOCKS_MARGIN_DEBT_BROWSER_TIMEOUT_SECONDS", "60")
 )
 # Retry cadence after a *failed* fetch, which is a different question from how
-# often fresh data appears: a fortnight-long success interval must not become a
-# fortnight-long outage when FINRA returns a 401/403.
+# often fresh data appears: a week-long success interval must not become a
+# week-long outage when FINRA returns a 401/403.
 MARGIN_DEBT_RETRY_INTERVAL_SECONDS = int(
     os.environ.get("STOCKS_MARGIN_DEBT_RETRY_INTERVAL_SECONDS", "21600")  # 6h
 )

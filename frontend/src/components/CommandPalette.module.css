@@ -2,7 +2,7 @@
   position: fixed;
   inset: 0;
   z-index: var(--z-overlay);
-  background: oklch(0 0 0 / 0.5);
+  background: var(--scrim);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -85,7 +85,7 @@
 .item > svg:last-child {
   margin-left: auto;
   opacity: 0;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .itemActive {
   background: var(--accent-weak);
@@ -123,4 +123,40 @@
   letter-spacing: var(--caption-spacing);
   border-top: 1px solid var(--border);
   margin-top: var(--s-1);
+}
+/* The first heading in the list sits right under the market row's own
+   divider — a second rule there read as a double line. */
+.list > li:first-child .section { border-top: none; margin-top: 0; }
+
+/* Market filter for the stock search. */
+.marketRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-4);
+  border-bottom: 1px solid var(--border);
+}
+.marketLabel {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+}
+.marketBadge {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.marketBadge[data-market="TASE"] {
+  color: var(--info);
+  background: var(--info-weak);
+  border-color: transparent;
 }

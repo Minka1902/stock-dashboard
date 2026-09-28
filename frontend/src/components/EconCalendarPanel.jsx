@@ -4,6 +4,7 @@ import Skeleton from "./Skeleton";
 import SuggestionHistoryPreview from "./SuggestionHistoryPreview";
 import { formatDate } from "../lib/format";
 import styles from "./EconCalendarPanel.module.css";
+import Tooltip from "./Tooltip";
 
 const IMPORTANCE_LABEL = { high: "High impact", medium: "Medium impact", low: "Low impact" };
 
@@ -130,15 +131,17 @@ function DateGroup({ date, rows }) {
         <tr key={ev.event_id}>
           <td className={styles.time}>{ev.time || "—"}</td>
           <td>
-            <span
-              className={styles.dot}
-              data-impact={ev.importance}
-              title={IMPORTANCE_LABEL[ev.importance] || ev.importance}
-              aria-label={IMPORTANCE_LABEL[ev.importance] || ev.importance}
-            />
+            <Tooltip content={IMPORTANCE_LABEL[ev.importance] || ev.importance}>
+              <span
+                className={styles.dot}
+                data-impact={ev.importance}
+                role="img"
+                aria-label={IMPORTANCE_LABEL[ev.importance] || ev.importance}
+              />
+            </Tooltip>
           </td>
           <td className={styles.event}>
-            <span className={styles.eventName}>{ev.event}</span>
+            <Tooltip truncate><span className={styles.eventName}>{ev.event}</span></Tooltip>
             {ev.country && <span className={styles.country}>{ev.country}</span>}
           </td>
           <td className={`${styles.num} ${ev.actual ? styles.actual : ""}`}>

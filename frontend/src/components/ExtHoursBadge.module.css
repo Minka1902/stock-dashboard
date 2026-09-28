@@ -12,11 +12,11 @@
 }
 .badge[data-state="PRE"] {
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .badge[data-state="POST"] {
-  background: color-mix(in oklab, var(--info, #57a5e0) 18%, transparent);
-  color: var(--info, #57a5e0);
+  background: color-mix(in oklab, var(--info) 18%, transparent);
+  color: var(--info);
 }
 .chg {
   font-style: normal;

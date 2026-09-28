@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { formatRelativeTime, formatCount } from "../lib/format";
-import { SOURCE_META, SOURCE_ORDER, sourceState, sourceNote } from "../lib/sources";
+import { SOURCE_META, SOURCE_ORDER, STATE_TIP, sourceState, sourceNote } from "../lib/sources";
+import Tooltip from "./Tooltip";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./SourceGuide.module.css";
 
@@ -14,7 +15,8 @@ function SourceRow({ sourceKey, status }) {
   const meta = SOURCE_META[sourceKey];
   const state = status ? sourceState(status.status) : "idle";
   const note = status ? sourceNote(status.status) : null;
-  const isError = state === "error";
+  // Deferred sources get the same disclosure: the reason and next attempt.
+  const isError = state === "error" || state === "deferred";
   const detail = status?.error_detail || status?.status || "";
 
   const copy = async () => {
@@ -28,7 +30,9 @@ function SourceRow({ sourceKey, status }) {
   return (
     <li className={styles.item} data-state={state}>
       <div className={styles.row}>
-        <span className={styles.dot} title={note || undefined} />
+        <Tooltip content={note ? `${STATE_TIP[state]} Note: ${note}` : STATE_TIP[state]}>
+          <span className={styles.dot} role="img" aria-label={state} />
+        </Tooltip>
         <span className={styles.text}>
           <span className={styles.name}>
             {meta.label}
@@ -48,7 +52,7 @@ function SourceRow({ sourceKey, status }) {
               onClick={() => setOpen((o) => !o)}
               aria-expanded={open}
             >
-              <span className={styles.err}>{status.status}</span>
+              <Tooltip truncate><span className={styles.err}>{status.status}</span></Tooltip>
               <span className={styles.chevron} data-open={open ? "yes" : "no"}>▾</span>
             </button>
           )}

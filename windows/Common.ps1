@@ -23,6 +23,11 @@ $script:DataRoot = Join-Path $ProgramData 'SignalDashboard'
 $script:DataDb   = Join-Path $DataRoot 'db'
 $script:DataLogs = Join-Path $DataRoot 'logs'
 $script:DbFile   = Join-Path $DataDb 'stocks.db'
+# Playwright's Chromium for the margin-debt headless fetch. Its default cache is
+# %LOCALAPPDATA%\ms-playwright of whoever ran `playwright install` -- a profile
+# LocalSystem never looks in -- so the service gets a machine-wide copy here and
+# PLAYWRIGHT_BROWSERS_PATH pointing at it.
+$script:DataBrowsers = Join-Path $DataRoot 'ms-playwright'
 $script:EnvFile  = Join-Path $PSScriptRoot 'service.env'
 $script:NssmDir  = Join-Path $PSScriptRoot 'nssm'
 $script:NssmExe  = Join-Path $NssmDir 'nssm.exe'

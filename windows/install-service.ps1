@@ -32,6 +32,12 @@
     Copy an existing backend\stocks.db into the service's data directory
     using SQLite's online backup API. Never deletes the source.
 
+.PARAMETER SkipBrowserInstall
+    Don't run `playwright install chromium` into
+    C:\ProgramData\SignalDashboard\ms-playwright. Only the margin-debt source's
+    headless-browser tier needs it; without it that tier reports
+    "headless browser not installed" in the source status.
+
 .EXAMPLE
     .\windows\install-service.ps1
 .EXAMPLE
@@ -45,6 +51,7 @@ param(
     [switch]$TrustNssmDownload,
     [switch]$SkipBuild,
     [switch]$ImportExistingDb,
+    [switch]$SkipBrowserInstall,
     [string]$PublicOrigin
 )
 
@@ -127,6 +134,48 @@ foreach ($d in @($DataRoot, $DataDb, $DataLogs)) {
 & icacls.exe $DataRoot /inheritance:r /grant:r `
     'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' | Out-Null
 Write-Step 'data' $DataRoot
+
+# ---------------------------------------------------------- headless browser --
+# FINRA's Cloudflare front refuses plain HTTP, so margin_debt's last tier drives
+# a real headless Chromium through Playwright. A per-user `playwright install`
+# lands in that user's %LOCALAPPDATA%, which LocalSystem cannot see, so install
+# a machine-wide copy under the (already ACL'd) data root and point the service
+# at it via PLAYWRIGHT_BROWSERS_PATH in the environment block below.
+#
+# Warn, don't Fail: only that one tier depends on it, and without it the source
+# status says exactly what to run rather than the whole install stopping.
+if ($SkipBrowserInstall) {
+    Write-Step 'browser' 'skipped (-SkipBrowserInstall)' 'DarkGray'
+} else {
+    $pwProbe = Start-Process -FilePath $Python -WindowStyle Hidden -Wait -PassThru `
+                             -ArgumentList '-c "import playwright"'
+    if ($pwProbe.ExitCode -ne 0) {
+        Write-Step 'browser' 'playwright not in the venv -- margin-debt browser tier disabled' 'Yellow'
+        Write-Host "    Fix: cd `"$Backend`"; .venv\Scripts\python.exe -m pip install -r requirements.txt" -ForegroundColor Yellow
+        Write-Host '         then re-run this installer.' -ForegroundColor Yellow
+    } else {
+        Write-Step 'browser' "playwright install chromium -> $DataBrowsers ..." 'DarkGray'
+        $prevBrowsersPath = $env:PLAYWRIGHT_BROWSERS_PATH
+        $env:PLAYWRIGHT_BROWSERS_PATH = $DataBrowsers
+        $pwExit = 1
+        try {
+            & $Python -m playwright install chromium
+            $pwExit = $LASTEXITCODE
+        } catch {
+            Write-Host "    $($_.Exception.Message)" -ForegroundColor Yellow
+        } finally {
+            $env:PLAYWRIGHT_BROWSERS_PATH = $prevBrowsersPath
+        }
+        if ($pwExit -ne 0) {
+            Write-Step 'browser' 'install failed -- margin-debt browser tier will report it' 'Yellow'
+            Write-Host '    Retry later (elevated):' -ForegroundColor Yellow
+            Write-Host "      `$env:PLAYWRIGHT_BROWSERS_PATH = '$DataBrowsers'" -ForegroundColor Yellow
+            Write-Host "      & '$Python' -m playwright install chromium" -ForegroundColor Yellow
+        } else {
+            Write-Step 'browser' $DataBrowsers
+        }
+    }
+}
 
 if (-not (Test-Path $EnvFile)) {
     Copy-Item (Join-Path $PSScriptRoot 'service.env.example') $EnvFile
@@ -243,6 +292,9 @@ $envPairs = [ordered]@{
     'STOCKS_STATIC_DIR'          = (Join-Path $Frontend 'dist')
     'STOCKS_CORS_ORIGINS'        = $origin
     'STOCKS_OAUTH_REDIRECT_BASE' = $origin
+    # Set even with -SkipBrowserInstall, so a later manual install into the
+    # same path is picked up on the next restart.
+    'PLAYWRIGHT_BROWSERS_PATH'   = $DataBrowsers
 }
 if ($PublicOrigin) {
     # Public origin FIRST, for the _frontend_origin reason above: it has to be

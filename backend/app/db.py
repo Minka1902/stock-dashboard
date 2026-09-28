@@ -3,9 +3,11 @@ import functools
 import inspect
 import json
 import re
+import html
 import sqlite3
 import sys
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.models import (
@@ -37,6 +39,7 @@ from app.models import (
     SuggestionHistoryEntry,
     SocialSentiment,
     SourceRun,
+    SourceSchedule,
     SourceStatus,
     JobRun,
     SuggestionLogEntry,
@@ -421,6 +424,21 @@ def init_schema(conn: sqlite3.Connection) -> None:
             updated_at TEXT NOT NULL,
             PRIMARY KEY (user_id, ticker)
         );
+        -- Named snapshots of a ticker's drawings ("drafts"), many per
+        -- (user, ticker). Like `drawings`, the shapes are opaque client JSON.
+        CREATE TABLE IF NOT EXISTS drawing_drafts (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL,
+            ticker      TEXT NOT NULL,
+            title       TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            timeframe   TEXT NOT NULL DEFAULT '',
+            shapes_json TEXT NOT NULL DEFAULT '[]',
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_drawing_drafts_owner
+            ON drawing_drafts (user_id, ticker);
         CREATE TABLE IF NOT EXISTS company_holders (
             ticker      TEXT NOT NULL,
             kind        TEXT NOT NULL DEFAULT 'institution',
@@ -462,6 +480,14 @@ def init_schema(conn: sqlite3.Connection) -> None:
             avg_cost REAL NOT NULL,
             added_at TEXT NOT NULL,
             PRIMARY KEY (user_id, ticker)
+        );
+        -- Per-user FX pairs shown in the ticker carousel ("USDILS=X", ...).
+        -- Seeded lazily from config.FX_PAIRS on first read (get_fx_watch).
+        CREATE TABLE IF NOT EXISTS fx_watch (
+            user_id  INTEGER NOT NULL,
+            pair     TEXT NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (user_id, pair)
         );
         CREATE TABLE IF NOT EXISTS notify_profile (
             user_id       INTEGER PRIMARY KEY,
@@ -578,7 +604,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
             source       TEXT NOT NULL,
             started_at   TEXT NOT NULL,
             finished_at  TEXT NOT NULL,
-            outcome      TEXT NOT NULL,   -- ok | error | skipped
+            outcome      TEXT NOT NULL,   -- ok | error | deferred (legacy: skipped)
             duration_ms  INTEGER NOT NULL,
             record_count INTEGER NOT NULL DEFAULT 0,
             detail       TEXT
@@ -586,7 +612,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS job_runs (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             job_id      TEXT NOT NULL,
-            event       TEXT NOT NULL,    -- executed | error | missed | max_instances
+            event       TEXT NOT NULL,    -- executed | error | coalesced (legacy: missed | max_instances)
             at          TEXT NOT NULL,
             duration_ms INTEGER,
             detail      TEXT
@@ -604,6 +630,20 @@ def init_schema(conn: sqlite3.Connection) -> None:
             source           TEXT NOT NULL DEFAULT 'yahoo',
             fetched_at       TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (ticker, event_date)
+        );
+        -- One row per source (plus 'derived' for boom_score -> alerts): when it
+        -- runs. Seeded from the SOURCES registry cadences; edited on the
+        -- Server page. times/days are comma lists ("06:00,18:00", "mon,fri").
+        CREATE TABLE IF NOT EXISTS source_schedules (
+            source           TEXT PRIMARY KEY,
+            mode             TEXT NOT NULL DEFAULT 'interval',  -- interval | times
+            interval_seconds INTEGER,
+            times            TEXT NOT NULL DEFAULT '',
+            days             TEXT NOT NULL DEFAULT 'mon,tue,wed,thu,fri,sat,sun',
+            tz               TEXT NOT NULL DEFAULT 'UTC',
+            enabled          INTEGER NOT NULL DEFAULT 1,
+            retry_seconds    INTEGER,
+            updated_at       TEXT
         );
         -- The calendar is read by date range far more often than by ticker.
         CREATE INDEX IF NOT EXISTS idx_earnings_date ON earnings(event_date);
@@ -635,6 +675,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         ("officers_json",   "TEXT NOT NULL DEFAULT ''"),
         ("insider_pct",     "REAL"),
         ("institution_pct", "REAL"),
+        ("financial_currency", "TEXT"),
     ]:
         _try_add_column(conn, "fundamentals", col, col_def)
 
@@ -679,7 +720,23 @@ def init_schema(conn: sqlite3.Connection) -> None:
     # Distinct from last_refreshed_at (= last attempt). See SourceStatus in models.py.
     _try_add_column(conn, "source_status", "last_success_at", "TEXT")
     _try_add_column(conn, "source_status", "last_duration_ms", "INTEGER")
+    # When the scheduler tries again after an error/deferral (NULL when healthy).
+    _try_add_column(conn, "source_status", "next_attempt_at", "TEXT")
+    # Per-run traceback (source_status only keeps the latest) and next attempt.
+    _try_add_column(conn, "source_runs", "error_detail", "TEXT")
+    _try_add_column(conn, "source_runs", "next_attempt_at", "TEXT")
     _try_add_column(conn, "portfolio", "category", "TEXT")  # NULL = auto-classified
+    # Native trading currency of each position. Every row before multi-currency
+    # support was a US listing priced in dollars, so the default is USD.
+    _try_add_column(conn, "portfolio", "currency", "TEXT NOT NULL DEFAULT 'USD'")
+    _try_add_column(conn, "notify_profile", "base_currency", "TEXT NOT NULL DEFAULT 'USD'")
+    # Set once a user's FX watch list has been seeded, so removing every pair
+    # sticks instead of re-seeding the defaults on the next read.
+    _try_add_column(conn, "users", "fx_watch_seeded", "INTEGER NOT NULL DEFAULT 0")
+    # Boom Score: components that can't apply to a listing (TASE has no SEC
+    # Form 4, congress or federal-contract data) and how the score was rescaled.
+    _try_add_column(conn, "boom_scores", "not_applicable", "TEXT NOT NULL DEFAULT '[]'")
+    _try_add_column(conn, "boom_scores", "score_note", "TEXT NOT NULL DEFAULT ''")
     _try_add_column(conn, "app_settings", "x_accounts", "TEXT")  # comma list; NULL = env default
     # TA transition snapshot on alert_state (Phase 3 — warn before falls/breakouts).
     for col, col_def in [
@@ -689,6 +746,72 @@ def init_schema(conn: sqlite3.Connection) -> None:
         ("ta_conviction",      "INTEGER"),
     ]:
         _try_add_column(conn, "alert_state", col, col_def)
+    _migrate_ila_price_rows(conn)
+    _migrate_econ_entities(conn)
+    conn.commit()
+
+
+# Shared market-data tables that hold prices per ticker.
+_PRICE_TABLES = ("ohlc_series", "stock_analysis", "technical_signals", "seasonality")
+
+
+def _migrate_ila_price_rows(conn: sqlite3.Connection) -> None:
+    """One-time: drop TASE (".TA") price rows stored before ILA normalization.
+
+    Yahoo quotes Tel Aviv listings in agorot; since app/currency.py every
+    stored price is in shekels. Rows written earlier would mix units with
+    fresh ones, so they are deleted once (the scheduler re-fetches them) and
+    legacy TASE holdings — which the new portfolio.currency column defaults to
+    USD — are marked ILS. Recorded in `data_migrations` so it never repeats.
+    """
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS data_migrations ("
+        "name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
+    name = "ila_to_ils_2026_09"
+    if conn.execute("SELECT 1 FROM data_migrations WHERE name = ?", (name,)).fetchone():
+        return
+    for table in _PRICE_TABLES:
+        conn.execute(f"DELETE FROM {table} WHERE UPPER(ticker) LIKE '%.TA'")
+    conn.execute("UPDATE portfolio SET currency = 'ILS' WHERE UPPER(ticker) LIKE '%.TA'")
+    conn.execute(
+        "INSERT INTO data_migrations (name, applied_at) VALUES (?, ?)",
+        (name, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+    )
+
+
+def _migrate_econ_entities(conn: sqlite3.Connection) -> None:
+    """One-time: decode HTML entities stored in econ_events before the parser
+    decoded them. Nasdaq sends "&nbsp;" for a value that isn't out yet; past
+    events are never re-fetched, so their rows are fixed in place (same
+    empty → NULL rule as econ_calendar._clean_value)."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS data_migrations ("
+        "name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
+    name = "econ_html_entities_2026_09"
+    if conn.execute("SELECT 1 FROM data_migrations WHERE name = ?", (name,)).fetchone():
+        return
+    rows = conn.execute(
+        "SELECT event_id, event, actual, forecast, previous FROM econ_events "
+        "WHERE event LIKE '%&%;%' OR actual LIKE '%&%;%' "
+        "OR forecast LIKE '%&%;%' OR previous LIKE '%&%;%'"
+    ).fetchall()
+
+    def clean(v):
+        if v is None:
+            return None
+        s = html.unescape(v).replace(" ", " ").strip()
+        return None if s in ("", "-", "—", "N/A", "n/a") else s
+
+    for r in rows:
+        conn.execute(
+            "UPDATE econ_events SET event = ?, actual = ?, forecast = ?, previous = ? "
+            "WHERE event_id = ?",
+            (html.unescape(r[1]).strip() or r[1], clean(r[2]), clean(r[3]), clean(r[4]), r[0]),
+        )
+    conn.execute(
+        "INSERT INTO data_migrations (name, applied_at) VALUES (?, ?)",
+        (name, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+    )
     conn.commit()
 
 
@@ -1057,14 +1180,15 @@ def update_source_status(
         """
         INSERT INTO source_status
             (source, last_refreshed_at, status, record_count, error_detail,
-             last_success_at, last_duration_ms)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+             last_success_at, last_duration_ms, next_attempt_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
         ON CONFLICT(source) DO UPDATE SET
             last_refreshed_at=excluded.last_refreshed_at,
             status=excluded.status,
             record_count=excluded.record_count,
             error_detail=excluded.error_detail,
             last_duration_ms=excluded.last_duration_ms,
+            next_attempt_at=NULL,
             last_success_at=CASE
                 WHEN excluded.last_success_at IS NOT NULL THEN excluded.last_success_at
                 ELSE source_status.last_success_at
@@ -1083,6 +1207,50 @@ def get_source_statuses(conn: sqlite3.Connection) -> list[SourceStatus]:
     return [SourceStatus(**dict(row)) for row in cur.fetchall()]
 
 
+def mark_source_deferred(
+    conn: sqlite3.Connection,
+    source: str,
+    at: str,
+    status: str,
+    next_attempt_at: str | None,
+    duration_ms: int | None = None,
+) -> None:
+    """Stamp a deferral: the source asked to be retried later.
+
+    Unlike a failure it says nothing bad about the data already stored, so
+    record_count and last_success_at are left alone; only the attempt clock,
+    the status line and the next attempt move.
+    """
+    conn.execute(
+        """
+        INSERT INTO source_status
+            (source, last_refreshed_at, status, record_count, error_detail,
+             last_success_at, last_duration_ms, next_attempt_at)
+        VALUES (?, ?, ?, 0, NULL, NULL, ?, ?)
+        ON CONFLICT(source) DO UPDATE SET
+            last_refreshed_at=excluded.last_refreshed_at,
+            status=excluded.status,
+            error_detail=NULL,
+            last_duration_ms=excluded.last_duration_ms,
+            next_attempt_at=excluded.next_attempt_at
+        """,
+        (source, at, status, duration_ms, next_attempt_at),
+    )
+    conn.commit()
+
+
+def set_source_next_attempt(
+    conn: sqlite3.Connection, source: str, run_id: int | None, at: str | None
+) -> None:
+    """Record when the scheduler will try `source` again, on both the run row
+    and the status row, so the page can say "retrying at 14:30" instead of
+    leaving a failed source looking abandoned."""
+    if run_id is not None:
+        conn.execute("UPDATE source_runs SET next_attempt_at = ? WHERE id = ?", (at, run_id))
+    conn.execute("UPDATE source_status SET next_attempt_at = ? WHERE source = ?", (at, source))
+    conn.commit()
+
+
 # ---------- run history (Server page / diagnostics) ----------
 def record_source_run(
     conn: sqlite3.Connection,
@@ -1093,22 +1261,26 @@ def record_source_run(
     duration_ms: int,
     record_count: int = 0,
     detail: str | None = None,
-) -> None:
-    """Append one source execution, including skips.
+    error_detail: str | None = None,
+    next_attempt_at: str | None = None,
+) -> int:
+    """Append one source execution and return its row id.
 
-    Skips matter most: a throttled source and a healthy one look identical in
-    `source_status`, so without this row "it hasn't fetched in two weeks" is
-    invisible.
+    `detail` is the one-line summary; `error_detail` the full traceback of this
+    particular run (source_status only keeps the most recent one).
     """
-    conn.execute(
+    cur = conn.execute(
         """
         INSERT INTO source_runs
-            (source, started_at, finished_at, outcome, duration_ms, record_count, detail)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            (source, started_at, finished_at, outcome, duration_ms, record_count,
+             detail, error_detail, next_attempt_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (source, started_at, finished_at, outcome, duration_ms, record_count, detail),
+        (source, started_at, finished_at, outcome, duration_ms, record_count,
+         detail, error_detail, next_attempt_at),
     )
     conn.commit()
+    return cur.lastrowid
 
 
 def get_source_runs(
@@ -1125,16 +1297,20 @@ def get_source_runs(
 
 
 def get_source_run_stats(conn: sqlite3.Connection) -> dict[str, dict]:
-    """Per-source run counters and durations, keyed by source name."""
+    """Per-source run counters and durations, keyed by source name.
+
+    Durations only count runs that actually fetched (ok/error); a deferral and
+    a legacy skip return immediately and would drag the averages down.
+    """
     cur = conn.execute(
         """
         SELECT source,
-               COUNT(*)                                        AS runs_total,
-               SUM(CASE WHEN outcome = 'ok'      THEN 1 ELSE 0 END) AS runs_ok,
-               SUM(CASE WHEN outcome = 'error'   THEN 1 ELSE 0 END) AS runs_error,
-               SUM(CASE WHEN outcome = 'skipped' THEN 1 ELSE 0 END) AS runs_skipped,
-               AVG(CASE WHEN outcome != 'skipped' THEN duration_ms END) AS avg_duration_ms,
-               MAX(CASE WHEN outcome != 'skipped' THEN duration_ms END) AS max_duration_ms
+               COUNT(*)                                              AS runs_total,
+               SUM(CASE WHEN outcome = 'ok'       THEN 1 ELSE 0 END) AS runs_ok,
+               SUM(CASE WHEN outcome = 'error'    THEN 1 ELSE 0 END) AS runs_error,
+               SUM(CASE WHEN outcome = 'deferred' THEN 1 ELSE 0 END) AS runs_deferred,
+               AVG(CASE WHEN outcome IN ('ok', 'error') THEN duration_ms END) AS avg_duration_ms,
+               MAX(CASE WHEN outcome IN ('ok', 'error') THEN duration_ms END) AS max_duration_ms
         FROM source_runs
         GROUP BY source
         """
@@ -1157,9 +1333,85 @@ def record_job_run(
     conn.commit()
 
 
-def get_job_runs(conn: sqlite3.Connection, limit: int = 100) -> list[JobRun]:
-    cur = conn.execute("SELECT * FROM job_runs ORDER BY id DESC LIMIT ?", (limit,))
+def get_job_runs(
+    conn: sqlite3.Connection, limit: int = 100, job_id: str | None = None
+) -> list[JobRun]:
+    if job_id:
+        cur = conn.execute(
+            "SELECT * FROM job_runs WHERE job_id = ? ORDER BY id DESC LIMIT ?", (job_id, limit))
+    else:
+        cur = conn.execute("SELECT * FROM job_runs ORDER BY id DESC LIMIT ?", (limit,))
     return [JobRun(**dict(row)) for row in cur.fetchall()]
+
+
+# ---------- per-source schedules ----------
+def _schedule_from_row(row) -> SourceSchedule:
+    d = dict(row)
+    return SourceSchedule(
+        source=d["source"],
+        mode=d["mode"],
+        interval_seconds=d["interval_seconds"],
+        times=[t for t in (d["times"] or "").split(",") if t],
+        days=[x for x in (d["days"] or "").split(",") if x],
+        tz=d["tz"],
+        enabled=bool(d["enabled"]),
+        retry_seconds=d["retry_seconds"],
+        updated_at=d["updated_at"],
+    )
+
+
+def _schedule_params(s: SourceSchedule) -> tuple:
+    return (s.source, s.mode, s.interval_seconds, ",".join(s.times), ",".join(s.days),
+            s.tz, 1 if s.enabled else 0, s.retry_seconds, s.updated_at)
+
+
+def seed_source_schedules(conn: sqlite3.Connection, schedules: list[SourceSchedule]) -> None:
+    """Insert default rows for sources that have none, and refresh rows that
+    are still an untouched default (updated_at NULL — only an admin save via
+    the Server page stamps it). An admin's edit is never overwritten and
+    survives every restart; a stale seed follows the registry's new default
+    (margin_debt moved from every 14 days to a Monday 06:00 slot)."""
+    conn.executemany(
+        """
+        INSERT INTO source_schedules
+            (source, mode, interval_seconds, times, days, tz, enabled, retry_seconds, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(source) DO UPDATE SET
+            mode=excluded.mode, interval_seconds=excluded.interval_seconds,
+            times=excluded.times, days=excluded.days, tz=excluded.tz,
+            enabled=excluded.enabled, retry_seconds=excluded.retry_seconds
+        WHERE source_schedules.updated_at IS NULL AND excluded.updated_at IS NULL
+        """,
+        [_schedule_params(s) for s in schedules],
+    )
+    conn.commit()
+
+
+def upsert_source_schedule(conn: sqlite3.Connection, s: SourceSchedule) -> None:
+    conn.execute(
+        """
+        INSERT INTO source_schedules
+            (source, mode, interval_seconds, times, days, tz, enabled, retry_seconds, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(source) DO UPDATE SET
+            mode=excluded.mode, interval_seconds=excluded.interval_seconds,
+            times=excluded.times, days=excluded.days, tz=excluded.tz,
+            enabled=excluded.enabled, retry_seconds=excluded.retry_seconds,
+            updated_at=excluded.updated_at
+        """,
+        _schedule_params(s),
+    )
+    conn.commit()
+
+
+def get_source_schedules(conn: sqlite3.Connection) -> dict[str, SourceSchedule]:
+    cur = conn.execute("SELECT * FROM source_schedules ORDER BY source")
+    return {row["source"]: _schedule_from_row(row) for row in cur.fetchall()}
+
+
+def get_source_schedule(conn: sqlite3.Connection, source: str) -> SourceSchedule | None:
+    row = conn.execute("SELECT * FROM source_schedules WHERE source = ?", (source,)).fetchone()
+    return _schedule_from_row(row) if row else None
 
 
 def prune_history(
@@ -1666,7 +1918,8 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              death_cross, insider_cluster_sell, overbought_rsi, congress_sale,
              analyst_downgrade_cluster, extreme_greed, earnings_soon, mixed_signals,
              vix_spike_contrarian, aaii_bearish_extreme, put_call_fear, aaii_bullish_euphoria,
-             margin_debt_deleveraging, margin_debt_euphoria)
+             margin_debt_deleveraging, margin_debt_euphoria,
+             not_applicable, score_note)
         VALUES
             (:ticker, :computed_at, :score, :components,
              :golden_cross, :rsi_recovery, :insider_cluster_buy, :congress_buy,
@@ -1676,7 +1929,8 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              :death_cross, :insider_cluster_sell, :overbought_rsi, :congress_sale,
              :analyst_downgrade_cluster, :extreme_greed, :earnings_soon, :mixed_signals,
              :vix_spike_contrarian, :aaii_bearish_extreme, :put_call_fear, :aaii_bullish_euphoria,
-             :margin_debt_deleveraging, :margin_debt_euphoria)
+             :margin_debt_deleveraging, :margin_debt_euphoria,
+             :not_applicable, :score_note)
         ON CONFLICT(ticker) DO UPDATE SET
             computed_at=excluded.computed_at, score=excluded.score,
             components=excluded.components,
@@ -1701,7 +1955,9 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
             put_call_fear=excluded.put_call_fear,
             aaii_bullish_euphoria=excluded.aaii_bullish_euphoria,
             margin_debt_deleveraging=excluded.margin_debt_deleveraging,
-            margin_debt_euphoria=excluded.margin_debt_euphoria
+            margin_debt_euphoria=excluded.margin_debt_euphoria,
+            not_applicable=excluded.not_applicable,
+            score_note=excluded.score_note
         """,
         [r.model_dump() for r in records],
     )
@@ -1861,12 +2117,12 @@ def upsert_fundamentals(conn: sqlite3.Connection, records: list[Fundamentals]) -
             (ticker, fetched_at, sector, industry, pe_ratio, forward_pe,
              peg_ratio, pb_ratio, revenue_growth, profit_margin, market_cap,
              name, website, country, city, employees, summary, officers_json,
-             insider_pct, institution_pct)
+             insider_pct, institution_pct, financial_currency)
         VALUES
             (:ticker, :fetched_at, :sector, :industry, :pe_ratio, :forward_pe,
              :peg_ratio, :pb_ratio, :revenue_growth, :profit_margin, :market_cap,
              :name, :website, :country, :city, :employees, :summary, :officers_json,
-             :insider_pct, :institution_pct)
+             :insider_pct, :institution_pct, :financial_currency)
         ON CONFLICT(ticker) DO UPDATE SET
             fetched_at=excluded.fetched_at, sector=excluded.sector,
             industry=excluded.industry, pe_ratio=excluded.pe_ratio,
@@ -1876,7 +2132,8 @@ def upsert_fundamentals(conn: sqlite3.Connection, records: list[Fundamentals]) -
             name=excluded.name, website=excluded.website, country=excluded.country,
             city=excluded.city, employees=excluded.employees, summary=excluded.summary,
             officers_json=excluded.officers_json, insider_pct=excluded.insider_pct,
-            institution_pct=excluded.institution_pct
+            institution_pct=excluded.institution_pct,
+            financial_currency=excluded.financial_currency
         """,
         [r.model_dump() for r in records],
     )
@@ -1958,6 +2215,86 @@ def save_drawings(
         (user_id, ticker.upper(), json.dumps(shapes), updated_at),
     )
     conn.commit()
+
+
+# ---- drawing drafts: named per-user snapshots of a ticker's drawings ----
+_DRAFT_COLS = "id, ticker, title, description, timeframe, shapes_json, created_at, updated_at"
+
+
+def _draft_row(row: sqlite3.Row) -> dict:
+    d = dict(row)
+    try:
+        d["shapes"] = json.loads(d.pop("shapes_json"))
+    except (json.JSONDecodeError, TypeError):
+        d["shapes"] = []
+    return d
+
+
+def list_drawing_drafts(conn: sqlite3.Connection, user_id: int, ticker: str) -> list[dict]:
+    """A user's drafts for one ticker, newest first."""
+    cur = conn.execute(
+        f"SELECT {_DRAFT_COLS} FROM drawing_drafts WHERE user_id = ? AND ticker = ?"
+        " ORDER BY updated_at DESC, id DESC",
+        (user_id, ticker.upper()),
+    )
+    return [_draft_row(r) for r in cur.fetchall()]
+
+
+def get_drawing_draft(conn: sqlite3.Connection, user_id: int, draft_id: int) -> dict | None:
+    """One draft, or None when it doesn't exist *or belongs to someone else* —
+    callers answer both with the same 404 so ids don't leak across accounts."""
+    row = conn.execute(
+        f"SELECT {_DRAFT_COLS} FROM drawing_drafts WHERE id = ? AND user_id = ?",
+        (draft_id, user_id),
+    ).fetchone()
+    return _draft_row(row) if row else None
+
+
+def create_drawing_draft(
+    conn: sqlite3.Connection, user_id: int, ticker: str, title: str,
+    description: str, timeframe: str, shapes: list, now: str,
+) -> dict:
+    cur = conn.execute(
+        "INSERT INTO drawing_drafts (user_id, ticker, title, description, timeframe,"
+        " shapes_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (user_id, ticker.upper(), title, description, timeframe, json.dumps(shapes), now, now),
+    )
+    conn.commit()
+    return get_drawing_draft(conn, user_id, cur.lastrowid)
+
+
+def update_drawing_draft(
+    conn: sqlite3.Connection, user_id: int, draft_id: int, now: str, *,
+    title: str | None = None, description: str | None = None,
+    timeframe: str | None = None, shapes: list | None = None,
+) -> dict | None:
+    """Patch the given fields of an owned draft. None if not found/not owned."""
+    sets, params = [], []
+    for col, val in (("title", title), ("description", description), ("timeframe", timeframe)):
+        if val is not None:
+            sets.append(f"{col} = ?")
+            params.append(val)
+    if shapes is not None:
+        sets.append("shapes_json = ?")
+        params.append(json.dumps(shapes))
+    sets.append("updated_at = ?")
+    params.append(now)
+    cur = conn.execute(
+        f"UPDATE drawing_drafts SET {', '.join(sets)} WHERE id = ? AND user_id = ?",
+        (*params, draft_id, user_id),
+    )
+    conn.commit()
+    if cur.rowcount == 0:
+        return None
+    return get_drawing_draft(conn, user_id, draft_id)
+
+
+def delete_drawing_draft(conn: sqlite3.Connection, user_id: int, draft_id: int) -> bool:
+    cur = conn.execute(
+        "DELETE FROM drawing_drafts WHERE id = ? AND user_id = ?", (draft_id, user_id),
+    )
+    conn.commit()
+    return cur.rowcount > 0
 
 
 def upsert_company_holders(conn: sqlite3.Connection, records: list[CompanyHolder]) -> None:
@@ -2127,8 +2464,8 @@ def upsert_holding(conn: sqlite3.Connection, user_id: int, item: Holding) -> Non
     """
     conn.execute(
         """
-        INSERT INTO portfolio (user_id, ticker, shares, avg_cost, added_at)
-        VALUES (:user_id, :ticker, :shares, :avg_cost, :added_at)
+        INSERT INTO portfolio (user_id, ticker, shares, avg_cost, added_at, currency)
+        VALUES (:user_id, :ticker, :shares, :avg_cost, :added_at, :currency)
         ON CONFLICT(user_id, ticker) DO UPDATE SET
             avg_cost = (portfolio.shares * portfolio.avg_cost
                         + excluded.shares * excluded.avg_cost)
@@ -2141,13 +2478,15 @@ def upsert_holding(conn: sqlite3.Connection, user_id: int, item: Holding) -> Non
 
 
 def replace_holding(
-    conn: sqlite3.Connection, user_id: int, ticker: str, shares: float, avg_cost: float
+    conn: sqlite3.Connection, user_id: int, ticker: str, shares: float, avg_cost: float,
+    currency: str | None = None,
 ) -> None:
-    """Overwrite an existing position outright (the edit/correct path)."""
+    """Overwrite an existing position outright (the edit/correct path).
+    `currency` None keeps the stored one."""
     conn.execute(
-        "UPDATE portfolio SET shares = ?, avg_cost = ? "
+        "UPDATE portfolio SET shares = ?, avg_cost = ?, currency = COALESCE(?, currency) "
         "WHERE user_id = ? AND ticker = ?",
-        (shares, avg_cost, user_id, ticker),
+        (shares, avg_cost, currency, user_id, ticker),
     )
     conn.commit()
 
@@ -2160,7 +2499,8 @@ def remove_holding(conn: sqlite3.Connection, user_id: int, ticker: str) -> None:
 
 def get_portfolio(conn: sqlite3.Connection, user_id: int) -> list[Holding]:
     cur = conn.execute(
-        "SELECT ticker, shares, avg_cost, added_at FROM portfolio "
+        "SELECT ticker, shares, avg_cost, added_at, "
+        "COALESCE(currency, 'USD') AS currency FROM portfolio "
         "WHERE user_id = ? ORDER BY ticker ASC",
         (user_id,),
     )
@@ -2279,6 +2619,7 @@ def get_notify_profile(conn: sqlite3.Connection, user_id: int) -> NotifyProfile:
         account_size=d.get("account_size"),
         risk_pct=d.get("risk_pct") if d.get("risk_pct") is not None else 1.0,
         updated_at=d.get("updated_at") or "",
+        base_currency=d.get("base_currency") or "USD",
     )
 
 
@@ -2286,13 +2627,13 @@ def upsert_notify_profile(conn: sqlite3.Connection, user_id: int,
                           profile: NotifyProfile) -> None:
     conn.execute(
         """
-        INSERT INTO notify_profile (user_id, email, phone, email_enabled, sms_enabled, account_size, risk_pct, updated_at)
-        VALUES (:user_id, :email, :phone, :email_enabled, :sms_enabled, :account_size, :risk_pct, :updated_at)
+        INSERT INTO notify_profile (user_id, email, phone, email_enabled, sms_enabled, account_size, risk_pct, updated_at, base_currency)
+        VALUES (:user_id, :email, :phone, :email_enabled, :sms_enabled, :account_size, :risk_pct, :updated_at, :base_currency)
         ON CONFLICT(user_id) DO UPDATE SET
             email=excluded.email, phone=excluded.phone,
             email_enabled=excluded.email_enabled, sms_enabled=excluded.sms_enabled,
             account_size=excluded.account_size, risk_pct=excluded.risk_pct,
-            updated_at=excluded.updated_at
+            updated_at=excluded.updated_at, base_currency=excluded.base_currency
         """,
         {
             "user_id": user_id,
@@ -2303,9 +2644,52 @@ def upsert_notify_profile(conn: sqlite3.Connection, user_id: int,
             "account_size": profile.account_size,
             "risk_pct": profile.risk_pct,
             "updated_at": profile.updated_at,
+            "base_currency": profile.base_currency or "USD",
         },
     )
     conn.commit()
+
+
+# ---------- FX watch list (per user) ----------
+
+def get_fx_watch(conn: sqlite3.Connection, user_id: int,
+                 seed: list[str] | tuple[str, ...] = ()) -> list[str]:
+    """The user's FX pairs in display order.
+
+    First read seeds `seed` (config.FX_PAIRS) and marks the account seeded, so
+    a user who later removes every pair gets an empty list, not the defaults
+    back. Accounts with no `users` row (tests) simply re-seed each time.
+    """
+    rows = conn.execute(
+        "SELECT pair FROM fx_watch WHERE user_id = ? ORDER BY position, pair",
+        (user_id,),
+    ).fetchall()
+    if rows:
+        return [r[0] for r in rows]
+    seeded = conn.execute(
+        "SELECT fx_watch_seeded FROM users WHERE id = ?", (user_id,)).fetchone()
+    if seeded is not None and seeded[0]:
+        return []
+    pairs = list(dict.fromkeys(seed))
+    _write_fx_watch(conn, user_id, pairs)
+    return pairs
+
+
+def _write_fx_watch(conn: sqlite3.Connection, user_id: int, pairs: list[str]) -> None:
+    conn.execute("DELETE FROM fx_watch WHERE user_id = ?", (user_id,))
+    conn.executemany(
+        "INSERT INTO fx_watch (user_id, pair, position) VALUES (?, ?, ?)",
+        [(user_id, p, i) for i, p in enumerate(pairs)],
+    )
+    conn.execute("UPDATE users SET fx_watch_seeded = 1 WHERE id = ?", (user_id,))
+    conn.commit()
+
+
+def set_fx_watch(conn: sqlite3.Connection, user_id: int, pairs: list[str]) -> list[str]:
+    """Replace the user's FX pairs (order = display order). Caller validates."""
+    pairs = list(dict.fromkeys(pairs))
+    _write_fx_watch(conn, user_id, pairs)
+    return pairs
 
 
 # ---------- app settings (single row) ----------
@@ -2657,6 +3041,8 @@ _PER_USER_TABLES = (
     "alert_reads",
     "suggestion_history",
     "drawings",
+    "drawing_drafts",
+    "fx_watch",
     "sessions",
     "recovery_codes",
     "oauth_identities",

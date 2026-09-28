@@ -137,6 +137,7 @@ export function heikinAshi(bars) {
       high: Math.max(b.high, open, close),
       low: Math.min(b.low, open, close),
       volume: b.volume,
+      ...(b.session ? { session: b.session } : {}),
     });
     prevOpen = open;
     prevClose = close;

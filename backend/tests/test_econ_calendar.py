@@ -86,6 +86,22 @@ def test_parse_nasdaq_uses_curated_importance_and_time():
     assert events[1].time == ""
 
 
+def test_parse_nasdaq_decodes_html_entities():
+    """Nasdaq sends "&nbsp;" for a value that isn't out yet; it must read as
+    missing, not as the literal entity text."""
+    payload = {"data": {"rows": [{
+        "eventName": "FOMC Member Williams Speaks", "country": "United States", "gmt": "04:10",
+        "actual": "&nbsp;", "consensus": "", "previous": "&nbsp;",
+    }, {
+        "eventName": "S&amp;P Global PMI", "country": "United States", "gmt": "13:45",
+        "actual": "52.1", "consensus": "51.8&nbsp;", "previous": "51.5",
+    }]}}
+    speech, pmi = ec.parse_nasdaq(payload, "2026-09-25", "2026-09-25T00:00:00+00:00")
+    assert speech.actual is None and speech.previous is None and speech.forecast is None
+    assert pmi.event == "S&P Global PMI"
+    assert pmi.forecast == "51.8"
+
+
 def test_classify_importance():
     assert ec.classify_importance("FOMC Rate Decision") == "high"
     assert ec.classify_importance("Core CPI (MoM)") == "high"
@@ -118,3 +134,17 @@ def test_storage_round_trip(conn):
     # upsert is idempotent (PK = event_id) and updates in place
     db.upsert_econ_events(conn, events)
     assert len(db.get_econ_events(conn, days_ahead=4000, days_back=4000)) == 2
+
+
+def test_init_schema_decodes_entities_stored_before_the_fix(conn):
+    """Rows written before the parser decoded entities are fixed once, in place."""
+    conn.execute(
+        "INSERT INTO econ_events (event_id, date, time, country, event, importance, "
+        "importance_source, actual, forecast, previous, source, fetched_at) VALUES "
+        "('e1', '2026-07-07', '', 'United States', 'S&amp;P PMI', 'low', 'curated', "
+        "'&nbsp;', NULL, '51.8&nbsp;', 'nasdaq', '2026-07-08T00:00:00+00:00')")
+    conn.execute("DELETE FROM data_migrations WHERE name = 'econ_html_entities_2026_09'")
+    conn.commit()
+    db.init_schema(conn)
+    row = conn.execute("SELECT event, actual, previous FROM econ_events WHERE event_id = 'e1'").fetchone()
+    assert tuple(row) == ("S&P PMI", None, "51.8")

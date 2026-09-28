@@ -48,15 +48,21 @@
   letter-spacing: 0.01em;
   color: var(--text-faint);
   background: var(--surface-2);
-  padding: 10px var(--s-5);
+  padding: 10px var(--s-2);
   white-space: nowrap;
 }
 
+/* 13 columns: generous side padding on every cell made the table ~1240px
+   wide, so it scrolled sideways inside its panel below ~1500px. Tight inner
+   gutters, the panel's own inset on the outer edges. */
 .table tbody td {
-  padding: 10px var(--s-5);
+  padding: 10px var(--s-2);
   border-top: 1px solid var(--border);
   vertical-align: middle;
 }
+
+.table th:first-child, .table td:first-child { padding-left: var(--s-5); }
+.table th:last-child, .table td:last-child { padding-right: var(--s-5); }
 
 .table tbody tr:nth-child(even) {
   background: color-mix(in oklch, var(--surface-2) 45%, transparent);
@@ -73,7 +79,7 @@
 .ticker {
   font-family: var(--mono);
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .chg {
@@ -120,7 +126,7 @@
   color: var(--text-faint);
 }
 .freshness[data-tone="fresh"] { color: var(--positive); }
-.freshness[data-tone="mid"]   { color: oklch(0.72 0.15 60); }
+.freshness[data-tone="mid"]   { color: var(--caution); }
 .freshness[data-tone="stale"] { color: var(--negative); }
 
 .empty {
@@ -139,7 +145,7 @@
   height: 52px;
   border-radius: var(--r-md);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .emptyTitle {
@@ -153,7 +159,7 @@
   border-radius: var(--r-sm);
   border: none;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
   cursor: pointer;
 }

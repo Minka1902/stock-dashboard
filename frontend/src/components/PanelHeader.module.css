@@ -47,7 +47,7 @@
   cursor: pointer;
   transition: border-color 0.12s ease, color 0.12s ease;
 }
-.refresh:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.refresh:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-text); }
 .refresh:disabled { opacity: 0.6; cursor: default; }
 
 .spin { display: inline-flex; animation: spin 0.9s linear infinite; }

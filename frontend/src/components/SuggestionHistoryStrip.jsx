@@ -1,10 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  CartesianGrid, Line, LineChart, ReferenceDot, ResponsiveContainer, Tooltip, YAxis,
+  CartesianGrid, Line, LineChart, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { getSuggestionHistory } from "../api";
-import { TONE_COLOR, outcomeTone, pctLabel } from "../lib/suggestionHistory";
+import { TONE_TOKEN, outcomeTone, pctLabel } from "../lib/suggestionHistory";
+import { useThemeColors } from "../lib/themeColors";
 import styles from "./SuggestionHistoryStrip.module.css";
+
+// SVG chart chrome for this strip, resolved per theme (see lib/themeColors).
+const STRIP_TOKENS = {
+  grid: "--grid",
+  tick: "--text-faint",
+  line: "--accent",
+  ring: "--surface",
+  cursor: "--border-strong", // recharts' hover cursor is #ccc unless told otherwise
+};
+
+// The tooltip is an HTML overlay, so it takes var() directly.
+const TOOLTIP_STYLE = {
+  background: "var(--surface)", border: "1px solid var(--border-strong)",
+  borderRadius: 6, fontSize: 12, color: "var(--text)",
+};
 
 /**
  * The compact analysis-page variant: this ticker's past suggestions plotted
@@ -13,6 +29,8 @@ import styles from "./SuggestionHistoryStrip.module.css";
  */
 export default function SuggestionHistoryStrip({ ticker, daily = [] }) {
   const [entries, setEntries] = useState(null);
+  const c = useThemeColors(STRIP_TOKENS);
+  const tone = useThemeColors(TONE_TOKEN);
 
   useEffect(() => {
     let alive = true;
@@ -65,24 +83,27 @@ export default function SuggestionHistoryStrip({ ticker, daily = [] }) {
         <div className={styles.chart}>
           <ResponsiveContainer width="100%" height={120}>
             <LineChart data={series} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
-              <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
+              <CartesianGrid stroke={c.grid} vertical={false} />
+              {/* Hidden, but it is what maps ReferenceDot's x (a date) onto
+                  the plot: without it the x scale is row indices and no
+                  suggestion marker is ever drawn. */}
+              <XAxis dataKey="date" hide />
               <YAxis
                 domain={["dataMin", "dataMax"]}
                 width={46}
-                tick={{ fill: "#8f887e", fontSize: 10 }}
+                tick={{ fill: c.tick, fontSize: 10 }}
                 axisLine={false}
                 tickLine={false}
               />
               <Tooltip
-                contentStyle={{
-                  background: "#15171c", border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: 6, fontSize: 12,
-                }}
-                labelStyle={{ color: "#8f887e" }}
+                contentStyle={TOOLTIP_STYLE}
+                cursor={{ stroke: c.cursor }}
+                labelStyle={{ color: "var(--text-faint)" }}
+                itemStyle={{ color: "var(--text)" }}
                 formatter={(v) => [Number(v).toFixed(2), "close"]}
               />
               <Line
-                type="monotone" dataKey="close" stroke="#f0b429" strokeWidth={1.6}
+                type="monotone" dataKey="close" stroke={c.line} strokeWidth={1.6}
                 dot={false} isAnimationActive={false}
               />
               {marks.map((m) => (
@@ -91,8 +112,8 @@ export default function SuggestionHistoryStrip({ ticker, daily = [] }) {
                   x={m.at}
                   y={m.close}
                   r={4}
-                  fill={TONE_COLOR[outcomeTone(m.outcomes.d7)]}
-                  stroke="#15171c"
+                  fill={tone[outcomeTone(m.outcomes.d7)]}
+                  stroke={c.ring}
                   strokeWidth={1.5}
                   isFront
                 />

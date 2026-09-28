@@ -33,3 +33,17 @@ def test_parse_bars_skips_null_rows_and_maps_fields():
 def test_parse_bars_empty_payload():
     assert ohlc.parse_bars({}) == []
     assert ohlc.parse_bars({"chart": {"result": []}}) == []
+
+
+def test_parse_bars_normalizes_tase_agorot_to_shekels():
+    """Stored OHLC feeds the analysis engine, so its levels must be in ILS."""
+    payload = {"chart": {"result": [{
+        "meta": {"currency": "ILA"},
+        "timestamp": [1704067200],
+        "indicators": {"quote": [{"open": [11900.0], "high": [12100.0],
+                                  "low": [11800.0], "close": [12050.0],
+                                  "volume": [5000]}]},
+    }]}}
+    bar = ohlc.parse_bars(payload)[0]
+    assert (bar.open, bar.high, bar.low, bar.close) == (119.0, 121.0, 118.0, 120.5)
+    assert bar.volume == 5000.0

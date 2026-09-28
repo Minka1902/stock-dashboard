@@ -80,7 +80,7 @@
 .ticker {
   font-family: var(--mono);
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: none;
 }
 .ticker:hover {
@@ -152,7 +152,7 @@
   height: 48px;
   border-radius: var(--r-sm);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .emptyTitle {
   font-family: var(--mono);
@@ -165,7 +165,7 @@
   border-radius: var(--r-sm);
   border: 1px solid var(--accent-weak);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--mono);
   font-weight: 600;
   cursor: pointer;

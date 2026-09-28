@@ -3,10 +3,10 @@
 // (account avatars) and the user menu.
 
 const HUES = [
-  ["var(--accent)", "var(--info, #57a5e0)"],
-  ["var(--info, #57a5e0)", "var(--positive, #4fd6a0)"],
-  ["var(--positive, #4fd6a0)", "var(--accent)"],
-  ["#c084fc", "var(--accent)"],
+  ["var(--accent)", "var(--info)"],
+  ["var(--info)", "var(--positive)"],
+  ["var(--positive)", "var(--accent)"],
+  ["var(--chart-compare)", "var(--accent)"],
 ];
 
 function hashString(str) {

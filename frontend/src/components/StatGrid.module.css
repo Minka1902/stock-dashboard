@@ -41,7 +41,7 @@
   flex: none;
 }
 .icon[data-tone="accent"] {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-weak);
 }
 .icon[data-tone="positive"] {

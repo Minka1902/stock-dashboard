@@ -70,7 +70,7 @@
   border-radius: var(--r-sm);
   border: 1px solid var(--accent-weak);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--mono);
   font-weight: 600;
   cursor: pointer;
@@ -89,6 +89,10 @@
 
 .tableWrap {
   overflow-x: auto;
+  /* Containing block for the visually-hidden "Actions" header: without it the
+     absolutely positioned label escaped to the page and widened the whole
+     document on a phone. */
+  position: relative;
 }
 
 .table {
@@ -175,6 +179,9 @@
 
 @media (max-width: 720px) {
   .summary { grid-template-columns: 1fr; }
+  /* The blurb gets the full width; the controls wrap under it. */
+  .head { flex-wrap: wrap; }
+  .headControls { justify-content: flex-start; }
 }
 
 .mergeNote {
@@ -182,7 +189,7 @@
   align-items: center;
   gap: 6px;
   padding: 8px var(--s-4);
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--mono);
   font-size: 12px;
 }
@@ -245,7 +252,7 @@
 .catChip { cursor: default; }
 .catChip[data-source="manual"] {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-weak);
 }
 
@@ -267,7 +274,7 @@
 
 /* --- inline edit --- */
 .editInput {
-  width: 82px;
+  width: 76px;
   height: 28px;
   padding: 0 8px;
   border-radius: var(--r-sm);
@@ -293,7 +300,7 @@
   line-height: 1;
   cursor: pointer;
 }
-.iconAction:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-weak); }
+.iconAction:hover { color: var(--accent-text); border-color: var(--accent); background: var(--accent-weak); }
 
 .advice {
   display: inline-flex;
@@ -309,9 +316,9 @@
   border: 1px solid var(--border);
   color: var(--text-muted);
 }
-.advice em { font-style: normal; font-size: 10px; opacity: 0.85; }
+.advice em { font-style: normal; font-size: 10px; }
 .advice[data-tone="buy"] { color: var(--positive); background: var(--positive-weak); border-color: transparent; }
-.advice[data-tone="hold"] { color: var(--accent); background: var(--accent-weak); border-color: transparent; }
+.advice[data-tone="hold"] { color: var(--accent-text); background: var(--accent-weak); border-color: transparent; }
 .advice[data-tone="warn"] { color: var(--negative); border-color: var(--negative-weak); }
 .advice[data-tone="sell"] { color: var(--negative); background: var(--negative-weak); border-color: transparent; }
 .advicePending { font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); }
@@ -319,7 +326,7 @@
 .symbol {
   font-family: var(--mono);
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .pl {
@@ -362,7 +369,7 @@
   height: 48px;
   border-radius: var(--r-sm);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
   margin-bottom: var(--s-2);
 }
 .emptyTitle {
@@ -396,8 +403,150 @@
 }
 
 .totals td {
+  padding: 9px var(--s-4);
   border-top: 1px solid var(--border-strong, var(--grid));
   font-family: var(--mono);
   font-weight: 700;
   color: var(--text);
 }
+
+/* --- multi-currency --- */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.headControls {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.baseSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.baseLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+}
+
+.noteClose {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.noteClose:hover { color: var(--text); }
+
+.cardBase {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-size: 9.5px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  margin-left: 4px;
+}
+.cardSub {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+.subCcy {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+.subExcl { color: var(--caution); }
+.dot { color: var(--text-faint); }
+
+.fxLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+  padding: var(--s-2) var(--s-4);
+  border-bottom: 1px solid var(--grid);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.fxRate { color: var(--text); }
+.fxMeta { color: var(--text-faint); }
+.fxMissing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--caution);
+  background: var(--caution-weak);
+  padding: 2px 8px;
+  border-radius: var(--r-xs);
+}
+.fxMissingCell {
+  color: var(--caution);
+  font-size: 11px;
+}
+
+.tickerLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ccyBadge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 0 5px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: help;
+  white-space: nowrap;
+}
+.ccyBadge[data-ccy="ILS"] {
+  color: var(--info);
+  border-color: color-mix(in oklab, var(--info) 45%, transparent);
+  background: var(--info-weak);
+}
+
+.ccyPick {
+  display: inline-flex;
+  width: 140px;
+}
+.ccyPick > * { width: 100%; }
+.ccyPick button { height: 36px; font-size: 13px; font-family: var(--mono); }
+
+/* Cost over currency, stacked: side by side they widened the row enough to
+   push Save/Cancel out of the panel. */
+.editCost {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.editCcy { width: 76px; }
+.editCcy > button { height: 28px; font-size: 12px; font-family: var(--mono); padding: 0 6px 0 8px; }

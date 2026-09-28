@@ -11,7 +11,7 @@ import html
 import json
 from datetime import datetime, timezone
 
-from app import db
+from app import currency, db
 from app.models import OHLCBar, StockAnalysis
 from app.sources.technical import compute_ma
 
@@ -149,20 +149,22 @@ def _table(headers: list[str], rows: list[list[str]]) -> str:
 def _plan_section(a: StockAnalysis) -> str:
     if a.stop is None:
         return "<p class='muted'>No valid stop below price yet — plan pending.</p>"
+    sym = _e(currency.symbol_for(a.currency or currency.currency_for_symbol(a.ticker)))
     stats = _table(
         ["Entry", f"Stop ({_e(a.stop_basis)})", "Target 3R", "Risk/share", "Reward/share", "R:R", "Shares"],
-        [[f"${_n(a.entry)}", f"${_n(a.stop)}", f"${_n(a.target)}",
-          f"${_n(a.risk_per_share)}", f"${_n(a.reward_per_share)}",
+        [[f"{sym}{_n(a.entry)}", f"{sym}{_n(a.stop)}", f"{sym}{_n(a.target)}",
+          f"{sym}{_n(a.risk_per_share)}", f"{sym}{_n(a.reward_per_share)}",
           _n(a.rr), _e(a.suggested_shares) if a.suggested_shares is not None else "—"]],
     )
     ladder = _table(
         ["R", "Price", "Feasibility", "Why"],
-        [[f"{t.r}:1", f"${_n(t.price)}", _e(t.feasibility), _e(t.why)] for t in a.targets],
+        [[f"{t.r}:1", f"{sym}{_n(t.price)}", _e(t.feasibility), _e(t.why)] for t in a.targets],
     )
     sizing = ""
     if a.account_size:
         sizing = (f"<p class='muted'>Sized to {_e(a.risk_pct)}% of a "
-                  f"${a.account_size:,.0f} account.</p>")
+                  f"{_e(currency.symbol_for(a.account_currency))}{a.account_size:,.0f} account."
+                  + (f" {_e(a.sizing_note)}" if a.sizing_note else "") + "</p>")
     return stats + "<h3>Target ladder</h3>" + ladder + sizing
 
 
@@ -183,8 +185,11 @@ def build_report(conn, ticker: str, *, print_mode: bool = False, profile=None,
     if a is None:
         return None
     if profile is not None:
-        a = apply_sizing(a, profile.account_size, profile.risk_pct)
+        a = apply_sizing(a, profile.account_size, profile.risk_pct,
+                         account_currency=profile.base_currency)
 
+    # Prices in the listing's own currency: ₪ for TASE, $ for US listings.
+    sym = _e(currency.symbol_for(a.currency or currency.currency_for_symbol(ticker)))
     daily = daily_override if daily_override is not None else db.get_ohlc(conn, ticker, "daily")
     boom = next((b for b in db.get_boom_scores(conn) if b.ticker == ticker), None)
     fund = db.get_fundamentals_for(conn, ticker)
@@ -202,28 +207,28 @@ def build_report(conn, ticker: str, *, print_mode: bool = False, profile=None,
         ["Trend", _e(a.trend)], ["MA alignment", _e(a.ma_alignment)],
         ["MA20 / MA50", f"{_n(a.ma20)} / {_n(a.ma50)}"],
         ["MA150 / MA200", f"{_n(a.ma150)} / {_n(a.ma200)}"],
-        ["ATR(14)", f"${_n(a.atr14)}" + (f" ({_n(a.atr_pct)}%)" if a.atr_pct else "")],
+        ["ATR(14)", f"{sym}{_n(a.atr14)}" + (f" ({_n(a.atr_pct)}%)" if a.atr_pct else "")],
     ]
     structure = _table(["Metric", "Value"], structure_rows)
 
     sr = _table(
         ["Kind", "Price", "Touches", "Last touch"],
-        [[_e(l.kind), f"${_n(l.price)}", str(l.touches), _e(l.last_touch)]
+        [[_e(l.kind), f"{sym}{_n(l.price)}", str(l.touches), _e(l.last_touch)]
          for l in a.resistance[:5] + a.support[:5]],
     )
 
     patterns = _table(
         ["Pattern", "Direction", "Confidence", "Measured move", "Pivots", "Note"],
         [[_e(p.label), _e(p.direction), f"{p.confidence * 100:.0f}%",
-          f"${_n(p.measured_move)}" if p.measured_move else "—",
-          "; ".join(f"{_e(pv.get('role'))} ${_n(pv.get('price'))}" for pv in p.pivots),
+          f"{sym}{_n(p.measured_move)}" if p.measured_move else "—",
+          "; ".join(f"{_e(pv.get('role'))} {sym}{_n(pv.get('price'))}" for pv in p.pivots),
           _e(p.note)] for p in a.patterns],
     ) if a.patterns else "<p class='muted'>No classical pattern reads clearly right now.</p>"
 
     open_gaps = [g for g in a.gaps if not g.filled]
     gaps = _table(
         ["Date", "Kind", "Size", "From", "To"],
-        [[_e(g.date), _e(g.kind), _pct(g.pct), f"${_n(g.from_price)}", f"${_n(g.to_price)}"]
+        [[_e(g.date), _e(g.kind), _pct(g.pct), f"{sym}{_n(g.from_price)}", f"{sym}{_n(g.to_price)}"]
          for g in open_gaps],
     ) if open_gaps else "<p class='muted'>No unfilled gaps.</p>"
 
@@ -241,6 +246,7 @@ def build_report(conn, ticker: str, *, print_mode: bool = False, profile=None,
             + _table(["Component", "Points"],
                      [[_e(k.replace('_', ' ')), f"{v:+d}"]
                       for k, v in sorted(components.items(), key=lambda kv: -abs(kv[1]))])
+            + (f"<p class='muted'>{_e(boom.score_note)}</p>" if boom.score_note else "")
         )
     else:
         boom_html = "<p class='muted'>Not on the watchlist — no Boom Score computed.</p>"
@@ -252,7 +258,7 @@ def build_report(conn, ticker: str, *, print_mode: bool = False, profile=None,
             ["PEG / P/B", f"{_n(fund.peg_ratio)} / {_n(fund.pb_ratio)}"],
             ["Revenue growth", _pct(fund.revenue_growth * 100) if fund.revenue_growth is not None else "—"],
             ["Profit margin", _pct(fund.profit_margin * 100) if fund.profit_margin is not None else "—"],
-            ["Market cap", f"${fund.market_cap:,.0f}" if fund.market_cap else "—"],
+            ["Market cap", f"{sym}{fund.market_cap:,.0f}" if fund.market_cap else "—"],
         ])
     else:
         fund_html = "<p class='muted'>No fundamentals stored.</p>"
@@ -275,7 +281,7 @@ def build_report(conn, ticker: str, *, print_mode: bool = False, profile=None,
             if isinstance(close, (int, float)) and close and isinstance(a.price, (int, float)):
                 delta = (a.price / close - 1.0) * 100
             anchor_rows.append([
-                _e(label), _e(an.get("date")), f"${_n(close)}",
+                _e(label), _e(an.get("date")), f"{sym}{_n(close)}",
                 _pct(delta) + (" since" if delta is not None else ""),
             ])
         anchors_html = ("<h3>On this day in past years</h3>"
@@ -360,7 +366,7 @@ def build_report(conn, ticker: str, *, print_mode: bool = False, profile=None,
   <h1>{_e(ticker)}</h1>
   <span class="directive">{_e(a.directive)}</span>
   <span>conviction {a.conviction:+d}</span>
-  <span>price ${_n(a.price)}</span>
+  <span>price {sym}{_n(a.price)}</span>
   <span class="meta">Stock Signal Dashboard<br>
     analysis {_e(a.computed_at)} · report {_e(generated)}</span>
 </header>

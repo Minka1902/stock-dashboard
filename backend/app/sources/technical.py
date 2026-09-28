@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from app import currency
 from app.models import TechnicalSignal
 
 _AV_URL = "https://www.alphavantage.co/query"
@@ -134,7 +135,8 @@ def parse_response(payload: dict, ticker: str, fetched_at: str) -> TechnicalSign
     if "Time Series (Daily)" in payload:
         closes, volumes = _parse_alphavantage(payload)
     elif "chart" in payload:
-        closes, volumes = _parse_yahoo(payload)
+        # TASE closes arrive in agorot; price and 52w levels must be in ILS.
+        closes, volumes = _parse_yahoo(currency.normalize_chart_payload(payload))
 
     if len(closes) < 15:
         return None

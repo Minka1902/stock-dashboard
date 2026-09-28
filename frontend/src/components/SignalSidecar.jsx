@@ -1,5 +1,8 @@
 import { formatCount } from "../lib/format";
+import InfoTip from "./InfoTip";
+import Term from "./Term";
 import styles from "./SignalSidecar.module.css";
+import Tooltip from "./Tooltip";
 
 // BoomScore boolean flags → short human labels, matching the digest's wording.
 const BULLISH = {
@@ -58,7 +61,7 @@ function Row({ label, value, tone }) {
   return (
     <div className={styles.row}>
       <span className={styles.rowLabel}>{label}</span>
-      <span className={styles.rowValue} data-tone={tone}>{value}</span>
+      <Tooltip truncate><span className={styles.rowValue} data-tone={tone}>{value}</span></Tooltip>
     </div>
   );
 }
@@ -86,7 +89,7 @@ export default function SignalSidecar({ signals, analysis }) {
 
   return (
     <aside className={styles.sidecar} aria-label="Signals">
-      <Block title="Boom score" hint="composite">
+      <Block title={<>Boom score <InfoTip term="boom_score" size={14} /></>} hint="composite">
         {boom ? (
           <>
             <div className={styles.score} data-tone={scoreTone}>
@@ -116,14 +119,14 @@ export default function SignalSidecar({ signals, analysis }) {
               value={tech.change_pct == null ? "—" : `${tech.change_pct >= 0 ? "+" : ""}${tech.change_pct.toFixed(2)}%`}
               tone={tech.change_pct == null ? "" : tech.change_pct >= 0 ? "pos" : "neg"}
             />
-            <Row label="RSI 14" value={num(tech.rsi14, 1)}
+            <Row label={<Term term="rsi" tip="Computed over 14 days.">RSI 14</Term>} value={num(tech.rsi14, 1)}
                  tone={tech.rsi14 == null ? "" : tech.rsi14 >= 70 ? "neg" : tech.rsi14 <= 30 ? "pos" : ""} />
-            <Row label="MACD" value={num(tech.macd, 3)}
+            <Row label={<Term term="macd">MACD</Term>} value={num(tech.macd, 3)}
                  tone={tech.macd_crossover ? "pos" : ""} />
-            <Row label="MA 50 / 200" value={`${num(tech.ma50)} / ${num(tech.ma200)}`}
+            <Row label={<Term term="moving_average">MA 50 / 200</Term>} value={`${num(tech.ma50)} / ${num(tech.ma200)}`}
                  tone={tech.golden_cross ? "pos" : ""} />
             <Row label="52w range" value={`${num(tech.low_52w)} – ${num(tech.high_52w)}`} />
-            <Row label="Rel. volume" value={tech.rel_volume == null ? "—" : `${tech.rel_volume.toFixed(2)}×`} />
+            <Row label={<Term term="relative_volume">Rel. volume</Term>} value={tech.rel_volume == null ? "—" : `${tech.rel_volume.toFixed(2)}×`} />
           </div>
         ) : <Missing what="technicals" />}
       </Block>
@@ -150,23 +153,24 @@ export default function SignalSidecar({ signals, analysis }) {
       <Block title="Positioning" hint="short interest · social">
         {short || social ? (
           <div className={styles.rows}>
-            <Row label="Short % float" value={pct(short?.short_pct_float)}
+            <Row label={<Term term="short_interest">Short % float</Term>} value={pct(short?.short_pct_float)}
                  tone={short?.squeeze_flag ? "pos" : ""} />
-            <Row label="Days to cover" value={num(short?.days_to_cover, 2)} />
+            <Row label={<Term term="days_to_cover">Days to cover</Term>} value={num(short?.days_to_cover, 2)} />
             <Row label="Shares short" value={short?.shares_short != null ? formatCount(short.shares_short) : "—"} />
             <Row label="WSB mentions" value={social?.mentions != null ? formatCount(social.mentions) : "—"} />
-            <Row label="WSB rank" value={social?.rank != null ? `#${social.rank}` : "—"} />
+            <Row label={<Term term="wsb_rank">WSB rank</Term>} value={social?.rank != null ? `#${social.rank}` : "—"} />
           </div>
         ) : <Missing what="short interest or social data" />}
       </Block>
 
-      <Block title="Trade plan" hint={analysis?.rr != null ? `R/R ${analysis.rr}` : undefined}>
+      <Block title="Trade plan"
+             hint={analysis?.rr != null ? <Term term="r_multiple">R/R {analysis.rr}</Term> : undefined}>
         {analysis && analysis.entry != null ? (
           <div className={styles.rows}>
             <Row label="Entry" value={num(analysis.entry)} />
             <Row label="Stop" value={num(analysis.stop)} tone="neg" />
             <Row label="Target" value={num(analysis.target)} tone="pos" />
-            <Row label="Risk / share"
+            <Row label={<Term tip="Entry minus stop: what one share loses if the stop is hit. This is one R.">Risk / share</Term>}
                  value={analysis.entry != null && analysis.stop != null
                    ? num(analysis.entry - analysis.stop) : "—"} />
             {analysis.shares != null && <Row label="Shares (sized)" value={formatCount(analysis.shares)} />}

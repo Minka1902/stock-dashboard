@@ -1220,19 +1220,46 @@ def build(ticker: str, daily: list[OHLCBar], price: float | None,
 
 
 def apply_sizing(a: StockAnalysis, account_size: float | None,
-                 risk_pct: float | None) -> StockAnalysis:
+                 risk_pct: float | None, account_currency: str | None = None,
+                 rate_fn=None) -> StockAnalysis:
     """Fill per-user position sizing into a globally-computed analysis.
 
     Analyses are stored unsized (shared across users); the requesting user's
     account size / risk tolerance is applied at read time.
+
+    Like with like: `account_size` is in `account_currency` (the user's base
+    currency) while `risk_per_share` is in the ticker's trading currency. When
+    they differ the risk budget is converted with `rate_fn(from, to)`
+    (default: live Yahoo FX via app.currency.fx_rate). No rate means no
+    sizing — the note says so rather than sizing on a guessed rate.
     """
+    from app import currency as ccy_mod  # local: currency -> quotes -> ... cycle-safe
+
     out = a.model_copy(deep=True)
     out.account_size = account_size
     out.risk_pct = risk_pct
     out.suggested_shares = None
-    if (account_size and risk_pct and risk_pct > 0
+    out.sizing_note = ""
+    ticker_ccy = out.currency or ccy_mod.currency_for_symbol(out.ticker)
+    out.currency = ticker_ccy
+    out.account_currency = account_currency or ticker_ccy
+    if not (account_size and risk_pct and risk_pct > 0
             and out.risk_per_share and out.risk_per_share > 0):
-        out.suggested_shares = int((account_size * (risk_pct / 100.0)) / out.risk_per_share)
+        return out
+
+    budget = account_size
+    if account_currency and ticker_ccy and account_currency != ticker_ccy:
+        rate = (rate_fn or ccy_mod.fx_rate)(account_currency, ticker_ccy)
+        if not rate:
+            out.sizing_note = (
+                f"FX unavailable ({account_currency}→{ticker_ccy}) — not sized: the account "
+                f"is in {account_currency} and {out.ticker} trades in {ticker_ccy}.")
+            return out
+        budget = account_size * rate
+        out.sizing_note = (
+            f"Account {account_size:,.0f} {account_currency} ≈ {budget:,.0f} {ticker_ccy} "
+            f"at 1 {account_currency} = {rate:.4f} {ticker_ccy} (live Yahoo FX).")
+    out.suggested_shares = int((budget * (risk_pct / 100.0)) / out.risk_per_share)
     return out
 
 

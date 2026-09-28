@@ -27,6 +27,10 @@
   font: inherit;
   font-size: 12px;
   white-space: nowrap;
+  /* Never wider than the row: on a phone the status text ellipsises instead
+     of pushing the whole page sideways. */
+  max-width: 100%;
+  min-width: 0;
   cursor: pointer;
   transition: border-color 0.12s ease;
 }
@@ -60,6 +64,8 @@
 .meta {
   color: var(--text-muted);
   max-width: 220px;
+  min-width: 0;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
 }

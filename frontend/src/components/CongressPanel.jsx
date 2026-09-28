@@ -6,6 +6,8 @@ import SortHeader from "./SortHeader";
 import { useSortableRows } from "../hooks/useSortableRows";
 import { formatDate } from "../lib/format";
 import styles from "./CongressPanel.module.css";
+import Tooltip from "./Tooltip";
+import InfoTip from "./InfoTip";
 
 const COMPACT_LIMIT = 5;
 
@@ -58,7 +60,7 @@ export default function CongressPanel({ data, loading, busy, onRefresh, compact 
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Congress" />}
         <div>
-          <h2 className={styles.title}>Congressional Trades</h2>
+          <h2 className={styles.title}>Congressional Trades <InfoTip term="congress_trade" /></h2>
           <p className={styles.subtitle}>
             STOCK Act disclosures · House &amp; Senate · legislators trading ahead of policy booms
           </p>
@@ -93,8 +95,10 @@ export default function CongressPanel({ data, loading, busy, onRefresh, compact 
               ) : (
                 rows.map((t) => (
                   <tr key={t.trade_hash}>
-                    <td className={styles.rep} title={`${t.representative} (${t.state})`}>
-                      <span className={styles.repName}>{t.representative}</span>
+                    <td className={styles.rep}>
+                      <Tooltip truncate content={t.state ? `${t.representative} (${t.state})` : t.representative}>
+                        <span className={styles.repName}>{t.representative}</span>
+                      </Tooltip>
                       {t.state && <span className={styles.state}>{t.state}</span>}
                     </td>
                     <td>

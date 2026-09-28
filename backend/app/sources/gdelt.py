@@ -10,6 +10,7 @@ import time
 import httpx
 
 from app import config
+from app.ingest import SourceDeferred
 from app.models import NewsArticle
 
 API_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
@@ -22,12 +23,18 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Signal Dashboard; minka.scharff@gmail.com
 _cooldown_until = 0.0
 
 
-class GdeltCoolingDown(RuntimeError):
-    """Raised instead of hitting GDELT while in the post-429 backoff window."""
+class GdeltCoolingDown(SourceDeferred):
+    """GDELT asked us to back off (HTTP 429), or we are still inside that
+    backoff window. A deferral, not an error: ingest records it as a
+    `deferred` run with this reason and retries once the cooldown ends."""
 
 
 def _in_cooldown() -> bool:
     return time.monotonic() < _cooldown_until
+
+
+def _cooldown_remaining() -> float:
+    return max(0.0, _cooldown_until - time.monotonic())
 
 
 def _begin_cooldown() -> None:
@@ -85,7 +92,9 @@ def fetch(query: str, limit: int) -> list[NewsArticle]:
     a cooldown on a fresh 429, so a rate-limited GDELT can't pin worker threads.
     """
     if _in_cooldown():
-        raise GdeltCoolingDown("GDELT rate-limited (429); backing off")
+        raise GdeltCoolingDown(
+            "GDELT rate-limited (HTTP 429); cooling down before the next request",
+            retry_after_seconds=_cooldown_remaining())
     params = {
         "query": query,
         "mode": "ArtList",
@@ -99,6 +108,9 @@ def fetch(query: str, limit: int) -> list[NewsArticle]:
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 429:
             _begin_cooldown()
+            raise GdeltCoolingDown(
+                "GDELT returned HTTP 429 (rate limited)",
+                retry_after_seconds=config.GDELT_COOLDOWN_SECONDS) from exc
         raise
     body = resp.text.strip()
     if not body:

@@ -110,7 +110,7 @@
   height: 52px;
   border-radius: var(--r-md);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .emptyTitle {
@@ -124,7 +124,7 @@
   border-radius: var(--r-sm);
   border: none;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
   cursor: pointer;
 }

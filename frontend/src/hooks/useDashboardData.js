@@ -208,14 +208,14 @@ export function useDashboardData() {
     patch({ watchlist: await apiRemoveWatch(ticker) });
   }, [patch]);
 
-  const addHolding = useCallback(async (ticker, shares, avgCost) => {
-    const list = await apiAddHolding(ticker, shares, avgCost);
+  const addHolding = useCallback(async (ticker, shares, avgCost, currency = null) => {
+    const list = await apiAddHolding(ticker, shares, avgCost, currency);
     patch({ portfolio: list });
     return list;
   }, [patch]);
 
-  const updateHolding = useCallback(async (ticker, shares, avgCost) => {
-    patch({ portfolio: await apiUpdateHolding(ticker, shares, avgCost) });
+  const updateHolding = useCallback(async (ticker, shares, avgCost, currency = null) => {
+    patch({ portfolio: await apiUpdateHolding(ticker, shares, avgCost, currency) });
   }, [patch]);
 
   const setHoldingCategory = useCallback(async (ticker, category) => {

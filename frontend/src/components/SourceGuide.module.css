@@ -43,6 +43,12 @@
   box-shadow: 0 0 0 3px var(--negative-weak);
 }
 
+.item[data-state="deferred"] .dot {
+  background: var(--caution);
+  box-shadow: 0 0 0 3px var(--caution-weak);
+}
+.item[data-state="deferred"] .err { color: var(--caution); }
+
 .text {
   display: flex;
   flex-direction: column;
@@ -63,7 +69,7 @@
 .provider {
   font-weight: 500;
   font-size: 11px;
-  color: var(--accent);
+  color: var(--accent-text);
   padding: 1px 7px;
   border-radius: var(--r-pill);
   background: var(--accent-weak);
@@ -144,7 +150,7 @@
   font-size: 11.5px;
   cursor: pointer;
 }
-.copyBtn:hover { border-color: var(--accent); color: var(--accent); }
+.copyBtn:hover { border-color: var(--accent); color: var(--accent-text); }
 
 .pre {
   margin: 0;

@@ -11,6 +11,11 @@ import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import styles from "./YieldCurvePanel.module.css";
+import InfoTip from "./InfoTip";
+import HintTip from "./Tooltip";
+
+// Recharts draws its hover cursor in #ccc unless told otherwise.
+const CURSOR = { stroke: "var(--border-strong)" };
 
 const TOOLTIP_STYLE = {
   background: "var(--surface-2)",
@@ -35,15 +40,19 @@ export default function YieldCurvePanel({ data, loading, busy, onRefresh, compac
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Yield Curve" />}
         <div>
-          <h2 className={styles.title}>US Treasury Yield Curve</h2>
+          <h2 className={styles.title}>US Treasury Yield Curve <InfoTip term="yield_curve" /></h2>
           <p className={styles.subtitle}>
             10yr − 2yr spread · negative = inverted · normalization often precedes a boom
           </p>
         </div>
         {latest && !loading && (
-          <span className={styles.spreadBadge} data-tone={tone}>
-            {spreadBps !== null ? `${spread >= 0 ? "+" : ""}${spreadBps} bps` : "—"}
-          </span>
+          <HintTip content={spread === null
+            ? "No 10-year − 2-year spread available yet"
+            : `10-year minus 2-year Treasury yield, in basis points (1 bp = 0.01 percentage point). ${spread >= 0 ? "Positive: the curve is not inverted." : "Negative: the curve is inverted."}`}>
+            <span className={styles.spreadBadge} data-tone={tone} tabIndex={0}>
+              {spreadBps !== null ? `${spread >= 0 ? "+" : ""}${spreadBps} bps` : "—"}
+            </span>
+          </HintTip>
         )}
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
@@ -93,6 +102,7 @@ export default function YieldCurvePanel({ data, loading, busy, onRefresh, compac
                 />
                 <Tooltip
                   contentStyle={TOOLTIP_STYLE}
+                  cursor={CURSOR}
                   formatter={(v) => [`${v != null ? v.toFixed(2) : "—"}%`, "Spread"]}
                   labelFormatter={(l) => l}
                 />

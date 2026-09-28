@@ -11,7 +11,7 @@ treats +60 as the "boom" alert threshold and caps its bar at +100.
 import json
 from datetime import datetime, timezone
 
-from app import config, db
+from app import config, currency, db
 from app.models import BoomScore
 from app.sources import margin_debt
 
@@ -45,6 +45,57 @@ WEIGHTS: dict[str, int] = {
     "aaii_bullish_euphoria":      -10,
     "margin_debt_euphoria":       -10,
 }
+
+# Components whose data only exists for US listings: SEC Form 4 insider
+# filings, congressional disclosures, US federal contract awards and FINRA /
+# Yahoo short interest. For a Tel Aviv (.TA) listing these can never fire, so
+# they are excluded and the rest of the score is rescaled to the full range —
+# otherwise every TASE stock would be structurally capped below US peers.
+TASE_NOT_APPLICABLE: tuple[str, ...] = (
+    "insider_cluster_buy", "insider_cluster_sell",
+    "congress_buy", "congress_sale",
+    "contracts_catalyst", "short_squeeze",
+)
+
+_NA_LABELS = {
+    "insider": "SEC Form 4 insider trades",
+    "congress": "congressional trades",
+    "contracts": "US federal contracts",
+    "short": "short interest",
+}
+
+
+def not_applicable_for(ticker: str) -> tuple[str, ...]:
+    """Component keys that cannot apply to `ticker`'s market."""
+    if currency.market_for_symbol(ticker) == "TASE":
+        return TASE_NOT_APPLICABLE
+    return ()
+
+
+def renormalize(components: dict[str, int], excluded: tuple[str, ...]) -> tuple[int, str]:
+    """(score, note) with bullish and bearish sides each rescaled so the
+    maximum reachable over the applicable components equals the full-weight
+    maximum. Raw component points are left as they are for display."""
+    raw = sum(components.values())
+    if not excluded:
+        return raw, ""
+    bull_all = sum(v for v in WEIGHTS.values() if v > 0)
+    bear_all = -sum(v for v in WEIGHTS.values() if v < 0)
+    bull_ok = bull_all - sum(WEIGHTS[k] for k in excluded if WEIGHTS.get(k, 0) > 0)
+    bear_ok = bear_all + sum(WEIGHTS[k] for k in excluded if WEIGHTS.get(k, 0) < 0)
+    bull_scale = bull_all / bull_ok if bull_ok > 0 else 1.0
+    bear_scale = bear_all / bear_ok if bear_ok > 0 else 1.0
+    pos = sum(v for v in components.values() if v > 0)
+    neg = sum(v for v in components.values() if v < 0)
+    score = round(pos * bull_scale + neg * bear_scale)
+    note = (
+        "TASE listing: SEC Form 4 insider, congressional-trade, US federal-contract "
+        "and short-interest signals don't exist for Tel Aviv stocks, so they are "
+        f"excluded and the score is renormalized over the remaining components "
+        f"(bullish points ×{bull_scale:.2f}, bearish ×{bear_scale:.2f}; raw sum {raw:+d})."
+    )
+    return score, note
+
 
 # Weight multipliers for congressional trade amount ranges.
 _AMOUNT_WEIGHTS: dict[str, float] = {
@@ -231,12 +282,17 @@ def _score_ticker(
     if _seasonal_tailwind(conn, ticker):
         components["seasonal_tailwind"] = WEIGHTS["seasonal_tailwind"]
 
+    # --- Components that can't apply to this listing's market ---
+    excluded = not_applicable_for(ticker)
+    for key in excluded:
+        components.pop(key, None)
+
     # --- Mixed signal detection ---
     bullish_keys = {k for k, v in components.items() if v > 0}
     bearish_keys = {k for k, v in components.items() if v < 0}
     mixed_signals = bool(bullish_keys and bearish_keys)
 
-    score = sum(components.values())
+    score, score_note = renormalize(components, excluded)
 
     return BoomScore(
         ticker=ticker,
@@ -274,6 +330,8 @@ def _score_ticker(
         # flags
         earnings_soon=earnings_soon,
         mixed_signals=mixed_signals,
+        not_applicable=json.dumps(list(excluded)),
+        score_note=score_note,
     )
 
 

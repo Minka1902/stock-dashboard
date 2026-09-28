@@ -68,7 +68,7 @@
 .ticker {
   font-family: var(--mono);
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .num {
@@ -128,7 +128,7 @@
   height: 52px;
   border-radius: var(--r-md);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .emptyTitle {
@@ -142,7 +142,7 @@
   border-radius: var(--r-sm);
   border: none;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
   cursor: pointer;
 }
@@ -157,5 +157,5 @@
   color: var(--text-faint);
 }
 .freshness[data-tone="fresh"] { color: var(--positive); }
-.freshness[data-tone="mid"]   { color: oklch(0.72 0.15 60); }
+.freshness[data-tone="mid"]   { color: var(--caution); }
 .freshness[data-tone="stale"] { color: var(--negative); }

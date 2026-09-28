@@ -54,24 +54,50 @@ class SourceStatus(BaseModel):
     # min_interval after a single failure, which is how margin_debt went quiet.
     last_success_at: str | None = None
     last_duration_ms: int | None = None
+    # When the scheduler will try again after an error or a deferral. None
+    # while healthy (the schedule's normal next run applies).
+    next_attempt_at: str | None = None
 
 
 class SourceRun(BaseModel):
-    """One recorded execution of a source — including skips.
+    """One recorded execution of a source.
 
-    Skips are recorded too. A source that is silently throttled looks identical
-    to a healthy one in `source_status`; the run log is what makes "it hasn't
-    actually fetched in two weeks" visible.
+    Outcomes are ok | error | deferred. `skipped` only appears on rows written
+    before the per-source scheduler existed: the schedule is now the only gate,
+    so a scheduled run always fetches. `error_detail` keeps the full traceback
+    for *this* run (source_status only holds the latest one).
     """
 
     id: int
     source: str
     started_at: str
     finished_at: str
-    outcome: str        # "ok" | "error" | "skipped"
+    outcome: str        # "ok" | "error" | "deferred" (legacy rows: "skipped")
     duration_ms: int
     record_count: int
     detail: str | None = None
+    error_detail: str | None = None
+    next_attempt_at: str | None = None
+
+
+class SourceSchedule(BaseModel):
+    """When one source (or the derived boom_score -> alerts step) runs.
+
+    mode "interval": every `interval_seconds`, optionally only on `days`.
+    mode "times": at each HH:MM in `times`, on `days`, wall-clock in `tz`.
+    `retry_seconds`: how soon to try again after an error (None -> default,
+    see schedules.retry_after_seconds).
+    """
+
+    source: str
+    mode: str = "interval"
+    interval_seconds: int | None = None
+    times: list[str] = []
+    days: list[str] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    tz: str = "UTC"
+    enabled: bool = True
+    retry_seconds: int | None = None
+    updated_at: str | None = None
 
 
 class JobRun(BaseModel):
@@ -124,8 +150,12 @@ class LiveQuote(BaseModel):
     # "equity" | "fx". FX quotes come from the same endpoint but need different
     # display: more decimals, and they must not drive the market-open badge,
     # since currencies trade ~24/5 and would report REGULAR at 3am.
-    kind: str = "equity"
-    label: str = ""             # display name; "USD/ILS" for USDILS=X
+    kind: str = "equity"        # "equity" | "fx" | "index"
+    label: str = ""             # display name; "USD/ILS" for USDILS=X, "TA-35"
+    # Major-unit ISO currency of every price above ("ILS" for TASE — Yahoo's
+    # ILA agorot are divided out in app/currency.py before this is built).
+    currency: str | None = None
+    market: str = "US"          # "US" | "TASE" | "FX" | "OTHER" (symbol convention)
 
 
 class FearGreedSnapshot(BaseModel):
@@ -278,6 +308,11 @@ class BoomScore(BaseModel):
     # risk / meta flags
     earnings_soon: bool = False
     mixed_signals: bool = False
+    # JSON list of component keys that cannot apply to this listing (e.g. SEC
+    # insider / congress / federal-contract signals for a TASE stock) and a
+    # plain-language note on how the score was renormalized because of it.
+    not_applicable: str = "[]"
+    score_note: str = ""
 
 
 class Fundamentals(BaseModel):
@@ -304,6 +339,10 @@ class Fundamentals(BaseModel):
     officers_json: str = ""        # JSON list of {name, title, age, pay}
     insider_pct: float | None = None      # fraction held by insiders (0-1)
     institution_pct: float | None = None  # fraction held by institutions (0-1)
+    # ISO code the company reports its financials in (Yahoo financialData
+    # .financialCurrency) — officer pay is in this currency, which for a TASE
+    # listing can be ILS or USD independently of the ₪ share price.
+    financial_currency: str | None = None
 
 
 class SuggestionHistoryEntry(BaseModel):
@@ -355,8 +394,9 @@ class Seasonality(BaseModel):
 class Holding(BaseModel):
     ticker: str        # PRIMARY KEY (single-user portfolio)
     shares: float
-    avg_cost: float
+    avg_cost: float    # in `currency` (the position's native trading currency)
     added_at: str
+    currency: str = "USD"  # ISO code; legacy rows predate the column -> USD
 
 
 class NotifyProfile(BaseModel):
@@ -365,9 +405,11 @@ class NotifyProfile(BaseModel):
     email_enabled: bool = False
     sms_enabled: bool = False
     # Position sizing (Trading & risk settings). risk_pct clamped 0.1–10 in the API.
-    account_size: float | None = None
+    account_size: float | None = None   # in base_currency
     risk_pct: float = 1.0
     updated_at: str = ""
+    # Currency the portfolio totals (and account_size) are expressed in.
+    base_currency: str = "USD"          # "USD" | "ILS"
 
 
 class AppSettings(BaseModel):
@@ -588,6 +630,11 @@ class StockAnalysis(BaseModel):
     suggested_shares: int | None = None
     account_size: float | None = None
     risk_pct: float | None = None
+    # Sizing is like-for-like: account_size is in the user's base currency,
+    # risk_per_share in the ticker's; apply_sizing converts one into the other.
+    currency: str | None = None           # the ticker's trading currency
+    account_currency: str | None = None   # the currency account_size is in
+    sizing_note: str = ""                 # e.g. "FX unavailable — not sized"
     evidence: list[Evidence] = []
     reasons: list[str] = []
     disclaimer: str = "Rule-based technical read, not a prediction. Verify before trading."

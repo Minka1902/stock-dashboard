@@ -8,7 +8,7 @@
   display: grid;
   place-items: center;
   border-radius: 50%;
-  color: var(--bg);
+  color: var(--on-accent);
   background: var(--accent);
   border: 1px solid color-mix(in oklab, var(--accent) 70%, black);
   box-shadow: 0 6px 20px -6px color-mix(in oklab, var(--accent) 55%, transparent);

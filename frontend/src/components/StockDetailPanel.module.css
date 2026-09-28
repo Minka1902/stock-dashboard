@@ -6,8 +6,9 @@
 
 .topbar {
   display: flex;
+  flex-wrap: wrap; /* never wider than the page: controls wrap to a 2nd row */
   align-items: center;
-  gap: var(--s-3);
+  gap: var(--s-2) var(--s-3);
   padding: var(--s-3) var(--s-4);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -46,7 +47,7 @@
   border: 1px solid var(--border);
 }
 .directive[data-tone="buy"] { color: var(--positive); background: var(--positive-weak); border-color: transparent; }
-.directive[data-tone="hold"] { color: var(--accent); background: var(--accent-weak); border-color: transparent; }
+.directive[data-tone="hold"] { color: var(--accent-text); background: var(--accent-weak); border-color: transparent; }
 .directive[data-tone="warn"] { color: var(--negative); border-color: var(--negative-weak); }
 .directive[data-tone="sell"] { color: var(--negative); background: var(--negative-weak); border-color: transparent; }
 
@@ -95,20 +96,8 @@
   .identity { flex: 1 1 100%; }
 }
 
-/* panes */
-.pane { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
-.paneHead {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--grid);
-}
-.paneBody { padding: var(--s-4); }
-
-/* The chart carries its own toolbar and legend, so it gets the pane surface
-   without a caption head — the ticker is already the page heading. */
-.chartPane {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r-md); overflow: hidden; padding: var(--s-4);
-}
+/* Panes (including the chart) are CollapsibleSection — styles live in
+   CollapsibleSection.module.css. */
 
 .tf { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
 .tfBtn {
@@ -116,7 +105,7 @@
   font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer;
 }
 .tfBtn + .tfBtn { border-left: 1px solid var(--border); }
-.tfBtn[data-active="yes"] { background: var(--accent-weak); color: var(--accent); }
+.tfBtn[data-active="yes"] { background: var(--accent-weak); color: var(--accent-text); }
 
 .legend {
   margin-top: var(--s-3); display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
@@ -124,7 +113,7 @@
 }
 .legend span[data-c] { font-weight: 700; }
 .legend span[data-c="info"] { color: var(--info); }
-.legend span[data-c="accent"] { color: var(--accent); }
+.legend span[data-c="accent"] { color: var(--accent-text); }
 .legend span[data-c="muted"] { color: var(--text-muted); }
 .legend span[data-c="neg"] { color: var(--negative); }
 .legendSep { color: var(--text-faint); }
@@ -133,7 +122,7 @@
 @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
 
 .rr {
-  font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--accent);
+  font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--accent-text);
 }
 
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-3); }
@@ -155,14 +144,14 @@
   display: grid; grid-template-columns: 44px 72px 74px 1fr; align-items: center; gap: var(--s-2);
   padding: 7px var(--s-3); border: 1px solid var(--grid); border-radius: var(--r-sm); background: var(--surface-2);
 }
-.rungR { font-family: var(--mono); font-weight: 700; color: var(--accent); }
+.rungR { font-family: var(--mono); font-weight: 700; color: var(--accent-text); }
 .rungPrice { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .feas {
   font-family: var(--mono); font-size: 9.5px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.05em; padding: 2px 7px; border-radius: var(--r-xs); text-align: center;
   border: 1px solid var(--border); color: var(--text-muted);
 }
-.feas[data-tone="base"] { color: var(--accent); border-color: var(--accent-weak); }
+.feas[data-tone="base"] { color: var(--accent-text); border-color: var(--accent-weak); }
 .feas[data-tone="buy"] { color: var(--positive); background: var(--positive-weak); border-color: transparent; }
 .feas[data-tone="hold"] { color: var(--text); }
 .feas[data-tone="muted"] { color: var(--text-faint); }
@@ -196,7 +185,7 @@
   font-size: 9.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--accent);
+  color: var(--accent-text);
   border: 1px solid var(--accent-weak);
   border-radius: var(--r-xs);
   padding: 1px 5px;
@@ -223,7 +212,7 @@
 .patDir[data-tone="pos"] { color: var(--positive); }
 .patDir[data-tone="neg"] { color: var(--negative); }
 .patConf { font-family: var(--mono); color: var(--text-muted); }
-.patMove { font-family: var(--mono); color: var(--accent); }
+.patMove { font-family: var(--mono); color: var(--accent-text); }
 .patNote { grid-column: 1 / -1; font-size: 11.5px; color: var(--text-muted); }
 .patPivots { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
 .patPivots em { font-family: var(--mono); font-style: normal; font-size: 10.5px; color: var(--text-faint); }
@@ -265,7 +254,7 @@
   font-size: 12px;
   text-decoration: none;
 }
-.reportBtn:hover { color: var(--accent); border-color: var(--accent-weak); }
+.reportBtn:hover { color: var(--accent-text); border-color: var(--accent-weak); }
 
 /* --- "this day in history" anchors --- */
 .anchors {
@@ -293,3 +282,51 @@
 .anchorClose { font-weight: 600; }
 .anchorDelta[data-tone="pos"] { color: var(--positive); font-size: 0.86em; }
 .anchorDelta[data-tone="neg"] { color: var(--negative); font-size: 0.86em; }
+
+/* TASE listing: market chip beside the price and the "not applicable" note. */
+.marketChip {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: var(--r-xs);
+  color: var(--info);
+  background: var(--info-weak);
+}
+.marketNote {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  margin: var(--s-2) 0 var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid color-mix(in oklab, var(--info) 35%, transparent);
+  border-radius: var(--r-sm);
+  background: var(--info-weak);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.marketNote > svg { flex: none; margin-top: 3px; color: var(--info); }
+
+/* "★ Watching" plus the list(s) it's on, as chips — these classes had no
+   rules, so the label ran into the list name ("WatchingMy Watchlist"). */
+.watching {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-text);
+}
+.watchLists { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.watchList {
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 500;
+}

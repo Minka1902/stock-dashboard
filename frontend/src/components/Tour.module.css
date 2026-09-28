@@ -13,7 +13,7 @@
 .spot {
   position: fixed;
   border-radius: var(--r-md);
-  box-shadow: 0 0 0 9999px oklch(0 0 0 / 0.62);
+  box-shadow: 0 0 0 9999px var(--scrim-strong);
   border: 1px solid var(--accent);
   pointer-events: none;
   transition: top var(--dur-3) var(--ease-out-expo),
@@ -28,7 +28,7 @@
 .dim {
   position: absolute;
   inset: 0;
-  background: oklch(0 0 0 / 0.62);
+  background: var(--scrim-strong);
   pointer-events: none;
 }
 
@@ -59,7 +59,7 @@
 .title {
   margin: 0 0 var(--s-2);
   font-size: 1em;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .body {
@@ -109,7 +109,7 @@
 .navPrimary {
   background: var(--accent);
   border: 1px solid var(--accent);
-  color: var(--bg);
+  color: var(--on-accent);
   font-weight: 700;
 }
 

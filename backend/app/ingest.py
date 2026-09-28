@@ -4,7 +4,8 @@ import sqlite3
 import threading
 import time
 import traceback
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from app import db
@@ -28,16 +29,6 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _parse_iso(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-    except (ValueError, TypeError):
-        return None
-    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
-
-
 class FetchResult(list):
     """A list of records with an optional status note or warning.
 
@@ -56,46 +47,30 @@ class FetchResult(list):
         self.warning = warning
 
 
-def _should_skip(
-    existing,
-    min_interval_seconds: int | None,
-    retry_interval_seconds: int | None,
-) -> tuple[bool, str]:
-    """Decide whether to skip this run, and say why.
+class SourceDeferred(Exception):
+    """Raised by a fetch that cannot run *right now* but is not broken.
 
-    The gate depends on how the source last *ended*, not just when it last ran:
-
-    - last run succeeded -> wait `min_interval` from the last SUCCESS.
-    - last run failed    -> wait `retry_interval` from the last ATTEMPT.
-
-    Keying the success cadence off last_success_at is the fix for the bug that
-    made margin_debt look dead: stamping every attempt (including failures) into
-    the throttle clock meant one failure froze the source for the entire
-    min_interval, so it never retried and never reported anything new.
+    The canonical case is a rate limit (GDELT's post-429 cooldown). Recording
+    it as an error would page someone for a source behaving exactly as the
+    upstream asked; recording nothing would hide it. It becomes a `deferred`
+    run with the reason and the moment the source wants to be tried again.
     """
-    if existing is None:
-        return False, ""
 
-    failed = (existing.status or "").startswith("error")
-    now = datetime.now(timezone.utc)
+    def __init__(self, reason: str, retry_after_seconds: float | None = None):
+        super().__init__(reason)
+        self.reason = reason
+        self.retry_after_seconds = retry_after_seconds
 
-    if failed:
-        gate = retry_interval_seconds if retry_interval_seconds is not None else min_interval_seconds
-        reference = _parse_iso(existing.last_refreshed_at)
-        label = "retry_interval"
-    else:
-        gate = min_interval_seconds
-        # Old rows predate last_success_at; fall back so they aren't hammered.
-        reference = _parse_iso(existing.last_success_at) or _parse_iso(existing.last_refreshed_at)
-        label = "min_interval"
 
-    if gate is None or reference is None:
-        return False, ""
+@dataclass
+class RunResult:
+    """What one run_source call did. `next_attempt_at` is set for deferrals
+    (the scheduler may also annotate errors via db.set_source_next_attempt)."""
 
-    elapsed = (now - reference).total_seconds()
-    if elapsed < gate:
-        return True, f"{label}: {int(elapsed)}s elapsed of {int(gate)}s"
-    return False, ""
+    outcome: str               # ok | error | deferred
+    run_id: int | None = None
+    record_count: int = 0
+    next_attempt_at: str | None = None
 
 
 def run_source(
@@ -103,36 +78,25 @@ def run_source(
     source_name: str,
     fetch: Callable[[], list],
     store: Callable[[sqlite3.Connection, list], None],
-    min_interval_seconds: int | None = None,
-    force: bool = False,
-    retry_interval_seconds: int | None = None,
-) -> None:
+) -> RunResult:
     """Run one source: fetch records, persist them via `store`, stamp status.
 
-    `min_interval_seconds` throttles successful refreshes (measured from the last
-    success); `retry_interval_seconds` throttles retries after a failure
-    (measured from the last attempt). `force=True` bypasses both.
+    There is deliberately no throttle here. The per-source schedule
+    (app/schedules.py, one APScheduler job per source) is the only thing that
+    decides *when* a source runs, so a call always fetches and there is no
+    silent `skipped` outcome.
 
     Never raises: any failure is recorded as the source's status (with a short
-    `status` string and a full `error_detail` traceback for the Info page) so
-    the UI can show that the source tried and failed. A `FetchResult.warning`
-    on an otherwise-successful fetch is stamped as an error status *while still
-    storing the real records* — the "degraded provenance" case.
+    `status` string and a full `error_detail` traceback, on the status row and
+    on this run's row) so the UI can show that the source tried and failed. A
+    `FetchResult.warning` on an otherwise-successful fetch is stamped as an
+    error status *while still storing the real records* — the "degraded
+    provenance" case. A `SourceDeferred` becomes a `deferred` run.
 
-    Every outcome, skips included, appends a `source_runs` row.
+    Every outcome appends a `source_runs` row.
     """
     started_at = _now_iso()
     started = time.perf_counter()
-
-    if not force and (min_interval_seconds is not None or retry_interval_seconds is not None):
-        statuses = {s.source: s for s in db.get_source_statuses(conn)}
-        skip, why = _should_skip(
-            statuses.get(source_name), min_interval_seconds, retry_interval_seconds)
-        if skip:
-            db.record_source_run(
-                conn, source_name, started_at, _now_iso(), "skipped",
-                int((time.perf_counter() - started) * 1000), 0, why)
-            return
 
     with _RUNNING_LOCK:
         _RUNNING[source_name] = time.monotonic()
@@ -144,37 +108,54 @@ def run_source(
         if warning:
             # Degraded provenance: real data stored, but flagged as an error so
             # the UI surfaces the caveat. Keep the real record count.
-            # It is *not* a success for throttling purposes — we want to keep
-            # retrying until the source is back on its official tier.
+            # It is *not* a success for the cadence — we want to keep retrying
+            # until the source is back on its official tier.
             status = f"error: {warning}"
             db.update_source_status(
                 conn, source_name, _now_iso(), status, len(records),
                 error_detail=None, success=False, duration_ms=duration_ms)
-            db.record_source_run(
+            run_id = db.record_source_run(
                 conn, source_name, started_at, _now_iso(), "error",
-                duration_ms, len(records), warning)
-        else:
-            note = getattr(records, "note", "")
-            status = f"ok ({note})" if note else "ok"
-            db.update_source_status(
-                conn, source_name, _now_iso(), status, len(records),
-                error_detail=None, success=True, duration_ms=duration_ms)
-            db.record_source_run(
-                conn, source_name, started_at, _now_iso(), "ok",
-                duration_ms, len(records), note or None)
+                duration_ms, len(records), status)
+            return RunResult("error", run_id, len(records))
+        note = getattr(records, "note", "")
+        status = f"ok ({note})" if note else "ok"
+        db.update_source_status(
+            conn, source_name, _now_iso(), status, len(records),
+            error_detail=None, success=True, duration_ms=duration_ms)
+        run_id = db.record_source_run(
+            conn, source_name, started_at, _now_iso(), "ok",
+            duration_ms, len(records), note or None)
+        return RunResult("ok", run_id, len(records))
+    except SourceDeferred as exc:
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        next_at = None
+        if exc.retry_after_seconds is not None:
+            next_at = (datetime.now(timezone.utc) + timedelta(
+                seconds=max(1.0, float(exc.retry_after_seconds)))).isoformat(timespec="seconds")
+        reason = str(exc.reason)[:300]
+        logger.info("source %s deferred: %s (next attempt %s)", source_name, reason, next_at)
+        db.mark_source_deferred(
+            conn, source_name, _now_iso(), f"deferred: {reason}", next_at, duration_ms)
+        run_id = db.record_source_run(
+            conn, source_name, started_at, _now_iso(), "deferred", duration_ms, 0,
+            reason, next_attempt_at=next_at)
+        return RunResult("deferred", run_id, 0, next_at)
     except Exception as exc:  # noqa: BLE001 - we want to capture any failure
         duration_ms = int((time.perf_counter() - started) * 1000)
         logger.warning("source %s failed", source_name, exc_info=exc)
         # The status string is a UI feature, but raw exception text can leak
         # internals — keep it short and typed. The full traceback goes into
-        # error_detail for the Info page's expandable diagnostics.
+        # error_detail (status row and this run's row) for the Server page.
         brief = f"error: {type(exc).__name__}: {str(exc)[:120]}"
-        detail = f"{type(exc).__name__}: {exc}\n\n" + traceback.format_exc()[-2000:]
+        detail = f"{type(exc).__name__}: {exc}\n\n" + traceback.format_exc()[-4000:]
         db.update_source_status(
             conn, source_name, _now_iso(), brief, 0,
             error_detail=detail, success=False, duration_ms=duration_ms)
-        db.record_source_run(
-            conn, source_name, started_at, _now_iso(), "error", duration_ms, 0, brief)
+        run_id = db.record_source_run(
+            conn, source_name, started_at, _now_iso(), "error", duration_ms, 0, brief,
+            error_detail=detail)
+        return RunResult("error", run_id, 0)
     finally:
         with _RUNNING_LOCK:
             _RUNNING.pop(source_name, None)

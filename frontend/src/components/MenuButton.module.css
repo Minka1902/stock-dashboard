@@ -19,7 +19,7 @@
   transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
 .trigger:hover { color: var(--text); background: var(--surface-2); border-color: var(--border); }
-.trigger[aria-expanded="true"] { color: var(--accent); background: var(--surface-2); border-color: var(--border); }
+.trigger[aria-expanded="true"] { color: var(--accent-text); background: var(--surface-2); border-color: var(--border); }
 .trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Position, z-index and max-height come from Popover, which renders this to
@@ -61,7 +61,7 @@
 .item[data-tone="danger"]:hover:not(:disabled) { background: var(--negative-weak); }
 
 /* The currently-selected option in a picker menu. */
-.item[data-tone="active"] { color: var(--accent); background: var(--accent-weak); }
+.item[data-tone="active"] { color: var(--accent-text); background: var(--accent-weak); }
 
 .groupLabel {
   padding: var(--s-2) 10px 4px;

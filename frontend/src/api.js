@@ -53,7 +53,21 @@ export const getSources = () => getJSON("/api/sources");
 // Admin-only server introspection (the Server page).
 export const getServerOverview = () => getJSON("/api/server/overview");
 export const getServerSources = () => getJSON("/api/server/sources");
-export const getServerEvents = (limit = 60) => getJSON(`/api/server/events?limit=${limit}`);
+// `filter` = { kind: "source" | "job", id } narrows the log server-side
+// ("Show similar"), so the page gets a full page of that one thing.
+export const getServerEvents = (limit = 60, filter = null) => {
+  const q = new URLSearchParams({ limit: String(limit) });
+  if (filter?.kind) q.set("kind", filter.kind);
+  if (filter?.id) q.set("id", filter.id);
+  return getJSON(`/api/server/events?${q}`);
+};
+export const getServerSourceRuns = (source, limit = 10) =>
+  getJSON(`/api/server/sources/${encodeURIComponent(source)}/runs?limit=${limit}`);
+export const getServerSchedules = () => getJSON("/api/server/schedules");
+export const putServerSchedule = (source, patch) =>
+  request(`/api/server/schedules/${encodeURIComponent(source)}`, { method: "PUT", body: patch });
+export const runScheduleNow = (source) =>
+  request(`/api/server/schedules/${encodeURIComponent(source)}/run-now`, { method: "POST" });
 export const getNews = () => getJSON("/api/news");
 export const getTrades = () => getJSON("/api/trades");
 export const getWatchlist = (listId) =>
@@ -116,8 +130,9 @@ export const getEarnings = ({ from, to, scope } = {}) => {
 };
 export const getEarningsFor = (ticker) =>
   getJSON(`/api/earnings/${encodeURIComponent(ticker)}`);
-export const searchStocks = (q) =>
-  getJSON(`/api/search?q=${encodeURIComponent(q)}`);
+// market: "all" | "us" | "tase" — one upstream search serves every filter.
+export const searchStocks = (q, market = "all") =>
+  getJSON(`/api/search?q=${encodeURIComponent(q)}${market && market !== "all" ? `&market=${market}` : ""}`);
 export const getAnalyze = (ticker) =>
   getJSON(`/api/analyze/${encodeURIComponent(ticker)}`);
 export const getCompany = (ticker) =>
@@ -135,13 +150,30 @@ export const saveAppSettings = (settings) =>
   request("/api/settings", { method: "PUT", body: settings });
 export const saveProfile = (profile) =>
   request("/api/profile", { method: "PUT", body: profile });
-export const addHolding = (ticker, shares, avg_cost) =>
-  request("/api/portfolio", { method: "POST", body: { ticker, shares, avg_cost } });
-export const updateHolding = (ticker, shares, avg_cost) =>
+// avg_cost is in `currency` (the position's native one). currency null =
+// let the server detect it (".TA" → ILS, bare → USD, else Yahoo).
+export const addHolding = (ticker, shares, avg_cost, currency = null) =>
+  request("/api/portfolio", {
+    method: "POST",
+    body: { ticker, shares, avg_cost, ...(currency ? { currency } : {}) },
+  });
+export const updateHolding = (ticker, shares, avg_cost, currency = null) =>
   request(`/api/portfolio/${encodeURIComponent(ticker)}`, {
     method: "PUT",
-    body: { shares, avg_cost },
+    body: { shares, avg_cost, ...(currency ? { currency } : {}) },
   });
+// Per-user FX pairs for the ticker carousel ("USDILS=X", …), in display order.
+export const getFxWatch = () => getJSON("/api/fx-watch");
+export const saveFxWatch = (pairs) =>
+  request("/api/fx-watch", { method: "PUT", body: { pairs } });
+// Live multipliers into `base`; a null rate means "FX unavailable".
+export const getFxRates = (base, currencies = []) => {
+  const q = new URLSearchParams();
+  if (base) q.set("base", base);
+  if (currencies.length) q.set("currencies", currencies.join(","));
+  const qs = q.toString();
+  return getJSON(`/api/fx/rates${qs ? `?${qs}` : ""}`);
+};
 export const setHoldingCategory = (ticker, category) =>
   request(`/api/portfolio/${encodeURIComponent(ticker)}/category`, {
     method: "PUT",
@@ -203,3 +235,29 @@ export const useRecoveryCode = (code) =>
 export const markOnboarded = () =>
   request("/api/auth/onboarded", { method: "POST" });
 export const logout = () => request("/api/auth/logout", { method: "POST" });
+
+// ---------- in-app update ----------
+// Status is readable by any signed-in user ("an update is available");
+// apply is admin-only and answers 409 with the reason when it can't run.
+export const getUpdateStatus = (refresh = false) =>
+  getJSON(`/api/update/status${refresh ? "?refresh=true" : ""}`);
+export const applyUpdate = () => request("/api/update/apply", { method: "POST" });
+// Public liveness probe; its `commit` changes once a restarted server is
+// running the updated code.
+export const getHealth = () => getJSON("/api/health");
+
+// ---------- chart workspace: extended-hours print + drawing drafts ----------
+// Latest pre-market / after-hours print for the D/W/M chart's price lines.
+export const getChartExtended = (ticker) =>
+  getJSON(`/api/chart/${encodeURIComponent(ticker)}/extended`);
+// Named per-user snapshots of a ticker's drawings.
+export const listDrawingDrafts = (ticker) =>
+  getJSON(`/api/drawings/${encodeURIComponent(ticker)}/drafts`);
+export const createDrawingDraft = (ticker, { title, description = "", timeframe = "", shapes = [] }) =>
+  request(`/api/drawings/${encodeURIComponent(ticker)}/drafts`, {
+    method: "POST", body: { title, description, timeframe, shapes },
+  });
+export const updateDrawingDraft = (id, patch) =>
+  request(`/api/drawings/drafts/${encodeURIComponent(id)}`, { method: "PUT", body: patch });
+export const deleteDrawingDraft = (id) =>
+  request(`/api/drawings/drafts/${encodeURIComponent(id)}`, { method: "DELETE" });

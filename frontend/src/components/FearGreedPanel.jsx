@@ -11,6 +11,10 @@ import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./FearGreedPanel.module.css";
+import InfoTip from "./InfoTip";
+
+// Recharts draws its hover cursor in #ccc unless told otherwise.
+const CURSOR = { stroke: "var(--border-strong)" };
 
 const TOOLTIP_STYLE = {
   background: "var(--surface-2)",
@@ -39,7 +43,7 @@ export default function FearGreedPanel({ data, loading, busy, onRefresh, compact
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Fear & Greed" />}
         <div>
-          <h2 className={styles.title}>Fear &amp; Greed Index</h2>
+          <h2 className={styles.title}>Fear &amp; Greed Index <InfoTip term="fear_greed" /></h2>
           <p className={styles.subtitle}>
             CNN composite sentiment · extreme fear (&lt;25) marks historical boom entry points
           </p>
@@ -119,6 +123,7 @@ export default function FearGreedPanel({ data, loading, busy, onRefresh, compact
                 />
                 <Tooltip
                   contentStyle={TOOLTIP_STYLE}
+                  cursor={CURSOR}
                   formatter={(v, _n, props) => [
                     `${Math.round(v)} — ${props.payload?.rating ?? ""}`,
                     "Score",

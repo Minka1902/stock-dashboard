@@ -18,7 +18,7 @@
   padding: var(--s-2) var(--s-3) var(--s-5);
 }
 .mark {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 15px;
   text-shadow: 0 0 12px var(--accent-glow);
 }
@@ -93,14 +93,14 @@
 
 .active {
   background: var(--surface-3);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .active:hover {
   background: var(--surface-3);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .active .hint {
-  color: var(--accent-strong);
+  color: var(--accent-text);
 }
 /* Amber left tick — the current pane, terminal style. */
 .active::before {

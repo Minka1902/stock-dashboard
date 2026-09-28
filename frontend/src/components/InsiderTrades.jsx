@@ -1,5 +1,6 @@
 import { formatCount, formatCurrencyCompact, formatDate } from "../lib/format";
 import styles from "./InsiderTrades.module.css";
+import Tooltip from "./Tooltip";
 
 function tone(type) {
   const t = (type || "").toLowerCase();
@@ -30,8 +31,8 @@ export default function InsiderTrades({ trades = [], ticker }) {
           <span className={styles.type} data-tone={tone(t.transaction_type)}>
             {t.transaction_type || "—"}
           </span>
-          <span className={styles.owner} title={t.owner}>{t.owner || "—"}</span>
-          <span className={styles.role} title={t.role}>{t.role || "—"}</span>
+          <Tooltip truncate><span className={styles.owner}>{t.owner || "—"}</span></Tooltip>
+          <Tooltip truncate><span className={styles.role}>{t.role || "—"}</span></Tooltip>
           <span className={styles.shares}>
             {t.shares != null ? formatCount(t.shares) : "—"} sh
           </span>
@@ -40,9 +41,10 @@ export default function InsiderTrades({ trades = [], ticker }) {
           </span>
           <span className={styles.date}>{formatDate(t.transaction_date)}</span>
           {t.filing_url ? (
-            <a className={styles.filing} href={t.filing_url}
-               target="_blank" rel="noreferrer noopener"
-               title="Open the filing on SEC EDGAR">filing</a>
+            <Tooltip content="Open the Form 4 filing on SEC EDGAR (new tab)">
+              <a className={styles.filing} href={t.filing_url}
+                 target="_blank" rel="noreferrer noopener">filing</a>
+            </Tooltip>
           ) : <span className={styles.filing}>—</span>}
         </li>
       ))}

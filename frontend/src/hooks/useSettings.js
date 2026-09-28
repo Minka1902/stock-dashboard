@@ -17,8 +17,15 @@ const DEFAULTS = {
   focusMode: false,
   // Map of Overview section key -> true when the user has collapsed it.
   collapsed: {},
+  // Map of "<page>:<sectionId>" -> true when collapsed (e.g. "stock:insiders"
+  // on the analysis page). Not per-ticker: a collapsed section stays collapsed
+  // as you move between stocks.
+  collapsedSections: {},
   // Map of view key -> true once its guided tour has run (auto-runs once per view).
   toursSeen: {},
+  // Set by Settings → "Replay all tours": lets tours auto-run again for an
+  // account that is already onboarded (they otherwise never auto-run).
+  toursReplay: false,
   // Label tickers by symbol ("NVDA") or company name ("NVIDIA Corporation").
   // Falls back to the symbol wherever no name is stored.
   nameDisplay: "ticker",

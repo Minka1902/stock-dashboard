@@ -1,7 +1,8 @@
-import { Area, AreaChart, ResponsiveContainer } from "recharts";
+import { Area, AreaChart } from "recharts";
 import { motion } from "motion/react";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./Sparkline.module.css";
+import Tooltip from "./Tooltip";
 
 /**
  * Tiny inline sparkline for a table row. `closes` is a number[] (real closes,
@@ -14,7 +15,11 @@ export default function Sparkline({
 }) {
   if (loading) return <span className={styles.dash} style={{ width }}>···</span>;
   if (error || !closes || closes.length < 2) {
-    return <span className={styles.dash} style={{ width }} title={error ? "No data" : undefined}>—</span>;
+    return (
+      <Tooltip content={error ? "No price history available for this range" : "Not enough price history to draw a trend"}>
+        <span className={styles.dash} style={{ width }}>—</span>
+      </Tooltip>
+    );
   }
   const up = changePct != null ? changePct >= 0 : closes[closes.length - 1] >= closes[0];
   const color = up ? "var(--positive)" : "var(--negative)";
@@ -28,14 +33,14 @@ export default function Sparkline({
       animate={{ opacity: 1 }}
       transition={{ duration: prefersReducedMotion() ? 0 : 0.25 }}
     >
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 2, right: 0, bottom: 2, left: 0 }}>
-          <Area
-            type="monotone" dataKey="c" stroke={color} strokeWidth={1.5}
-            fill={color} fillOpacity={0.12} dot={false} isAnimationActive={false}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
+      {/* Fixed-size: a ResponsiveContainer here measured -1×-1 on first paint
+          and warned on every row. */}
+      <AreaChart width={width} height={height} data={data} margin={{ top: 2, right: 0, bottom: 2, left: 0 }}>
+        <Area
+          type="monotone" dataKey="c" stroke={color} strokeWidth={1.5}
+          fill={color} fillOpacity={0.12} dot={false} isAnimationActive={false}
+        />
+      </AreaChart>
     </motion.div>
   );
 }

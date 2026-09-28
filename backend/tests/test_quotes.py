@@ -233,3 +233,52 @@ def test_get_quotes_preserves_requested_order(monkeypatch):
     assert [q.ticker for q in quotes.get_quotes(asked, ttl_seconds=60)] == asked
     # Second call is served from cache — same order, not alphabetical.
     assert [q.ticker for q in quotes.get_quotes(asked, ttl_seconds=60)] == asked
+
+
+# ---------- currency & market (WS-B) ----------
+
+def test_parse_quote_normalizes_agorot_to_shekels():
+    """Yahoo quotes TASE equities in ILA (agorot); the app works in ILS."""
+    payload = _payload(
+        meta={"currency": "ILA", "regularMarketPrice": 12050.0,
+              "chartPreviousClose": 11900.0, "marketState": "REGULAR"},
+        closes=[12000.0, 12050.0],
+    )
+    q = quotes.parse_quote(payload, "teva.ta", FETCHED)
+    assert q.ticker == "TEVA.TA"
+    assert q.price == 120.5
+    assert q.previous_close == 119.0
+    assert q.regular_price == 120.5
+    assert q.currency == "ILS"
+    assert q.market == "TASE"
+    # The percentage move is unit-free, so normalizing must not change it.
+    assert q.change_pct == round((12050 - 11900) / 11900 * 100, 2)
+
+
+def test_parse_quote_carries_usd_currency_and_us_market():
+    payload = _payload(meta={"currency": "USD", "regularMarketPrice": 10.0,
+                             "chartPreviousClose": 9.0}, closes=[10.0])
+    q = quotes.parse_quote(payload, "AAPL", FETCHED)
+    assert (q.currency, q.market) == ("USD", "US")
+
+
+def test_parse_quote_without_meta_currency_falls_back_to_symbol_convention():
+    payload = _payload(meta={"regularMarketPrice": 10.0}, closes=[10.0])
+    assert quotes.parse_quote(payload, "AAPL", FETCHED).currency == "USD"
+
+
+def test_decorate_marks_fx_and_index_and_tase_session(monkeypatch):
+    made = [
+        LiveQuote(ticker="TEVA.TA", price=120.5, change_pct=None, previous_close=None,
+                  market_state="PRE", extended_change_pct=1.0, fetched_at="t"),
+        LiveQuote(ticker="TA35.TA", price=4242.1, change_pct=None, previous_close=None,
+                  market_state="LIVE", fetched_at="t"),
+        LiveQuote(ticker="USDILS=X", price=3.05, change_pct=None, previous_close=None,
+                  market_state="LIVE", fetched_at="t"),
+    ]
+    out = quotes.decorate(made, indexes={"TA35.TA": "TA-35"}, tase_status="CLOSED")
+    teva, ta35, fx = out
+    # TASE has no extended session: the clock decides, and no extended move.
+    assert (teva.market, teva.market_state, teva.extended_change_pct) == ("TASE", "CLOSED", None)
+    assert (ta35.kind, ta35.label, ta35.market) == ("index", "TA-35", "TASE")
+    assert (fx.kind, fx.label, fx.market) == ("fx", "USD/ILS", "FX")

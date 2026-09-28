@@ -6,6 +6,8 @@ import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import AnimatedNumber from "./AnimatedNumber";
 import TickerLabel from "./TickerLabel";
+import Tooltip from "./Tooltip";
+import InfoTip from "./InfoTip";
 import { getBoomScoreHistory } from "../api";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import styles from "./BoomScorePanel.module.css";
@@ -38,6 +40,11 @@ const CHIP_META = {
 };
 
 const HORIZON_TIP = { S: "Short (days–weeks)", M: "Medium (weeks–months)", L: "Long (months+)" };
+
+// Score band behind each conviction tier, for the tier badge's tooltip.
+const TIER_RANGE = {
+  high: "76 or more", mid: "51–75", low: "26–50", faint: "0–25", neg: "below 0",
+};
 
 function convictionTier(score) {
   if (score >= 76) return { label: "Strong Setup",    tone: "high" };
@@ -75,7 +82,7 @@ export default function BoomScorePanel({ data, loading, busy, onRefresh, compact
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Boom Score" />}
         <div>
-          <h2 className={styles.title}>Boom Score</h2>
+          <h2 className={styles.title}>Boom Score <InfoTip term="boom_score" /></h2>
           <p className={styles.subtitle}>
             Composite signal strength · bullish &amp; bearish · ranked by conviction
           </p>
@@ -114,7 +121,10 @@ export default function BoomScorePanel({ data, loading, busy, onRefresh, compact
                 <span className={styles.ticker}>
                   <TickerLabel ticker={s.ticker} />
                   {s.earnings_soon && (
-                    <span className={styles.earningsWarn} title="Earnings within 7 days — high event risk">⚠</span>
+                    <Tooltip content="Earnings within 7 days — high event risk">
+                      <span className={styles.earningsWarn} role="img" tabIndex={0}
+                            aria-label="Earnings within 7 days">⚠</span>
+                    </Tooltip>
                   )}
                 </span>
 
@@ -126,12 +136,17 @@ export default function BoomScorePanel({ data, loading, busy, onRefresh, compact
                   <AnimatedNumber value={s.score} />
                 </span>
 
-                <span className={styles.tier} data-tone={tier.tone}>{tier.label}</span>
+                <Tooltip content={`Conviction tier for a Boom Score of ${TIER_RANGE[tier.tone]}. More independent signals agreeing = higher tier; it is not a forecast.`}>
+                  <span className={styles.tier} data-tone={tier.tone}>{tier.label}</span>
+                </Tooltip>
 
                 <ScoreSparkline ticker={s.ticker} />
 
                 {s.mixed_signals && (
-                  <span className={styles.mixedWarn} title="Conflicting bullish and bearish signals — research further">⚡</span>
+                  <Tooltip content="Conflicting bullish and bearish signals — research further">
+                    <span className={styles.mixedWarn} role="img" tabIndex={0}
+                          aria-label="Mixed signals">⚡</span>
+                  </Tooltip>
                 )}
 
                 <div className={styles.chips}>
@@ -140,12 +155,22 @@ export default function BoomScorePanel({ data, loading, busy, onRefresh, compact
                     if (!meta) return null;
                     const tip = meta.tip + ` · ${HORIZON_TIP[meta.horizon]}`;
                     return (
-                      <span key={key} className={styles.chip} data-tone={meta.tone} title={tip}>
-                        {meta.label}
-                        <span className={styles.horizon}>{meta.horizon}</span>
-                      </span>
+                      <Tooltip key={key} content={tip}>
+                        <span className={styles.chip} data-tone={meta.tone}>
+                          {meta.label}
+                          <span className={styles.horizon}>{meta.horizon}</span>
+                        </span>
+                      </Tooltip>
                     );
                   })}
+                  {s.score_note && (
+                    <Tooltip content={s.score_note}>
+                      <span className={styles.chip} data-tone="neutral" tabIndex={0}
+                            aria-label={s.score_note}>
+                        TASE · renormalized
+                      </span>
+                    </Tooltip>
+                  )}
                 </div>
               </motion.li>
             );

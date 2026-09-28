@@ -7,6 +7,8 @@ import { openTickerTab } from "../lib/nav";
 import { getSuggestionLog } from "../api";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./SuggestionsPanel.module.css";
+import Tooltip from "./Tooltip";
+import Term from "./Term";
 
 function statusTone(status) {
   if (status.startsWith("sent")) return "pos";
@@ -53,14 +55,15 @@ function DeliveryLog() {
 /** The symbol, clickable: opens that stock's analysis in a new tab. */
 function Symbol({ ticker }) {
   return (
-    <button
-      type="button"
-      className={styles.symbolBtn}
-      onClick={() => openTickerTab(ticker)}
-      title={`Open ${ticker} analysis in a new tab`}
-    >
-      <TickerLabel ticker={ticker} className={styles.symbol} />
-    </button>
+    <Tooltip content={`Open ${ticker} analysis in a new tab`}>
+      <button
+        type="button"
+        className={styles.symbolBtn}
+        onClick={() => openTickerTab(ticker)}
+      >
+        <TickerLabel ticker={ticker} className={styles.symbol} />
+      </button>
+    </Tooltip>
   );
 }
 
@@ -105,10 +108,12 @@ function OpportunityBody({ o }) {
     return (
       <>
         <Symbol ticker={o.ticker} /><Lists lists={o.lists} />
-        <span className={styles.score}>Boom {o.score}</span>
+        <span className={styles.score}><Term term="boom_score">Boom {o.score}</Term></span>
         <span className={styles.reasons}>
           {o.signals.map((s) => <span key={s} className={styles.chip} data-tone="bull">{s}</span>)}
-          <span className={styles.chip} data-tone="muted">TA pending</span>
+          <Tooltip content="Technical analysis for this ticker hasn't been computed yet, so this row shows its Boom Score signals instead.">
+            <span className={styles.chip} data-tone="muted" tabIndex={0}>TA pending</span>
+          </Tooltip>
         </span>
       </>
     );
@@ -119,13 +124,15 @@ function OpportunityBody({ o }) {
       <Symbol ticker={o.ticker} /><Lists lists={o.lists} />
       <span className={styles.chip} data-tone={tone}>{(o.recommendation || "hold").toUpperCase()}</span>
       <span className={styles.action} data-risk="no">
-        conv {o.conviction}
-        {o.rr != null ? ` · R/R ${o.rr}` : ""}
+        <Term term="analysis_conviction">conv {o.conviction}</Term>
+        {o.rr != null && <> · <Term term="r_multiple">R/R {o.rr}</Term></>}
         {o.entry != null ? ` · entry ${o.entry} / stop ${o.stop}` : ""}
       </span>
       <span className={styles.reasons}>
         {(o.evidence || []).map((e) => <span key={e} className={styles.chip}>{e}</span>)}
-        {o.score != null && <span className={styles.chip} data-tone="muted">Boom {o.score}</span>}
+        {o.score != null && (
+          <Term term="boom_score"><span className={styles.chip} data-tone="muted">Boom {o.score}</span></Term>
+        )}
       </span>
     </>
   );
@@ -150,15 +157,18 @@ function NewIdeaRow({ o, onWatch }) {
     <li className={styles.alert}>
       <OpportunityBody o={o} />
       {onWatch && (
-        <button
-          type="button"
-          className={styles.watchBtn}
-          onClick={add}
-          disabled={adding || added}
-          title={`Add ${o.ticker} to your watchlist`}
-        >
-          {added ? "✓ Watching" : adding ? "Adding…" : "+ Watch"}
-        </button>
+        <Tooltip content={added
+          ? `${o.ticker} is on your watchlist`
+          : adding ? `Adding ${o.ticker}…` : `Add ${o.ticker} to your watchlist`}>
+          <button
+            type="button"
+            className={styles.watchBtn}
+            onClick={add}
+            disabled={adding || added}
+          >
+            {added ? "✓ Watching" : adding ? "Adding…" : "+ Watch"}
+          </button>
+        </Tooltip>
       )}
     </li>
   );

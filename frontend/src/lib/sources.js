@@ -125,10 +125,23 @@ export const MODULE_SOURCE = {
   alerts: { note: "Derived" },
 };
 
+/** Plain-language meaning of each source state, for status badge tooltips. */
+export const STATE_TIP = {
+  ok: "OK — the last refresh succeeded and delivered real data.",
+  error: "Error — the last refresh failed. Nothing was invented; the previous data (if any) is kept.",
+  deferred: "Deferred — the source asked to wait (usually a rate limit). It retries automatically; this is not a failure.",
+  idle: "No data yet — this source has not reported a status.",
+  never: "Never run — this source has not run since it was added. It runs on its schedule.",
+};
+
 // "ok" or "ok (fallback: …)" both mean the source delivered real data.
+// "deferred: …" means the source asked to be retried later (e.g. a rate
+// limit): not a failure, not fresh either — shown in amber, never as an error.
 export function sourceState(status) {
   if (!status) return "error";
-  return status === "ok" || status.startsWith("ok (") ? "ok" : "error";
+  if (status === "ok" || status.startsWith("ok (")) return "ok";
+  if (status.startsWith("deferred")) return "deferred";
+  return "error";
 }
 
 // The parenthetical note carried by an "ok (…)" fallback status, else null.
@@ -142,8 +155,13 @@ export function sourceNote(status) {
 // component render-purity checks). `status` is a GET /api/sources entry.
 export function sourceStale(status, maxAgeHours = 24) {
   if (!status) return false; // unknown → don't suppress
-  if (sourceState(status.status) === "error") return true;
-  if (!status.last_refreshed_at) return true;
-  const ageH = (Date.now() - Date.parse(status.last_refreshed_at)) / 3600000;
+  const state = sourceState(status.status);
+  if (state === "error") return true;
+  // A deferral re-stamps the attempt clock, so judge its age by the data.
+  const stamp = state === "deferred"
+    ? status.last_success_at || status.last_refreshed_at
+    : status.last_refreshed_at;
+  if (!stamp) return true;
+  const ageH = (Date.now() - Date.parse(stamp)) / 3600000;
   return Number.isFinite(ageH) && ageH > maxAgeHours;
 }

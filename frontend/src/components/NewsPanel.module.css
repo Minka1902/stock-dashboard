@@ -101,7 +101,7 @@
   overflow: hidden;
 }
 .headline:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .meta {
@@ -115,7 +115,7 @@
 }
 .domain {
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-text);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -128,7 +128,7 @@
   padding: 0;
   font: inherit;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-text);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   cursor: pointer;
@@ -183,7 +183,7 @@
 }
 .sourceChip:hover { color: var(--text); border-color: var(--border); }
 .sourceChip[data-active="yes"] {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   background: var(--accent-weak);
 }
@@ -193,14 +193,14 @@
   font-variant-numeric: tabular-nums;
   color: var(--text-faint);
 }
-.sourceChip[data-active="yes"] .count { color: var(--accent); }
+.sourceChip[data-active="yes"] .count { color: var(--accent-text); }
 
 .moreSources {
   appearance: none;
   border: none;
   background: none;
   padding: 3px 4px;
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--mono);
   font-size: 10.5px;
   cursor: pointer;
@@ -223,7 +223,7 @@
   cursor: pointer;
 }
 .sortBtn:hover { color: var(--text); border-color: var(--border); }
-.sortBtn[data-active="yes"] { color: var(--accent); border-color: var(--accent); }
+.sortBtn[data-active="yes"] { color: var(--accent-text); border-color: var(--accent); }
 .caret { font-size: 8px; opacity: 0.8; }
 .sep {
   color: var(--text-faint);
@@ -244,7 +244,7 @@
   height: 48px;
   border-radius: var(--r-sm);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .emptyTitle {
   font-family: var(--mono);
@@ -257,7 +257,7 @@
   border-radius: var(--r-sm);
   border: 1px solid var(--accent-weak);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--mono);
   font-weight: 600;
   cursor: pointer;
@@ -293,7 +293,7 @@
   letter-spacing: 0.04em;
   cursor: pointer;
 }
-.updateBtn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.updateBtn:hover:not(:disabled) { color: var(--accent-text); border-color: var(--accent); }
 .updateBtn:disabled { opacity: 0.6; cursor: default; }
 .updateBtn:disabled svg { animation: spin 900ms linear infinite; }
 @media (prefers-reduced-motion: reduce) {
@@ -342,7 +342,7 @@
 }
 .tab:hover { color: var(--text); background: var(--surface-hover); }
 .tab[data-active="yes"] {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-weak);
   border-color: var(--accent-weak);
 }
@@ -353,7 +353,7 @@
   font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.05em;
-  color: var(--accent);
+  color: var(--accent-text);
   border: 1px solid var(--accent-weak);
   border-radius: var(--r-xs);
   padding: 1px 5px;

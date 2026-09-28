@@ -6,6 +6,8 @@ import { getEarnings } from "../api";
 import { DAY_NAMES, monthGrid } from "../lib/calendarGrid";
 import { openTickerTab } from "../lib/nav";
 import styles from "./EarningsPanel.module.css";
+import Tooltip from "./Tooltip";
+import Term from "./Term";
 
 const MONTH_FMT = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
 const TIMING_LABEL = { bmo: "before open", amc: "after close", intraday: "during hours" };
@@ -101,9 +103,9 @@ export default function EarningsPanel() {
       </header>
 
       <div className={styles.monthBar}>
-        <button className={styles.navBtn} onClick={() => step(-1)} aria-label="Previous month">‹</button>
+        <Tooltip content="Previous month"><button className={styles.navBtn} onClick={() => step(-1)} aria-label="Previous month">‹</button></Tooltip>
         <span className={styles.monthLabel}>{MONTH_FMT.format(new Date(cursor.year, cursor.month, 1))}</span>
-        <button className={styles.navBtn} onClick={() => step(1)} aria-label="Next month">›</button>
+        <Tooltip content="Next month"><button className={styles.navBtn} onClick={() => step(1)} aria-label="Next month">›</button></Tooltip>
         <span className={styles.legend}>
           <span className={styles.chip} data-kind="held" /> held
           <span className={styles.chip} data-kind="watched" /> watched
@@ -163,14 +165,15 @@ export default function EarningsPanel() {
           <ul className={styles.detailList}>
             {dayRows.map((e) => (
               <li key={e.ticker} className={styles.detailRow}>
-                <button
-                  type="button"
-                  className={styles.symbolBtn}
-                  onClick={() => openTickerTab(e.ticker)}
-                  title={`Open ${e.ticker} analysis`}
-                >
-                  <TickerLabel ticker={e.ticker} className={styles.symbol} />
-                </button>
+                <Tooltip content={`Open ${e.ticker} analysis in a new tab`}>
+                  <button
+                    type="button"
+                    className={styles.symbolBtn}
+                    onClick={() => openTickerTab(e.ticker)}
+                  >
+                    <TickerLabel ticker={e.ticker} className={styles.symbol} />
+                  </button>
+                </Tooltip>
                 <span className={styles.kind} data-kind={e.held ? "held" : e.watched ? "watched" : "major"}>
                   {e.held ? "held" : e.watched ? "watched" : "large cap"}
                 </span>
@@ -179,7 +182,7 @@ export default function EarningsPanel() {
                   {e.is_estimate ? "date estimated" : "date confirmed"}
                 </span>
                 <span className={styles.eps}>
-                  {e.eps_estimate != null ? `est. EPS ${e.eps_estimate.toFixed(2)}` : ""}
+                  {e.eps_estimate != null && <Term term="eps">est. EPS {e.eps_estimate.toFixed(2)}</Term>}
                 </span>
               </li>
             ))}

@@ -35,7 +35,7 @@
 .pill:last-child { border-right: none; }
 .pill:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
 .pill[data-active="yes"] {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-weak);
 }
 .pill:disabled { opacity: 0.35; cursor: not-allowed; }
@@ -65,7 +65,7 @@
   cursor: pointer;
 }
 .segBtn:hover { color: var(--text); }
-.segBtn[data-active="yes"] { color: var(--accent); }
+.segBtn[data-active="yes"] { color: var(--accent-text); }
 .segBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .segThumb {
   position: absolute;
@@ -104,7 +104,7 @@
 }
 .legend em[data-tone="pos"] { color: var(--positive); }
 .legend em[data-tone="neg"] { color: var(--negative); }
-.legendCompare { color: var(--accent); }
+.legendCompare { color: var(--accent-text); }
 .overlayChip {
   display: inline-flex;
   align-items: center;
@@ -147,14 +147,70 @@
   padding: 2px 7px;
   border-radius: var(--r-xs);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--mono);
   font-size: 9.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 
-.canvasWrap { position: relative; min-height: 0; }
+.canvasWrap { position: relative; min-height: 0; flex: 1; min-width: 0; }
+
+/* ---- chart stage: drawing rail + canvas (WS-C) ---- */
+.stage {
+  display: flex;
+  align-items: stretch;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+/* snapshot / drafts actions, pushed to the toolbar's right edge */
+.actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-left: auto;
+}
+
+/* stands in for EXT where the market has no extended session */
+.pillNote {
+  align-self: center;
+  padding: 5px 9px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  cursor: help;
+}
+.pillNote:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* PRE / REG / POST tag on the crosshair legend */
+.sessionTag {
+  padding: 0 5px;
+  border-radius: var(--r-xs);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.sessionTag[data-session="pre"] { color: var(--chart-info); border-color: color-mix(in oklab, var(--chart-info) 45%, transparent); }
+.sessionTag[data-session="post"] { color: var(--chart-compare); border-color: color-mix(in oklab, var(--chart-compare) 45%, transparent); }
+
+/* D/W/M: latest pre-market / after-hours print */
+.extChip { color: var(--text-faint); cursor: help; }
+.extChip[data-session="pre"] em { color: var(--chart-info); }
+.extChip[data-session="post"] em { color: var(--chart-compare); }
+
+/* shutter flash when a snapshot is taken (animated by animejs) */
+.flash {
+  position: absolute;
+  inset: 0;
+  background: var(--text);
+  opacity: 0;
+  pointer-events: none;
+  z-index: var(--z-raised);
+}
 .canvas { min-height: 0; }
 
 /* ---- transition loader (Task 5) ---- */
@@ -195,10 +251,26 @@
   margin: 0;
   padding-top: 2px;
 }
-.key span[data-c="info"] { color: #57a5e0; }
-.key span[data-c="accent"] { color: #f0b429; }
-.key span[data-c="muted"] { color: #8f887e; }
-.key span[data-c="neg"] { color: #e5544b; }
-.key span[data-c="pos"] { color: #4fd6a0; }
-.key span[data-c="cmp"] { color: #c084fc; }
+.key span[data-c="info"] { color: var(--chart-info); }
+.key span[data-c="accent"] { color: var(--accent-text); }
+.key span[data-c="muted"] { color: var(--chart-muted); }
+.key span[data-c="neg"] { color: var(--chart-down); }
+.key span[data-c="pos"] { color: var(--chart-up); }
+.key span[data-c="cmp"] { color: var(--chart-compare); }
 .keyNote { color: var(--text-faint); }
+
+/* Currency of the chart's prices (₪ ILS for Tel Aviv listings). */
+.legendCcy {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 0 5px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+/* Phones: the drawing rail sits above the canvas (see ChartTools.module.css). */
+@media (max-width: 560px) {
+  .stage { flex-direction: column; }
+}

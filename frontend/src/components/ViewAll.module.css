@@ -9,7 +9,7 @@
   border: none;
   background: transparent;
   border-radius: var(--r-sm);
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;

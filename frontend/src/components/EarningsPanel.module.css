@@ -30,7 +30,7 @@
   cursor: pointer;
 }
 .scopeBtn[data-active="yes"] {
-  color: var(--accent); background: var(--accent-weak); border-color: transparent;
+  color: var(--accent-text); background: var(--accent-weak); border-color: transparent;
 }
 
 .monthBar {
@@ -50,7 +50,7 @@
   width: 26px; height: 26px;
   cursor: pointer;
 }
-.navBtn:hover { color: var(--accent); border-color: var(--accent); }
+.navBtn:hover { color: var(--accent-text); border-color: var(--accent); }
 .monthLabel { font-family: var(--mono); font-weight: 700; min-width: 160px; }
 
 .legend {
@@ -118,7 +118,7 @@
   background: var(--surface-3);
 }
 .chipTicker[data-kind="held"]    { color: var(--positive); background: var(--positive-weak); }
-.chipTicker[data-kind="watched"] { color: var(--accent); background: var(--accent-weak); }
+.chipTicker[data-kind="watched"] { color: var(--accent-text); background: var(--accent-weak); }
 /* Dashed = the provider guessed this date; the company hasn't confirmed it. */
 .chipTicker[data-estimate="yes"] { border-style: dashed; border-color: currentColor; }
 .more { font-family: var(--mono); font-size: 9px; color: var(--text-faint); }
@@ -141,13 +141,13 @@
 }
 @media (max-width: 760px) { .detailRow { grid-template-columns: 1fr 1fr; } }
 .symbolBtn { appearance: none; border: none; background: none; padding: 0; cursor: pointer; text-align: left; }
-.symbol { font-family: var(--mono); font-weight: 700; color: var(--accent); }
+.symbol { font-family: var(--mono); font-weight: 700; color: var(--accent-text); }
 .kind {
   font-family: var(--mono); font-size: 9.5px; text-transform: uppercase;
   letter-spacing: 0.05em; color: var(--text-faint);
 }
 .kind[data-kind="held"]    { color: var(--positive); }
-.kind[data-kind="watched"] { color: var(--accent); }
+.kind[data-kind="watched"] { color: var(--accent-text); }
 .timing, .eps { font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
 .est { font-family: var(--mono); font-size: 10.5px; }
 .est[data-estimate="yes"] { color: var(--text-faint); }

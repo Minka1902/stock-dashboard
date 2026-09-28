@@ -20,6 +20,25 @@
   src: url("/fonts/atkinson-hyperlegible-bold.woff2") format("woff2");
 }
 
+/* The new-shekel sign (U+20AA) only. The monospace fonts Windows ships
+   (Consolas, Lucida Console, Courier New) draw ₪ at lowercase height, so
+   "₪120.50" reads smaller than "$341.46" beside it. This face serves just
+   that one code point: an upright mono ₪ when one is installed, else the
+   stack's own glyph scaled to digit height. Faces sharing a family and a
+   unicode-range are tried last-declared first, so the unscaled one wins
+   when it exists. */
+@font-face {
+  font-family: "Shekel Mono";
+  src: local("Consolas"), local("Menlo"), local("Courier New");
+  unicode-range: U+20AA;
+  size-adjust: 128%;
+}
+@font-face {
+  font-family: "Shekel Mono";
+  src: local("DejaVu Sans Mono"), local("Noto Sans Mono"), local("Liberation Mono");
+  unicode-range: U+20AA;
+}
+
 *,
 *::before,
 *::after {
@@ -55,7 +74,7 @@ body {
   --s-7: 48px;
 
   /* typography — monospace leads */
-  --mono: ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  --mono: "Shekel Mono", ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", "Roboto Mono", Menlo, Consolas, monospace;
   --sans: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
   /* uppercase terminal caption */
@@ -73,7 +92,8 @@ body {
   --z-raised: 3;    /* in-panel chrome: chart toolbar, section nav */
   --z-popover: 400; /* menus and tooltips anchored to a trigger */
   --z-overlay: 800; /* command palette */
-  --z-tour: 1000;   /* guided-tour spotlight, above everything */
+  --z-tour: 1000;   /* guided-tour spotlight */
+  --z-tooltip: 1100; /* transient hover/focus hints — above everything, incl. the tour */
 
   /* motion */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -116,19 +136,48 @@ body {
   --border-strong: oklch(1 0 0 / 0.22);
   --text: oklch(0.945 0.006 80);
   --text-muted: oklch(0.72 0.010 80);
-  --text-faint: oklch(0.56 0.012 80);
+  --text-faint: oklch(0.62 0.012 80);
   --accent: oklch(0.82 0.145 75);
+  /* Accent used as TEXT. Same as --accent on the dark palettes; the light
+     ones need a darker shade to reach 4.5:1 on their pale surfaces. */
+  --accent-text: var(--accent);
   --accent-strong: oklch(0.76 0.16 68);
   --accent-weak: oklch(0.82 0.145 75 / 0.15);
   --accent-glow: oklch(0.82 0.145 75 / 0.35);
   --positive: oklch(0.84 0.17 158);
   --positive-weak: oklch(0.84 0.17 158 / 0.16);
-  --negative: oklch(0.64 0.215 20);
+  --negative: oklch(0.70 0.20 20);
   --negative-weak: oklch(0.64 0.215 20 / 0.16);
   --info: oklch(0.74 0.11 232);
   --info-weak: oklch(0.74 0.11 232 / 0.16);
   --shadow: 0 1px 0 oklch(1 0 0 / 0.04) inset, 0 12px 34px oklch(0 0 0 / 0.5);
   --shadow-lg: 0 1px 0 oklch(1 0 0 / 0.05) inset, 0 20px 48px oklch(0 0 0 / 0.62);
+  /* Mid-range / "watch" tone, between positive and negative. */
+  --caution: oklch(0.72 0.15 60);
+  --caution-weak: oklch(0.72 0.15 60 / 0.18);
+  /* Text on a solid accent / negative fill (primary buttons, badges). */
+  --on-accent: oklch(0.16 0.01 80);
+  --on-negative: oklch(0.16 0.01 80);
+  --switch-knob: oklch(0.97 0.004 80);
+  --scrim: oklch(0 0 0 / 0.5);
+  --scrim-strong: oklch(0 0 0 / 0.62);
+  /* Chart & canvas tokens. lightweight-charts and the drawing layer paint on
+     <canvas>, so they read these through lib/themeColors.js (which converts
+     oklch to rgb) rather than through CSS. Every palette defines all of them. */
+  --chart-text: var(--text-muted);
+  --chart-grid: var(--grid);
+  --chart-border: var(--border);
+  --chart-crosshair: oklch(0.72 0.010 80 / 0.55);
+  --chart-up: var(--positive);
+  --chart-down: var(--negative);
+  --chart-accent: var(--accent);
+  --chart-info: var(--info);
+  --chart-muted: oklch(0.62 0.012 80);
+  --chart-compare: oklch(0.74 0.17 305);
+  --draw-stroke: var(--accent);
+  --draw-selected: var(--info);
+  --draw-fill: oklch(0.82 0.145 75 / 0.12);
+  --draw-label: var(--on-accent);
 }
 
 /* ---------- Light theme (fallback) ---------- */
@@ -145,19 +194,41 @@ body {
   --border-strong: oklch(0.78 0.014 80);
   --text: oklch(0.24 0.020 80);
   --text-muted: oklch(0.46 0.022 80);
-  --text-faint: oklch(0.60 0.018 80);
+  --text-faint: oklch(0.53 0.018 80);
   --accent: oklch(0.62 0.15 68);
+  --accent-text: oklch(0.48 0.14 64);
   --accent-strong: oklch(0.54 0.16 64);
   --accent-weak: oklch(0.62 0.15 68 / 0.14);
   --accent-glow: oklch(0.62 0.15 68 / 0.30);
-  --positive: oklch(0.56 0.15 158);
+  --positive: oklch(0.44 0.13 158);
   --positive-weak: oklch(0.56 0.15 158 / 0.14);
-  --negative: oklch(0.55 0.20 22);
+  --negative: oklch(0.50 0.20 22);
   --negative-weak: oklch(0.55 0.20 22 / 0.12);
-  --info: oklch(0.52 0.12 232);
+  --info: oklch(0.46 0.12 232);
   --info-weak: oklch(0.52 0.12 232 / 0.14);
   --shadow: 0 1px 2px oklch(0.6 0.02 80 / 0.18), 0 12px 30px oklch(0.6 0.02 80 / 0.16);
   --shadow-lg: 0 2px 4px oklch(0.6 0.02 80 / 0.16), 0 20px 44px oklch(0.6 0.02 80 / 0.22);
+  --caution: oklch(0.52 0.16 52);
+  --caution-weak: oklch(0.58 0.16 45 / 0.14);
+  --on-accent: oklch(0.18 0.02 70);
+  --on-negative: oklch(0.99 0.003 80);
+  --switch-knob: oklch(1 0 0);
+  --scrim: oklch(0.2 0.02 80 / 0.4);
+  --scrim-strong: oklch(0.2 0.02 80 / 0.55);
+  --chart-text: var(--text-muted);
+  --chart-grid: oklch(0 0 0 / 0.07);
+  --chart-border: var(--border);
+  --chart-crosshair: oklch(0.46 0.022 80 / 0.55);
+  --chart-up: var(--positive);
+  --chart-down: var(--negative);
+  --chart-accent: var(--accent);
+  --chart-info: var(--info);
+  --chart-muted: oklch(0.52 0.018 80);
+  --chart-compare: oklch(0.52 0.20 305);
+  --draw-stroke: var(--accent);
+  --draw-selected: var(--info);
+  --draw-fill: oklch(0.62 0.15 68 / 0.14);
+  --draw-label: var(--on-accent);
 }
 
 /* ---------- Retro theme (purple-phosphor terminal) ----------
@@ -178,6 +249,7 @@ body {
   --text-muted: oklch(0.77 0.06 300);
   --text-faint: oklch(0.62 0.07 300);
   --accent: oklch(0.74 0.17 300);
+  --accent-text: var(--accent);
   --accent-strong: oklch(0.68 0.20 300);
   --accent-weak: oklch(0.74 0.17 300 / 0.18);
   --accent-glow: oklch(0.74 0.19 300 / 0.42);
@@ -189,6 +261,29 @@ body {
   --info-weak: oklch(0.82 0.13 200 / 0.16);
   --shadow: 0 1px 0 oklch(0.74 0.18 300 / 0.06) inset, 0 12px 34px oklch(0 0.02 300 / 0.55);
   --shadow-lg: 0 1px 0 oklch(0.74 0.18 300 / 0.08) inset, 0 20px 48px oklch(0 0.02 300 / 0.66);
+  /* Negative is already amber here, so "caution" moves to a phosphor yellow. */
+  --caution: oklch(0.86 0.15 105);
+  --caution-weak: oklch(0.86 0.15 105 / 0.16);
+  --on-accent: oklch(0.15 0.03 300);
+  --on-negative: oklch(0.15 0.03 300);
+  --switch-knob: oklch(0.96 0.03 300);
+  --scrim: oklch(0.08 0.03 300 / 0.55);
+  --scrim-strong: oklch(0.08 0.03 300 / 0.68);
+  --chart-text: var(--text-muted);
+  --chart-grid: var(--grid);
+  --chart-border: var(--border);
+  --chart-crosshair: oklch(0.77 0.06 300 / 0.6);
+  --chart-up: var(--positive);
+  --chart-down: var(--negative);
+  --chart-accent: var(--accent);
+  --chart-info: var(--info);
+  --chart-muted: oklch(0.64 0.07 300);
+  /* The accent is already violet here, so the SPY overlay goes phosphor pink. */
+  --chart-compare: oklch(0.80 0.15 350);
+  --draw-stroke: var(--accent);
+  --draw-selected: var(--info);
+  --draw-fill: oklch(0.74 0.17 300 / 0.14);
+  --draw-label: var(--on-accent);
 }
 
 /* ---------- Warm theme (cream / amber paper) ---------- */
@@ -205,19 +300,41 @@ body {
   --border-strong: oklch(0.76 0.036 70);
   --text: oklch(0.28 0.032 60);
   --text-muted: oklch(0.48 0.034 62);
-  --text-faint: oklch(0.60 0.030 66);
+  --text-faint: oklch(0.52 0.030 66);
   --accent: oklch(0.60 0.15 55);
+  --accent-text: oklch(0.48 0.14 52);
   --accent-strong: oklch(0.52 0.16 50);
   --accent-weak: oklch(0.60 0.15 55 / 0.15);
   --accent-glow: oklch(0.60 0.15 55 / 0.30);
-  --positive: oklch(0.55 0.15 150);
+  --positive: oklch(0.44 0.13 150);
   --positive-weak: oklch(0.55 0.15 150 / 0.14);
-  --negative: oklch(0.54 0.20 25);
+  --negative: oklch(0.50 0.20 25);
   --negative-weak: oklch(0.54 0.20 25 / 0.13);
-  --info: oklch(0.52 0.12 232);
+  --info: oklch(0.46 0.12 232);
   --info-weak: oklch(0.52 0.12 232 / 0.14);
   --shadow: 0 1px 2px oklch(0.55 0.04 60 / 0.20), 0 12px 30px oklch(0.55 0.04 60 / 0.16);
   --shadow-lg: 0 2px 4px oklch(0.55 0.04 60 / 0.18), 0 20px 44px oklch(0.55 0.04 60 / 0.22);
+  --caution: oklch(0.50 0.12 90);
+  --caution-weak: oklch(0.58 0.12 90 / 0.16);
+  --on-accent: oklch(0.17 0.03 60);
+  --on-negative: oklch(0.99 0.01 85);
+  --switch-knob: oklch(0.995 0.01 85);
+  --scrim: oklch(0.25 0.03 60 / 0.4);
+  --scrim-strong: oklch(0.25 0.03 60 / 0.55);
+  --chart-text: var(--text-muted);
+  --chart-grid: oklch(0.45 0.05 60 / 0.10);
+  --chart-border: var(--border);
+  --chart-crosshair: oklch(0.48 0.034 62 / 0.55);
+  --chart-up: var(--positive);
+  --chart-down: var(--negative);
+  --chart-accent: var(--accent);
+  --chart-info: var(--info);
+  --chart-muted: oklch(0.52 0.030 66);
+  --chart-compare: oklch(0.50 0.18 320);
+  --draw-stroke: var(--accent);
+  --draw-selected: var(--info);
+  --draw-fill: oklch(0.60 0.15 55 / 0.14);
+  --draw-label: var(--on-accent);
 }
 
 body {

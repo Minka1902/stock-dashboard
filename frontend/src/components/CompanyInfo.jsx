@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { formatCount, formatCurrencyCompact } from "../lib/format";
+import { currencyForSymbol, formatCount, formatMoney } from "../lib/format";
+import Tooltip from "./Tooltip";
+import Term from "./Term";
 import styles from "./CompanyInfo.module.css";
 
 const SUMMARY_CLAMP = 320;
@@ -12,13 +14,29 @@ function num(v, digits = 2) {
   return v == null ? "—" : Number(v).toFixed(digits);
 }
 
-function Row({ label, value, title }) {
+// The value cell is ellipsised, so it shows its full text on hover — but only
+// when it is actually cut off.
+function Row({ label, value }) {
   return (
     <div className={styles.row}>
       <span className={styles.rowLabel}>{label}</span>
-      <span className={styles.rowValue} title={title}>{value}</span>
+      <Tooltip truncate><span className={styles.rowValue}>{value}</span></Tooltip>
     </div>
   );
+}
+
+// Officer pay is in the company's reporting currency (Yahoo financialCurrency),
+// which can differ from the listing's: TEVA.TA trades in ₪ but reports in USD,
+// LUMI.TA reports in ILS. When the code isn't known it is USD by Yahoo's
+// convention, and it's spelled out wherever it differs from the share price's
+// currency so a "$" is never read as shekels (or the reverse).
+function officerPayFormatter(profile, ticker) {
+  const payCcy = profile?.financial_currency || "USD";
+  const listingCcy = currencyForSymbol(ticker) || "USD";
+  return (n) => {
+    const money = formatMoney(n, payCcy, { compact: true });
+    return payCcy === listingCcy ? money : `${money} ${payCcy}`;
+  };
 }
 
 function Section({ title, children }) {
@@ -42,6 +60,7 @@ export default function CompanyInfo({ company, ticker, show = {} }) {
 
   const profile = company?.profile || null;
   const officers = company?.officers || [];
+  const payLabel = officerPayFormatter(profile, ticker);
   const holders = company?.holders || [];
   const name = company?.name || null;
 
@@ -92,7 +111,8 @@ export default function CompanyInfo({ company, ticker, show = {} }) {
           )}
           <div className={styles.rows}>
             <Row label="Market cap" value={profile?.market_cap != null
-              ? formatCurrencyCompact(profile.market_cap) : "—"} />
+              // In the listing's currency (Yahoo reports a .TA market cap in shekels).
+              ? formatMoney(profile.market_cap, currencyForSymbol(ticker) || "USD", { compact: true }) : "—"} />
             <Row label="Employees" value={profile?.employees != null
               ? formatCount(profile.employees) : "—"} />
             <Row label="Headquarters" value={location || "—"} />
@@ -112,10 +132,10 @@ export default function CompanyInfo({ company, ticker, show = {} }) {
       {wants.valuation && profile && (
         <Section title="Valuation">
           <div className={styles.rows}>
-            <Row label="P/E (trailing)" value={num(profile.pe_ratio)} />
-            <Row label="P/E (forward)" value={num(profile.forward_pe)} />
-            <Row label="PEG" value={num(profile.peg_ratio)} />
-            <Row label="Price / book" value={num(profile.pb_ratio)} />
+            <Row label={<Term term="pe_ratio">P/E (trailing)</Term>} value={num(profile.pe_ratio)} />
+            <Row label={<Term term="pe_ratio">P/E (forward)</Term>} value={num(profile.forward_pe)} />
+            <Row label={<Term term="peg">PEG</Term>} value={num(profile.peg_ratio)} />
+            <Row label={<Term term="price_to_book">Price / book</Term>} value={num(profile.pb_ratio)} />
             <Row label="Revenue growth" value={pct(profile.revenue_growth)} />
             <Row label="Profit margin" value={pct(profile.profit_margin)} />
           </div>
@@ -132,7 +152,7 @@ export default function CompanyInfo({ company, ticker, show = {} }) {
             <ul className={styles.holders}>
               {holders.map((h) => (
                 <li key={h.holder} className={styles.holder}>
-                  <span className={styles.holderName}>{h.holder}</span>
+                  <Tooltip truncate><span className={styles.holderName}>{h.holder}</span></Tooltip>
                   <span className={styles.holderPct}>{pct(h.pct_held, 2)}</span>
                   <span className={styles.holderMeta}>
                     {h.shares != null ? formatCount(h.shares) : "—"} sh
@@ -153,11 +173,11 @@ export default function CompanyInfo({ company, ticker, show = {} }) {
             <ul className={styles.officers}>
               {officers.map((o) => (
                 <li key={o.name} className={styles.officer}>
-                  <span className={styles.officerName}>{o.name}</span>
+                  <Tooltip truncate><span className={styles.officerName}>{o.name}</span></Tooltip>
                   <span className={styles.officerTitle}>{o.title || "—"}</span>
                   <span className={styles.officerMeta}>
                     {o.age ? `age ${o.age}` : ""}
-                    {o.pay ? `${o.age ? " · " : ""}${formatCurrencyCompact(o.pay)}` : ""}
+                    {o.pay ? `${o.age ? " · " : ""}${payLabel(o.pay)}` : ""}
                   </span>
                 </li>
               ))}

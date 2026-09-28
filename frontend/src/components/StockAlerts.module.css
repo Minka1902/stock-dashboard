@@ -71,7 +71,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-weak);
   border-radius: var(--r-xs);
   padding: 1px 5px;
@@ -88,7 +88,7 @@
   border: none;
   background: none;
   padding: 2px 0;
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--mono);
   font-size: 10.5px;
   cursor: pointer;

@@ -4,7 +4,9 @@ import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import TickerLabel from "./TickerLabel";
-import { formatPercentSigned } from "../lib/format";
+import HintTip from "./Tooltip";
+import InfoTip from "./InfoTip";
+import { currencyForSymbol, formatPercentSigned, formatPrice } from "../lib/format";
 import styles from "./SeasonalityPanel.module.css";
 
 const COMPACT_LIMIT = 5;
@@ -82,17 +84,21 @@ function WindowCell({ window, lookback }) {
   const stats = summarize(window.per_year, lookback);
   return (
     <div className={styles.window}>
-      <div className={styles.wlabel} title={meta.hint}>{meta.label}</div>
+      <HintTip content={meta.hint}>
+        <div className={styles.wlabel} tabIndex={0}>{meta.label}</div>
+      </HintTip>
       {stats ? (
         <>
           <div className={styles.wstats}>
-            <span
-              className={styles.avg}
-              data-tone={stats.avg > 0 ? "pos" : stats.avg < 0 ? "neg" : "flat"}
-              title={`Median ${formatPercentSigned(stats.median)} · best ${formatPercentSigned(stats.best)} · worst ${formatPercentSigned(stats.worst)}`}
-            >
-              {formatPercentSigned(stats.avg)}
-            </span>
+            <HintTip content={`Average ${formatPercentSigned(stats.avg)} · median ${formatPercentSigned(stats.median)} · best ${formatPercentSigned(stats.best)} · worst ${formatPercentSigned(stats.worst)}`}>
+              <span
+                className={styles.avg}
+                data-tone={stats.avg > 0 ? "pos" : stats.avg < 0 ? "neg" : "flat"}
+                tabIndex={0}
+              >
+                {formatPercentSigned(stats.avg)}
+              </span>
+            </HintTip>
             <span className={styles.win}>
               <strong>{stats.ups}/{stats.n}</strong> up
             </span>
@@ -108,7 +114,7 @@ function WindowCell({ window, lookback }) {
 
 // "Where was this stock on this day 1/2/5/max years ago" — close then, and
 // the move from that close to the current price when a live quote is known.
-function AnchorStrip({ anchors, price }) {
+function AnchorStrip({ anchors, price, currency }) {
   if (!anchors || anchors.length === 0) return null;
   return (
     <div className={styles.anchorStrip}>
@@ -116,18 +122,19 @@ function AnchorStrip({ anchors, price }) {
         const delta = price && an.close ? (price / an.close - 1) * 100 : null;
         const label = an.years_ago === "max" ? "earliest" : `${an.years_ago}y ago`;
         return (
-          <span
+          <HintTip
             key={String(an.years_ago)}
-            className={styles.anchorChip}
-            title={`Close on ${an.date}${delta != null ? ` → ${delta >= 0 ? "+" : ""}${delta.toFixed(1)}% to now` : ""}`}
+            content={`Close on ${an.date}${delta != null ? ` → ${delta >= 0 ? "+" : ""}${delta.toFixed(1)}% to now` : ""}`}
           >
-            <em>{label}</em> ${an.close != null ? Number(an.close).toFixed(2) : "—"}
-            {delta != null && (
-              <b data-tone={delta >= 0 ? "pos" : "neg"}>
-                {delta >= 0 ? "+" : ""}{delta.toFixed(1)}%
-              </b>
-            )}
-          </span>
+            <span className={styles.anchorChip} tabIndex={0}>
+              <em>{label}</em> {formatPrice(an.close, currency)}
+              {delta != null && (
+                <b data-tone={delta >= 0 ? "pos" : "neg"}>
+                  {delta >= 0 ? "+" : ""}{delta.toFixed(1)}%
+                </b>
+              )}
+            </span>
+          </HintTip>
         );
       })}
     </div>
@@ -162,7 +169,7 @@ export default function SeasonalityPanel({ data, settings, quotes, loading, busy
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Seasonality" />}
         <div>
-          <h2 className={styles.title}>Seasonality — This Time in Past Years</h2>
+          <h2 className={styles.title}>Seasonality — This Time in Past Years <InfoTip term="seasonality" /></h2>
           <p className={styles.subtitle}>
             How each watchlist ticker historically moved around today's date · {lookbackLabel} ·
             green/red bars are individual years (configure in Settings)
@@ -207,7 +214,8 @@ export default function SeasonalityPanel({ data, settings, quotes, loading, busy
                         ))
                       )}
                     </div>
-                    <AnchorStrip anchors={anchors} price={quotes?.[s.ticker]?.price} />
+                    <AnchorStrip anchors={anchors} price={quotes?.[s.ticker]?.price}
+                                 currency={quotes?.[s.ticker]?.currency || currencyForSymbol(s.ticker)} />
                   </div>
                 </li>
               );

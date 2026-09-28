@@ -83,6 +83,16 @@ accounts, separate TOTP). See `windows/README.md`, especially the note that
 `STOCKS_CORS_ORIGINS[0]` doubles as the OAuth post-login redirect target
 (`routes_oauth.py::_frontend_origin`) and must stay the app's own origin.
 
+**In-app update** (Info → Updates): `app/updater.py` compares the checkout against
+`origin/main` using git, with a 6-hourly scheduler job and a 1h cache. `app/routes_update.py`
+serves `GET /api/update/status` to any user. `POST /api/update/apply` is admin-only and refuses
+with 409 unless the checkout is on `main`, has no tracked changes, and can fast-forward. It
+spawns a detached `windows/update.ps1` (pull → pip → npm build → restart, rolling back on
+failure), which writes progress to `<LOG_DIR>/update-status.json`. `/api/health` carries
+`commit`, which is how the UI knows the restarted server is on the new code.
+`backend/app/version.py` is the version source of truth, and `frontend/package.json` mirrors
+it. See `windows/README.md` → "Updating from the app".
+
 ### Desktop app (`desktop/`) — Electron shell
 ```bash
 cd desktop
@@ -121,8 +131,9 @@ No root package manager, so the companions copy rather than share:
   Routes needing the user take `Depends(auth.get_current_user)`.
 - **Per-user tables**: `watchlists` (named lists, PK `id`), `watchlist` (items, PK
   `(watchlist_id, ticker)` — `user_id` is denormalized onto each row), `portfolio` (PK
-  `(user_id, ticker)`), `notify_profile`
-  (PK `user_id`), `alert_reads`. **Shared**: all market-data tables, `stock_analysis` (stored
+  `(user_id, ticker)`, each row has a native `currency`), `notify_profile`
+  (PK `user_id`, carries `base_currency`), `alert_reads`, `fx_watch` (carousel FX pairs, PK
+  `(user_id, pair)`). **Shared**: all market-data tables, `stock_analysis` (stored
   *unsized*; `analysis.apply_sizing` personalizes at read time), `app_settings` (PUT is
   admin-only). The first registered account becomes admin and claims legacy `user_id=0` rows
   (`db.claim_legacy_rows`); old single-user DBs are rebuilt in place by `init_schema`.
@@ -136,7 +147,7 @@ No root package manager, so the companions copy rather than share:
   must call it. A third creation path that forgets to is the regression to watch for.
   Deliberately no first-user bootstrap exemption: it would be a race between the operator and
   the first stranger to load the URL, and the winner gets `is_admin` plus `claim_legacy_rows`.
-- `db.delete_user` sweeps all ten per-user tables explicitly. Only `sessions`,
+- `db.delete_user` sweeps all twelve per-user tables explicitly (incl. `drawings`, `drawing_drafts` and `fx_watch`). Only `sessions`,
   `recovery_codes` and `oauth_identities` declare `ON DELETE CASCADE`, so deleting the `users`
   row alone strands the rest under an id SQLite may reissue. Keep `_PER_USER_TABLES` in step
   with the schema.
@@ -174,27 +185,50 @@ The app can be served on the internet through a tunnel (Tailscale Funnel — see
 ## Backend architecture
 
 The whole pipeline hangs off the **`SOURCES` registry** in `app/main.py`:
-`name -> (fetch_callable, store_fn, min_interval_seconds | None)`.
+`name -> SourceSpec(fetch, store, min_interval, retry_interval, force_on_daily)`. The cadence
+fields only **seed** each source's row in `source_schedules`; after that the row (editable on
+the Server page) is what runs.
 
 - **`app/sources/<name>.py`** — one isolated module per source exposing `fetch(...) -> list[Model]`.
   Network-free parsing helpers are kept pure and unit-tested directly; `fetch` does the throttled
-  HTTP. Sources never write to the DB themselves.
+  HTTP. Sources never write to the DB themselves. A fetch that must wait (a rate-limit cooldown)
+  raises `ingest.SourceDeferred(reason, retry_after_seconds)` — GDELT's 429 does.
 - **`app/ingest.run_source`** — the only orchestrator. Calls `fetch()`, passes results to the
-  `store_fn`, and stamps source status. **It never raises**: any exception is captured as the
-  source's `error: ...` status. `min_interval_seconds` lets slow/rate-limited sources (congress,
-  seasonality) skip a refresh cycle.
+  `store_fn`, stamps source status and appends a `source_runs` row, returning a `RunResult`.
+  **It never raises and never gates**: outcomes are `ok`, `error` (brief status + full traceback on
+  both the status row and the run row) or `deferred` (reason + `next_attempt_at`). There is no
+  `skipped` outcome any more (only on legacy rows).
+- **`app/schedules.py`** — pure schedule logic: validation, APScheduler triggers (interval, with an
+  optional weekday filter, or HH:MM times on days in a tz) and `next_due` (never run → now; ok →
+  one interval/next slot after the last success; error → last attempt + retry; deferred → the
+  source's own next attempt; anything past → now, so a missed run happens late, never not at all).
 - **`app/db.py`** — the *single* place any SQLite access lives. `init_schema` is idempotent
   (`CREATE TABLE IF NOT EXISTS` + `_try_add_column` for additive migrations). One shared connection
   (`check_same_thread=False`, `Row` factory) is created at import time in `main.py`.
 - **`app/models.py`** — Pydantic models that are the common schema between sources, DB, and API.
 - **`app/main.py`** — FastAPI routes (mostly thin `db.get_* -> model_dump()` reads) plus the
-  APScheduler wiring in `lifespan`: an interval job (`_refresh_all`, default 180s) and a pre-market
-  cron job (`_send_daily_digest`).
+  scheduler wiring in `lifespan`: **one APScheduler job per source** (`src:<name>`) plus `src:derived`,
+  `daily_analysis`, `daily_digest` and `prune_history`, all on the single-thread `refresh` executor.
 
-**Ordering matters in `SOURCES` (dict insertion order is load order):**
-- `boom_score` is a *pure DB computation* (no network) and must run **after** every source it reads.
-- `alerts` must run **last** — it diffs the freshly computed boom scores against the prior
-  `alert_state` snapshot to fire transition events exactly once (deduped by `dedup_key`).
+**Scheduling rules (task 9: nothing is silently skipped):**
+- Every job runs on one serial thread (`_refresh_executor`, shared with manual `/api/refresh` and
+  run-now), so `refresh_conn` never has two writers. A job due while another runs **queues and runs
+  late** (`misfire_grace_time=None`); a fire while its own previous run is still queued/running is
+  recorded as `coalesced` (`max_instances=1`). The Server page lists what is queued.
+- After each run its outcome re-arms its own job via `schedules.next_due` (`_after_run`); errors and
+  deferrals get that time written onto their run row as `next_attempt_at`.
+- First runs after startup/edits are held back `SCHEDULER_STARTUP_DELAY_SECONDS` (staggered 1s per
+  source, registry order) — also what keeps `TestClient` lifespans from firing real fetches.
+- Shutdown pauses the scheduler and drains the pool **before** `scheduler.shutdown()`: that call
+  holds the job-store lock while waiting for executors, and a finishing run needs that lock to
+  re-arm itself — draining inside it deadlocks.
+- A non-forced manual refresh of a source with a registry `min_interval` that is still fresh
+  answers `queued: false` with the reason and next run (no run row); `force=1` is admin-only.
+
+**Derived step:** `boom_score` (a pure DB computation that reads every other source) then `alerts`
+(diffs the fresh boom scores against the prior `alert_state` snapshot to fire transition events
+exactly once, deduped by `dedup_key`) run together, in that order, as the `derived` job. It has its
+own schedule row and is pulled forward to `DERIVED_DEBOUNCE_SECONDS` after any upstream success.
 
 **Boom Score** (`app/sources/boom_score.py`) combines all signals into a weighted `-90…+100`
 composite per watchlist ticker. `WEIGHTS` defines each component's contribution; congress weight is

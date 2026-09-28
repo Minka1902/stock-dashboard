@@ -1,8 +1,10 @@
 import Icon from "./Icon";
 import SourceGuide from "./SourceGuide";
+import UpdatesSection from "./UpdatesSection";
 import GLOSSARY from "../lib/glossary";
 import { MODULE_SOURCE, SOURCE_META, sourceState } from "../lib/sources";
 import { prefersReducedMotion } from "../lib/motionConfig";
+import { isUpdateAvailable, useUpdateStatus } from "../hooks/useUpdateStatus";
 import styles from "./InfoPanel.module.css";
 
 // Resolves a module card's data source into a display line + live status dot state.
@@ -171,6 +173,7 @@ const SECTIONS = [
   { id: "info-modules", label: "Modules" },
   { id: "info-sources", label: "Data sources" },
   { id: "info-glossary", label: "Glossary" },
+  { id: "info-updates", label: "Updates" },
 ];
 
 /**
@@ -180,6 +183,8 @@ const SECTIONS = [
  */
 export default function InfoPanel({ onNavigate, sources }) {
   const statusByName = new Map((sources || []).map((s) => [s.source, s]));
+  const { data: updateData } = useUpdateStatus();
+  const updateAvailable = isUpdateAvailable(updateData);
 
   const jump = (id) => {
     document.getElementById(id)?.scrollIntoView({
@@ -204,6 +209,9 @@ export default function InfoPanel({ onNavigate, sources }) {
         {SECTIONS.map((s) => (
           <button key={s.id} type="button" className={styles.chip} onClick={() => jump(s.id)}>
             {s.label}
+            {s.id === "info-updates" && updateAvailable && (
+              <span className={styles.chipDot} role="img" aria-label="update available" />
+            )}
           </button>
         ))}
       </nav>
@@ -234,7 +242,6 @@ export default function InfoPanel({ onNavigate, sources }) {
                       type="button"
                       className={styles.card}
                       onClick={() => onNavigate?.(m.key)}
-                      title={`Go to ${m.name}`}
                     >
                       <span className={styles.cardHead}>
                         <span className={styles.cardIcon}><Icon name={m.icon} size={18} /></span>
@@ -274,6 +281,12 @@ export default function InfoPanel({ onNavigate, sources }) {
               </div>
             ))}
           </dl>
+        </div>
+
+        {/* ---- Updates ---- */}
+        <div id="info-updates" className={styles.section}>
+          <h3 className={styles.sectionTitle}>Updates</h3>
+          <UpdatesSection />
         </div>
       </div>
     </section>

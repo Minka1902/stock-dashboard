@@ -80,7 +80,7 @@
 .symbol {
   font-family: var(--mono);
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
   min-width: 56px;
 }
 
@@ -134,7 +134,7 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.watchBtn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.watchBtn:hover:not(:disabled) { color: var(--accent-text); border-color: var(--accent); }
 .watchBtn:disabled { color: var(--positive); border-color: transparent; background: var(--positive-weak); cursor: default; }
 
 .pl {
@@ -257,7 +257,7 @@
   height: 48px;
   border-radius: var(--r-sm);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
   margin-bottom: var(--s-2);
 }
 .emptyTitle {
@@ -275,7 +275,7 @@
   border-radius: var(--r-sm);
   border: 1px solid var(--accent-weak);
   background: var(--accent-weak);
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--mono);
   font-weight: 600;
   cursor: pointer;

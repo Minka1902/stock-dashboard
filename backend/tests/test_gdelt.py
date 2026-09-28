@@ -80,3 +80,34 @@ def test_fetch_for_tickers_tags_and_survives_failures(monkeypatch):
     monkeypatch.setattr(gdelt, "fetch", stub_fetch)
     out = gdelt.fetch_for_tickers(["NOC", "BAD", "LMT"], {"NOC": "Northrop Grumman Corp"}, 5)
     assert [a.ticker for a in out] == ["NOC", "LMT"]
+
+
+def test_http_429_defers_the_source_instead_of_failing_it(monkeypatch):
+    """A 429 is GDELT asking us to come back later — a deferral with a next
+    attempt, not an error, and the cooldown then short-circuits the network."""
+    import httpx
+    import pytest
+    from app import ingest
+
+    hits = []
+    real_client = httpx.Client
+
+    def handler(request):
+        hits.append(request.url)
+        return httpx.Response(429, request=request)
+
+    monkeypatch.setattr(gdelt, "_cooldown_until", 0.0)
+    monkeypatch.setattr(
+        gdelt.httpx, "Client",
+        lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw))
+
+    with pytest.raises(ingest.SourceDeferred) as first:
+        gdelt.fetch("q", 5)
+    assert first.value.retry_after_seconds > 0
+    assert "429" in first.value.reason
+    assert len(hits) == 1
+
+    with pytest.raises(gdelt.GdeltCoolingDown) as second:
+        gdelt.fetch("q", 5)
+    assert 0 < second.value.retry_after_seconds <= gdelt.config.GDELT_COOLDOWN_SECONDS
+    assert len(hits) == 1  # cooling down: no second request

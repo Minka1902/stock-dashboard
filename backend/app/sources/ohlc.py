@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from app import currency
 from app.models import OHLCBar, OHLCSeries
 
 _URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
@@ -24,7 +25,9 @@ _SERIES = [("daily", "1d", "2y"), ("weekly", "1wk", "2y")]
 
 
 def parse_bars(payload: dict) -> list[OHLCBar]:
-    result = (payload.get("chart") or {}).get("result") or []
+    """Bars in the listing's major currency (TASE agorot -> shekels), so every
+    analysis level computed from stored OHLC is in ILS, not ILA."""
+    result = (currency.normalize_chart_payload(payload).get("chart") or {}).get("result") or []
     if not result:
         return []
     r = result[0]

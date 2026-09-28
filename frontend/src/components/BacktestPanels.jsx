@@ -3,6 +3,7 @@ import Segmented from "./Segmented";
 import Skeleton from "./Skeleton";
 import { getSignalReplay, getTrackRecord } from "../api";
 import styles from "./BacktestPanels.module.css";
+import Term from "./Term";
 
 /** null means "we don't know", and must never render as 0. */
 function num(v, suffix = "") {
@@ -118,8 +119,8 @@ function TrackRecord() {
               <tr>
                 <th>{groupBy === "ticker" ? "Stock" : "Bucket"}</th>
                 <th className={styles.num}>Total</th>
-                <th className={styles.num}>Scored</th><th className={styles.num}>Pending</th>
-                <th className={styles.num}>Hit rate</th><th className={styles.num}>Median</th>
+                <th className={styles.num}><Term tip="Entries whose forward window has ended, so a price change can be measured">Scored</Term></th><th className={styles.num}><Term tip="Entries whose window has not ended yet — counted neither as hits nor as misses">Pending</Term></th>
+                <th className={styles.num}><Term tip="Share of scored entries whose price was higher at the end of the window. It does not look at which way the suggestion pointed.">Hit rate</Term></th><th className={styles.num}><Term tip="Median price change over the window, across scored entries">Median</Term></th>
                 <th className={styles.num}>Best</th><th className={styles.num}>Worst</th>
               </tr>
             </thead>
@@ -182,8 +183,8 @@ function SignalReplay() {
             <thead>
               <tr>
                 <th>Threshold</th><th className={styles.num}>Crossings</th>
-                <th className={styles.num}>Scored</th><th className={styles.num}>Pending</th>
-                <th className={styles.num}>Hit rate</th><th className={styles.num}>Median</th>
+                <th className={styles.num}><Term tip="Entries whose forward window has ended, so a price change can be measured">Scored</Term></th><th className={styles.num}><Term tip="Entries whose window has not ended yet — counted neither as hits nor as misses">Pending</Term></th>
+                <th className={styles.num}><Term tip="Share of scored entries whose price was higher at the end of the window. It does not look at which way the suggestion pointed.">Hit rate</Term></th><th className={styles.num}><Term tip="Median price change over the window, across scored entries">Median</Term></th>
                 <th>Sample</th>
               </tr>
             </thead>
