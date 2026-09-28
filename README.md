@@ -158,7 +158,7 @@ All backend configuration comes from `STOCKS_*` environment variables with defau
 | `STOCKS_CORS_ORIGINS` | `http://localhost:5173` | Allowed origins, comma-separated. `*` is rejected. The first entry is also the OAuth post-login redirect |
 | `STOCKS_REFRESH_SECONDS` | `180` | Default source cadence |
 | `STOCKS_SCHEDULE_TZ` | `Asia/Jerusalem` | Default timezone for time-of-day schedules |
-| `STOCKS_SEC_USER_AGENT` | *(placeholder)* | Contact user agent required by SEC EDGAR |
+| `STOCKS_SEC_USER_AGENT` | *(maintainer's contact)* | Contact user agent required by SEC EDGAR — set your own |
 | `STOCKS_REGISTRATION` | `open` | `open` \| `invite` \| `closed` |
 | `STOCKS_INVITE_CODE` | — | Required when registration is `invite` |
 | `STOCKS_COOKIE_SECURE` | `0` | Set to `1` when served over HTTPS |
