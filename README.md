@@ -79,6 +79,16 @@ Architecturally it is a **FastAPI + SQLite + APScheduler** backend that ingests 
 
 ## Installation
 
+**Windows installer.** Download
+[`SignalSetup.exe`](https://github.com/Minka1902/stock-dashboard/releases/latest/download/SignalSetup.exe)
+and run it (one UAC prompt). It installs git, Node.js and Python machine-wide through winget if they are
+missing, clones `main` into `C:\Program Files\SignalDashboard\repo`, installs the dependencies, registers the
+Windows service and adds a **Signal** Start Menu shortcut. Every launch of the app then checks GitHub for
+updates and offers to apply them. The exe is unsigned, so SmartScreen asks first: *More info → Run anyway*.
+Details in [`windows/README.md`](windows/README.md#one-click-installer).
+
+**From source.**
+
 ```bash
 git clone https://github.com/Minka1902/stock-dashboard.git
 cd stock-dashboard

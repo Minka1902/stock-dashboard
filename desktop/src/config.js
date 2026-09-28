@@ -37,6 +37,13 @@ export const MAX_NOTIFICATIONS_PER_POLL = 3;
 export const HEALTH_TIMEOUT_MS = 60_000;
 export const HEALTH_INTERVAL_MS = 1_000;
 
+/** How often the launch update check re-reads /api/health while an update runs. */
+export const UPDATE_POLL_MS = 2_000;
+
+/** Mirrors backend/app/updater.py STALE_RUN_SECONDS: a "running" update older
+ *  than this is a dead updater, and the launch check stops waiting on it. */
+export const STALE_RUN_MS = 30 * 60_000;
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(here, "..");
 export const REPO_ROOT = path.resolve(ROOT, "..");

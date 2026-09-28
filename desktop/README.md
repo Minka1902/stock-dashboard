@@ -96,12 +96,32 @@ that must be kept in sync — the same convention the extension already follows:
 | `"app:navigate"` in `src/preload.cjs` | `NAV_EVENT` in `frontend/src/lib/nav.js` |
 | Tray menu items | `commandItems` in `frontend/src/App.jsx` |
 | Poll cadence, `MAX_NOTIFICATIONS_PER_POLL` | `extension/src/background/index.js` |
+| `STALE_RUN_MS`, `isApplyRunning` in `src/updates/pending.js` | `STALE_RUN_SECONDS`, `is_apply_running` in `backend/app/updater.py` |
 
 The tray menu deliberately omits "Refresh all sources" (there is only
 `POST /api/refresh/{source}`, no bulk route, so it would mean duplicating
 `EXTERNAL_SOURCES` from `useDashboardData.js` here) and the theme/dyslexia
 toggles (they live in `SettingsContext` with no main-process representation).
 All three are one Ctrl+K away in the app.
+
+### Updates on launch
+
+Once per launch, `src/updates/launch.js` calls `GET /api/update/status?refresh=true`
+and, if `main` has moved, offers **Update now / Later** in a native dialog.
+Non-admins, and installs the backend can't update (not on `main`, tracked
+changes), get an info box with the reason instead. `src/updates/pending.js` is
+that decision, kept pure and unit-tested.
+
+"Update now" is the same `POST /api/update/apply` as Info → Updates, so the
+service does the pull, pip, build, restart and rollback as LocalSystem, with no
+UAC prompt. The window then goes to `/info`, whose `UpdatesSection` follows
+the running update on its own. When `/api/health` reports a new `commit`, the
+app relaunches itself, because the pull also changed `desktop/`, which this
+process loaded at startup.
+
+The check needs a signed-in session. A 401 leaves it pending until the
+session cookie changes (tokens rotate on sign-in, and the SPA's login changes
+no URL) or the next alert poll.
 
 ### Service control
 
@@ -128,4 +148,7 @@ it would be a privilege-escalation hole in a LocalSystem service. It isn't done.
 - **Double notifications.** If you also run the browser extension against the
   same backend, high-severity alerts toast twice — the two keep independent seen
   stores by design. Turn off `notifyHighSeverity` in whichever you use less.
-- **No packaged installer yet.** Distribution is scripts only.
+- **Desktop npm deps are not updated in place.** `update.ps1` cannot reinstall
+  `desktop\node_modules` while `electron.exe` is running (Windows locks it), so an
+  Electron bump arrives on the next `SignalSetup.exe` run (repair), not
+  through "Update now".
