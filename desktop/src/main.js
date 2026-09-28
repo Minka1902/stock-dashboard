@@ -6,9 +6,10 @@
 
 import path from "node:path";
 
-import { Notification, app, ipcMain, net, session, shell } from "electron";
+import { Notification, app, ipcMain, session, shell } from "electron";
 
 import { APP_ORIGIN, LOG_DIR, POLL_MS, TRAY_ICON } from "./config.js";
+import { apiPost } from "./api.js";
 import { AlertPoller } from "./alerts/poller.js";
 import { JsonStore } from "./alerts/store.js";
 import { AppTray } from "./tray.js";
@@ -18,6 +19,7 @@ import {
   WAITING_PAGE,
 } from "./window.js";
 import { queryService, restartServiceElevated } from "./service.js";
+import { checkForUpdate, waitForNewCommit } from "./updates/launch.js";
 
 // Required for Windows toast identity. Must be set before app is ready.
 app.setAppUserModelId("com.signal.dashboard");
@@ -36,6 +38,7 @@ let poller = null;
 let store = null;
 let onAppOrigin = false;   // is the window showing the dashboard, or waiting.html?
 let healthAbort = null;
+let updateCheck = "pending"; // "pending" | "running" | "done" — once per launch
 
 app.isQuitting = false;
 
@@ -96,6 +99,13 @@ app.whenReady().then(async () => {
     },
   });
 
+  // Tokens rotate on every auth state upgrade (auth.py), so a new cookie is
+  // the main process's only signal that the user just signed in — the SPA's
+  // login flow changes no URL.
+  session.defaultSession.cookies.on("changed", (_e, _cookie, _cause, removed) => {
+    if (!removed) void checkUpdateOnce();
+  });
+
   poller = new AlertPoller(store, onPollState, navigate);
 
   await showWaitingThenLoad();
@@ -147,12 +157,35 @@ async function showWaitingThenLoad() {
   await win.loadURL(APP_ORIGIN);
   onAppOrigin = true;
   tray?.update({ reachable: true, health });
+  void checkUpdateOnce();
+}
+
+/**
+ * The launch update check. It needs a signed-in session, so a 401 leaves it
+ * pending and the next trigger (sign-in cookie, poll tick) tries again.
+ */
+async function checkUpdateOnce() {
+  if (updateCheck !== "pending" || !onAppOrigin) return;
+  updateCheck = "running";
+  const { status, commit } = await checkForUpdate(win);
+  updateCheck = status === "retry" ? "pending" : "done";
+  if (status !== "applied") return;
+
+  // Info → Updates resumes following a running update on its own.
+  navigate("/info");
+  if (await waitForNewCommit(commit)) {
+    // The pull also changed desktop/, which this process loaded at startup.
+    app.relaunch();
+    app.isQuitting = true;
+    app.quit();
+  }
 }
 
 // -------------------------------------------------------------------- state --
 
-function onPollState({ unread, reachable }) {
+function onPollState({ unread, authed, reachable }) {
   tray?.update({ unread, reachable });
+  if (authed) void checkUpdateOnce();
 }
 
 async function refreshServiceState() {
@@ -187,13 +220,7 @@ function navigate(routePath) {
 
 async function markAllRead() {
   try {
-    await net.fetch(`${APP_ORIGIN}/api/alerts/read`, {
-      method: "POST",
-      credentials: "include",
-      session: session.defaultSession,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ all: true }),
-    });
+    await apiPost("/api/alerts/read", { all: true });
   } catch (err) {
     console.error("mark all read failed:", err);
   }

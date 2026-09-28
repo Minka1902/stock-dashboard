@@ -93,6 +93,12 @@ failure), which writes progress to `<LOG_DIR>/update-status.json`. `/api/health`
 `backend/app/version.py` is the version source of truth, and `frontend/package.json` mirrors
 it. See `windows/README.md` → "Updating from the app".
 
+**Installer** (`windows/setup/`): `SignalSetup.exe` is an Inno Setup *bootstrapper* built by
+`.github/workflows/installer.yml`. It installs git/Node/Python machine-wide, clones `main` into
+Program Files, and runs `install-service.ps1` + `install-desktop.ps1`. It stays a git checkout
+on purpose, so the updater above keeps working. The desktop app runs that updater's check on
+every launch (`desktop/src/updates/`).
+
 ### Desktop app (`desktop/`) — Electron shell
 ```bash
 cd desktop
@@ -118,6 +124,7 @@ No root package manager, so the companions copy rather than share:
 | `"app:navigate"` in `desktop/src/preload.cjs` | `NAV_EVENT` in `frontend/src/lib/nav.js` |
 | `desktop/src/tray.js` menu items | `commandItems` in `frontend/src/App.jsx` |
 | poll cadence, `MAX_NOTIFICATIONS_PER_POLL` | `extension/src/background/index.js` |
+| `STALE_RUN_MS`, `isApplyRunning` in `desktop/src/…` | `STALE_RUN_SECONDS`, `is_apply_running` in `backend/app/updater.py` |
 
 ## Auth & multi-tenancy
 

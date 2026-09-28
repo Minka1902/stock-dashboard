@@ -15,32 +15,11 @@
 // plain setInterval is right), chrome.storage, the boom-score/symbol caches,
 // the message broker, and apiBase configurability (the origin is fixed).
 
-import { net, session, Notification } from "electron";
+import { Notification } from "electron";
 
-import { APP_ORIGIN, MAX_NOTIFICATIONS_PER_POLL, POLL_MS, REQUEST_TIMEOUT_MS, ICON }
-  from "../config.js";
+import { apiGet } from "../api.js";
+import { MAX_NOTIFICATIONS_PER_POLL, POLL_MS, ICON } from "../config.js";
 import { diffNew, pushSeen, tickerFromKey } from "./seen.js";
-
-/**
- * Node's global fetch does NOT share Electron's cookie jar, so a plain
- * fetch("/api/alerts") gets 401 forever even with an authenticated window.
- * net.fetch bound to defaultSession does — and it defaults to
- * credentials: "omit", so that has to be explicit too.
- */
-async function apiGet(path) {
-  const res = await net.fetch(`${APP_ORIGIN}${path}`, {
-    credentials: "include",
-    session: session.defaultSession,
-    cache: "no-store",
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    const err = new Error(`GET ${path} -> ${res.status}`);
-    err.status = res.status;
-    throw err;
-  }
-  return res.json();
-}
 
 export class AlertPoller {
   /**

@@ -7,6 +7,36 @@ Without this, the scheduler only runs while someone has `start.bat` open and
 stays logged in, so the 3-minute ingest cycle, the pre-market digest and the
 nightly jobs simply don't happen.
 
+## One-click installer
+
+[`SignalSetup.exe`](https://github.com/Minka1902/stock-dashboard/releases/latest/download/SignalSetup.exe)
+does everything in this document for you. It is a bootstrapper, not a bundle: it ships
+`setup/bootstrap.ps1` plus a checksum-verified `nssm.exe`, and fetches the rest.
+
+1. **Prerequisites.** git, Node.js (20.19+ / 22.12+) and Python 3.11+, installed through `winget` when
+   missing. All three must be **machine-wide**, because LocalSystem sees neither your user PATH nor a
+   per-user Python (the venv redirects to its base interpreter at every start). Python is looked up in
+   `HKLM` (PEP 514) for exactly that reason.
+2. **Code.** `git clone` of `main` into `C:\Program Files\SignalDashboard\repo`. Program Files is
+   deliberate: this code runs as LocalSystem, and only administrators can write there.
+3. **Dependencies.** The backend venv plus `pip install`, then `npm install --no-save` in `frontend\`.
+4. **Service.** `install-service.ps1`, then `install-desktop.ps1`.
+
+The console window shows the progress, and a transcript goes to
+`C:\ProgramData\SignalDashboard\logs\setup.log`. The finish page offers to launch the app.
+
+- **Repair / upgrade.** Run it again. The checkout is fast-forwarded (never reset) and the service is
+  re-registered.
+- **Update on launch.** Each start of the desktop app checks for updates through the in-app updater
+  below. See `desktop/README.md`.
+- **Uninstall** (Settings → Apps) removes the service, the checkout and the shortcut. It **keeps**
+  `C:\ProgramData\SignalDashboard` (database, logs). `windows\service.env` lives in the checkout, so
+  copy it out first if it holds secrets you want to keep.
+- **Building it.** `.github/workflows/installer.yml` builds it on `windows-latest` with Inno Setup
+  (`setup/SignalSetup.iss`). A PR that touches `windows/setup/` gets the exe as an artifact, and a `v*`
+  tag attaches it to the release. The workflow **refuses to build until `$script:NssmSha256` is pinned
+  in `Common.ps1`** (see NSSM below).
+
 ## Install
 
 From an **elevated** PowerShell, in the repo root:
