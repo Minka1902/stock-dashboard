@@ -34,8 +34,8 @@ The console window shows the progress, and a transcript goes to
   copy it out first if it holds secrets you want to keep.
 - **Building it.** `.github/workflows/installer.yml` builds it on `windows-latest` with Inno Setup
   (`setup/SignalSetup.iss`). A PR that touches `windows/setup/` gets the exe as an artifact, and a `v*`
-  tag attaches it to the release. The workflow **refuses to build until `$script:NssmSha256` is pinned
-  in `Common.ps1`** (see NSSM below).
+  tag attaches it to the release. The workflow only bundles an `nssm.exe` that matches
+  `$script:NssmSha256` in `Common.ps1` (see NSSM below).
 
 ## Install
 
@@ -56,22 +56,22 @@ re-registers the service, so it's safe to run repeatedly.
 ### NSSM
 
 The service is hosted by [NSSM](https://nssm.cc). The repo carries no binaries,
-so the installer fetches it — but **not from an unverified download by default**,
-because NSSM ends up with SYSTEM-level process control. You have three options:
+so the installer fetches it, and only accepts the download if its SHA-256 matches
+`$script:NssmSha256` in `windows\Common.ps1`. NSSM ends up with SYSTEM-level
+process control, so a mismatch is fatal. The pin is the zip the owner downloaded
+from nssm.cc on 2026-09-29, and the `SignalSetup.exe` build is checked against
+the same pin.
 
 ```powershell
-# 1. Verify it yourself, then pin it (recommended)
-#    Download https://nssm.cc/release/nssm-2.24.zip, then:
-Get-FileHash .\nssm-2.24.zip -Algorithm SHA256
-.\windows\install-service.ps1 -NssmSha256 <hash>
-#    Put that hash in $script:NssmSha256 in windows\Common.ps1 and every
-#    later install is checked automatically.
+# Default: download and check against the pinned hash
+.\windows\install-service.ps1
 
-# 2. Use a copy you already trust
+# Use a copy you already trust
 .\windows\install-service.ps1 -NssmPath C:\tools\nssm.exe
 
-# 3. Accept the risk for one run (prints the hash so you can pin it)
-.\windows\install-service.ps1 -TrustNssmDownload
+# nssm.cc changed the file: verify the new zip by hand, then re-pin
+Get-FileHash .\nssm-2.24.zip -Algorithm SHA256
+.\windows\install-service.ps1 -NssmSha256 <hash>   # and update Common.ps1
 ```
 
 ## Day to day

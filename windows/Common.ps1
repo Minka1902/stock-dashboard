@@ -34,15 +34,14 @@ $script:NssmExe  = Join-Path $NssmDir 'nssm.exe'
 
 # nssm 2.24, the last stable release (2017).
 #
-# NssmSha256 is deliberately EMPTY. This is a binary we hand SYSTEM-level
-# process control to, and a checksum is only worth anything if someone actually
-# verified it against the publisher -- a hash invented at authoring time and
-# committed would look like a security control while being nothing of the kind.
-# So the installer refuses to auto-download unpinned unless you explicitly opt
-# in, and prints the hash it got so you can pin it here for every later install.
-# Fill this in once you have verified it, or pass -NssmSha256 per run.
+# NssmSha256 pins the zip the repo owner downloaded from NssmUrl themselves on
+# 2026-09-29. This is a binary we hand SYSTEM-level process control to, so the
+# installer and the SignalSetup.exe build (.github/workflows/installer.yml)
+# both refuse any download that doesn't match. A mismatch means the file
+# changed: verify the new one by hand before re-pinning, never override it.
+# -NssmSha256 still overrides it per run.
 $script:NssmUrl    = 'https://nssm.cc/release/nssm-2.24.zip'
-$script:NssmSha256 = ''
+$script:NssmSha256 = '727D1E42275C605E0F04ABA98095C38A8E1E46DEF453CDFFCE42869428AA6743'
 $script:AllowUnpinnedNssm = $false
 
 function Write-Step {
