@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - "windows/setup/**"
+      - "windows/Common.ps1"
       - ".github/workflows/installer.yml"
   workflow_dispatch:
 
