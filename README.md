@@ -19,8 +19,8 @@ Architecturally it is a **FastAPI + SQLite + APScheduler** backend that ingests 
 - **Portfolio and watchlists** — multiple named watchlists and a multi-currency portfolio with position sizing, all per user.
 - **Charts** — candlestick charts with extended hours, drawing tools and saved drafts.
 - **Multi-user with mandatory 2FA** — Argon2id passwords, TOTP (Google/Microsoft Authenticator), recovery codes, optional OAuth sign-in. Market data is shared; watchlists, portfolio and notifications are per user.
-- **Operations built in** — editable per-source schedules, run-now, a queue view, and a one-click in-app updater (admin only).
-- **Companions** — a browser extension that adds ticker badges and desktop alerts, an Electron tray app, and a Windows service installer.
+- **Operations built in** — editable per-source schedules, run-now, a queue view, and a one-click in-app updater (admin only) with rollback on failure.
+- **Companions** — a browser extension that adds ticker badges and desktop alerts, an Electron tray app that checks for updates on every launch, and a one-click Windows installer (`SignalSetup.exe`).
 
 ## Architecture
 
@@ -57,14 +57,15 @@ Architecturally it is a **FastAPI + SQLite + APScheduler** backend that ingests 
 
 | Layer | Technology |
 |---|---|
-| Backend | Python 3.11+, FastAPI 0.115, uvicorn, Pydantic 2, httpx, APScheduler 3.11 |
+| Backend | Python 3.11+, FastAPI 0.115, uvicorn, Pydantic 2, httpx, APScheduler 3.11, xlrd / openpyxl (spreadsheet sources) |
 | Auth | argon2-cffi (Argon2id), pyotp (TOTP), segno (QR codes), OAuth (Google / GitHub / Facebook) |
 | Database | SQLite (WAL mode, stdlib `sqlite3`) |
 | Optional backend | psutil (Server page metrics), Playwright + Chromium (margin-debt fetch) |
 | Frontend | React 19, Vite 8, CSS Modules with design tokens, lightweight-charts, Recharts, Motion, anime.js |
 | Extension | Manifest V3, Vite build for Chrome and Firefox |
-| Desktop | Electron |
+| Desktop | Electron 34 |
 | Service | Windows service via NSSM, PowerShell scripts |
+| Installer | Inno Setup bootstrapper, built by GitHub Actions |
 | Testing / lint | pytest, ESLint, `node --test` |
 
 ## Prerequisites
@@ -164,6 +165,7 @@ All backend configuration comes from `STOCKS_*` environment variables with defau
 |---|---|---|
 | `STOCKS_DB_PATH` | `backend/stocks.db` | SQLite file |
 | `STOCKS_LOG_DIR` | `backend/logs/` | Rotating log directory |
+| `STOCKS_LOG_LEVEL` | `INFO` | Log level |
 | `STOCKS_STATIC_DIR` | `frontend/dist/` | Built SPA served on `:8000` |
 | `STOCKS_CORS_ORIGINS` | `http://localhost:5173` | Allowed origins, comma-separated. `*` is rejected. The first entry is also the OAuth post-login redirect |
 | `STOCKS_REFRESH_SECONDS` | `180` | Default source cadence |
@@ -178,6 +180,8 @@ All backend configuration comes from `STOCKS_*` environment variables with defau
 | `STOCKS_TWILIO_*` | — | SMS digest |
 | `STOCKS_DIGEST_HOUR` / `_MINUTE` / `_TZ` | `7` / `30` / `America/New_York` | Pre-market digest time |
 | `STOCKS_OAUTH_{GOOGLE,GITHUB,FACEBOOK}_CLIENT_ID` / `_SECRET` | — | Optional social login |
+| `STOCKS_OAUTH_REDIRECT_BASE` | `http://localhost:8000` | Base of the OAuth callback URL registered with each provider |
+| `STOCKS_UPDATE_MODE` | *(auto-detected)* | `service` \| `dev` — overrides the updater's detection of whether it runs under the NSSM service |
 | `STOCKS_ALPHA_VANTAGE_KEY`, `STOCKS_FMP_KEY`, `STOCKS_X_BEARER` | — | Optional API keys |
 
 **Ports:** the backend uses `8000` and the Vite dev server uses `5173`. Both can be changed with `start.ps1 -ApiPort` / `-WebPort`. In dev, `VITE_API_BASE` stays empty (same-origin through the proxy); set it only if you run a cross-origin backend.
@@ -198,9 +202,10 @@ stock-dashboard/
 │   │   ├── schedules.py       # pure schedule logic (triggers, next_due)
 │   │   ├── db.py              # ALL SQLite access, schema + migrations
 │   │   ├── models.py          # Pydantic models shared by sources, DB and API
-│   │   ├── analysis.py, analyze.py, suggestions.py, sentiment.py, backtest.py, alerts.py
-│   │   ├── auth.py, routes_auth.py, routes_oauth.py, registration.py, security.py
-│   │   ├── routes_chart.py, routes_update.py, updater.py, notify.py, config.py
+│   │   ├── analysis.py, analyze.py, suggestions.py, suggestion_history.py, sentiment.py, backtest.py, alerts.py
+│   │   ├── search.py, quotes.py, chart_data.py, currency.py, market_calendar.py, report.py, themes.py
+│   │   ├── auth.py, routes_auth.py, routes_oauth.py, registration.py, security.py, validation.py
+│   │   ├── routes_chart.py, routes_update.py, updater.py, notify.py, config.py, version.py
 │   │   └── data/              # static reference data (contractor/major lists)
 │   ├── tests/                 # pytest suite (conftest: conn fixture, authenticate helper)
 │   ├── requirements.txt
@@ -214,13 +219,16 @@ stock-dashboard/
 │       ├── api.js             # REST client
 │       └── index.css          # design tokens and themes
 ├── extension/                 # MV3 browser companion (Chrome + Firefox)
-├── desktop/                   # Electron window + tray over the running service
-├── windows/                   # NSSM service install/control/update scripts, service.env.example
+├── desktop/                   # Electron window + tray over the running service (src/updates/: launch-time update check)
+├── windows/                   # NSSM service install/control/update scripts, Common.ps1 (NSSM pin), service.env.example
+│   └── setup/                 # SignalSetup.iss + bootstrap.ps1 (the one-click installer)
 ├── reports/                   # QA logs and release reports
+├── .github/workflows/         # installer.yml: builds SignalSetup.exe
 ├── .claude/skills/            # repo checklists (e.g. adding-a-data-source)
 ├── start.ps1 / start.bat / stop.bat   # dev/prod launcher
 ├── CLAUDE.md                  # in-depth architecture notes
 ├── PRODUCT.md / DESIGN.md     # product principles and design system
+├── fixes_plan_782026.md       # fix & feature plan (trading methodology + fixes)
 └── LICENSE
 ```
 
@@ -277,15 +285,15 @@ Interactive OpenAPI docs are served by FastAPI at **`/docs`** (and `/openapi.jso
 | Area | Endpoints |
 |---|---|
 | Health | `GET /api/health` (version and commit) |
-| Auth | `POST /api/auth/register`, `/login`, `/totp/verify`, `/totp/enable`, `/recovery`, `/logout`; `GET /api/auth/me`, `/status`, `/totp/setup`; OAuth under `/api/auth/oauth/{provider}/start` and `/callback` |
+| Auth | `POST /api/auth/register`, `/login`, `/totp/verify`, `/totp/enable`, `/recovery`, `/logout`, `/onboarded`; `GET /api/auth/me`, `/status`, `/totp/setup`, `/registration`; OAuth: `GET /api/auth/oauth/providers`, `/{provider}/start`, `/{provider}/callback` |
 | Watchlists | `GET/POST /api/watchlists`, `PATCH/DELETE /api/watchlists/{id}`, `GET/POST /api/watchlist`, `PATCH/DELETE /api/watchlist/{ticker}` |
-| Portfolio and profile | `GET/POST /api/portfolio`, `PUT/DELETE /api/portfolio/{ticker}`, `GET/PUT /api/profile`, `GET/PUT /api/fx-watch`, `GET /api/fx/rates` |
-| Signals | `GET /api/contracts`, `/news`, `/trades`, `/congress-trades`, `/signals`, `/short-interest`, `/social`, `/analyst`, `/fundamentals`, `/earnings`, `/seasonality`, `/x-posts` |
+| Portfolio and profile | `GET/POST /api/portfolio`, `PUT/DELETE /api/portfolio/{ticker}`, `PUT /api/portfolio/{ticker}/category`, `GET/PUT /api/profile`, `GET/PUT /api/fx-watch`, `GET /api/fx/rates` |
+| Signals | `GET /api/contracts`, `/news`, `/trades`, `/congress-trades`, `/signals`, `/short-interest`, `/social`, `/analyst`, `/fundamentals`, `/earnings`, `/earnings/{ticker}`, `/seasonality`, `/x-posts` |
 | Market sentiment | `GET /api/sentiment`, `/fear-greed`, `/vix`, `/aaii`, `/put-call`, `/margin-debt`, `/yield-curve`, `/econ-calendar` |
-| Scores and analysis | `GET /api/boom-scores`, `/boom-scores/history/{ticker}`, `/analysis`, `/analysis/{ticker}`, `/analysis/{ticker}/report`, `/analyze/{ticker}`, `/suggestions`, `/backtest/track-record` |
-| Search and charts | `GET /api/search?q=`, `/quotes`, `/sparklines`, `/chart/{ticker}`, `/chart/{ticker}/extended`, `/company/{ticker}`; drawings under `/api/drawings/{ticker}` |
+| Scores and analysis | `GET /api/boom-scores`, `/boom-scores/history/{ticker}`, `/analysis`, `/analysis/{ticker}`, `/analysis/{ticker}/report`, `/analyze/{ticker}`, `/suggestions`, `/suggestions/history`, `/suggestions/log`, `/backtest/track-record`, `/backtest/signal-replay`; `POST /api/suggestions/send-test` |
+| Search and charts | `GET /api/search?q=`, `/quotes`, `/sparklines`, `/chart/{ticker}`, `/chart/{ticker}/extended`, `/company/{ticker}`, `/company-names`; drawings under `/api/drawings/{ticker}` (drafts under `…/drafts` and `/api/drawings/drafts/{id}`) |
 | Alerts | `GET /api/alerts`, `POST /api/alerts/read` |
-| Operations | `POST /api/refresh/{source}` (`force=1` is admin-only), `GET /api/sources`, `GET /api/server/overview`, `/server/sources`, `/server/schedules`, `PUT /api/server/schedules/{source}`, `POST …/run-now`, `GET/PUT /api/settings` (PUT is admin-only) |
+| Operations | `POST /api/refresh/{source}` (`force=1` is admin-only), `GET /api/sources`, `GET /api/server/overview`, `/server/events`, `/server/sources`, `/server/sources/{source}/runs`, `/server/schedules`, `PUT /api/server/schedules/{source}`, `POST …/run-now`, `GET/PUT /api/settings` (PUT is admin-only) |
 | Updates | `GET /api/update/status`, `POST /api/update/apply` (admin only) |
 
 ## Development workflow
@@ -309,6 +317,7 @@ npm run lint
 - **Branches** — work on `feat/<topic>` or `fix/<topic>` branches and merge to `main` through a pull request. Commit messages follow Conventional Commits with a scope, e.g. `feat(chart): …`, `fix(ui): …`, `docs(reports): …`.
 - **Builds** — `npm run build` in `frontend/` produces `frontend/dist/`, which the backend serves automatically. The extension builds to `dist-chrome/` and `dist-firefox/`.
 - **Versioning** — `backend/app/version.py` is the source of truth, and `frontend/package.json` mirrors it.
+- **Installer** — `.github/workflows/installer.yml` builds `SignalSetup.exe` on `v*` tags (attached to the release), on PRs touching `windows/setup/` or `windows/Common.ps1`, and on manual dispatch. It bundles `nssm.exe` only when the download matches the pin in `windows/Common.ps1`.
 - **Debugging** — check the logs in `backend/logs/` (the service uses `C:\ProgramData\SignalDashboard\logs\`), `start.ps1 -Status` / `-Logs`, `/api/health`, and the **Server page**, which shows per-source status, run history with tracebacks, the queue, and system metrics.
 
 ## Troubleshooting
@@ -327,6 +336,9 @@ npm run lint
 | `database is locked` or duplicated jobs | More than one uvicorn worker or process is running. Run exactly one (`start.ps1 -Status`, `-Kill`). |
 | Registration is refused | `STOCKS_REGISTRATION` is `invite` (enter the code) or `closed`. |
 | The in-app update returns 409 | The checkout isn't on `main`, has tracked changes, or can't fast-forward. |
+| The desktop app offers an update but can't apply it | Only an admin can apply updates (Info → Updates). For admins, the reason is the same as the 409 above. |
+| SmartScreen blocks `SignalSetup.exe` | The exe is unsigned. Choose *More info → Run anyway*. |
+| NSSM checksum mismatch | The download doesn't match the pin in `windows/Common.ps1`, so the install stops. Verify the zip against nssm.cc before changing the pin (see `windows/README.md`). |
 | Port already in use | Run `start.ps1 -Kill`, or change `-ApiPort` / `-WebPort`. |
 
 ## Security considerations
@@ -334,7 +346,7 @@ npm run lint
 - **Data** — the app only ingests *public* data and makes no trades. Treat upstream responses as untrusted input: ticker inputs are whitelisted (`validation.clean_ticker`) before they reach outbound URLs.
 - **Credentials** — passwords are hashed with Argon2id, TOTP 2FA is mandatory, and recovery codes are single-use and stored hashed. Session tokens are opaque, stored as SHA-256 hashes, delivered as httpOnly SameSite=Lax cookies, and rotated on every auth-state upgrade.
 - **Secrets** — keep them in environment variables only, never in code or the database. `windows/service.env` is gitignored, so never commit it.
-- **Privileged execution** — the Windows service runs as **LocalSystem** under NSSM. By default the installer refuses an unverified NSSM download: pin its SHA-256 or supply a trusted binary (see `windows/README.md`). The in-app updater is admin-only and spawns `windows/update.ps1`, which pulls from `origin/main`, so protect that branch.
+- **Privileged execution** — the Windows service runs as **LocalSystem** under NSSM. The NSSM 2.24 download is checked against the SHA-256 pinned in `windows/Common.ps1`, and a mismatch is fatal (see `windows/README.md`). `SignalSetup.exe` is unsigned, so verify you downloaded it from this repository's releases. The in-app updater is admin-only and spawns `windows/update.ps1`, which pulls from `origin/main`, so protect that branch.
 - **Account creation** — `app/registration.py` is the single gate for both password and OAuth sign-up. On a reachable deployment, use `invite` or `closed`. The first account becomes admin, so register it before exposing the app.
 - **Public exposure** — the app is designed to sit behind a tunnel (Tailscale Funnel). The bind stays on `127.0.0.1`. `X-Forwarded-For` is trusted only from `STOCKS_TRUSTED_PROXY_IPS`, and HSTS is sent only on requests that really arrived over HTTPS. Set `STOCKS_COOKIE_SECURE=1` there.
 - **Abuse** — an in-memory, per-client rate limiter protects sensitive routes, and CORS uses an explicit allowlist only.
