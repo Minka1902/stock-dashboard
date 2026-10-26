@@ -6,9 +6,10 @@ import pytest
 
 from app import config, db
 from app.models import (
-    AnalystSignal, CongressTrade, Holding, InsiderTrade, OHLCSeries,
+    AnalystSignal, CongressTrade, InsiderTrade, OHLCSeries,
     SocialSentiment, WatchItem,
 )
+from tests.conftest import buy
 
 
 @pytest.fixture
@@ -59,7 +60,7 @@ def test_signal_candidates_capped(conn):
 def test_analysis_universe_is_union(conn):
     _seed_signals(conn)
     db.add_watch(conn, 0, WatchItem(ticker="AAPL", note="", added_at="t"))
-    db.upsert_holding(conn, 0, Holding(ticker="MSFT", shares=1, avg_cost=1, added_at="t"))
+    buy(conn, 0, "MSFT", 1, 1)
     universe = db.get_analysis_universe(conn, candidate_limit=20)
     assert {"AAPL", "MSFT", "GOOG", "TSLA", "NFLX", "AMD", "LMT"} <= set(universe)
 

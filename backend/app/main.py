@@ -2,6 +2,7 @@
 import itertools
 import json
 import logging
+import math
 import platform
 import re
 import threading
@@ -30,7 +31,7 @@ from pydantic import BaseModel
 
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, backtest, chart_data, config, currency, db, ingest, notify, quotes, report, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
+from app import analysis, analyze, auth, backtest, chart_data, config, currency, db, ingest, ledger, notify, quotes, report, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
@@ -1331,12 +1332,49 @@ def analysis_detail(ticker: str, user=Depends(auth.get_current_user)):
     }
 
 
-# ---------- portfolio (user managed) ----------
+# ---------- portfolio (user managed, written through the ledger) ----------
+def _account_param(account: str, write: bool = False) -> str:
+    """Validate an `account` query/body value. Paper positions move only
+    through paper orders, so hand edits are manual-account only."""
+    if account == "live":
+        raise HTTPException(status_code=409, detail="no live broker configured")
+    if account not in ("manual", "paper"):
+        raise HTTPException(status_code=400, detail="account must be 'manual' or 'paper'")
+    if write and account != "manual":
+        raise HTTPException(
+            status_code=400, detail="paper positions change only through paper orders")
+    return account
+
+
+def _executed_at(value: str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="executed_at must be an ISO date or datetime") from None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    if dt > datetime.now(timezone.utc) + timedelta(minutes=5):
+        raise HTTPException(status_code=400, detail="executed_at can't be in the future")
+    return dt.isoformat(timespec="seconds")
+
+
+def _record(user_id: int, **kw):
+    try:
+        return ledger.record(conn, user_id, **kw)
+    except ledger.LedgerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
 class HoldingCreate(BaseModel):
     ticker: str
     shares: float
     avg_cost: float           # in `currency`
     currency: str | None = None  # None = detect (symbol convention, then Yahoo)
+    fees: float = 0.0
+    pay_from_cash: bool = False  # debit the cost (+fees) from this currency's cash
+    executed_at: str | None = None
 
 
 def _clean_currency(code: str | None) -> str | None:
@@ -1348,13 +1386,13 @@ def _clean_currency(code: str | None) -> str | None:
     return c
 
 
-def _portfolio_out(user_id: int) -> list[dict]:
+def _portfolio_out(user_id: int, account: str = "manual") -> list[dict]:
     """Portfolio holdings enriched with theme category + its source ('manual'
     when overridden, else 'auto' from sector/industry classification)."""
-    overrides = db.get_holding_categories(conn, user_id)
+    overrides = db.get_holding_categories(conn, user_id, account)
     fund_map = db.get_fundamentals_map(conn)
     out = []
-    for h in db.get_portfolio(conn, user_id):
+    for h in db.get_portfolio(conn, user_id, account):
         if h.ticker in overrides:
             category, source = overrides[h.ticker], "manual"
         else:
@@ -1365,13 +1403,21 @@ def _portfolio_out(user_id: int) -> list[dict]:
     return out
 
 
+def _held(user_id: int, ticker: str, account: str = "manual") -> Holding:
+    h = next((h for h in db.get_portfolio(conn, user_id, account) if h.ticker == ticker), None)
+    if h is None:
+        raise HTTPException(status_code=404, detail="ticker not in portfolio")
+    return h
+
+
 @app.get("/api/portfolio")
-def portfolio(user=Depends(auth.get_current_user)):
-    return _portfolio_out(user.id)
+def portfolio(account: str = "manual", user=Depends(auth.get_current_user)):
+    return _portfolio_out(user.id, _account_param(account))
 
 
 @app.post("/api/portfolio")
 def add_holding(item: HoldingCreate, user=Depends(auth.get_current_user)):
+    """Record a BUY. Adding to a held ticker merges into a share-weighted cost."""
     ticker = clean_ticker(item.ticker)
     if item.shares <= 0 or item.avg_cost < 0:
         raise HTTPException(status_code=400, detail="shares must be > 0 and avg_cost >= 0")
@@ -1388,11 +1434,9 @@ def add_holding(item: HoldingCreate, user=Depends(auth.get_current_user)):
         ccy = held[ticker].currency
     else:
         ccy = requested or _ticker_currency(ticker) or "USD"
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    db.upsert_holding(conn, user.id, Holding(
-        ticker=ticker, shares=item.shares, avg_cost=item.avg_cost, added_at=now,
-        currency=ccy,
-    ))
+    _record(user.id, ticker=ticker, side="BUY", qty=item.shares, price=item.avg_cost,
+            currency_code=ccy, fees=item.fees, funded=item.pay_from_cash,
+            executed_at=_executed_at(item.executed_at))
     return _portfolio_out(user.id)
 
 
@@ -1404,16 +1448,35 @@ class HoldingReplace(BaseModel):
 
 @app.put("/api/portfolio/{ticker}")
 def edit_holding(ticker: str, item: HoldingReplace, user=Depends(auth.get_current_user)):
-    """Overwrite a held position outright (correct a mistaken entry)."""
+    """Correct a held position outright. Recorded as an ADJUST, so the history
+    keeps both the old and the corrected numbers."""
     t = clean_ticker(ticker)
     if item.shares <= 0 or item.avg_cost < 0:
         raise HTTPException(status_code=400, detail="shares must be > 0 and avg_cost >= 0")
-    held = {h.ticker for h in db.get_portfolio(conn, user.id)}
-    if t not in held:
-        raise HTTPException(status_code=404, detail="ticker not in portfolio")
-    db.replace_holding(conn, user.id, t, item.shares, item.avg_cost,
-                       _clean_currency(item.currency))
+    h = _held(user.id, t)
+    _record(user.id, ticker=t, side="ADJUST", qty=item.shares, price=item.avg_cost,
+            currency_code=_clean_currency(item.currency) or h.currency, source="adjust")
     return _portfolio_out(user.id)
+
+
+class HoldingSell(BaseModel):
+    shares: float
+    price: float
+    fees: float = 0.0
+    to_cash: bool = False        # credit the proceeds (-fees) to this currency's cash
+    executed_at: str | None = None
+
+
+@app.post("/api/portfolio/{ticker}/sell")
+def sell_holding(ticker: str, item: HoldingSell, user=Depends(auth.get_current_user)):
+    """Record a (partial) SELL; realized P&L is stored on the ledger row."""
+    t = clean_ticker(ticker)
+    h = _held(user.id, t)
+    tx = _record(user.id, ticker=t, side="SELL", qty=item.shares, price=item.price,
+                 currency_code=h.currency, fees=item.fees, funded=item.to_cash,
+                 executed_at=_executed_at(item.executed_at))
+    return {"portfolio": _portfolio_out(user.id), "realized_pnl": tx.realized_pnl,
+            "currency": tx.currency}
 
 
 class CategoryUpdate(BaseModel):
@@ -1428,17 +1491,74 @@ def set_holding_category(ticker: str, item: CategoryUpdate, user=Depends(auth.ge
             status_code=400,
             detail=f"category must be null or one of {', '.join(themes.THEMES)}",
         )
-    held = {h.ticker for h in db.get_portfolio(conn, user.id)}
-    if t not in held:
-        raise HTTPException(status_code=404, detail="ticker not in portfolio")
+    _held(user.id, t)
     db.set_holding_category(conn, user.id, t, item.category)
     return _portfolio_out(user.id)
 
 
 @app.delete("/api/portfolio/{ticker}")
 def delete_holding(ticker: str, user=Depends(auth.get_current_user)):
-    db.remove_holding(conn, user.id, clean_ticker(ticker))
+    """Remove a position without a sale (an ADJUST to zero, no realized P&L) —
+    the path for a mistaken entry. A real exit is POST .../sell."""
+    t = clean_ticker(ticker)
+    h = next((h for h in db.get_portfolio(conn, user.id) if h.ticker == t), None)
+    if h is not None:
+        _record(user.id, ticker=t, side="ADJUST", qty=0, price=h.avg_cost,
+                currency_code=h.currency, source="adjust")
     return _portfolio_out(user.id)
+
+
+class CashMove(BaseModel):
+    currency: str
+    amount: float
+    side: Literal["deposit", "withdraw"]
+    account: str = "manual"
+
+
+class CashSet(BaseModel):
+    balance: float
+    account: str = "manual"
+
+
+def _cash_out(user_id: int, account: str) -> list[dict]:
+    return [c.model_dump() for c in db.get_cash(conn, user_id, account)]
+
+
+@app.get("/api/portfolio/cash")
+def get_cash(account: str = "manual", user=Depends(auth.get_current_user)):
+    return _cash_out(user.id, _account_param(account))
+
+
+@app.post("/api/portfolio/cash")
+def move_cash(item: CashMove, user=Depends(auth.get_current_user)):
+    account = _account_param(item.account)
+    _record(user.id, ticker=item.currency, side=item.side.upper(), qty=item.amount,
+            currency_code=_clean_currency(item.currency), account=account)
+    return _cash_out(user.id, account)
+
+
+@app.put("/api/portfolio/cash/{code}")
+def set_cash(code: str, item: CashSet, user=Depends(auth.get_current_user)):
+    """Set a balance outright; recorded as the deposit/withdrawal of the gap."""
+    account = _account_param(item.account)
+    ccy = _clean_currency(code)
+    if not math.isfinite(item.balance) or item.balance < 0:
+        raise HTTPException(status_code=400, detail="balance must be >= 0")
+    current = next((c.balance for c in db.get_cash(conn, user.id, account) if c.currency == ccy), 0.0)
+    gap = item.balance - current
+    if abs(gap) > ledger.EPS:
+        _record(user.id, ticker=ccy, side="DEPOSIT" if gap > 0 else "WITHDRAW", qty=abs(gap),
+                currency_code=ccy, account=account, source="adjust")
+    return _cash_out(user.id, account)
+
+
+@app.get("/api/portfolio/transactions")
+def transactions(account: str | None = None, ticker: str | None = None,
+                 limit: int = 200, user=Depends(auth.get_current_user)):
+    rows = db.get_transactions(
+        conn, user.id, _account_param(account) if account else None,
+        clean_ticker(ticker) if ticker else None, max(1, min(limit, 1000)))
+    return [r.model_dump() for r in rows]
 
 
 # ---------- notification profile (email/phone; secrets stay in env) ----------

@@ -1,14 +1,18 @@
-"""Portfolio merge-on-add and edit/replace behavior (Task 2)."""
-from app import db
-from app.models import Holding
+"""Portfolio merge-on-add and edit/replace behavior, through the ledger."""
+from app import db, ledger
+from tests.conftest import buy
 
 
-def _add(conn, ticker, shares, avg_cost, added_at):
-    db.upsert_holding(conn, 1, Holding(
-        ticker=ticker, shares=shares, avg_cost=avg_cost, added_at=added_at))
+def _add(conn, ticker, shares, avg_cost, added_at, currency="USD"):
+    buy(conn, 1, ticker, shares, avg_cost, currency=currency, executed_at=added_at)
 
 
-def test_upsert_holding_merges_shares_and_weighted_cost(conn):
+def _adjust(conn, ticker, shares, avg_cost, currency):
+    ledger.record(conn, 1, ticker=ticker, side="ADJUST", qty=shares, price=avg_cost,
+                  currency_code=currency)
+
+
+def test_buy_merges_shares_and_weighted_cost(conn):
     _add(conn, "AAPL", 10, 100.0, "2026-01-01T00:00:00+00:00")
     _add(conn, "AAPL", 10, 200.0, "2026-02-02T00:00:00+00:00")
 
@@ -20,7 +24,7 @@ def test_upsert_holding_merges_shares_and_weighted_cost(conn):
     assert aapl.added_at == "2026-01-01T00:00:00+00:00"
 
 
-def test_upsert_holding_weighted_average_uneven(conn):
+def test_buy_weighted_average_uneven(conn):
     _add(conn, "MSFT", 5, 100.0, "2026-01-01T00:00:00+00:00")
     _add(conn, "MSFT", 15, 300.0, "2026-01-05T00:00:00+00:00")
     msft = {h.ticker: h for h in db.get_portfolio(conn, 1)}["MSFT"]
@@ -29,9 +33,9 @@ def test_upsert_holding_weighted_average_uneven(conn):
     assert msft.avg_cost == 250.0
 
 
-def test_replace_holding_overwrites(conn):
+def test_adjust_overwrites(conn):
     _add(conn, "NVDA", 10, 100.0, "2026-01-01T00:00:00+00:00")
-    db.replace_holding(conn, 1, "NVDA", 3, 500.0)
+    _adjust(conn, "NVDA", 3, 500.0, "USD")
     nvda = {h.ticker: h for h in db.get_portfolio(conn, 1)}["NVDA"]
     assert nvda.shares == 3
     assert nvda.avg_cost == 500.0
@@ -42,8 +46,7 @@ def test_replace_holding_overwrites(conn):
 # ---------- currency (WS-B) ----------
 
 def test_holding_currency_round_trips(conn):
-    db.upsert_holding(conn, 1, Holding(ticker="TEVA.TA", shares=10, avg_cost=120.5,
-                                       added_at="t", currency="ILS"))
+    _add(conn, "TEVA.TA", 10, 120.5, "t", currency="ILS")
     teva = {h.ticker: h for h in db.get_portfolio(conn, 1)}["TEVA.TA"]
     assert teva.currency == "ILS"
     assert teva.avg_cost == 120.5  # native units, never converted on write
@@ -64,19 +67,15 @@ def test_legacy_rows_without_currency_read_as_usd(conn):
 
 
 def test_merge_keeps_the_positions_original_currency(conn):
-    db.upsert_holding(conn, 1, Holding(ticker="TEVA.TA", shares=10, avg_cost=100,
-                                       added_at="t", currency="ILS"))
-    db.upsert_holding(conn, 1, Holding(ticker="TEVA.TA", shares=10, avg_cost=200,
-                                       added_at="t2", currency="ILS"))
+    _add(conn, "TEVA.TA", 10, 100, "t", currency="ILS")
+    _add(conn, "TEVA.TA", 10, 200, "t2", currency="ILS")
     teva = db.get_portfolio(conn, 1)[0]
     assert (teva.shares, teva.avg_cost, teva.currency) == (20, 150.0, "ILS")
 
 
-def test_replace_holding_can_override_currency(conn):
+def test_adjust_can_override_currency(conn):
     _add(conn, "TEVA", 1, 10.0, "t")
-    db.replace_holding(conn, 1, "TEVA", 1, 10.0, currency="ILS")
-    assert db.get_portfolio(conn, 1)[0].currency == "ILS"
-    db.replace_holding(conn, 1, "TEVA", 2, 11.0)  # None keeps it
+    _adjust(conn, "TEVA", 1, 10.0, "ILS")
     assert db.get_portfolio(conn, 1)[0].currency == "ILS"
 
 

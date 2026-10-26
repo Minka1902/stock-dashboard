@@ -3,8 +3,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import db
-from app.models import Holding, NotifyProfile, WatchItem
-from tests.conftest import authenticate
+from app.models import NotifyProfile, WatchItem
+from tests.conftest import buy, authenticate
 
 
 @pytest.fixture
@@ -35,8 +35,8 @@ def test_watchlists_are_isolated_per_user(conn):
 
 
 def test_portfolio_and_profile_isolated(conn):
-    db.upsert_holding(conn, 1, Holding(ticker="NOC", shares=5, avg_cost=100, added_at="t"))
-    db.upsert_holding(conn, 2, Holding(ticker="NOC", shares=9, avg_cost=50, added_at="t"))
+    buy(conn, 1, "NOC", 5, 100)
+    buy(conn, 2, "NOC", 9, 50)
     assert db.get_portfolio(conn, 1)[0].shares == 5
     assert db.get_portfolio(conn, 2)[0].shares == 9
     assert db.get_all_portfolio_tickers(conn) == ["NOC"]
@@ -64,7 +64,7 @@ def test_alert_read_state_is_per_user(conn):
 def test_claim_legacy_rows(conn):
     # Pre-auth data parked under user_id=0 …
     db.add_watch(conn, 0, WatchItem(ticker="LMT", note="legacy", added_at="t"))
-    db.upsert_holding(conn, 0, Holding(ticker="LMT", shares=3, avg_cost=400, added_at="t"))
+    buy(conn, 0, "LMT", 3, 400)
     db.upsert_notify_profile(conn, 0, NotifyProfile(email="old@x.co", updated_at="t"))
     # … is claimed by the first registered user.
     user = db.create_user(conn, "owner@x.co", "hash", "t", is_admin=True)

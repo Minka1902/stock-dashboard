@@ -3,8 +3,9 @@ import sqlite3
 
 import pytest
 
-from app import db, notify
-from app.models import Holding, NotifyProfile
+from app import db, ledger, notify
+from app.models import NotifyProfile
+from tests.conftest import buy
 
 
 @pytest.fixture
@@ -19,15 +20,15 @@ def conn():
 # ---- DB round-trips ----
 
 def test_portfolio_roundtrip(conn):
-    db.upsert_holding(conn, 0, Holding(ticker="AAPL", shares=10, avg_cost=100.0, added_at="t"))
+    buy(conn, 0, "AAPL", 10, 100.0, executed_at="2026-01-01T00:00:00+00:00")
     # Adding an existing ticker merges shares and weighted-averages the cost
     # (10@100 + 15@110 -> 25 @ (1000+1650)/25 = 106.0), never overwrites.
-    db.upsert_holding(conn, 0, Holding(ticker="AAPL", shares=15, avg_cost=110.0, added_at="t2"))
+    buy(conn, 0, "AAPL", 15, 110.0, executed_at="2026-02-01T00:00:00+00:00")
     rows = db.get_portfolio(conn, 0)
     assert len(rows) == 1
     assert rows[0].shares == 25 and rows[0].avg_cost == 106.0
-    assert rows[0].added_at == "t"  # first-buy date preserved
-    db.remove_holding(conn, 0, "AAPL")
+    assert rows[0].added_at == "2026-01-01T00:00:00+00:00"  # first-buy date preserved
+    ledger.record(conn, 0, ticker="AAPL", side="ADJUST", qty=0, price=106.0, currency_code="USD")
     assert db.get_portfolio(conn, 0) == []
 
 

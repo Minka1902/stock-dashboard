@@ -392,11 +392,49 @@ class Seasonality(BaseModel):
 
 
 class Holding(BaseModel):
-    ticker: str        # PRIMARY KEY (single-user portfolio)
+    ticker: str        # PRIMARY KEY with (user_id, account)
     shares: float
     avg_cost: float    # in `currency` (the position's native trading currency)
     added_at: str
     currency: str = "USD"  # ISO code; legacy rows predate the column -> USD
+
+
+class Transaction(BaseModel):
+    """One ledger row. `portfolio` and `cash_balances` are materialized from
+    these (app/ledger.py). DEPOSIT/WITHDRAW rows carry the currency code as
+    `ticker`, the amount as `qty` and price 1."""
+    id: int | None = None
+    user_id: int
+    account: str = "manual"      # manual | paper | live
+    ticker: str
+    side: str                    # BUY | SELL | ADJUST | DEPOSIT | WITHDRAW
+    qty: float                   # ADJUST: the position's new share count
+    price: float                 # ADJUST: the position's new avg_cost
+    fees: float = 0.0
+    currency: str
+    executed_at: str
+    source: str = "manual"       # manual | migration | adjust | paper_fill | paper_init ...
+    order_id: int | None = None
+    cash_delta: float = 0.0      # exact cash movement this row caused, in `currency`
+    realized_pnl: float | None = None  # SELL only, net of fees
+    flow: float = 0.0            # external capital in (+) / out (-), for time-weighted return
+
+
+class CashBalance(BaseModel):
+    currency: str
+    balance: float
+
+
+class EquitySnapshot(BaseModel):
+    user_id: int
+    account: str
+    date: str                # YYYY-MM-DD (America/New_York)
+    base_currency: str
+    value_base: float        # invested_base + cash_base
+    cash_base: float
+    invested_base: float     # market value of positions
+    flow_base: float         # net external flows since the previous day's snapshot
+    computed_at: str
 
 
 class NotifyProfile(BaseModel):
