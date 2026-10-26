@@ -337,6 +337,12 @@ OHLC_MAX_TICKERS = int(os.environ.get("STOCKS_OHLC_MAX_TICKERS", "60"))
 # Raised from 20: suggestions now rank tracked names and brand-new ideas in
 # separate pools, so the candidate list has to be deep enough to fill both.
 OPPORTUNITY_CANDIDATES = int(os.environ.get("STOCKS_OPPORTUNITY_CANDIDATES", "40"))
+# Benchmark series fetched by the ohlc source whether or not anyone holds them
+# (analytics beta / relative return, the regime gate's SPY vs 200-day MA).
+BENCHMARK_TICKERS = [
+    t.strip().upper() for t in os.environ.get("STOCKS_BENCHMARKS", "SPY,^TA125.TA").split(",")
+    if t.strip()
+]
 
 # Optional override for the built frontend directory the backend serves (single
 # port). Empty → default to <repo>/frontend/dist. Used by tests to point at a

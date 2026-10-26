@@ -108,7 +108,10 @@ def test_ohlc_fetch_is_stalest_first_and_capped(monkeypatch):
 
     monkeypatch.setattr(main.ohlc_source, "fetch", fake_fetch)
     monkeypatch.setattr(config, "OHLC_MAX_TICKERS", 2)
+    monkeypatch.setattr(config, "BENCHMARK_TICKERS", ["SPY"])
     main.ohlc_fetch(c)
     c.close()
+    assert captured["t"][0] == "SPY"       # benchmarks always ride along, outside the cap
+    captured["t"] = captured["t"][1:]
     assert len(captured["t"]) == 2
     assert "AAA" not in captured["t"]      # already fetched → not stalest

@@ -192,16 +192,17 @@ def econ_calendar_fetch(conn):
 
 
 def ohlc_fetch(conn):
-    """Pull OHLC history for the whole analysis universe (portfolio ∪ watchlist ∪
-    signal candidates), stalest-first and capped at OHLC_MAX_TICKERS so the Yahoo
-    fan-out stays bounded on the single worker — large universes rotate across
-    successive hourly runs."""
-    universe = db.get_analysis_universe(conn, config.OPPORTUNITY_CANDIDATES)
-    if not universe:
-        return []
+    """Pull OHLC history for the benchmarks plus the whole analysis universe
+    (portfolio ∪ watchlist ∪ signal candidates), stalest-first and capped at
+    OHLC_MAX_TICKERS so the Yahoo fan-out stays bounded on the single worker —
+    large universes rotate across successive hourly runs."""
+    universe = [t for t in db.get_analysis_universe(conn, config.OPPORTUNITY_CANDIDATES)
+                if t not in config.BENCHMARK_TICKERS]
     fetched = db.get_ohlc_fetched_at(conn)
     universe.sort(key=lambda t: fetched.get(t, ""))  # "" (never fetched) sorts first
-    return ohlc_source.fetch(universe[: config.OHLC_MAX_TICKERS])
+    # Benchmarks always ride along, outside the cap: analytics (beta, relative
+    # return) and the regime gate need them whether or not anyone holds them.
+    return ohlc_source.fetch(config.BENCHMARK_TICKERS + universe[: config.OHLC_MAX_TICKERS])
 
 
 def analysis_fetch(conn):
@@ -317,6 +318,10 @@ def build_sources(conn):
         "ohlc":           (lambda: ohlc_fetch(conn), db.upsert_ohlc, config.OHLC_MIN_INTERVAL_SECONDS),  # 2y history barely moves intraday
         "analysis":       (lambda: analysis_fetch(conn), db.upsert_analyses, config.ANALYSIS_MIN_INTERVAL_SECONDS),  # after ohlc; cheap DB+quote read
         "alerts":         (lambda: alerts_source.detect(conn), db.upsert_alerts, None),  # derived: after boom_score
+        # Closing value of every account (seeded at-times, after the US close).
+        "equity_snapshot": SourceSpec(lambda: equity.snapshot_all(conn), db.upsert_equity_snapshots,
+                                      retry_interval=3600, force_on_daily=False,
+                                      requests_derived=False),
     }
     return {
         name: spec if isinstance(spec, SourceSpec) else SourceSpec(*spec)
