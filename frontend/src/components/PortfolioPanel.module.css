@@ -301,6 +301,29 @@
   cursor: pointer;
 }
 .iconAction:hover { color: var(--accent-text); border-color: var(--accent); background: var(--accent-weak); }
+.textAction {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.textAction:hover, .textAction:focus-visible { color: var(--accent-text); border-color: var(--accent); background: var(--accent-weak); }
+
+.payCash {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 
 .advice {
   display: inline-flex;

@@ -67,7 +67,7 @@ const VIEWS = {
     <SuggestionsPanel data={p.suggestions} loading={p.loading} busy={p.busy} onRefresh={p.refresh} onAddWatch={p.addWatch} />
   ),
   portfolio: (p) => (
-    <PortfolioPanel portfolio={p.portfolio} signals={p.signals} quotes={p.quotesByTicker} analyses={p.analyses} onAdd={p.addHolding} onEdit={p.updateHolding} onSetCategory={p.setHoldingCategory} onRemove={p.removeHolding} />
+    <PortfolioPanel portfolio={p.portfolio} cash={p.cash} signals={p.signals} quotes={p.quotesByTicker} analyses={p.analyses} onAdd={p.addHolding} onEdit={p.updateHolding} onSetCategory={p.setHoldingCategory} onRemove={p.removeHolding} onSell={p.sellHolding} onMoveCash={p.moveCash} onSetCash={p.setCash} />
   ),
   trades: (p) => <TradesPanel trades={p.trades} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   news: (p) => (

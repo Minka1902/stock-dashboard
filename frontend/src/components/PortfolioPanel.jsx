@@ -2,11 +2,13 @@ import { useCallback, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
 import AnimatedNumber from "./AnimatedNumber";
+import CashBalances from "./CashBalances";
 import ExtHoursBadge from "./ExtHoursBadge";
 import InfoTip from "./InfoTip";
 import MenuButton, { MenuDivider, MenuItem, MenuLabel } from "./MenuButton";
 import Segmented from "./Segmented";
 import SelectMenu from "./SelectMenu";
+import SellDialog from "./SellDialog";
 import Sparkline from "./Sparkline";
 import SparkRange from "./SparkRange";
 import Term from "./Term";
@@ -20,7 +22,7 @@ import { fadeRise, prefersReducedMotion, staggerContainer, staggerItem } from ".
 import {
   currencyForSymbol, currencySymbol, formatMoney, formatMoneySigned, marketForSymbol,
 } from "../lib/format";
-import { convertAmount, summarizeByCurrency } from "../lib/portfolioMath";
+import { convertAmount, convertCash, summarizeByCurrency } from "../lib/portfolioMath";
 import styles from "./PortfolioPanel.module.css";
 
 const DIRECTIVE_TONE = { Accumulate: "buy", Hold: "hold", Reduce: "warn", Avoid: "sell" };
@@ -58,17 +60,20 @@ function ccyTip(ccy, ticker) {
 }
 
 export default function PortfolioPanel({
-  portfolio, signals, quotes = {}, analyses = [],
-  onAdd, onEdit, onSetCategory, onRemove,
+  portfolio, cash = [], signals, quotes = {}, analyses = [],
+  onAdd, onEdit, onSetCategory, onRemove, onSell, onMoveCash, onSetCash,
 }) {
   const [ticker, setTicker] = useState("");
   const [shares, setShares] = useState("");
   const [avgCost, setAvgCost] = useState("");
   const [addCcy, setAddCcy] = useState("auto");
+  // null = follow the default (on when that currency already has cash).
+  const [payCash, setPayCash] = useState(null);
+  const [selling, setSelling] = useState(null);
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
   const [mergeNote, setMergeNote] = useState(null);
-  const [baseNote, setBaseNote] = useState(null);
+  const [note, setNote] = useState(null);
 
   // Inline edit: which ticker is being edited + its draft values.
   const [editing, setEditing] = useState(null);
@@ -89,6 +94,7 @@ export default function PortfolioPanel({
   const neededCcys = [
     ...portfolio.map((h) => h.currency || "USD"),
     ...portfolio.map((h) => quoteCcy(h.ticker)),
+    ...cash.map((c) => c.currency),
   ].filter(Boolean);
   const fx = useFxRates(base, neededCcys);
 
@@ -119,6 +125,9 @@ export default function PortfolioPanel({
   const { total } = summary;
   const totalPl = total.cost > 0 ? ((total.value - total.cost) / total.cost) * 100 : null;
   const hasTotals = total.converted > 0;
+  const cashConv = convertCash(cash, base, fx.rates);
+  const hasCash = cash.some((c) => c.balance);
+  const cashOf = (ccy) => cash.find((c) => c.currency === ccy)?.balance || 0;
 
   // Group rows by theme category, subtotals converted into the base currency.
   const groups = useMemo(() => {
@@ -157,14 +166,18 @@ export default function PortfolioPanel({
     updateProfile({ base_currency: next }); // optimistic
     try {
       const saved = await saveProfile({ base_currency: next });
-      setBaseNote(saved?.note || null);
+      setNote(saved?.note || null);
     } catch (err) {
       updateProfile({ base_currency: base });
-      setBaseNote(err.message || "Could not change the base currency");
+      setNote(err.message || "Could not change the base currency");
     }
   }
 
   const detected = currencyForSymbol(ticker.trim());
+  const addTicker = ticker.trim().toUpperCase();
+  const tradeCcy = portfolio.find((h) => h.ticker === addTicker)?.currency
+    || (addCcy === "auto" ? detected : addCcy);
+  const payFromCash = payCash ?? (tradeCcy ? cashOf(tradeCcy) > 0 : false);
   const addCcyOptions = [
     { value: "auto", label: detected ? `Auto · ${detected}` : "Auto · detect" },
     ...HOLDING_CURRENCIES.map((c) => ({ value: c, label: `${currencySymbol(c).trim()} ${c}` })),
@@ -182,7 +195,7 @@ export default function PortfolioPanel({
     setPending(true);
     const existing = portfolio.find((h) => h.ticker === t);
     try {
-      const updated = await onAdd(t, sh, ac, addCcy === "auto" ? null : addCcy);
+      const updated = await onAdd(t, sh, ac, addCcy === "auto" ? null : addCcy, { payFromCash });
       // onAdd stores the returned list in the hook; also read it here for the merge note.
       const after = Array.isArray(updated) ? updated.find((h) => h.ticker === t) : null;
       if (existing && after) {
@@ -192,7 +205,7 @@ export default function PortfolioPanel({
       } else {
         setMergeNote(null);
       }
-      setTicker(""); setShares(""); setAvgCost(""); setAddCcy("auto");
+      setTicker(""); setShares(""); setAvgCost(""); setAddCcy("auto"); setPayCash(null);
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -215,11 +228,21 @@ export default function PortfolioPanel({
     setEditing(null);
   }
 
+  async function sell(h, order) {
+    const out = await onSell(h.ticker, order);
+    setMergeNote(null);
+    setNote(`Sold ${order.shares} ${h.ticker} — realized ${formatMoneySigned(out.realized_pnl, out.currency)}.`);
+  }
+
   const showEmpty = portfolio.length === 0;
   const reduced = prefersReducedMotion();
   const cards = [
-    { key: "value", label: "Total value", value: hasTotals ? total.value : null, tone: "flat",
-      fmt: fmtBase, sub: summary.byCurrency.map((s) => ({ ccy: s.currency, v: compact(s.value, s.currency) })) },
+    { key: "value", label: hasCash ? "Equity" : "Total value",
+      value: hasTotals || hasCash ? total.value + cashConv.total : null, tone: "flat", fmt: fmtBase,
+      sub: [
+        ...summary.byCurrency.map((s) => ({ ccy: s.currency, v: compact(s.value, s.currency) })),
+        ...(hasCash ? [{ ccy: "cash", v: compact(cashConv.total, base) }] : []),
+      ] },
     { key: "day", label: "Day P/L", value: hasTotals && total.dayKnown ? total.day : null,
       tone: total.day >= 0 ? "pos" : "neg", fmt: fmtBaseSigned,
       sub: summary.byCurrency.filter((s) => s.dayKnown)
@@ -263,22 +286,22 @@ export default function PortfolioPanel({
       </header>
 
       <AnimatePresence initial={false}>
-        {baseNote && (
+        {note && (
           <motion.p
-            key="base-note"
+            key="note"
             className={styles.mergeNote}
             initial={reduced ? false : { opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={reduced ? { opacity: 0 } : { opacity: 0, height: 0 }}
           >
-            <Icon name="info" size={13} /> {baseNote}
-            <button type="button" className={styles.noteClose} onClick={() => setBaseNote(null)}
+            <Icon name="info" size={13} /> {note}
+            <button type="button" className={styles.noteClose} onClick={() => setNote(null)}
                     aria-label="Dismiss note">×</button>
           </motion.p>
         )}
       </AnimatePresence>
 
-      {!showEmpty && (
+      {(!showEmpty || hasCash) && (
         <>
           <motion.div
             className={styles.summary}
@@ -349,6 +372,15 @@ export default function PortfolioPanel({
         </>
       )}
 
+      <CashBalances
+        balances={cash}
+        base={base}
+        rates={fx.rates}
+        currencies={HOLDING_CURRENCIES}
+        onMove={onMoveCash}
+        onSet={onSetCash}
+      />
+
       <form className={styles.form} onSubmit={submit} data-tour="add-form">
         <input className={styles.ticker} placeholder="Ticker" value={ticker} maxLength={12}
                aria-label="Ticker (e.g. AAPL or TEVA.TA)"
@@ -365,6 +397,15 @@ export default function PortfolioPanel({
           <span className={styles.ccyPick}>
             <SelectMenu label="Currency" value={addCcy} options={addCcyOptions} onChange={setAddCcy} />
           </span>
+        </Tooltip>
+        <Tooltip content={tradeCcy
+          ? `Debit the cost (plus fees) from your ${tradeCcy} cash. Off: the money came from outside this portfolio.`
+          : "Pick or type a ticker first"}>
+          <label className={styles.payCash}>
+            <input type="checkbox" checked={payFromCash} disabled={!tradeCcy}
+                   onChange={(e) => setPayCash(e.target.checked)} />
+            Pay from cash
+          </label>
         </Tooltip>
         <button className={styles.add} disabled={pending || !ticker.trim()}>
           {pending ? "Adding…" : "Add"}
@@ -563,11 +604,15 @@ export default function PortfolioPanel({
                             </span>
                           ) : (
                             <span className={styles.rowActions}>
-                              <Tooltip content={`Edit ${h.ticker}`}>
+                              <Tooltip content={`Record a sale of ${h.ticker}`}>
+                                <button className={styles.textAction} onClick={() => setSelling(h)}
+                                        aria-label={`Sell ${h.ticker}`}>Sell</button>
+                              </Tooltip>
+                              <Tooltip content={`Correct ${h.ticker} (recorded as an adjustment)`}>
                                 <button className={styles.iconAction} onClick={() => startEdit(h)}
                                         aria-label={`Edit ${h.ticker}`}>✎</button>
                               </Tooltip>
-                              <Tooltip content={`Remove ${h.ticker}`}>
+                              <Tooltip content={`Remove ${h.ticker} without a sale (for a mistaken entry)`}>
                                 <button className={styles.remove} onClick={() => onRemove(h.ticker)}
                                         aria-label={`Remove ${h.ticker}`}>×</button>
                               </Tooltip>
@@ -610,6 +655,15 @@ export default function PortfolioPanel({
             </tfoot>
           </table>
         </div>
+      )}
+      {selling && (
+        <SellDialog
+          holding={selling}
+          price={positions[selling.ticker]?.price ?? null}
+          hasCash={cashOf(selling.currency || "USD") > 0}
+          onSubmit={(order) => sell(selling, order)}
+          onClose={() => setSelling(null)}
+        />
       )}
     </section>
   );
