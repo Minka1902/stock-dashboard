@@ -101,8 +101,11 @@ def validate(s: SourceSchedule) -> SourceSchedule:
 # Sources whose default is a wall-clock slot rather than an interval.
 # margin_debt: FINRA publishes monthly; one headless-browser fetch a week
 # (Monday 06:00 Israel time) is plenty and keeps Chromium launches rare.
+# equity_snapshot: closing values, after the US close (TASE closes earlier).
 SEED_TIMES = {
     "margin_debt": {"times": ["06:00"], "days": ["mon"], "tz": "Asia/Jerusalem"},
+    "equity_snapshot": {"times": ["16:15"], "days": ["mon", "tue", "wed", "thu", "fri"],
+                        "tz": "America/New_York"},
 }
 
 

@@ -226,3 +226,19 @@ def next_trading_day(after: date | None = None, exchange: str = "NYSE") -> date:
     while not is_trading_day(d, exchange):
         d += timedelta(days=1)
     return d
+
+
+def last_closed_session(now: datetime | None = None) -> date:
+    """The most recent NYSE trading day whose regular session has ended at
+    `now` — the date a closing snapshot belongs to, whenever it actually runs."""
+    if now is None:
+        now = datetime.now(timezone.utc)
+    et = _to_eastern(now)
+    d = et.date()
+    close = _HALF_CLOSE if d.isoformat() in _HALF_DAYS else _REGULAR_CLOSE
+    if is_trading_day(d) and et.hour * 60 + et.minute >= close:
+        return d
+    d -= timedelta(days=1)
+    while not is_trading_day(d):
+        d -= timedelta(days=1)
+    return d

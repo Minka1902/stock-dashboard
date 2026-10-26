@@ -31,7 +31,7 @@ from pydantic import BaseModel
 
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, backtest, chart_data, config, currency, db, ingest, ledger, notify, quotes, report, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
+from app import analysis, analyze, auth, backtest, chart_data, config, currency, db, equity, ingest, ledger, notify, quotes, report, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
@@ -254,6 +254,7 @@ class SourceSpec(NamedTuple):
     force_on_daily: whether the daily deep run re-runs it. False for sources
     whose upstream publishes slowly or rate-limits us hard — hitting those an
     extra time daily just burns the quota and re-records the same error.
+    requests_derived: whether a success pulls the derived step forward.
     """
 
     fetch: object
@@ -261,6 +262,8 @@ class SourceSpec(NamedTuple):
     min_interval: int | None = None
     retry_interval: int | None = None
     force_on_daily: bool = True
+    # False for sources nothing in the derived step reads (equity snapshots).
+    requests_derived: bool = True
 
 
 def _us_only(tickers: list[str]) -> list[str]:
@@ -465,7 +468,8 @@ def _after_run(name: str, result: "ingest.RunResult", request_derived: bool = Tr
     so the page can say when the next attempt is."""
     if name in schedules.DERIVED_MEMBERS:
         return
-    if request_derived and (result.outcome == "ok" or result.record_count):
+    if request_derived and SOURCES[name].requests_derived and (
+            result.outcome == "ok" or result.record_count):
         _request_derived()
     sched = db.get_source_schedule(refresh_conn, name)
     if sched is None:
