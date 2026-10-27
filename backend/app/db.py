@@ -2656,7 +2656,8 @@ def _record_transaction(conn, tx: Transaction, funded: bool, ledger) -> Transact
         conn.execute(
             "INSERT INTO cash_balances (user_id, account, currency, balance) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(user_id, account, currency) DO UPDATE SET balance = excluded.balance",
-            (tx.user_id, tx.account, tx.currency, 0.0 if abs(after) <= ledger.EPS else after),
+            # Rounded so float noise never accumulates into "9,156.119999".
+            (tx.user_id, tx.account, tx.currency, 0.0 if abs(after) <= ledger.EPS else round(after, 6)),
         )
     tx = tx.model_copy(update={
         "cash_delta": eff.cash_delta, "realized_pnl": eff.realized, "flow": eff.flow})
