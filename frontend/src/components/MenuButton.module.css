@@ -77,3 +77,7 @@
   margin: var(--s-2) 0;
   background: var(--border);
 }
+
+@media (pointer: coarse) {
+  .trigger { min-width: var(--tap); min-height: var(--tap); }
+}

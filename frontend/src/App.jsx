@@ -7,6 +7,7 @@ import { useSettingsContext } from "./hooks/useSettingsContext";
 import { useAppSettings } from "./hooks/useAppSettings";
 import { useDocumentTitle } from "./hooks/useDocumentTitle";
 import Sidebar from "./components/Sidebar";
+import MobileNav from "./components/MobileNav";
 import TopBar from "./components/TopBar";
 import LiveTicker from "./components/LiveTicker";
 import CommandPalette from "./components/CommandPalette";
@@ -312,6 +313,9 @@ export default function App({ auth }) {
           no marquee, no top bar. Its own Back button is the way out (Task 19). */}
       {!detailTicker && (
         <Sidebar view={view} onNavigate={navigate} />
+      )}
+      {!detailTicker && (
+        <MobileNav view={view} onNavigate={navigate} isAdmin={Boolean(auth?.user?.is_admin)} />
       )}
 
       <main className={styles.main}>

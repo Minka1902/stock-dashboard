@@ -330,3 +330,15 @@
   font-size: 10.5px;
   font-weight: 500;
 }
+
+/* --- phones --- */
+@media (max-width: 640px) {
+  .topbar { padding: var(--s-2) var(--s-3); }
+  .stats { grid-template-columns: repeat(2, 1fr); gap: var(--s-2); }
+  /* R | price | feasibility on one line, the reason underneath. */
+  .rung { grid-template-columns: 36px 1fr auto; row-gap: 4px; }
+  .rung > :nth-child(4) { grid-column: 1 / -1; }
+  .levels { grid-template-columns: 1fr; gap: var(--s-3); }
+  .pattern { grid-template-columns: 1fr auto; }
+  .convTrack { width: 64px; }
+}

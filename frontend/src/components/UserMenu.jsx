@@ -11,8 +11,11 @@ import styles from "./UserMenu.module.css";
  * Avatar initials on a deterministic gradient, the email local part beside it
  * (≥ 960px), and a keyboard-operable menu (Settings / Info / Log out) with an
  * Admin badge for the admin account.
+ *
+ * `phoneItems` ({id, label, icon, hint, run, disabled}) are shown only on a
+ * phone (≤640px), where the top bar has no room for its own buttons.
  */
-export default function UserMenu({ user, onLogout, onNavigate }) {
+export default function UserMenu({ user, onLogout, onNavigate, phoneItems = [] }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   const menuRef = useRef(null);
@@ -75,6 +78,19 @@ export default function UserMenu({ user, onLogout, onNavigate }) {
             </div>
 
             <div className={styles.divider} />
+
+            {phoneItems.length > 0 && (
+              <div className={styles.phoneOnly}>
+                {phoneItems.map((it) => (
+                  <button key={it.id} type="button" role="menuitem" className={styles.item}
+                          disabled={it.disabled} onClick={() => { setOpen(false); it.run(); }}>
+                    <Icon name={it.icon} size={15} /> {it.label}
+                    {it.hint && <span className={styles.itemHint}>{it.hint}</span>}
+                  </button>
+                ))}
+                <div className={styles.divider} />
+              </div>
+            )}
 
             <button type="button" role="menuitem" className={styles.item} onClick={() => go("settings")}>
               <Icon name="settings" size={15} /> Settings

@@ -12,6 +12,7 @@ import { STATE_TIP, sourceState } from "../lib/sources";
 import Tooltip from "./Tooltip";
 import styles from "./ServerPanel.module.css";
 import Term from "./Term";
+import ScrollHint from "./ScrollHint";
 
 const TONE = { ok: "pos", error: "neg", deferred: "caution", never: "faint" };
 
@@ -251,7 +252,7 @@ export default function ServerPanel() {
             {deferred.length ? ` · ${deferred.length} deferred` : ""}
           </span>
         </div>
-        <div className={styles.tableWrap}>
+        <ScrollHint className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
               <tr>
@@ -320,7 +321,7 @@ export default function ServerPanel() {
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollHint>
       </section>
 
       <SchedulerSection schedules={schedules} setSchedules={setSchedules} />
@@ -360,7 +361,7 @@ export default function ServerPanel() {
             </AnimatePresence>
           </span>
         </div>
-        <div className={styles.tableWrap}>
+        <ScrollHint className={styles.tableWrap}>
           {events.length === 0 ? (
             <p className={styles.muted}>
               {filter ? `Nothing recorded for ${filter.kind} ${filter.id}.` : "Nothing recorded yet."}
@@ -427,7 +428,7 @@ export default function ServerPanel() {
               </tbody>
             </table>
           )}
-        </div>
+        </ScrollHint>
       </section>
 
       <SourceDrawer source={drawerRow} onClose={closeDrawer} />

@@ -77,6 +77,18 @@ export default function TopBar({
   const latest = refreshed[0];
   const live = latest && (latest.status === "ok" || latest.status.startsWith("ok ("));
   const lastRefresh = latest ? formatRelativeTime(latest.last_refreshed_at) : "never";
+  const themeIndex = themes.findIndex((t) => t.key === theme);
+  const nextTheme = themes[(themeIndex + 1) % Math.max(themes.length, 1)];
+  // On a phone these live in the account menu instead of the bar.
+  const phoneItems = [
+    { id: "refresh", label: busy ? "Syncing…" : "Refresh all sources", icon: "refresh",
+      run: onRefresh, disabled: busy },
+    ...(nextTheme ? [{ id: "theme", label: `Theme: ${nextTheme.label}`, icon: "moon",
+      run: () => onSetTheme(nextTheme.key) }] : []),
+    { id: "dyslexia", label: "Dyslexia-friendly mode", icon: "book", hint: dyslexia ? "on" : "off",
+      run: onToggleDyslexia },
+    ...(hasTour ? [{ id: "tour", label: "Guided tour of this view", icon: "info", run: onStartTour }] : []),
+  ];
 
   return (
     <header className={styles.bar}>
@@ -123,6 +135,14 @@ export default function TopBar({
             <kbd>K</kbd>
           </button>
         </Tooltip>
+        <button
+          type="button"
+          className={`${styles.iconBtn} ${styles.phoneOnly}`}
+          onClick={onOpenCommand}
+          aria-label="Search stocks and views"
+        >
+          <Icon name="search" size={17} />
+        </button>
 
         <span data-tour="alerts">
           <AlertsBell
@@ -137,7 +157,7 @@ export default function TopBar({
           <Tooltip side="bottom" content="Take a guided tour of this view">
             <button
               type="button"
-              className={styles.iconBtn}
+              className={`${styles.iconBtn} ${styles.desktopOnly}`}
               onClick={onStartTour}
               aria-label="Take a guided tour of this view"
             >
@@ -148,7 +168,7 @@ export default function TopBar({
 
         <Tooltip side="bottom" content={dyslexia ? "Turn off dyslexia-friendly mode" : "Turn on dyslexia-friendly mode"}>
           <button
-            className={styles.iconBtn}
+            className={`${styles.iconBtn} ${styles.desktopOnly}`}
             onClick={onToggleDyslexia}
             aria-label="Dyslexia-friendly mode"
             aria-pressed={dyslexia}
@@ -157,11 +177,14 @@ export default function TopBar({
             <Icon name="book" size={17} />
           </button>
         </Tooltip>
-        <ThemeMenu theme={theme} themes={themes} onSetTheme={onSetTheme} />
+        <span className={styles.desktopOnly}>
+          <ThemeMenu theme={theme} themes={themes} onSetTheme={onSetTheme} />
+        </span>
         <Tooltip side="bottom" content={busy
           ? "Syncing — a refresh is already running"
           : "Fetch fresh data from every source now, then reload the dashboard"}>
-          <button className={styles.refresh} onClick={onRefresh} disabled={busy} data-tour="refresh">
+          <button className={`${styles.refresh} ${styles.desktopOnly}`} onClick={onRefresh} disabled={busy}
+                  data-tour="refresh">
             <span className={busy ? styles.spin : ""}>
               <Icon name="refresh" size={15} />
             </span>
@@ -169,7 +192,7 @@ export default function TopBar({
           </button>
         </Tooltip>
 
-        <UserMenu user={user} onLogout={onLogout} onNavigate={onNavigate} />
+        <UserMenu user={user} onLogout={onLogout} onNavigate={onNavigate} phoneItems={phoneItems} />
       </div>
     </header>
   );

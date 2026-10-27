@@ -207,17 +207,24 @@
   .title { font-size: 16px; }
 }
 
-/* On a phone the row can't hold everything; drop the two controls that have
-   an equivalent elsewhere (the palette is Cmd/Ctrl+K, the lean is the first
-   thing on the Sentiment page) rather than let the bar overflow. */
-@media (max-width: 560px) {
-  .lean, .cmd { display: none; }
-  /* Title row first, the controls on their own row beneath — side by side
-     they wrapped into two rows that sat on top of the title. */
-  .bar { flex-wrap: wrap; row-gap: var(--s-2); padding: var(--s-2) var(--s-4); }
-  .left { flex: 1 1 100%; }
-  .title { overflow: hidden; text-overflow: ellipsis; }
-  .actions { flex: 1 1 100%; justify-content: flex-start; }
+.phoneOnly { display: none; }
+
+/* On a phone the bar is one row: title, search, alerts, account. Refresh,
+   theme, dyslexia and the tour move into the account menu (UserMenu
+   phoneItems); the lean is the first thing on the Sentiment page, and the
+   ⌘K button becomes a search icon (there is no keyboard to press). */
+@media (max-width: 640px) {
+  .lean, .cmd, .desktopOnly { display: none; }
+  .phoneOnly { display: grid; }
+  .bar { padding: var(--s-2) var(--s-3); gap: var(--s-2); min-height: 52px; }
+  .left { flex: 1 1 auto; min-width: 0; }
+  .title { overflow: hidden; text-overflow: ellipsis; font-size: 15px; }
+  .actions { flex: none; flex-wrap: nowrap; gap: var(--s-1); }
+}
+
+@media (pointer: coarse) {
+  .iconBtn { width: var(--tap); height: var(--tap); }
+  .refresh, .cmd, .lean { height: var(--tap); }
 }
 
 .user {

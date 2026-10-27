@@ -80,6 +80,22 @@ body {
   /* uppercase terminal caption */
   --caption-spacing: 0.09em;
 
+  /* type scale (DESIGN.md): caption, small, body, lead, h2, h1, display */
+  --fs-caption: 11px;
+  --fs-small: 12.5px;
+  --fs-body: 14px;
+  --fs-lead: 17px;
+  --fs-h2: 22px;
+  --fs-h1: 30px;
+  --fs-display: 44px;
+
+  /* Minimum hit area for a coarse pointer (touch). Breakpoints can't be custom
+     properties inside @media, so they are fixed values, documented in
+     DESIGN.md: 1000 (two columns stack), 900 (rail -> icons), 640 (phone:
+     bottom tab bar, stacked tables), 560 (small phone). */
+  --tap: 40px;
+  --mobile-nav-h: 60px;
+
   --sidebar-w: 212px;
 
   /* Stacking order. Anchored popups are portaled to <body>, so they live in
@@ -431,4 +447,34 @@ button {
   animation-iteration-count: 1 !important;
   transition-duration: 0.001ms !important;
   scroll-behavior: auto !important;
+}
+
+/* ============================================================
+   Phones (≤640px). Panel headers let their controls drop under the title
+   instead of squeezing the title into a narrow column; every panel shares
+   the <section><header> structure, so this is one rule, not 25.
+   ============================================================ */
+@media (max-width: 640px) {
+  main section > header {
+    flex-wrap: wrap;
+    row-gap: var(--s-2);
+  }
+}
+
+/* Touch (coarse pointer): every control in the page gets at least the --tap
+   hit height. One rule instead of a min-height in every module; components
+   that also need the width (icon-only buttons) set it in their own module. */
+@media (pointer: coarse) {
+  main button,
+  main select,
+  main [role="tab"],
+  main input:not([type="checkbox"]):not([type="radio"]) {
+    min-height: var(--tap);
+  }
+  main button { min-width: 32px; }
+  main input[type="checkbox"],
+  main input[type="radio"] {
+    width: 20px;
+    height: 20px;
+  }
 }

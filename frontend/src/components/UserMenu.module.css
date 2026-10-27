@@ -147,3 +147,17 @@
 
 .logout { color: var(--negative); }
 .logout svg { color: var(--negative); }
+
+.phoneOnly { display: none; }
+.itemHint {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+@media (max-width: 640px) {
+  .phoneOnly { display: block; }
+}
+@media (pointer: coarse) {
+  .trigger { min-height: var(--tap); min-width: var(--tap); justify-content: center; }
+}

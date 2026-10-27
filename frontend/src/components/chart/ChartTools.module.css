@@ -464,3 +464,7 @@
      sets data-align when the default would run off screen). */
   .flyout[data-align="end"] { left: auto; right: 0; transform-origin: right top; }
 }
+
+@media (pointer: coarse) {
+  .railBtn { width: var(--tap); height: var(--tap); }
+}

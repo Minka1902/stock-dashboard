@@ -144,6 +144,12 @@ const PATHS = {
       <path d="M6 13l6 6 6-6" />
     </>
   ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M20 20l-4.2-4.2" />
+    </>
+  ),
 };
 
 export default function Icon({ name, size = 18, strokeWidth = 1.8, ...rest }) {

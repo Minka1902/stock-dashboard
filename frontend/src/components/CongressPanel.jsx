@@ -8,6 +8,7 @@ import { formatDate } from "../lib/format";
 import styles from "./CongressPanel.module.css";
 import Tooltip from "./Tooltip";
 import InfoTip from "./InfoTip";
+import ScrollHint from "./ScrollHint";
 
 const COMPACT_LIMIT = 5;
 
@@ -77,7 +78,7 @@ export default function CongressPanel({ data, loading, busy, onRefresh, compact 
           </button>
         </div>
       ) : (
-        <div className={styles.tableWrap}>
+        <ScrollHint className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
               <tr>
@@ -123,7 +124,7 @@ export default function CongressPanel({ data, loading, busy, onRefresh, compact 
               )}
             </tbody>
           </table>
-        </div>
+        </ScrollHint>
       ))}
     </section>
   );

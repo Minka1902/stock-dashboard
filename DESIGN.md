@@ -53,6 +53,21 @@ Monospace-led, the terminal signature.
 - Density is a feature: tables run edge to edge, rows are compact (32-36px), zebra via `--surface`/`--surface-2` at very low delta.
 - Avoid the SaaS card grid entirely. Use ruled panes, split columns, and full-bleed tables. No nested containers.
 - Responsive is structural: rail collapses to icon-only, multi-column panes stack.
+  Fixed breakpoints (custom properties can't be used inside `@media`):
+  - 1000px: two-column panes stack.
+  - 900px: the rail drops to icons.
+  - 640px (phone): the rail is replaced by a bottom tab bar (`MobileNav`), with the
+    five core views plus a "More" sheet. The top bar is one row (title, search,
+    alerts, account). Refresh, theme, dyslexia and tour move into the account
+    menu. Wide tables either stack into cards (Portfolio) or scroll sideways
+    behind a `ScrollHint` edge fade.
+  - 560px: a small phone.
+- Touch: under `(pointer: coarse)` every control in `main` has at least `--tap`
+  (40px) of hit height (one rule in `index.css`). Icon-only buttons also take
+  the width in their own module. Inline glyphs (InfoTip) keep their size and
+  grow an invisible hit area instead.
+- Type scale tokens: `--fs-caption` 11, `--fs-small` 12.5, `--fs-body` 14,
+  `--fs-lead` 17, `--fs-h2` 22, `--fs-h1` 30, `--fs-display` 44.
 
 ## Elevation
 

@@ -15,6 +15,7 @@ import {
 import styles from "./TradesPanel.module.css";
 import Tooltip from "./Tooltip";
 import InfoTip from "./InfoTip";
+import ScrollHint from "./ScrollHint";
 
 const COMPACT_LIMIT = 5;
 
@@ -68,7 +69,7 @@ export default function TradesPanel({ trades, loading, busy, onRefresh, compact 
       {!collapsed && (showEmpty ? (
         <EmptyState icon="trending" title="No insider filings loaded yet" onRetry={onRefresh} busy={busy} />
       ) : (
-        <div className={styles.tableWrap}>
+        <ScrollHint className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
               <tr>
@@ -125,7 +126,7 @@ export default function TradesPanel({ trades, loading, busy, onRefresh, compact 
               )}
             </motion.tbody>
           </table>
-        </div>
+        </ScrollHint>
       ))}
     </section>
   );

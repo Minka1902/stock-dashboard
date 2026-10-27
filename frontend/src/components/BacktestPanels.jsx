@@ -4,6 +4,7 @@ import Skeleton from "./Skeleton";
 import { getSignalReplay, getTrackRecord } from "../api";
 import styles from "./BacktestPanels.module.css";
 import Term from "./Term";
+import ScrollHint from "./ScrollHint";
 
 /** null means "we don't know", and must never render as 0. */
 function num(v, suffix = "") {
@@ -113,7 +114,7 @@ function TrackRecord() {
           never made would be inventing them.
         </p>
       ) : (
-        <div className={styles.tableWrap}>
+        <ScrollHint className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
               <tr>
@@ -128,7 +129,7 @@ function TrackRecord() {
               {buckets.map((b) => <StatRow key={b.label} bucket={b} horizon={horizon} />)}
             </tbody>
           </table>
-        </div>
+        </ScrollHint>
       )}
     </div>
   );
@@ -178,7 +179,7 @@ function SignalReplay() {
           builds up as the scorer runs.
         </p>
       ) : (
-        <div className={styles.tableWrap}>
+        <ScrollHint className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
               <tr>
@@ -214,7 +215,7 @@ function SignalReplay() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollHint>
       )}
     </div>
   );

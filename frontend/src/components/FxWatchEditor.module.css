@@ -111,3 +111,7 @@
 .status { font-size: 13px; color: var(--text-muted); }
 .ok { color: var(--positive); font-weight: 600; }
 .err { color: var(--negative); }
+
+@media (pointer: coarse) {
+  .iconBtn, .removeBtn { width: var(--tap); height: var(--tap); }
+}

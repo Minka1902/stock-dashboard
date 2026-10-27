@@ -495,7 +495,7 @@ export default function PortfolioPanel({
                         exit={reduced ? { opacity: 0 } : { opacity: 0, x: -12 }}
                         layout={!reduced}
                       >
-                        <td>
+                        <td data-col="ticker">
                           <span className={styles.tickerLine}>
                             <Tooltip content={`Analyze ${h.ticker} in a new tab`}>
                               <button className={styles.symbolBtn} onClick={() => openTickerTab(h.ticker)}
@@ -520,12 +520,12 @@ export default function PortfolioPanel({
                         </td>
                         {isEditing ? (
                           <>
-                            <td className={styles.numCol}>
+                            <td className={styles.numCol} data-col="shares">
                               <input className={styles.editInput} type="number" min="0" step="any"
                                      aria-label={`Shares of ${h.ticker}`}
                                      value={editShares} onChange={(e) => setEditShares(e.target.value)} autoFocus />
                             </td>
-                            <td className={styles.numCol}>
+                            <td className={styles.numCol} data-col="cost">
                               <span className={styles.editCost}>
                                 <input className={styles.editInput} type="number" min="0" step="any"
                                        aria-label={`Average cost of ${h.ticker} in ${editCcy}`}
@@ -543,11 +543,11 @@ export default function PortfolioPanel({
                           </>
                         ) : (
                           <>
-                            <td className={styles.numCol}>{h.shares}</td>
-                            <td className={styles.numCol}>{formatMoney(h.avg_cost, ccy)}</td>
+                            <td className={styles.numCol} data-col="shares" data-label="Shares">{h.shares}</td>
+                            <td className={styles.numCol} data-col="cost" data-label="Avg cost">{formatMoney(h.avg_cost, ccy)}</td>
                           </>
                         )}
-                        <td className={styles.numCol}>
+                        <td className={styles.numCol} data-col="price" data-label="Price">
                           {price != null ? (
                             <span className={styles.priceCell}>
                               <span key={price} className={styles.tick} data-tone={dayTone}>{formatMoney(price, ccy)}</span>
@@ -559,18 +559,18 @@ export default function PortfolioPanel({
                             </Tooltip>
                           ) : "—"}
                         </td>
-                        <td className={styles.numCol}>
+                        <td className={styles.numCol} data-col="day" data-label="Day">
                           <span className={styles.pl} data-tone={dayTone}>
                             {dayPct != null ? signedPct(dayPct, 2) : "—"}
                           </span>
                         </td>
-                        <td className={styles.numCol}>{pos.value != null ? compact(pos.value, ccy) : "—"}</td>
-                        <td className={styles.numCol}>
+                        <td className={styles.numCol} data-col="value">{pos.value != null ? compact(pos.value, ccy) : "—"}</td>
+                        <td className={styles.numCol} data-col="pl" data-label="P/L">
                           <span className={styles.pl} data-tone={tone}>
                             {plPct != null ? signedPct(plPct) : "—"}
                           </span>
                         </td>
-                        <td>
+                        <td data-col="advice">
                           {an ? (
                             <span className={styles.advice} data-tone={DIRECTIVE_TONE[an.directive]}>
                               {an.directive}
@@ -580,7 +580,7 @@ export default function PortfolioPanel({
                             <span className={styles.advicePending}>analyzing…</span>
                           )}
                         </td>
-                        <td className={styles.numCol}>
+                        <td className={styles.numCol} data-col="trend">
                           <Sparkline
                             closes={sparks[h.ticker]?.closes}
                             changePct={sparks[h.ticker]?.change_pct}
@@ -590,7 +590,7 @@ export default function PortfolioPanel({
                             width={80}
                           />
                         </td>
-                        <td className={styles.actionsCol}>
+                        <td className={styles.actionsCol} data-col="actions">
                           {isEditing ? (
                             <span className={styles.editActions}>
                               <Tooltip content={`Save ${h.ticker}`}>

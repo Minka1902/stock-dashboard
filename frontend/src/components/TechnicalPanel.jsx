@@ -10,6 +10,7 @@ const money = (v, t) => formatMoney(v, currencyForSymbol(t) || "USD", { compact:
 import styles from "./TechnicalPanel.module.css";
 import Tooltip from "./Tooltip";
 import Term from "./Term";
+import ScrollHint from "./ScrollHint";
 import { freshnessTip } from "../lib/freshness";
 
 const COMPACT_LIMIT = 5;
@@ -126,7 +127,7 @@ export default function TechnicalPanel({ data, loading, busy, onRefresh, compact
           </button>
         </div>
       ) : (
-        <div className={styles.tableWrap}>
+        <ScrollHint className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
               <tr>
@@ -175,7 +176,7 @@ export default function TechnicalPanel({ data, loading, busy, onRefresh, compact
               )}
             </tbody>
           </table>
-        </div>
+        </ScrollHint>
       ))}
     </section>
   );
