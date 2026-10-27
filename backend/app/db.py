@@ -18,6 +18,8 @@ from app.models import (
     AppSettings,
     AuthSession,
     BoomScore,
+    Bot,
+    BotEvent,
     CashBalance,
     CompanyHolder,
     CongressTrade,
@@ -517,6 +519,34 @@ def init_schema(conn: sqlite3.Connection) -> None:
             balance  REAL NOT NULL,
             PRIMARY KEY (user_id, account, currency)
         );
+        CREATE TABLE IF NOT EXISTS bots (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER NOT NULL,
+            name         TEXT NOT NULL,
+            strategy     TEXT NOT NULL,
+            params_json  TEXT NOT NULL DEFAULT '{}',
+            tickers_json TEXT NOT NULL DEFAULT '[]',
+            watchlist_id INTEGER,
+            currency     TEXT NOT NULL,
+            allocated    REAL NOT NULL,
+            status       TEXT NOT NULL DEFAULT 'active',
+            state_json   TEXT NOT NULL DEFAULT '{}',
+            returned     REAL,
+            created_at   TEXT NOT NULL,
+            stopped_at   TEXT
+        );
+        CREATE TABLE IF NOT EXISTS bot_events (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            bot_id  INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            at      TEXT NOT NULL,
+            kind    TEXT NOT NULL,
+            ticker  TEXT,
+            qty     REAL,
+            price   REAL,
+            reason  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_bot_events_bot ON bot_events(bot_id, id DESC);
         CREATE TABLE IF NOT EXISTS equity_snapshots (
             user_id       INTEGER NOT NULL,
             account       TEXT NOT NULL,
@@ -2745,6 +2775,143 @@ def get_flows_since(
     return {r[0]: r[1] for r in cur.fetchall()}
 
 
+# ---------- demo trading bots ----------
+
+def _bot_from_row(row) -> Bot:
+    d = dict(row)
+    d["params"] = json.loads(d.pop("params_json") or "{}")
+    d["tickers"] = json.loads(d.pop("tickers_json") or "[]")
+    d["state"] = json.loads(d.pop("state_json") or "{}")
+    return Bot(**d)
+
+
+def _transfer(conn, user_id: int, from_acct: str, to_acct: str, ccy: str, amount: float,
+              source: str, at: str, ledger) -> None:
+    """WITHDRAW from one account, DEPOSIT into another; caller holds _immediate."""
+    for acct, side in ((from_acct, "WITHDRAW"), (to_acct, "DEPOSIT")):
+        _record_transaction(conn, Transaction(
+            user_id=user_id, account=acct, ticker=ccy, side=side, qty=amount, price=1.0,
+            currency=ccy, executed_at=at, source=source), True, ledger)
+
+
+def create_bot(conn: sqlite3.Connection, bot: Bot) -> Bot:
+    """Insert the bot and move its allocation out of manual cash, atomically.
+    Raises ledger.LedgerError (nothing written) when manual cash is short."""
+    from app import ledger
+
+    with _immediate(conn):
+        cur = conn.execute(
+            "INSERT INTO bots (user_id, name, strategy, params_json, tickers_json, watchlist_id, "
+            "currency, allocated, status, state_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', '{}', ?)",
+            (bot.user_id, bot.name, bot.strategy, json.dumps(bot.params), json.dumps(bot.tickers),
+             bot.watchlist_id, bot.currency, bot.allocated, bot.created_at),
+        )
+        bot = bot.model_copy(update={"id": cur.lastrowid})
+        _transfer(conn, bot.user_id, "manual", bot.account, bot.currency, bot.allocated,
+                  "bot_allocate", bot.created_at, ledger)
+        return bot
+
+
+def get_bot(conn: sqlite3.Connection, bot_id: int) -> Bot | None:
+    row = conn.execute("SELECT * FROM bots WHERE id = ?", (bot_id,)).fetchone()
+    return _bot_from_row(row) if row else None
+
+
+def get_bots(conn: sqlite3.Connection, user_id: int | None = None,
+             status: str | None = None) -> list[Bot]:
+    sql, args = "SELECT * FROM bots WHERE 1 = 1", []
+    if user_id is not None:
+        sql += " AND user_id = ?"
+        args.append(user_id)
+    if status:
+        sql += " AND status = ?"
+        args.append(status)
+    return [_bot_from_row(r) for r in conn.execute(sql + " ORDER BY id", args).fetchall()]
+
+
+def set_bot_status(conn: sqlite3.Connection, bot_id: int, status: str, from_statuses: tuple) -> bool:
+    """Conditional transition; False when the bot wasn't in `from_statuses`."""
+    cur = conn.execute(
+        f"UPDATE bots SET status = ? WHERE id = ? AND status IN ({','.join('?' * len(from_statuses))})",
+        (status, bot_id, *from_statuses))
+    conn.commit()
+    return cur.rowcount == 1
+
+
+def bot_trade(conn: sqlite3.Connection, bot: Bot, tx: Transaction, state: dict,
+              event: BotEvent) -> Transaction | None:
+    """One engine fill: the ledger row (positions + cash), the bot's new state
+    and its event, in one transaction — and only while the bot is still active,
+    so a stop that lands mid-run wins. Returns None when the bot had stopped."""
+    from app import ledger
+
+    with _immediate(conn):
+        live = conn.execute("SELECT status FROM bots WHERE id = ?", (bot.id,)).fetchone()
+        if live is None or live[0] != "active":
+            return None
+        tx = _record_transaction(conn, tx, True, ledger)
+        conn.execute("UPDATE bots SET state_json = ? WHERE id = ?", (json.dumps(state), bot.id))
+        _insert_bot_event(conn, event)
+        return tx
+
+
+def set_bot_state(conn: sqlite3.Connection, bot_id: int, state: dict) -> None:
+    conn.execute("UPDATE bots SET state_json = ? WHERE id = ? AND status = 'active'",
+                 (json.dumps(state), bot_id))
+    conn.commit()
+
+
+def stop_bot(conn: sqlite3.Connection, bot: Bot, fills: list[tuple[str, float, float, str]],
+             at: str) -> float | None:
+    """Close every position at the given (ticker, qty, price, reason) fills,
+    return all of the bot's cash to manual and mark it stopped — atomically.
+    Returns the amount returned, or None when it was already stopped."""
+    from app import ledger
+
+    with _immediate(conn):
+        cur = conn.execute(
+            "UPDATE bots SET status = 'stopped', stopped_at = ? WHERE id = ? AND status != 'stopped'",
+            (at, bot.id))
+        if cur.rowcount != 1:
+            return None
+        for ticker, qty, price, reason in fills:
+            _record_transaction(conn, Transaction(
+                user_id=bot.user_id, account=bot.account, ticker=ticker, side="SELL", qty=qty,
+                price=price, currency=bot.currency, executed_at=at, source="bot"), True, ledger)
+            _insert_bot_event(conn, BotEvent(bot_id=bot.id, user_id=bot.user_id, at=at, kind="sell",
+                                             ticker=ticker, qty=qty, price=price, reason=reason))
+        row = conn.execute(
+            "SELECT balance FROM cash_balances WHERE user_id = ? AND account = ? AND currency = ?",
+            (bot.user_id, bot.account, bot.currency)).fetchone()
+        cash = row[0] if row else 0.0
+        if cash > ledger.EPS:
+            _transfer(conn, bot.user_id, bot.account, "manual", bot.currency, cash,
+                      "bot_return", at, ledger)
+        conn.execute("UPDATE bots SET returned = ? WHERE id = ?", (round(cash, 2), bot.id))
+        _insert_bot_event(conn, BotEvent(
+            bot_id=bot.id, user_id=bot.user_id, at=at, kind="info",
+            reason=f"Stopped: {cash:,.2f} {bot.currency} returned to your Portfolio cash"))
+        return cash
+
+
+def _insert_bot_event(conn, e: BotEvent) -> None:
+    d = e.model_dump(exclude={"id"})
+    conn.execute(f"INSERT INTO bot_events ({', '.join(d)}) VALUES ({', '.join('?' * len(d))})",
+                 tuple(d.values()))
+
+
+def add_bot_event(conn: sqlite3.Connection, event: BotEvent) -> None:
+    _insert_bot_event(conn, event)
+    conn.commit()
+
+
+def get_bot_events(conn: sqlite3.Connection, bot_id: int, limit: int = 50) -> list[BotEvent]:
+    cur = conn.execute(
+        "SELECT * FROM bot_events WHERE bot_id = ? ORDER BY id DESC LIMIT ?", (bot_id, limit))
+    return [BotEvent(**dict(r)) for r in cur.fetchall()]
+
+
 def get_accounts_with_holdings(conn: sqlite3.Connection) -> list[tuple[int, str]]:
     """Every (user_id, account) owning a position or a non-zero cash balance."""
     cur = conn.execute(
@@ -3290,6 +3457,8 @@ _PER_USER_TABLES = (
     "transactions",
     "cash_balances",
     "equity_snapshots",
+    "bots",
+    "bot_events",
     "notify_profile",
     "alert_reads",
     "suggestion_history",

@@ -6,6 +6,8 @@ to the next account. `db.delete_user` has to sweep all of them explicitly.
 """
 from app import db, ledger
 from app.models import (
+    Bot,
+    BotEvent,
     EquitySnapshot,
     NotifyProfile,
     OAuthIdentity,
@@ -22,6 +24,8 @@ PER_USER_TABLES = (
     "transactions",
     "cash_balances",
     "equity_snapshots",
+    "bots",
+    "bot_events",
     "notify_profile",
     "alert_reads",
     "suggestion_history",
@@ -43,6 +47,9 @@ def _populate(conn, user_id: int, ticker: str) -> None:
     db.upsert_equity_snapshots(conn, [EquitySnapshot(
         user_id=user_id, account="manual", date="2026-01-01", base_currency="USD",
         value_base=7, cash_base=5, invested_base=2, flow_base=0, computed_at="t")])
+    bot = db.create_bot(conn, Bot(user_id=user_id, name="b", strategy="trend", currency="USD",
+                                  allocated=1, created_at="t"))
+    db.add_bot_event(conn, BotEvent(bot_id=bot.id, user_id=user_id, at="t", kind="info", reason="r"))
     db.upsert_notify_profile(conn, user_id, NotifyProfile(
         email="a@b.c", phone="", email_enabled=True, sms_enabled=False,
         account_size=None, risk_pct=1.0, updated_at="t"))

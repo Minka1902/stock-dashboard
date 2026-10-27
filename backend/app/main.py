@@ -24,6 +24,7 @@ from apscheduler.events import (
 from apscheduler.executors.pool import BasePoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -31,7 +32,7 @@ from pydantic import BaseModel
 
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, backtest, chart_data, config, currency, db, equity, ingest, ledger, notify, quotes, report, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
+from app import analysis, analyze, auth, backtest, bots, chart_data, config, currency, db, equity, ingest, ledger, notify, quotes, report, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
@@ -678,6 +679,10 @@ def _run_daily_analysis():
         logger.exception("post-analysis digest delivery failed")
 
 
+# Minute-cadence jobs: a row per run would be ~1,400 a day of noise, so only
+# their errors (and late starts) are recorded.
+_QUIET_JOBS = {"bots"}
+
 _JOB_EVENT_NAMES = {
     EVENT_JOB_EXECUTED: "executed",
     EVENT_JOB_ERROR: "error",
@@ -720,7 +725,10 @@ def _on_job_event(event):
     elif late is not None and late >= _LATE_NOTE_SECONDS:
         detail = f"started {int(late)}s after its scheduled time (queued behind other work)"
 
-    if name == "executed" and str(event.job_id).startswith("src:") and detail is None:
+    if name == "executed" and detail is None and (
+            str(event.job_id).startswith("src:") or event.job_id in _QUIET_JOBS):
+        return
+    if name == "coalesced" and event.job_id in _QUIET_JOBS:
         return
     try:
         db.record_job_run(
@@ -780,6 +788,15 @@ async def lifespan(app: FastAPI):
     )
     _add_timed_job(
         _run_daily_analysis, analysis_trigger(db.get_app_settings(conn)), "daily_analysis")
+    # Demo trading bots: every minute, held back like the source jobs so a
+    # restart (or a test lifespan) never trades before the app has settled.
+    _add_timed_job(
+        lambda: bots.run(refresh_conn),
+        IntervalTrigger(
+            seconds=config.BOT_INTERVAL_SECONDS,
+            start_date=datetime.now(timezone.utc)
+            + timedelta(seconds=config.SCHEDULER_STARTUP_DELAY_SECONDS)),
+        "bots")
     # 6-hourly GitHub update check. Runs on the default executor, not the
     # serial "refresh" one: it only shells out to git and never touches SQLite.
     updater.schedule(scheduler)
@@ -1568,6 +1585,103 @@ def transactions(account: str | None = None, ticker: str | None = None,
         conn, user.id, _account_param(account) if account else None,
         clean_ticker(ticker) if ticker else None, max(1, min(limit, 1000)))
     return [r.model_dump() for r in rows]
+
+
+# ---------- demo trading bots ----------
+class BotCreate(BaseModel):
+    strategy: str
+    name: str | None = None
+    params: dict = {}
+    tickers: list[str] | str = []
+    watchlist_id: int | None = None
+    amount: float | None = None
+    currency: str = ""
+
+
+def _own_bot(user_id: int, bot_id: int):
+    bot = db.get_bot(conn, bot_id)
+    if bot is None or bot.user_id != user_id:
+        raise HTTPException(status_code=404, detail="bot not found")
+    return bot
+
+
+def _bots_out(user_id: int) -> list[dict]:
+    mine = db.get_bots(conn, user_id)
+    held = sorted({h.ticker for b in mine if b.status != "stopped"
+                   for h in db.get_portfolio(conn, user_id, b.account)})
+    by_ticker = {q.ticker: q for q in quotes.get_quotes(held)} if held else {}
+    return [bots.view(conn, b, by_ticker) for b in reversed(mine)]
+
+
+@app.get("/api/bots/strategies")
+def bot_strategies(user=Depends(auth.get_current_user)):
+    return {"strategies": [{"key": k, **v} for k, v in bots.STRATEGIES.items()],
+            "cost_bps": config.BOT_COST_BPS}
+
+
+@app.get("/api/bots")
+def list_bots(user=Depends(auth.get_current_user)):
+    return {"bots": _bots_out(user.id), "cost_bps": config.BOT_COST_BPS}
+
+
+@app.post("/api/bots", dependencies=[Depends(rate_limit("bots", 30, 60))])
+def create_bot(item: BotCreate, user=Depends(auth.get_current_user)):
+    """Create a demo bot and move its allocation out of manual cash."""
+    bot, errors = bots.validate_new(conn, user.id, item.model_dump())
+    if errors:
+        raise HTTPException(status_code=422, detail={
+            "message": "Some fields need attention", "errors": errors})
+    try:
+        db.create_bot(conn, bot)
+    except ledger.LedgerError as exc:
+        raise HTTPException(status_code=422, detail={
+            "message": str(exc), "errors": {"amount": str(exc)}}) from None
+    return {"bots": _bots_out(user.id)}
+
+
+@app.post("/api/bots/{bot_id}/pause")
+def pause_bot(bot_id: int, user=Depends(auth.get_current_user)):
+    _own_bot(user.id, bot_id)
+    if not db.set_bot_status(conn, bot_id, "paused", ("active",)):
+        raise HTTPException(status_code=409, detail="only a running bot can be paused")
+    return {"bots": _bots_out(user.id)}
+
+
+@app.post("/api/bots/{bot_id}/resume")
+def resume_bot(bot_id: int, user=Depends(auth.get_current_user)):
+    _own_bot(user.id, bot_id)
+    if not db.set_bot_status(conn, bot_id, "active", ("paused",)):
+        raise HTTPException(status_code=409, detail="only a paused bot can be resumed")
+    return {"bots": _bots_out(user.id)}
+
+
+@app.post("/api/bots/{bot_id}/stop")
+def stop_bot(bot_id: int, user=Depends(auth.get_current_user)):
+    """Close the bot's positions and return its cash to the Portfolio."""
+    try:
+        bots.stop(conn, _own_bot(user.id, bot_id))
+    except bots.BotError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return {"bots": _bots_out(user.id)}
+
+
+@app.post("/api/bots/stop-all")
+def stop_all_bots(user=Depends(auth.get_current_user)):
+    failed = {}
+    for bot in db.get_bots(conn, user.id):
+        if bot.status == "stopped":
+            continue
+        try:
+            bots.stop(conn, bot)
+        except bots.BotError as exc:
+            failed[bot.name] = str(exc)
+    return {"bots": _bots_out(user.id), "failed": failed}
+
+
+@app.get("/api/bots/{bot_id}/events")
+def bot_events(bot_id: int, limit: int = 100, user=Depends(auth.get_current_user)):
+    _own_bot(user.id, bot_id)
+    return [e.model_dump() for e in db.get_bot_events(conn, bot_id, max(1, min(limit, 500)))]
 
 
 # ---------- notification profile (email/phone; secrets stay in env) ----------

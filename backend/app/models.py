@@ -420,6 +420,42 @@ class Transaction(BaseModel):
     flow: float = 0.0            # external capital in (+) / out (-), for time-weighted return
 
 
+class Bot(BaseModel):
+    """A demo trading bot. It trades in its own ledger account ("bot:<id>"),
+    funded by a transfer out of the owner's manual cash; `state` keeps the
+    per-position stop / target / high-water mark and re-entry cooldowns."""
+    id: int | None = None
+    user_id: int
+    name: str
+    strategy: str                  # follow | trend | dip | breakout
+    params: dict = {}
+    tickers: list[str] = []        # explicit universe; empty -> watchlist / strategy default
+    watchlist_id: int | None = None
+    currency: str = "USD"
+    allocated: float
+    status: str = "active"         # active | paused | stopped
+    state: dict = {}
+    returned: float | None = None  # cash handed back on stop
+    created_at: str
+    stopped_at: str | None = None
+
+    @property
+    def account(self) -> str:
+        return f"bot:{self.id}"
+
+
+class BotEvent(BaseModel):
+    id: int | None = None
+    bot_id: int
+    user_id: int
+    at: str
+    kind: str                      # buy | sell | skip | error | info
+    ticker: str | None = None
+    qty: float | None = None
+    price: float | None = None
+    reason: str
+
+
 class CashBalance(BaseModel):
     currency: str
     balance: float

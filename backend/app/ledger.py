@@ -9,6 +9,7 @@ The arithmetic here is pure, so `replay` can rebuild the materialized tables
 from the ledger alone and tests can assert the two agree.
 """
 import math
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -18,6 +19,8 @@ from app.models import Holding, Transaction
 SIDES = ("BUY", "SELL", "ADJUST", "DEPOSIT", "WITHDRAW")
 CASH_SIDES = ("DEPOSIT", "WITHDRAW")
 ACCOUNTS = ("manual", "paper", "live")
+# Each demo bot trades in an account of its own (app/bots.py).
+BOT_ACCOUNT = re.compile(r"bot:\d+")
 EPS = 1e-9
 
 
@@ -122,8 +125,8 @@ def record(
     it moves) atomically. Raises LedgerError for anything the rules refuse."""
     if side not in SIDES:
         raise LedgerError(f"side must be one of {', '.join(SIDES)}")
-    if account not in ACCOUNTS:
-        raise LedgerError(f"account must be one of {', '.join(ACCOUNTS)}")
+    if account not in ACCOUNTS and not BOT_ACCOUNT.fullmatch(account):
+        raise LedgerError(f"account must be one of {', '.join(ACCOUNTS)} or bot:<id>")
     qty = _finite("quantity", qty, strict=side != "ADJUST")
     price = _finite("price", price)
     fees = _finite("fees", fees)
