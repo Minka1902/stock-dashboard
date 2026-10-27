@@ -179,3 +179,7 @@
 @keyframes rise {
   from { opacity: 0; transform: translateY(-6px); }
 }
+
+@media (pointer: coarse) {
+  .bell { width: var(--tap); height: var(--tap); }
+}

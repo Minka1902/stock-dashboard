@@ -5,6 +5,7 @@ import SuggestionHistoryPreview from "./SuggestionHistoryPreview";
 import { formatDate } from "../lib/format";
 import styles from "./EconCalendarPanel.module.css";
 import Tooltip from "./Tooltip";
+import ScrollHint from "./ScrollHint";
 
 const IMPORTANCE_LABEL = { high: "High impact", medium: "Medium impact", low: "Low impact" };
 
@@ -92,7 +93,7 @@ export default function EconCalendarPanel({ data = [], loading, busy, onRefresh,
           </button>
         </div>
       ) : (
-        <div className={styles.tableWrap}>
+        <ScrollHint className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
               <tr>
@@ -114,7 +115,7 @@ export default function EconCalendarPanel({ data = [], loading, busy, onRefresh,
               )}
             </tbody>
           </table>
-        </div>
+        </ScrollHint>
       )}
     </section>
     </>

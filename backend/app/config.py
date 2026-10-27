@@ -337,6 +337,18 @@ OHLC_MAX_TICKERS = int(os.environ.get("STOCKS_OHLC_MAX_TICKERS", "60"))
 # Raised from 20: suggestions now rank tracked names and brand-new ideas in
 # separate pools, so the candidate list has to be deep enough to fill both.
 OPPORTUNITY_CANDIDATES = int(os.environ.get("STOCKS_OPPORTUNITY_CANDIDATES", "40"))
+# Demo trading bots (app/bots.py): simulated fills move the live price this
+# many basis points against the bot (each side); at most this many bots per
+# user that aren't stopped; the engine's cadence.
+BOT_COST_BPS = float(os.environ.get("STOCKS_BOT_COST_BPS", "10"))
+BOT_MAX_BOTS = int(os.environ.get("STOCKS_BOT_MAX_BOTS", "10"))
+BOT_INTERVAL_SECONDS = int(os.environ.get("STOCKS_BOT_INTERVAL_SECONDS", "60"))
+# Benchmark series fetched by the ohlc source whether or not anyone holds them
+# (analytics beta / relative return, the regime gate's SPY vs 200-day MA).
+BENCHMARK_TICKERS = [
+    t.strip().upper() for t in os.environ.get("STOCKS_BENCHMARKS", "SPY,^TA125.TA").split(",")
+    if t.strip()
+]
 
 # Optional override for the built frontend directory the backend serves (single
 # port). Empty → default to <repo>/frontend/dist. Used by tests to point at a

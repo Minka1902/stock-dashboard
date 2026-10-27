@@ -6,9 +6,10 @@ import pytest
 
 from app import config, db
 from app.models import (
-    AnalystSignal, CongressTrade, Holding, InsiderTrade, OHLCSeries,
+    AnalystSignal, CongressTrade, InsiderTrade, OHLCSeries,
     SocialSentiment, WatchItem,
 )
+from tests.conftest import buy
 
 
 @pytest.fixture
@@ -59,7 +60,7 @@ def test_signal_candidates_capped(conn):
 def test_analysis_universe_is_union(conn):
     _seed_signals(conn)
     db.add_watch(conn, 0, WatchItem(ticker="AAPL", note="", added_at="t"))
-    db.upsert_holding(conn, 0, Holding(ticker="MSFT", shares=1, avg_cost=1, added_at="t"))
+    buy(conn, 0, "MSFT", 1, 1)
     universe = db.get_analysis_universe(conn, candidate_limit=20)
     assert {"AAPL", "MSFT", "GOOG", "TSLA", "NFLX", "AMD", "LMT"} <= set(universe)
 
@@ -107,7 +108,10 @@ def test_ohlc_fetch_is_stalest_first_and_capped(monkeypatch):
 
     monkeypatch.setattr(main.ohlc_source, "fetch", fake_fetch)
     monkeypatch.setattr(config, "OHLC_MAX_TICKERS", 2)
+    monkeypatch.setattr(config, "BENCHMARK_TICKERS", ["SPY"])
     main.ohlc_fetch(c)
     c.close()
+    assert captured["t"][0] == "SPY"       # benchmarks always ride along, outside the cap
+    captured["t"] = captured["t"][1:]
     assert len(captured["t"]) == 2
     assert "AAA" not in captured["t"]      # already fetched → not stalest

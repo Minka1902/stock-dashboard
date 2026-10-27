@@ -7,9 +7,10 @@ import pytest
 
 from app import db
 from app.models import (
-    BoomScore, Evidence, Holding, Seasonality, StockAnalysis, TechnicalSignal, WatchItem,
+    BoomScore, Evidence, Seasonality, StockAnalysis, TechnicalSignal, WatchItem,
 )
 from app import suggestions
+from tests.conftest import buy
 
 
 @pytest.fixture
@@ -44,8 +45,7 @@ def _setup(conn):
     for t in ("AAPL", "PLTR", "NVDA"):
         db.add_watch(conn, 0, WatchItem(ticker=t, note="", added_at="2026-06-28T00:00:00+00:00"))
     # Hold AAPL, bought at 100.
-    db.upsert_holding(conn, 0, Holding(ticker="AAPL", shares=10, avg_cost=100.0,
-                                    added_at="2026-06-28T00:00:00+00:00"))
+    buy(conn, 0, "AAPL", 10, 100.0, executed_at="2026-06-28T00:00:00+00:00")
     # AAPL bearish (overbought), PLTR strong bullish, NVDA mild.
     db.upsert_boom_scores(conn, [
         _boom("AAPL", -10, overbought_rsi=True),
@@ -176,7 +176,7 @@ def test_opportunities_ta_pending_fallback(conn):
 
 
 def test_holdings_ta_sell_overrides_action(conn):
-    db.upsert_holding(conn, 0, Holding(ticker="AAPL", shares=10, avg_cost=100.0, added_at="t"))
+    buy(conn, 0, "AAPL", 10, 100.0)
     _seed_analysis(conn, "AAPL", "sell", conviction=-40, rr_pass=False,
                    evidence=[Evidence(component="ma_structure", signal="bearish",
                                       weight=-15, detail="Topping formation — trim/exit.")])

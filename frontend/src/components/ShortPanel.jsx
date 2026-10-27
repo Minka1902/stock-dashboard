@@ -8,6 +8,7 @@ import styles from "./ShortPanel.module.css";
 import Tooltip from "./Tooltip";
 import Term from "./Term";
 import InfoTip from "./InfoTip";
+import ScrollHint from "./ScrollHint";
 import { freshnessTip } from "../lib/freshness";
 
 const COMPACT_LIMIT = 5;
@@ -68,7 +69,7 @@ export default function ShortPanel({ data, loading, busy, onRefresh, compact = f
           </button>
         </div>
       ) : (
-        <div className={styles.tableWrap}>
+        <ScrollHint className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
               <tr>
@@ -101,7 +102,7 @@ export default function ShortPanel({ data, loading, busy, onRefresh, compact = f
               )}
             </tbody>
           </table>
-        </div>
+        </ScrollHint>
       ))}
     </section>
   );

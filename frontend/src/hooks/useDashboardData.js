@@ -22,6 +22,7 @@ import {
   getFundamentals,
   getSeasonality,
   getPortfolio,
+  getCash,
   getXPosts,
   getSuggestions,
   getAlerts,
@@ -34,6 +35,9 @@ import {
   updateHolding as apiUpdateHolding,
   setHoldingCategory as apiSetHoldingCategory,
   removeHolding as apiRemoveHolding,
+  sellHolding as apiSellHolding,
+  moveCash as apiMoveCash,
+  setCash as apiSetCash,
 } from "../api";
 
 const REFRESH_MS = 180000; // 3 minutes, matches backend default
@@ -76,6 +80,7 @@ const ENDPOINTS = [
   { key: "fundamentals", fetch: getFundamentals, initial: [] },
   { key: "seasonality", fetch: getSeasonality, initial: [] },
   { key: "portfolio", fetch: getPortfolio, initial: [] },
+  { key: "cash", fetch: getCash, initial: [] },
   { key: "suggestions", fetch: getSuggestions, initial: null },
   {
     key: "alerts",
@@ -208,10 +213,31 @@ export function useDashboardData() {
     patch({ watchlist: await apiRemoveWatch(ticker) });
   }, [patch]);
 
-  const addHolding = useCallback(async (ticker, shares, avgCost, currency = null) => {
-    const list = await apiAddHolding(ticker, shares, avgCost, currency);
-    patch({ portfolio: list });
+  const addHolding = useCallback(async (ticker, shares, avgCost, currency = null, opts = {}) => {
+    const list = await apiAddHolding(ticker, shares, avgCost, currency, opts);
+    patch(opts.payFromCash ? { portfolio: list, cash: await getCash() } : { portfolio: list });
     return list;
+  }, [patch]);
+
+  // Resolves to { portfolio, realized_pnl, currency } so the caller can say
+  // what the sale realized.
+  const sellHolding = useCallback(async (ticker, order) => {
+    const out = await apiSellHolding(ticker, order);
+    patch(order.toCash ? { portfolio: out.portfolio, cash: await getCash() } : { portfolio: out.portfolio });
+    return out;
+  }, [patch]);
+
+  const moveCash = useCallback(async (currency, amount, side) => {
+    patch({ cash: await apiMoveCash(currency, amount, side) });
+  }, [patch]);
+
+  const setCash = useCallback(async (currency, balance) => {
+    patch({ cash: await apiSetCash(currency, balance) });
+  }, [patch]);
+
+  // For changes made elsewhere (a bot allocating or returning cash).
+  const reloadCash = useCallback(async () => {
+    patch({ cash: await getCash() });
   }, [patch]);
 
   const updateHolding = useCallback(async (ticker, shares, avgCost, currency = null) => {
@@ -250,9 +276,14 @@ export function useDashboardData() {
     updateHolding,
     setHoldingCategory,
     removeHolding,
+    sellHolding,
+    moveCash,
+    setCash,
+    reloadCash,
     markAlertsRead,
   }), [
     data, loading, busy, error, refresh, refreshOne, addWatch, removeWatch,
-    addHolding, updateHolding, setHoldingCategory, removeHolding, markAlertsRead,
+    addHolding, updateHolding, setHoldingCategory, removeHolding, sellHolding,
+    moveCash, setCash, reloadCash, markAlertsRead,
   ]);
 }

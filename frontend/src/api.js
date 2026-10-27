@@ -6,11 +6,21 @@ const BASE = import.meta.env.VITE_API_BASE || "";
 // (and drives the "Backend unreachable" banner) instead of hanging forever.
 const REQUEST_TIMEOUT_MS = 20000;
 
+// `fields` carries field-level messages ({ stop_price: "must be below …" })
+// when the backend answers with detail = { message, errors }.
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, fields = null) {
     super(message);
     this.status = status;
+    this.fields = fields;
   }
+}
+
+// FastAPI's own 422s send detail as an array of { loc, msg }.
+function detailMessage(detail) {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) return detail.map((d) => d.msg).filter(Boolean).join("; ");
+  return detail?.message || null;
 }
 
 async function request(path, { method = "GET", body } = {}) {
@@ -41,7 +51,8 @@ async function request(path, { method = "GET", body } = {}) {
       window.dispatchEvent(new Event("auth:expired"));
     }
     const detail = (await res.json().catch(() => ({}))).detail;
-    throw new ApiError(detail || `request failed: ${path}`, res.status);
+    throw new ApiError(
+      detailMessage(detail) || `request failed: ${path}`, res.status, detail?.errors || null);
   }
   return res.json();
 }
@@ -93,7 +104,9 @@ export const getSeasonality = () => getJSON("/api/seasonality");
 export const getAnalyses = () => getJSON("/api/analysis");
 export const getAnalysis = (ticker) => getJSON(`/api/analysis/${encodeURIComponent(ticker)}`);
 export const getBoomScoreHistory = (ticker) => getJSON(`/api/boom-scores/history/${encodeURIComponent(ticker)}`);
-export const getPortfolio = () => getJSON("/api/portfolio");
+const accountQuery = (account) => (account && account !== "manual" ? `?account=${account}` : "");
+export const getPortfolio = (account = "manual") => getJSON(`/api/portfolio${accountQuery(account)}`);
+export const getCash = (account = "manual") => getJSON(`/api/portfolio/cash${accountQuery(account)}`);
 export const getProfile = () => getJSON("/api/profile");
 export const getSuggestions = () => getJSON("/api/suggestions");
 export const getAppSettings = () => getJSON("/api/settings");
@@ -152,11 +165,43 @@ export const saveProfile = (profile) =>
   request("/api/profile", { method: "PUT", body: profile });
 // avg_cost is in `currency` (the position's native one). currency null =
 // let the server detect it (".TA" → ILS, bare → USD, else Yahoo).
-export const addHolding = (ticker, shares, avg_cost, currency = null) =>
+// payFromCash debits cost + fees from that currency's cash balance.
+export const addHolding = (ticker, shares, avg_cost, currency = null, { fees = 0, payFromCash = false } = {}) =>
   request("/api/portfolio", {
     method: "POST",
-    body: { ticker, shares, avg_cost, ...(currency ? { currency } : {}) },
+    body: { ticker, shares, avg_cost, fees, pay_from_cash: payFromCash, ...(currency ? { currency } : {}) },
   });
+// toCash credits the proceeds (less fees) to that currency's cash balance.
+export const sellHolding = (ticker, { shares, price, fees = 0, toCash = false }) =>
+  request(`/api/portfolio/${encodeURIComponent(ticker)}/sell`, {
+    method: "POST", body: { shares, price, fees, to_cash: toCash },
+  });
+export const moveCash = (currency, amount, side, account = "manual") =>
+  request("/api/portfolio/cash", { method: "POST", body: { currency, amount, side, account } });
+export const setCash = (currency, balance, account = "manual") =>
+  request(`/api/portfolio/cash/${encodeURIComponent(currency)}`, {
+    method: "PUT", body: { balance, account },
+  });
+// ---------- demo trading bots ----------
+export const getBotStrategies = () => getJSON("/api/bots/strategies");
+export const getBots = () => getJSON("/api/bots");
+// body: { strategy, name, params, tickers | watchlist_id, amount, currency }.
+// A 422 carries field errors on ApiError.fields ("amount", "params.fast", …).
+export const createBot = (body) => request("/api/bots", { method: "POST", body });
+export const pauseBot = (id) => request(`/api/bots/${id}/pause`, { method: "POST" });
+export const resumeBot = (id) => request(`/api/bots/${id}/resume`, { method: "POST" });
+export const stopBot = (id) => request(`/api/bots/${id}/stop`, { method: "POST" });
+export const stopAllBots = () => request("/api/bots/stop-all", { method: "POST" });
+export const getBotEvents = (id, limit = 100) => getJSON(`/api/bots/${id}/events?limit=${limit}`);
+
+export const getTransactions = ({ account, ticker, limit } = {}) => {
+  const q = new URLSearchParams();
+  if (account) q.set("account", account);
+  if (ticker) q.set("ticker", ticker);
+  if (limit) q.set("limit", limit);
+  const qs = q.toString();
+  return getJSON(`/api/portfolio/transactions${qs ? `?${qs}` : ""}`);
+};
 export const updateHolding = (ticker, shares, avg_cost, currency = null) =>
   request(`/api/portfolio/${encodeURIComponent(ticker)}`, {
     method: "PUT",

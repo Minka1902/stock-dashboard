@@ -7,6 +7,7 @@ import { useSettingsContext } from "./hooks/useSettingsContext";
 import { useAppSettings } from "./hooks/useAppSettings";
 import { useDocumentTitle } from "./hooks/useDocumentTitle";
 import Sidebar from "./components/Sidebar";
+import MobileNav from "./components/MobileNav";
 import TopBar from "./components/TopBar";
 import LiveTicker from "./components/LiveTicker";
 import CommandPalette from "./components/CommandPalette";
@@ -34,6 +35,7 @@ import SuggestionsPanel from "./components/SuggestionsPanel";
 import SuggestionHistoryPanel from "./components/SuggestionHistoryPanel";
 import EarningsPanel from "./components/EarningsPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
+import TradingBotPanel from "./components/TradingBotPanel";
 import XPostsPanel from "./components/XPostsPanel";
 import InfoPanel from "./components/InfoPanel";
 import ServerPanel from "./components/ServerPanel";
@@ -67,8 +69,9 @@ const VIEWS = {
     <SuggestionsPanel data={p.suggestions} loading={p.loading} busy={p.busy} onRefresh={p.refresh} onAddWatch={p.addWatch} />
   ),
   portfolio: (p) => (
-    <PortfolioPanel portfolio={p.portfolio} signals={p.signals} quotes={p.quotesByTicker} analyses={p.analyses} onAdd={p.addHolding} onEdit={p.updateHolding} onSetCategory={p.setHoldingCategory} onRemove={p.removeHolding} />
+    <PortfolioPanel portfolio={p.portfolio} cash={p.cash} signals={p.signals} quotes={p.quotesByTicker} analyses={p.analyses} onAdd={p.addHolding} onEdit={p.updateHolding} onSetCategory={p.setHoldingCategory} onRemove={p.removeHolding} onSell={p.sellHolding} onMoveCash={p.moveCash} onSetCash={p.setCash} />
   ),
+  "trading-bot": (p) => <TradingBotPanel cash={p.cash} onCashChanged={p.reloadCash} />,
   trades: (p) => <TradesPanel trades={p.trades} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   news: (p) => (
     <NewsPanel
@@ -289,6 +292,7 @@ export default function App({ auth }) {
     { id: "sentiment",   label: "Market Sentiment", hint: "the mood",   icon: "gauge",    run: () => navigate("sentiment") },
     { id: "suggestions", label: "Suggestions",      hint: "what to do", icon: "spark",    run: () => navigate("suggestions") },
     { id: "portfolio",   label: "Portfolio",        hint: "your book",  icon: "wallet",   run: () => navigate("portfolio") },
+    { id: "trading-bot", label: "Trading Bot",      hint: "demo strategies", icon: "bot", run: () => navigate("trading-bot") },
     { id: "trades",      label: "Trades",           hint: "insiders",   icon: "trending", run: () => navigate("trades") },
     { id: "news",        label: "News",             hint: "the tape",   icon: "news",     run: () => navigate("news") },
     { id: "watchlist",   label: "Watchlist",        hint: "charts & radar", icon: "star", run: () => navigate("watchlist") },
@@ -312,6 +316,9 @@ export default function App({ auth }) {
           no marquee, no top bar. Its own Back button is the way out (Task 19). */}
       {!detailTicker && (
         <Sidebar view={view} onNavigate={navigate} />
+      )}
+      {!detailTicker && (
+        <MobileNav view={view} onNavigate={navigate} isAdmin={Boolean(auth?.user?.is_admin)} />
       )}
 
       <main className={styles.main}>

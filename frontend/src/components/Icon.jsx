@@ -144,6 +144,19 @@ const PATHS = {
       <path d="M6 13l6 6 6-6" />
     </>
   ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M20 20l-4.2-4.2" />
+    </>
+  ),
+  // A robot head — the Trading Bot page.
+  bot: (
+    <>
+      <rect x="4" y="8" width="16" height="11" rx="2.5" />
+      <path d="M12 4v4M9 13h.01M15 13h.01M9.5 16.5h5M2 12v3M22 12v3" />
+    </>
+  ),
 };
 
 export default function Icon({ name, size = 18, strokeWidth = 1.8, ...rest }) {

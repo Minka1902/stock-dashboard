@@ -274,3 +274,7 @@
 @media (max-width: 560px) {
   .stage { flex-direction: column; }
 }
+
+@media (pointer: coarse) {
+  .segBtn { width: 36px; height: 36px; }
+}

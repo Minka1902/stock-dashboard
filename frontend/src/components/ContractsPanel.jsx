@@ -9,6 +9,7 @@ import {
 } from "../lib/format";
 import styles from "./ContractsPanel.module.css";
 import Tooltip from "./Tooltip";
+import ScrollHint from "./ScrollHint";
 
 const COMPACT_LIMIT = 5;
 
@@ -55,7 +56,7 @@ export default function ContractsPanel({ contracts, loading, busy, onRefresh, co
           </button>
         </div>
       ) : (
-        <div className={styles.tableWrap}>
+        <ScrollHint className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
               <tr>
@@ -100,7 +101,7 @@ export default function ContractsPanel({ contracts, loading, busy, onRefresh, co
               )}
             </tbody>
           </table>
-        </div>
+        </ScrollHint>
       ))}
     </section>
   );

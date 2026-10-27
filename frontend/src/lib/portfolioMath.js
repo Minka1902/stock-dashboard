@@ -54,3 +54,22 @@ export function summarizeByCurrency(positions, base, rates) {
   }
   return { byCurrency, total, excluded };
 }
+
+/**
+ * Cash balances converted into `base`. Same rule as positions: a currency
+ * with no live rate is excluded and reported, never guessed.
+ *
+ * @param balances [{ currency, balance }]
+ * @returns { total, excluded: [currency…] }
+ */
+export function convertCash(balances, base, rates) {
+  let total = 0;
+  const excluded = [];
+  for (const { currency, balance } of balances) {
+    if (!balance) continue;
+    const rate = currency === base ? 1 : rates?.[currency];
+    if (!rate) { excluded.push(currency); continue; }
+    total += balance * rate;
+  }
+  return { total, excluded };
+}

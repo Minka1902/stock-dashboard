@@ -7,6 +7,7 @@ import styles from "./SocialPanel.module.css";
 import Term from "./Term";
 import Tooltip from "./Tooltip";
 import InfoTip from "./InfoTip";
+import ScrollHint from "./ScrollHint";
 
 const COMPACT_LIMIT = 5;
 
@@ -65,7 +66,7 @@ export default function SocialPanel({ data, loading, busy, onRefresh, compact = 
           </button>
         </div>
       ) : (
-        <div className={styles.tableWrap}>
+        <ScrollHint className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
               <tr>
@@ -90,7 +91,7 @@ export default function SocialPanel({ data, loading, busy, onRefresh, compact = 
               )}
             </tbody>
           </table>
-        </div>
+        </ScrollHint>
       ))}
     </section>
   );

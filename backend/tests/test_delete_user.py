@@ -4,20 +4,28 @@ Only three of the per-user tables declare ON DELETE CASCADE, so deleting the
 `users` row alone would leave orphans behind under an id SQLite is free to hand
 to the next account. `db.delete_user` has to sweep all of them explicitly.
 """
-from app import db
+from app import db, ledger
 from app.models import (
-    Holding,
+    Bot,
+    BotEvent,
+    EquitySnapshot,
     NotifyProfile,
     OAuthIdentity,
     SuggestionHistoryEntry,
     WatchItem,
 )
+from tests.conftest import buy
 
 # Tables that carry a user_id and must be empty for a deleted account.
 PER_USER_TABLES = (
     "watchlist",
     "watchlists",
     "portfolio",
+    "transactions",
+    "cash_balances",
+    "equity_snapshots",
+    "bots",
+    "bot_events",
     "notify_profile",
     "alert_reads",
     "suggestion_history",
@@ -34,8 +42,14 @@ def _populate(conn, user_id: int, ticker: str) -> None:
     """Write one row into each per-user table for `user_id`."""
     db.add_watch(conn, user_id, WatchItem(ticker=ticker, note="n", added_at="t"))
     db.create_watchlist(conn, user_id, "Extra", "t")
-    db.upsert_holding(conn, user_id, Holding(
-        ticker=ticker, shares=1.0, avg_cost=2.0, added_at="t"))
+    buy(conn, user_id, ticker, 1.0, 2.0)
+    ledger.record(conn, user_id, ticker="USD", side="DEPOSIT", qty=5, currency_code="USD")
+    db.upsert_equity_snapshots(conn, [EquitySnapshot(
+        user_id=user_id, account="manual", date="2026-01-01", base_currency="USD",
+        value_base=7, cash_base=5, invested_base=2, flow_base=0, computed_at="t")])
+    bot = db.create_bot(conn, Bot(user_id=user_id, name="b", strategy="trend", currency="USD",
+                                  allocated=1, created_at="t"))
+    db.add_bot_event(conn, BotEvent(bot_id=bot.id, user_id=user_id, at="t", kind="info", reason="r"))
     db.upsert_notify_profile(conn, user_id, NotifyProfile(
         email="a@b.c", phone="", email_enabled=True, sms_enabled=False,
         account_size=None, risk_pct=1.0, updated_at="t"))

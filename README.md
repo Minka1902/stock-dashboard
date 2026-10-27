@@ -16,7 +16,9 @@ Architecturally it is a **FastAPI + SQLite + APScheduler** backend that ingests 
 - **Boom Score** — a weighted `-90…+100` composite per watched ticker. Every contributing component is stored, so the UI can explain the score, and each run is kept as history.
 - **Alerts and digests** — transition-based alerts that fire exactly once, plus an optional pre-market email/SMS digest.
 - **Analysis for any ticker** — a Cmd/Ctrl+K search palette and on-demand analysis (2-year bars, seasonality anchors, HTML report), including for tickers you don't watch.
-- **Portfolio and watchlists** — multiple named watchlists and a multi-currency portfolio with position sizing, all per user.
+- **Portfolio and watchlists** — multiple named watchlists and a multi-currency portfolio with position sizing, all per user. Every trade, correction and cash movement is a row in a transaction ledger, with cash balances, recorded sales (realized P&L) and a daily equity snapshot.
+- **Demo trading bots** — the Trading Bot page runs preset strategies (Follow Suggestions, Trend, Dip-buy, Breakout) on simulated fills, each funded with cash set aside from your portfolio and returned with its P&L when stopped. No real orders are placed.
+- **Works on a phone** — a bottom tab bar, one-row top bar, stacked portfolio cards and 40px touch targets below 640px.
 - **Charts** — candlestick charts with extended hours, drawing tools and saved drafts.
 - **Multi-user with mandatory 2FA** — Argon2id passwords, TOTP (Google/Microsoft Authenticator), recovery codes, optional OAuth sign-in. Market data is shared; watchlists, portfolio and notifications are per user.
 - **Operations built in** — editable per-source schedules, run-now, a queue view, and a one-click in-app updater (admin only) with rollback on failure.
@@ -183,6 +185,10 @@ All backend configuration comes from `STOCKS_*` environment variables with defau
 | `STOCKS_OAUTH_REDIRECT_BASE` | `http://localhost:8000` | Base of the OAuth callback URL registered with each provider |
 | `STOCKS_UPDATE_MODE` | *(auto-detected)* | `service` \| `dev` — overrides the updater's detection of whether it runs under the NSSM service |
 | `STOCKS_ALPHA_VANTAGE_KEY`, `STOCKS_FMP_KEY`, `STOCKS_X_BEARER` | — | Optional API keys |
+| `STOCKS_BENCHMARKS` | `SPY,^TA125.TA` | Benchmark series the `ohlc` source always fetches |
+| `STOCKS_BOT_COST_BPS` | `10` | Demo-bot simulated cost per side, in basis points |
+| `STOCKS_BOT_MAX_BOTS` | `10` | Bots per user that aren't stopped |
+| `STOCKS_BOT_INTERVAL_SECONDS` | `60` | Demo-bot engine cadence |
 
 **Ports:** the backend uses `8000` and the Vite dev server uses `5173`. Both can be changed with `start.ps1 -ApiPort` / `-WebPort`. In dev, `VITE_API_BASE` stays empty (same-origin through the proxy); set it only if you run a cross-origin backend.
 
@@ -248,7 +254,7 @@ A single SQLite database, created and migrated by `db.init_schema`. The function
 | Group | Tables | Responsibility |
 |---|---|---|
 | Auth | `users`, `sessions`, `recovery_codes`, `oauth_identities` | Accounts, hashed session tokens, single-use recovery codes, linked OAuth identities |
-| Per user | `watchlists`, `watchlist`, `portfolio`, `notify_profile`, `alert_reads`, `fx_watch`, `drawings`, `drawing_drafts` | Named watchlists and their items, holdings (each with a native currency), notification and base-currency settings, read receipts, FX carousel, chart drawings |
+| Per user | `watchlists`, `watchlist`, `portfolio`, `transactions`, `cash_balances`, `equity_snapshots`, `bots`, `bot_events`, `notify_profile`, `alert_reads`, `fx_watch`, `drawings`, `drawing_drafts` | Named watchlists and their items, holdings per account (materialized from the `transactions` ledger), cash, daily equity, demo bots and their decision log, notification and base-currency settings, read receipts, FX carousel, chart drawings |
 | Shared market data | `contracts`, `news`, `insider_trades`, `congress_trades`, `technical_signals`, `short_interest`, `social_sentiment`, `analyst_signals`, `fundamentals`, `company_holders`, `earnings`, `earnings_events`, `econ_events`, `ohlc_series`, `seasonality`, `x_posts`, `yield_curve`, `fear_greed`, `vix_daily`, `aaii_sentiment`, `put_call`, `margin_debt` | One table per source, written only through `upsert_*` helpers |
 | Derived | `boom_scores`, `boom_score_history`, `alerts`, `alert_state`, `stock_analysis`, `suggestion_history`, `suggestion_log` | Scores, alert state, and analysis. `stock_analysis` is stored unsized and personalized at read time |
 | Operations | `source_status`, `source_runs`, `source_schedules`, `job_runs`, `app_settings`, `data_migrations` | Source health, run history, editable schedules, job log, admin settings, one-off data migrations |
@@ -287,7 +293,8 @@ Interactive OpenAPI docs are served by FastAPI at **`/docs`** (and `/openapi.jso
 | Health | `GET /api/health` (version and commit) |
 | Auth | `POST /api/auth/register`, `/login`, `/totp/verify`, `/totp/enable`, `/recovery`, `/logout`, `/onboarded`; `GET /api/auth/me`, `/status`, `/totp/setup`, `/registration`; OAuth: `GET /api/auth/oauth/providers`, `/{provider}/start`, `/{provider}/callback` |
 | Watchlists | `GET/POST /api/watchlists`, `PATCH/DELETE /api/watchlists/{id}`, `GET/POST /api/watchlist`, `PATCH/DELETE /api/watchlist/{ticker}` |
-| Portfolio and profile | `GET/POST /api/portfolio`, `PUT/DELETE /api/portfolio/{ticker}`, `PUT /api/portfolio/{ticker}/category`, `GET/PUT /api/profile`, `GET/PUT /api/fx-watch`, `GET /api/fx/rates` |
+| Portfolio and profile | `GET/POST /api/portfolio`, `PUT/DELETE /api/portfolio/{ticker}`, `POST /api/portfolio/{ticker}/sell`, `PUT /api/portfolio/{ticker}/category`, `GET/POST /api/portfolio/cash`, `PUT /api/portfolio/cash/{currency}`, `GET /api/portfolio/transactions` (all take `?account=`), `GET/PUT /api/profile`, `GET/PUT /api/fx-watch`, `GET /api/fx/rates` |
+| Demo bots | `GET /api/bots`, `/bots/strategies`, `/bots/{id}/events`; `POST /api/bots`, `/bots/{id}/pause`, `/bots/{id}/resume`, `/bots/{id}/stop`, `/bots/stop-all` |
 | Signals | `GET /api/contracts`, `/news`, `/trades`, `/congress-trades`, `/signals`, `/short-interest`, `/social`, `/analyst`, `/fundamentals`, `/earnings`, `/earnings/{ticker}`, `/seasonality`, `/x-posts` |
 | Market sentiment | `GET /api/sentiment`, `/fear-greed`, `/vix`, `/aaii`, `/put-call`, `/margin-debt`, `/yield-curve`, `/econ-calendar` |
 | Scores and analysis | `GET /api/boom-scores`, `/boom-scores/history/{ticker}`, `/analysis`, `/analysis/{ticker}`, `/analysis/{ticker}/report`, `/analyze/{ticker}`, `/suggestions`, `/suggestions/history`, `/suggestions/log`, `/backtest/track-record`, `/backtest/signal-replay`; `POST /api/suggestions/send-test` |

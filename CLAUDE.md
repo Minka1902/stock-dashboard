@@ -138,7 +138,8 @@ No root package manager, so the companions copy rather than share:
   Routes needing the user take `Depends(auth.get_current_user)`.
 - **Per-user tables**: `watchlists` (named lists, PK `id`), `watchlist` (items, PK
   `(watchlist_id, ticker)` — `user_id` is denormalized onto each row), `portfolio` (PK
-  `(user_id, ticker)`, each row has a native `currency`), `notify_profile`
+  `(user_id, account, ticker)`, each row has a native `currency`), `transactions` (the ledger),
+  `cash_balances`, `equity_snapshots`, `bots` / `bot_events`, `notify_profile`
   (PK `user_id`, carries `base_currency`), `alert_reads`, `fx_watch` (carousel FX pairs, PK
   `(user_id, pair)`). **Shared**: all market-data tables, `stock_analysis` (stored
   *unsized*; `analysis.apply_sizing` personalizes at read time), `app_settings` (PUT is
@@ -154,7 +155,7 @@ No root package manager, so the companions copy rather than share:
   must call it. A third creation path that forgets to is the regression to watch for.
   Deliberately no first-user bootstrap exemption: it would be a race between the operator and
   the first stranger to load the URL, and the winner gets `is_admin` plus `claim_legacy_rows`.
-- `db.delete_user` sweeps all twelve per-user tables explicitly (incl. `drawings`, `drawing_drafts` and `fx_watch`). Only `sessions`,
+- `db.delete_user` sweeps every per-user table explicitly (incl. `drawings`, `drawing_drafts`, `fx_watch`, the ledger and the bots). Only `sessions`,
   `recovery_codes` and `oauth_identities` declare `ON DELETE CASCADE`, so deleting the `users`
   row alone strands the rest under an id SQLite may reissue. Keep `_PER_USER_TABLES` in step
   with the schema.
@@ -242,6 +243,27 @@ composite per watchlist ticker. `WEIGHTS` defines each component's contribution;
 scaled by trade amount and time-decayed. Component booleans are persisted so the UI can explain the
 score, and each run also appends to boom-score history.
 
+**Ledger** (`app/ledger.py`) — the *only* write path for positions and cash. Every add, edit
+(an `ADJUST`), removal (`ADJUST` to 0), sale, deposit and withdrawal is a `transactions` row;
+`portfolio` and `cash_balances` are materialized from it by `db.record_transaction` in one
+`BEGIN IMMEDIATE` transaction (two connections write, so read-modify-write takes the lock first).
+Accounts: `manual` (hand-tracked), `paper` (reserved), `live` (refused: no broker), and
+`bot:<id>`. The pure arithmetic lives in `ledger.apply`, and `ledger.replay` must always
+reproduce the materialized tables (tested). Each row also stores the `flow` it caused, the
+external capital in/out that time-weighted returns need. `equity` (the `equity_snapshot` source,
+seeded at 16:15 New York on weekdays) values every account in its owner's base currency and
+skips an account rather than writing a partial value when a price or FX rate is missing.
+
+**Demo bots** (`app/bots.py`) — preset strategies (`STRATEGIES`: follow / trend / dip /
+breakout) trading simulated fills in their own `bot:<id>` ledger account. Creating a bot moves
+its allocation out of manual cash, and stopping it closes the positions and hands the cash back,
+each atomically (`db.create_bot`, `db.stop_bot`). `bots.decide` is pure and reads **completed
+daily closes only** (no look-ahead, at most one change of mind per session). Stops, targets
+and fills use the live quote, moved `BOT_COST_BPS` against the bot. The engine is the 1-minute
+`bots` job, a member of `_QUIET_JOBS` (only its errors reach `job_runs`). It trades a ticker
+only while that ticker's exchange is LIVE, and a fill (`db.bot_trade`) re-checks inside its
+transaction that the bot is still active.
+
 ### Adding a new data source
 Step-by-step checklist lives in the `adding-a-data-source` skill
 (`.claude/skills/adding-a-data-source/SKILL.md`) — it loads on demand rather than
@@ -261,6 +283,14 @@ sitting in context every session.
   carries `?from=<view>`. That param is what `leaveStock` uses to decide whether Back returns to
   a view or closes the tab — and it is why `openTickerTab` must not pass `noopener`, which
   forfeits a tab's right to close itself.
+- Navigation items live in `src/lib/navItems.js`, shared by the desktop rail (`Sidebar`) and the
+  phone tab bar (`MobileNav`, ≤640px: the five core views plus a "More" sheet). On a phone the
+  TopBar is one row, and refresh / theme / dyslexia / tour move into `UserMenu` `phoneItems`.
+  Breakpoints and the `(pointer: coarse)` → `--tap` (40px) rule are documented in DESIGN.md.
+- Shared primitives for new UI: `Dialog` (portaled, focus-trapped, a bottom sheet on phones),
+  `ConfirmDialog`, `Field` (label + hint + field error), `Button`, and `ScrollHint` (edge fade on
+  sideways-scrolling tables). `ApiError.fields` carries the backend's field-level errors
+  (`detail = {message, errors}`).
 - Styling is **CSS Modules + design tokens** defined in `src/index.css` (`:root` custom properties
   for spacing/radius/typography; the "Iris Dusk" dark theme). No CSS framework. Accessibility is a
   first-class concern: an always-on ADHD-friendly type scale and an opt-in dyslexia mode

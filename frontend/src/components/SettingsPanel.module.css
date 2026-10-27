@@ -441,3 +441,7 @@
 .input:disabled,
 .tagRemove:disabled,
 .ghostBtn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+@media (pointer: coarse) {
+  .tagRemove { width: 32px; height: 32px; }
+}

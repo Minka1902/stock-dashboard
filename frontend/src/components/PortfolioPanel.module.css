@@ -2,7 +2,9 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  overflow: hidden;
+  /* clip, not hidden: hidden makes the panel a scroll container, which
+     silently disables the sticky group rows inside it. */
+  overflow: clip;
 }
 
 .head {
@@ -301,6 +303,29 @@
   cursor: pointer;
 }
 .iconAction:hover { color: var(--accent-text); border-color: var(--accent); background: var(--accent-weak); }
+.textAction {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.textAction:hover, .textAction:focus-visible { color: var(--accent-text); border-color: var(--accent); background: var(--accent-weak); }
+
+.payCash {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 
 .advice {
   display: inline-flex;
@@ -550,3 +575,90 @@
 }
 .editCcy { width: 76px; }
 .editCcy > button { height: 28px; font-size: 12px; font-family: var(--mono); padding: 0 6px 0 8px; }
+
+/* --- phones: each position is a stacked card instead of a 10-column row --- */
+@media (max-width: 640px) {
+  .summary { grid-template-columns: 1fr 1fr; gap: var(--s-2); padding: var(--s-3); }
+  .summary > :first-child { grid-column: 1 / -1; }
+  .card { padding: var(--s-2) var(--s-3); }
+  .cardValue { font-size: 17px; }
+
+  .form { padding: var(--s-3); }
+  .ticker, .num { flex: 1 1 calc(50% - var(--s-1)); width: auto; min-width: 0; }
+  .ccyPick { flex: 1 1 calc(50% - var(--s-1)); }
+  .payCash { flex: 1 1 calc(50% - var(--s-1)); }
+  .add { flex: 1 1 100%; }
+
+  /* Nothing scrolls sideways any more, so the wrapper must not be a scroll
+     container either — that is what lets the group rows stick. */
+  .tableWrap { overflow: visible; }
+  .table, .table tbody, .table tfoot { display: block; }
+  .table thead { display: none; }
+
+  .groupRow {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    background: var(--surface-2);
+    border-top: 1px solid var(--border);
+  }
+  .groupRow td { position: static; border: none; padding: 6px var(--s-3); }
+  .groupRow td:first-child { flex: 1; }
+  .groupRow td:empty { display: none; }
+
+  .table tbody tr.row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "ticker value"
+      "ticker pl"
+      "shares price"
+      "cost   day"
+      "advice trend"
+      "actions actions";
+    column-gap: var(--s-3);
+    row-gap: 2px;
+    padding: var(--s-2) var(--s-3);
+    border-top: 1px solid var(--grid);
+  }
+  .table tbody tr.row td { padding: 0; border: none; text-align: left; }
+  .row td[data-col="ticker"] { grid-area: ticker; }
+  .row td[data-col="value"] { grid-area: value; text-align: right; font-size: 14px; font-weight: 700; }
+  .row td[data-col="pl"] { grid-area: pl; text-align: right; }
+  .row td[data-col="shares"] { grid-area: shares; }
+  .row td[data-col="cost"] { grid-area: cost; }
+  .row td[data-col="price"] { grid-area: price; text-align: right; }
+  .row td[data-col="day"] { grid-area: day; text-align: right; }
+  .row td[data-col="advice"] { grid-area: advice; align-self: center; padding-top: 4px; }
+  .row td[data-col="trend"] { grid-area: trend; text-align: right; padding-top: 4px; }
+  .row td[data-col="actions"] { grid-area: actions; padding-top: var(--s-2); }
+  .row td[data-label]::before {
+    content: attr(data-label) " ";
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+  }
+  .row td[data-col="actions"] .rowActions,
+  .row td[data-col="actions"] .editActions { display: flex; justify-content: flex-end; }
+
+  .totals {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-2);
+    padding: var(--s-2) var(--s-3);
+    border-top: 1px solid var(--border-strong, var(--grid));
+  }
+  .totals td { padding: 0; border: none; }
+  .totals td:empty { display: none; }
+}
+
+@media (pointer: coarse) {
+  .iconAction, .remove { width: var(--tap); height: var(--tap); }
+  .textAction { height: var(--tap); padding: 0 14px; }
+}

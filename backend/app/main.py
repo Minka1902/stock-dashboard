@@ -2,6 +2,7 @@
 import itertools
 import json
 import logging
+import math
 import platform
 import re
 import threading
@@ -23,6 +24,7 @@ from apscheduler.events import (
 from apscheduler.executors.pool import BasePoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -30,7 +32,7 @@ from pydantic import BaseModel
 
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, backtest, chart_data, config, currency, db, ingest, notify, quotes, report, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
+from app import analysis, analyze, auth, backtest, bots, chart_data, config, currency, db, equity, ingest, ledger, notify, quotes, report, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
@@ -191,16 +193,17 @@ def econ_calendar_fetch(conn):
 
 
 def ohlc_fetch(conn):
-    """Pull OHLC history for the whole analysis universe (portfolio ∪ watchlist ∪
-    signal candidates), stalest-first and capped at OHLC_MAX_TICKERS so the Yahoo
-    fan-out stays bounded on the single worker — large universes rotate across
-    successive hourly runs."""
-    universe = db.get_analysis_universe(conn, config.OPPORTUNITY_CANDIDATES)
-    if not universe:
-        return []
+    """Pull OHLC history for the benchmarks plus the whole analysis universe
+    (portfolio ∪ watchlist ∪ signal candidates), stalest-first and capped at
+    OHLC_MAX_TICKERS so the Yahoo fan-out stays bounded on the single worker —
+    large universes rotate across successive hourly runs."""
+    universe = [t for t in db.get_analysis_universe(conn, config.OPPORTUNITY_CANDIDATES)
+                if t not in config.BENCHMARK_TICKERS]
     fetched = db.get_ohlc_fetched_at(conn)
     universe.sort(key=lambda t: fetched.get(t, ""))  # "" (never fetched) sorts first
-    return ohlc_source.fetch(universe[: config.OHLC_MAX_TICKERS])
+    # Benchmarks always ride along, outside the cap: analytics (beta, relative
+    # return) and the regime gate need them whether or not anyone holds them.
+    return ohlc_source.fetch(config.BENCHMARK_TICKERS + universe[: config.OHLC_MAX_TICKERS])
 
 
 def analysis_fetch(conn):
@@ -253,6 +256,7 @@ class SourceSpec(NamedTuple):
     force_on_daily: whether the daily deep run re-runs it. False for sources
     whose upstream publishes slowly or rate-limits us hard — hitting those an
     extra time daily just burns the quota and re-records the same error.
+    requests_derived: whether a success pulls the derived step forward.
     """
 
     fetch: object
@@ -260,6 +264,8 @@ class SourceSpec(NamedTuple):
     min_interval: int | None = None
     retry_interval: int | None = None
     force_on_daily: bool = True
+    # False for sources nothing in the derived step reads (equity snapshots).
+    requests_derived: bool = True
 
 
 def _us_only(tickers: list[str]) -> list[str]:
@@ -313,6 +319,10 @@ def build_sources(conn):
         "ohlc":           (lambda: ohlc_fetch(conn), db.upsert_ohlc, config.OHLC_MIN_INTERVAL_SECONDS),  # 2y history barely moves intraday
         "analysis":       (lambda: analysis_fetch(conn), db.upsert_analyses, config.ANALYSIS_MIN_INTERVAL_SECONDS),  # after ohlc; cheap DB+quote read
         "alerts":         (lambda: alerts_source.detect(conn), db.upsert_alerts, None),  # derived: after boom_score
+        # Closing value of every account (seeded at-times, after the US close).
+        "equity_snapshot": SourceSpec(lambda: equity.snapshot_all(conn), db.upsert_equity_snapshots,
+                                      retry_interval=3600, force_on_daily=False,
+                                      requests_derived=False),
     }
     return {
         name: spec if isinstance(spec, SourceSpec) else SourceSpec(*spec)
@@ -464,7 +474,8 @@ def _after_run(name: str, result: "ingest.RunResult", request_derived: bool = Tr
     so the page can say when the next attempt is."""
     if name in schedules.DERIVED_MEMBERS:
         return
-    if request_derived and (result.outcome == "ok" or result.record_count):
+    if request_derived and SOURCES[name].requests_derived and (
+            result.outcome == "ok" or result.record_count):
         _request_derived()
     sched = db.get_source_schedule(refresh_conn, name)
     if sched is None:
@@ -668,6 +679,10 @@ def _run_daily_analysis():
         logger.exception("post-analysis digest delivery failed")
 
 
+# Minute-cadence jobs: a row per run would be ~1,400 a day of noise, so only
+# their errors (and late starts) are recorded.
+_QUIET_JOBS = {"bots"}
+
 _JOB_EVENT_NAMES = {
     EVENT_JOB_EXECUTED: "executed",
     EVENT_JOB_ERROR: "error",
@@ -710,7 +725,10 @@ def _on_job_event(event):
     elif late is not None and late >= _LATE_NOTE_SECONDS:
         detail = f"started {int(late)}s after its scheduled time (queued behind other work)"
 
-    if name == "executed" and str(event.job_id).startswith("src:") and detail is None:
+    if name == "executed" and detail is None and (
+            str(event.job_id).startswith("src:") or event.job_id in _QUIET_JOBS):
+        return
+    if name == "coalesced" and event.job_id in _QUIET_JOBS:
         return
     try:
         db.record_job_run(
@@ -770,6 +788,15 @@ async def lifespan(app: FastAPI):
     )
     _add_timed_job(
         _run_daily_analysis, analysis_trigger(db.get_app_settings(conn)), "daily_analysis")
+    # Demo trading bots: every minute, held back like the source jobs so a
+    # restart (or a test lifespan) never trades before the app has settled.
+    _add_timed_job(
+        lambda: bots.run(refresh_conn),
+        IntervalTrigger(
+            seconds=config.BOT_INTERVAL_SECONDS,
+            start_date=datetime.now(timezone.utc)
+            + timedelta(seconds=config.SCHEDULER_STARTUP_DELAY_SECONDS)),
+        "bots")
     # 6-hourly GitHub update check. Runs on the default executor, not the
     # serial "refresh" one: it only shells out to git and never touches SQLite.
     updater.schedule(scheduler)
@@ -1331,12 +1358,49 @@ def analysis_detail(ticker: str, user=Depends(auth.get_current_user)):
     }
 
 
-# ---------- portfolio (user managed) ----------
+# ---------- portfolio (user managed, written through the ledger) ----------
+def _account_param(account: str, write: bool = False) -> str:
+    """Validate an `account` query/body value. Paper positions move only
+    through paper orders, so hand edits are manual-account only."""
+    if account == "live":
+        raise HTTPException(status_code=409, detail="no live broker configured")
+    if account not in ("manual", "paper"):
+        raise HTTPException(status_code=400, detail="account must be 'manual' or 'paper'")
+    if write and account != "manual":
+        raise HTTPException(
+            status_code=400, detail="paper positions change only through paper orders")
+    return account
+
+
+def _executed_at(value: str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="executed_at must be an ISO date or datetime") from None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    if dt > datetime.now(timezone.utc) + timedelta(minutes=5):
+        raise HTTPException(status_code=400, detail="executed_at can't be in the future")
+    return dt.isoformat(timespec="seconds")
+
+
+def _record(user_id: int, **kw):
+    try:
+        return ledger.record(conn, user_id, **kw)
+    except ledger.LedgerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
 class HoldingCreate(BaseModel):
     ticker: str
     shares: float
     avg_cost: float           # in `currency`
     currency: str | None = None  # None = detect (symbol convention, then Yahoo)
+    fees: float = 0.0
+    pay_from_cash: bool = False  # debit the cost (+fees) from this currency's cash
+    executed_at: str | None = None
 
 
 def _clean_currency(code: str | None) -> str | None:
@@ -1348,13 +1412,13 @@ def _clean_currency(code: str | None) -> str | None:
     return c
 
 
-def _portfolio_out(user_id: int) -> list[dict]:
+def _portfolio_out(user_id: int, account: str = "manual") -> list[dict]:
     """Portfolio holdings enriched with theme category + its source ('manual'
     when overridden, else 'auto' from sector/industry classification)."""
-    overrides = db.get_holding_categories(conn, user_id)
+    overrides = db.get_holding_categories(conn, user_id, account)
     fund_map = db.get_fundamentals_map(conn)
     out = []
-    for h in db.get_portfolio(conn, user_id):
+    for h in db.get_portfolio(conn, user_id, account):
         if h.ticker in overrides:
             category, source = overrides[h.ticker], "manual"
         else:
@@ -1365,13 +1429,21 @@ def _portfolio_out(user_id: int) -> list[dict]:
     return out
 
 
+def _held(user_id: int, ticker: str, account: str = "manual") -> Holding:
+    h = next((h for h in db.get_portfolio(conn, user_id, account) if h.ticker == ticker), None)
+    if h is None:
+        raise HTTPException(status_code=404, detail="ticker not in portfolio")
+    return h
+
+
 @app.get("/api/portfolio")
-def portfolio(user=Depends(auth.get_current_user)):
-    return _portfolio_out(user.id)
+def portfolio(account: str = "manual", user=Depends(auth.get_current_user)):
+    return _portfolio_out(user.id, _account_param(account))
 
 
 @app.post("/api/portfolio")
 def add_holding(item: HoldingCreate, user=Depends(auth.get_current_user)):
+    """Record a BUY. Adding to a held ticker merges into a share-weighted cost."""
     ticker = clean_ticker(item.ticker)
     if item.shares <= 0 or item.avg_cost < 0:
         raise HTTPException(status_code=400, detail="shares must be > 0 and avg_cost >= 0")
@@ -1388,11 +1460,9 @@ def add_holding(item: HoldingCreate, user=Depends(auth.get_current_user)):
         ccy = held[ticker].currency
     else:
         ccy = requested or _ticker_currency(ticker) or "USD"
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    db.upsert_holding(conn, user.id, Holding(
-        ticker=ticker, shares=item.shares, avg_cost=item.avg_cost, added_at=now,
-        currency=ccy,
-    ))
+    _record(user.id, ticker=ticker, side="BUY", qty=item.shares, price=item.avg_cost,
+            currency_code=ccy, fees=item.fees, funded=item.pay_from_cash,
+            executed_at=_executed_at(item.executed_at))
     return _portfolio_out(user.id)
 
 
@@ -1404,16 +1474,35 @@ class HoldingReplace(BaseModel):
 
 @app.put("/api/portfolio/{ticker}")
 def edit_holding(ticker: str, item: HoldingReplace, user=Depends(auth.get_current_user)):
-    """Overwrite a held position outright (correct a mistaken entry)."""
+    """Correct a held position outright. Recorded as an ADJUST, so the history
+    keeps both the old and the corrected numbers."""
     t = clean_ticker(ticker)
     if item.shares <= 0 or item.avg_cost < 0:
         raise HTTPException(status_code=400, detail="shares must be > 0 and avg_cost >= 0")
-    held = {h.ticker for h in db.get_portfolio(conn, user.id)}
-    if t not in held:
-        raise HTTPException(status_code=404, detail="ticker not in portfolio")
-    db.replace_holding(conn, user.id, t, item.shares, item.avg_cost,
-                       _clean_currency(item.currency))
+    h = _held(user.id, t)
+    _record(user.id, ticker=t, side="ADJUST", qty=item.shares, price=item.avg_cost,
+            currency_code=_clean_currency(item.currency) or h.currency, source="adjust")
     return _portfolio_out(user.id)
+
+
+class HoldingSell(BaseModel):
+    shares: float
+    price: float
+    fees: float = 0.0
+    to_cash: bool = False        # credit the proceeds (-fees) to this currency's cash
+    executed_at: str | None = None
+
+
+@app.post("/api/portfolio/{ticker}/sell")
+def sell_holding(ticker: str, item: HoldingSell, user=Depends(auth.get_current_user)):
+    """Record a (partial) SELL; realized P&L is stored on the ledger row."""
+    t = clean_ticker(ticker)
+    h = _held(user.id, t)
+    tx = _record(user.id, ticker=t, side="SELL", qty=item.shares, price=item.price,
+                 currency_code=h.currency, fees=item.fees, funded=item.to_cash,
+                 executed_at=_executed_at(item.executed_at))
+    return {"portfolio": _portfolio_out(user.id), "realized_pnl": tx.realized_pnl,
+            "currency": tx.currency}
 
 
 class CategoryUpdate(BaseModel):
@@ -1428,17 +1517,171 @@ def set_holding_category(ticker: str, item: CategoryUpdate, user=Depends(auth.ge
             status_code=400,
             detail=f"category must be null or one of {', '.join(themes.THEMES)}",
         )
-    held = {h.ticker for h in db.get_portfolio(conn, user.id)}
-    if t not in held:
-        raise HTTPException(status_code=404, detail="ticker not in portfolio")
+    _held(user.id, t)
     db.set_holding_category(conn, user.id, t, item.category)
     return _portfolio_out(user.id)
 
 
 @app.delete("/api/portfolio/{ticker}")
 def delete_holding(ticker: str, user=Depends(auth.get_current_user)):
-    db.remove_holding(conn, user.id, clean_ticker(ticker))
+    """Remove a position without a sale (an ADJUST to zero, no realized P&L) —
+    the path for a mistaken entry. A real exit is POST .../sell."""
+    t = clean_ticker(ticker)
+    h = next((h for h in db.get_portfolio(conn, user.id) if h.ticker == t), None)
+    if h is not None:
+        _record(user.id, ticker=t, side="ADJUST", qty=0, price=h.avg_cost,
+                currency_code=h.currency, source="adjust")
     return _portfolio_out(user.id)
+
+
+class CashMove(BaseModel):
+    currency: str
+    amount: float
+    side: Literal["deposit", "withdraw"]
+    account: str = "manual"
+
+
+class CashSet(BaseModel):
+    balance: float
+    account: str = "manual"
+
+
+def _cash_out(user_id: int, account: str) -> list[dict]:
+    return [c.model_dump() for c in db.get_cash(conn, user_id, account)]
+
+
+@app.get("/api/portfolio/cash")
+def get_cash(account: str = "manual", user=Depends(auth.get_current_user)):
+    return _cash_out(user.id, _account_param(account))
+
+
+@app.post("/api/portfolio/cash")
+def move_cash(item: CashMove, user=Depends(auth.get_current_user)):
+    account = _account_param(item.account)
+    _record(user.id, ticker=item.currency, side=item.side.upper(), qty=item.amount,
+            currency_code=_clean_currency(item.currency), account=account)
+    return _cash_out(user.id, account)
+
+
+@app.put("/api/portfolio/cash/{code}")
+def set_cash(code: str, item: CashSet, user=Depends(auth.get_current_user)):
+    """Set a balance outright; recorded as the deposit/withdrawal of the gap."""
+    account = _account_param(item.account)
+    ccy = _clean_currency(code)
+    if not math.isfinite(item.balance) or item.balance < 0:
+        raise HTTPException(status_code=400, detail="balance must be >= 0")
+    current = next((c.balance for c in db.get_cash(conn, user.id, account) if c.currency == ccy), 0.0)
+    gap = item.balance - current
+    if abs(gap) > ledger.EPS:
+        _record(user.id, ticker=ccy, side="DEPOSIT" if gap > 0 else "WITHDRAW", qty=abs(gap),
+                currency_code=ccy, account=account, source="adjust")
+    return _cash_out(user.id, account)
+
+
+@app.get("/api/portfolio/transactions")
+def transactions(account: str | None = None, ticker: str | None = None,
+                 limit: int = 200, user=Depends(auth.get_current_user)):
+    rows = db.get_transactions(
+        conn, user.id, _account_param(account) if account else None,
+        clean_ticker(ticker) if ticker else None, max(1, min(limit, 1000)))
+    return [r.model_dump() for r in rows]
+
+
+# ---------- demo trading bots ----------
+class BotCreate(BaseModel):
+    strategy: str
+    name: str | None = None
+    params: dict = {}
+    tickers: list[str] | str = []
+    watchlist_id: int | None = None
+    amount: float | None = None
+    currency: str = ""
+
+
+def _own_bot(user_id: int, bot_id: int):
+    bot = db.get_bot(conn, bot_id)
+    if bot is None or bot.user_id != user_id:
+        raise HTTPException(status_code=404, detail="bot not found")
+    return bot
+
+
+def _bots_out(user_id: int) -> list[dict]:
+    mine = db.get_bots(conn, user_id)
+    held = sorted({h.ticker for b in mine if b.status != "stopped"
+                   for h in db.get_portfolio(conn, user_id, b.account)})
+    by_ticker = {q.ticker: q for q in quotes.get_quotes(held)} if held else {}
+    return [bots.view(conn, b, by_ticker) for b in reversed(mine)]
+
+
+@app.get("/api/bots/strategies")
+def bot_strategies(user=Depends(auth.get_current_user)):
+    return {"strategies": [{"key": k, **v} for k, v in bots.STRATEGIES.items()],
+            "cost_bps": config.BOT_COST_BPS}
+
+
+@app.get("/api/bots")
+def list_bots(user=Depends(auth.get_current_user)):
+    return {"bots": _bots_out(user.id), "cost_bps": config.BOT_COST_BPS}
+
+
+@app.post("/api/bots", dependencies=[Depends(rate_limit("bots", 30, 60))])
+def create_bot(item: BotCreate, user=Depends(auth.get_current_user)):
+    """Create a demo bot and move its allocation out of manual cash."""
+    bot, errors = bots.validate_new(conn, user.id, item.model_dump())
+    if errors:
+        raise HTTPException(status_code=422, detail={
+            "message": "Some fields need attention", "errors": errors})
+    try:
+        db.create_bot(conn, bot)
+    except ledger.LedgerError as exc:
+        raise HTTPException(status_code=422, detail={
+            "message": str(exc), "errors": {"amount": str(exc)}}) from None
+    return {"bots": _bots_out(user.id)}
+
+
+@app.post("/api/bots/{bot_id}/pause")
+def pause_bot(bot_id: int, user=Depends(auth.get_current_user)):
+    _own_bot(user.id, bot_id)
+    if not db.set_bot_status(conn, bot_id, "paused", ("active",)):
+        raise HTTPException(status_code=409, detail="only a running bot can be paused")
+    return {"bots": _bots_out(user.id)}
+
+
+@app.post("/api/bots/{bot_id}/resume")
+def resume_bot(bot_id: int, user=Depends(auth.get_current_user)):
+    _own_bot(user.id, bot_id)
+    if not db.set_bot_status(conn, bot_id, "active", ("paused",)):
+        raise HTTPException(status_code=409, detail="only a paused bot can be resumed")
+    return {"bots": _bots_out(user.id)}
+
+
+@app.post("/api/bots/{bot_id}/stop")
+def stop_bot(bot_id: int, user=Depends(auth.get_current_user)):
+    """Close the bot's positions and return its cash to the Portfolio."""
+    try:
+        bots.stop(conn, _own_bot(user.id, bot_id))
+    except bots.BotError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return {"bots": _bots_out(user.id)}
+
+
+@app.post("/api/bots/stop-all")
+def stop_all_bots(user=Depends(auth.get_current_user)):
+    failed = {}
+    for bot in db.get_bots(conn, user.id):
+        if bot.status == "stopped":
+            continue
+        try:
+            bots.stop(conn, bot)
+        except bots.BotError as exc:
+            failed[bot.name] = str(exc)
+    return {"bots": _bots_out(user.id), "failed": failed}
+
+
+@app.get("/api/bots/{bot_id}/events")
+def bot_events(bot_id: int, limit: int = 100, user=Depends(auth.get_current_user)):
+    _own_bot(user.id, bot_id)
+    return [e.model_dump() for e in db.get_bot_events(conn, bot_id, max(1, min(limit, 500)))]
 
 
 # ---------- notification profile (email/phone; secrets stay in env) ----------

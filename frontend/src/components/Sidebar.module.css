@@ -152,3 +152,12 @@
     padding: 10px 4px;
   }
 }
+
+/* Phones navigate with the bottom tab bar (MobileNav). */
+@media (max-width: 640px) {
+  .rail { display: none; }
+}
+
+@media (pointer: coarse) {
+  .item { min-height: 44px; }
+}

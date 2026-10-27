@@ -1,5 +1,6 @@
 """All SQLite access lives here."""
 import functools
+from contextlib import contextmanager
 import inspect
 import json
 import re
@@ -17,11 +18,15 @@ from app.models import (
     AppSettings,
     AuthSession,
     BoomScore,
+    Bot,
+    BotEvent,
+    CashBalance,
     CompanyHolder,
     CongressTrade,
     ContractRecord,
     EarningsEvent,
     EconEvent,
+    EquitySnapshot,
     FearGreedSnapshot,
     Fundamentals,
     Holding,
@@ -44,6 +49,7 @@ from app.models import (
     JobRun,
     SuggestionLogEntry,
     TechnicalSignal,
+    Transaction,
     User,
     VixPoint,
     WatchItem,
@@ -473,13 +479,85 @@ def init_schema(conn: sqlite3.Connection) -> None:
             fetched_at TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (account, post_id)
         );
+        -- Materialized positions, one row per (user, account, ticker). The
+        -- transactions ledger below is the source of truth; every write goes
+        -- through record_transaction, which updates both in one transaction.
         CREATE TABLE IF NOT EXISTS portfolio (
             user_id  INTEGER NOT NULL DEFAULT 0,
+            account  TEXT NOT NULL DEFAULT 'manual',
             ticker   TEXT NOT NULL,
             shares   REAL NOT NULL,
             avg_cost REAL NOT NULL,
             added_at TEXT NOT NULL,
-            PRIMARY KEY (user_id, ticker)
+            category TEXT,
+            currency TEXT NOT NULL DEFAULT 'USD',
+            PRIMARY KEY (user_id, account, ticker)
+        );
+        CREATE TABLE IF NOT EXISTS transactions (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER NOT NULL,
+            account      TEXT NOT NULL DEFAULT 'manual',
+            ticker       TEXT NOT NULL,
+            side         TEXT NOT NULL,
+            qty          REAL NOT NULL,
+            price        REAL NOT NULL,
+            fees         REAL NOT NULL DEFAULT 0,
+            currency     TEXT NOT NULL,
+            executed_at  TEXT NOT NULL,
+            source       TEXT NOT NULL,
+            order_id     INTEGER,
+            cash_delta   REAL NOT NULL DEFAULT 0,
+            realized_pnl REAL,
+            flow         REAL NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_tx_user
+            ON transactions(user_id, account, ticker, executed_at);
+        CREATE TABLE IF NOT EXISTS cash_balances (
+            user_id  INTEGER NOT NULL,
+            account  TEXT NOT NULL DEFAULT 'manual',
+            currency TEXT NOT NULL,
+            balance  REAL NOT NULL,
+            PRIMARY KEY (user_id, account, currency)
+        );
+        CREATE TABLE IF NOT EXISTS bots (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER NOT NULL,
+            name         TEXT NOT NULL,
+            strategy     TEXT NOT NULL,
+            params_json  TEXT NOT NULL DEFAULT '{}',
+            tickers_json TEXT NOT NULL DEFAULT '[]',
+            watchlist_id INTEGER,
+            currency     TEXT NOT NULL,
+            allocated    REAL NOT NULL,
+            status       TEXT NOT NULL DEFAULT 'active',
+            state_json   TEXT NOT NULL DEFAULT '{}',
+            returned     REAL,
+            created_at   TEXT NOT NULL,
+            stopped_at   TEXT
+        );
+        CREATE TABLE IF NOT EXISTS bot_events (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            bot_id  INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            at      TEXT NOT NULL,
+            kind    TEXT NOT NULL,
+            ticker  TEXT,
+            qty     REAL,
+            price   REAL,
+            reason  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_bot_events_bot ON bot_events(bot_id, id DESC);
+        CREATE TABLE IF NOT EXISTS equity_snapshots (
+            user_id       INTEGER NOT NULL,
+            account       TEXT NOT NULL,
+            date          TEXT NOT NULL,
+            base_currency TEXT NOT NULL,
+            value_base    REAL NOT NULL,
+            cash_base     REAL NOT NULL,
+            invested_base REAL NOT NULL,
+            flow_base     REAL NOT NULL DEFAULT 0,
+            computed_at   TEXT NOT NULL,
+            PRIMARY KEY (user_id, account, date)
         );
         -- Per-user FX pairs shown in the ticker carousel ("USDILS=X", ...).
         -- Seeded lazily from config.FX_PAIRS on first read (get_fx_watch).
@@ -729,6 +807,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     # Native trading currency of each position. Every row before multi-currency
     # support was a US listing priced in dollars, so the default is USD.
     _try_add_column(conn, "portfolio", "currency", "TEXT NOT NULL DEFAULT 'USD'")
+    _migrate_portfolio_accounts(conn)
     _try_add_column(conn, "notify_profile", "base_currency", "TEXT NOT NULL DEFAULT 'USD'")
     # Set once a user's FX watch list has been seeded, so removing every pair
     # sticks instead of re-seeding the defaults on the next read.
@@ -748,7 +827,67 @@ def init_schema(conn: sqlite3.Connection) -> None:
         _try_add_column(conn, "alert_state", col, col_def)
     _migrate_ila_price_rows(conn)
     _migrate_econ_entities(conn)
+    _seed_ledger(conn)
     conn.commit()
+
+
+def _migrate_portfolio_accounts(conn: sqlite3.Connection) -> None:
+    """One-time rebuild of `portfolio` with an `account` column in its key.
+
+    Paper (and later live) positions sit beside the manually tracked ones, so
+    the primary key becomes (user_id, account, ticker). Existing rows are the
+    manual account. Skipped once the column exists.
+    """
+    if _has_column(conn, "portfolio", "account"):
+        return
+    conn.executescript(
+        """
+        CREATE TABLE portfolio_v3 (
+            user_id  INTEGER NOT NULL DEFAULT 0,
+            account  TEXT NOT NULL DEFAULT 'manual',
+            ticker   TEXT NOT NULL,
+            shares   REAL NOT NULL,
+            avg_cost REAL NOT NULL,
+            added_at TEXT NOT NULL,
+            category TEXT,
+            currency TEXT NOT NULL DEFAULT 'USD',
+            PRIMARY KEY (user_id, account, ticker)
+        );
+        INSERT INTO portfolio_v3
+            (user_id, account, ticker, shares, avg_cost, added_at, category, currency)
+            SELECT user_id, 'manual', ticker, shares, avg_cost, added_at, category, currency
+            FROM portfolio;
+        DROP TABLE portfolio;
+        ALTER TABLE portfolio_v3 RENAME TO portfolio;
+        """
+    )
+
+
+def _seed_ledger(conn: sqlite3.Connection) -> None:
+    """One-time: give every position that predates the ledger an opening BUY
+    at its avg_cost / added_at, so replaying the ledger reproduces `portfolio`.
+    The opening rows move no cash (the money was spent before cash existed)."""
+    name = "ledger_seed_2026_10"
+    if conn.execute("SELECT 1 FROM data_migrations WHERE name = ?", (name,)).fetchone():
+        return
+    conn.execute(
+        """
+        INSERT INTO transactions
+            (user_id, account, ticker, side, qty, price, fees, currency,
+             executed_at, source, cash_delta, flow)
+        SELECT p.user_id, p.account, p.ticker, 'BUY', p.shares, p.avg_cost, 0, p.currency,
+               p.added_at, 'migration', 0, p.shares * p.avg_cost
+        FROM portfolio p
+        WHERE NOT EXISTS (
+            SELECT 1 FROM transactions t
+            WHERE t.user_id = p.user_id AND t.account = p.account AND t.ticker = p.ticker)
+        ORDER BY p.user_id, p.added_at, p.ticker
+        """
+    )
+    conn.execute(
+        "INSERT INTO data_migrations (name, applied_at) VALUES (?, ?)",
+        (name, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+    )
 
 
 # Shared market-data tables that hold prices per ticker.
@@ -2451,60 +2590,336 @@ def get_x_posts_for(conn: sqlite3.Connection, ticker: str, limit: int = 20) -> l
     return posts[:limit]
 
 
-# ---------- portfolio (user managed) ----------
+# ---------- portfolio (user managed; materialized from the ledger) ----------
 
-def upsert_holding(conn: sqlite3.Connection, user_id: int, item: Holding) -> None:
-    """Add shares to a position, merging into any existing holding.
+@contextmanager
+def _immediate(conn: sqlite3.Connection):
+    """One write transaction taken up front (BEGIN IMMEDIATE).
 
-    On conflict the shares are summed and ``avg_cost`` becomes the
-    share-weighted average of the existing and incoming cost basis, so P/L
-    stays correct. ``added_at`` (first-buy date) is preserved. In SQLite's
-    ``DO UPDATE SET`` every RHS expression evaluates against the pre-update
-    row, so the ordering of the two assignments below is safe.
+    The request and refresh connections both write. A read-modify-write in
+    SQLite's default deferred mode could read a position, lose the race for
+    the write lock and fail; taking the lock first serializes the two writers
+    on the database itself. Commits on success, rolls back on any error.
     """
-    conn.execute(
-        """
-        INSERT INTO portfolio (user_id, ticker, shares, avg_cost, added_at, currency)
-        VALUES (:user_id, :ticker, :shares, :avg_cost, :added_at, :currency)
-        ON CONFLICT(user_id, ticker) DO UPDATE SET
-            avg_cost = (portfolio.shares * portfolio.avg_cost
-                        + excluded.shares * excluded.avg_cost)
-                       / (portfolio.shares + excluded.shares),
-            shares   = portfolio.shares + excluded.shares
-        """,
-        {"user_id": user_id, **item.model_dump()},
-    )
+    if conn.in_transaction:
+        conn.commit()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+    except BaseException:
+        conn.rollback()
+        raise
     conn.commit()
 
 
-def replace_holding(
-    conn: sqlite3.Connection, user_id: int, ticker: str, shares: float, avg_cost: float,
-    currency: str | None = None,
-) -> None:
-    """Overwrite an existing position outright (the edit/correct path).
-    `currency` None keeps the stored one."""
-    conn.execute(
-        "UPDATE portfolio SET shares = ?, avg_cost = ?, currency = COALESCE(?, currency) "
-        "WHERE user_id = ? AND ticker = ?",
-        (shares, avg_cost, currency, user_id, ticker),
-    )
-    conn.commit()
+def _get_holding(conn, user_id: int, account: str, ticker: str) -> Holding | None:
+    row = conn.execute(
+        "SELECT ticker, shares, avg_cost, added_at, currency FROM portfolio "
+        "WHERE user_id = ? AND account = ? AND ticker = ?",
+        (user_id, account, ticker),
+    ).fetchone()
+    return Holding(**dict(row)) if row else None
 
 
-def remove_holding(conn: sqlite3.Connection, user_id: int, ticker: str) -> None:
-    conn.execute(
-        "DELETE FROM portfolio WHERE user_id = ? AND ticker = ?", (user_id, ticker))
-    conn.commit()
+def record_transaction(conn: sqlite3.Connection, tx: Transaction, funded: bool) -> Transaction:
+    """Append `tx` to the ledger and apply it to `portfolio` and `cash_balances`
+    in one transaction. Raises ledger.LedgerError (nothing written) when the
+    rules refuse it: oversell, a currency that doesn't match the position, or
+    cash going negative."""
+    from app import ledger  # ledger imports db; local import breaks the cycle
+
+    with _immediate(conn):
+        return _record_transaction(conn, tx, funded, ledger)
 
 
-def get_portfolio(conn: sqlite3.Connection, user_id: int) -> list[Holding]:
+def _record_transaction(conn, tx: Transaction, funded: bool, ledger) -> Transaction:
+    """record_transaction's body, for callers already inside _immediate."""
+    pos = None
+    if tx.side not in ledger.CASH_SIDES:
+        pos = _get_holding(conn, tx.user_id, tx.account, tx.ticker)
+        if pos and tx.side != "ADJUST" and pos.currency != tx.currency:
+            raise ledger.LedgerError(
+                f"{tx.ticker} is held in {pos.currency}, not {tx.currency}")
+        if pos is None and tx.side == "SELL":
+            raise ledger.LedgerError(f"{tx.ticker} is not held in the {tx.account} account")
+    eff = ledger.apply(pos, tx, funded)
+    if eff.cash_delta:
+        row = conn.execute(
+            "SELECT balance FROM cash_balances WHERE user_id = ? AND account = ? AND currency = ?",
+            (tx.user_id, tx.account, tx.currency),
+        ).fetchone()
+        after = (row[0] if row else 0.0) + eff.cash_delta
+        if after < -ledger.EPS:
+            raise ledger.LedgerError(
+                f"not enough {tx.currency} cash: {row[0] if row else 0.0:,.2f} available, "
+                f"{-eff.cash_delta:,.2f} needed")
+        conn.execute(
+            "INSERT INTO cash_balances (user_id, account, currency, balance) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(user_id, account, currency) DO UPDATE SET balance = excluded.balance",
+            # Rounded so float noise never accumulates into "9,156.119999".
+            (tx.user_id, tx.account, tx.currency, 0.0 if abs(after) <= ledger.EPS else round(after, 6)),
+        )
+    tx = tx.model_copy(update={
+        "cash_delta": eff.cash_delta, "realized_pnl": eff.realized, "flow": eff.flow})
+    d = tx.model_dump(exclude={"id"})
     cur = conn.execute(
-        "SELECT ticker, shares, avg_cost, added_at, "
-        "COALESCE(currency, 'USD') AS currency FROM portfolio "
-        "WHERE user_id = ? ORDER BY ticker ASC",
-        (user_id,),
+        f"INSERT INTO transactions ({', '.join(d)}) VALUES ({', '.join('?' * len(d))})",
+        tuple(d.values()),
+    )
+    tx = tx.model_copy(update={"id": cur.lastrowid})
+    if tx.side in ledger.CASH_SIDES:
+        return tx
+    if eff.position is None:
+        conn.execute(
+            "DELETE FROM portfolio WHERE user_id = ? AND account = ? AND ticker = ?",
+            (tx.user_id, tx.account, tx.ticker))
+    else:
+        p = eff.position
+        conn.execute(
+            "INSERT INTO portfolio (user_id, account, ticker, shares, avg_cost, added_at, currency) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(user_id, account, ticker) DO UPDATE SET "
+            "shares = excluded.shares, avg_cost = excluded.avg_cost, currency = excluded.currency",
+            (tx.user_id, tx.account, p.ticker, p.shares, p.avg_cost, p.added_at, p.currency),
+        )
+    return tx
+
+
+def get_portfolio(conn: sqlite3.Connection, user_id: int, account: str = "manual") -> list[Holding]:
+    cur = conn.execute(
+        "SELECT ticker, shares, avg_cost, added_at, currency FROM portfolio "
+        "WHERE user_id = ? AND account = ? ORDER BY ticker ASC",
+        (user_id, account),
     )
     return [Holding(**dict(row)) for row in cur.fetchall()]
+
+
+def get_cash(conn: sqlite3.Connection, user_id: int, account: str = "manual") -> list[CashBalance]:
+    cur = conn.execute(
+        "SELECT currency, balance FROM cash_balances "
+        "WHERE user_id = ? AND account = ? ORDER BY currency",
+        (user_id, account),
+    )
+    return [CashBalance(**dict(row)) for row in cur.fetchall()]
+
+
+def get_transactions(
+    conn: sqlite3.Connection, user_id: int, account: str | None = None,
+    ticker: str | None = None, limit: int = 500,
+) -> list[Transaction]:
+    """Ledger rows, newest first."""
+    sql = "SELECT * FROM transactions WHERE user_id = ?"
+    args: list = [user_id]
+    if account:
+        sql += " AND account = ?"
+        args.append(account)
+    if ticker:
+        sql += " AND ticker = ?"
+        args.append(ticker)
+    sql += " ORDER BY id DESC LIMIT ?"
+    args.append(limit)
+    return [Transaction(**dict(r)) for r in conn.execute(sql, args).fetchall()]
+
+
+def upsert_equity_snapshots(conn: sqlite3.Connection, snaps: list[EquitySnapshot]) -> None:
+    """One row per (user, account, date); a later run the same day replaces it."""
+    conn.executemany(
+        """
+        INSERT INTO equity_snapshots
+            (user_id, account, date, base_currency, value_base, cash_base,
+             invested_base, flow_base, computed_at)
+        VALUES (:user_id, :account, :date, :base_currency, :value_base, :cash_base,
+                :invested_base, :flow_base, :computed_at)
+        ON CONFLICT(user_id, account, date) DO UPDATE SET
+            base_currency = excluded.base_currency, value_base = excluded.value_base,
+            cash_base = excluded.cash_base, invested_base = excluded.invested_base,
+            flow_base = excluded.flow_base, computed_at = excluded.computed_at
+        """,
+        [s.model_dump() for s in snaps],
+    )
+    conn.commit()
+
+
+def get_equity_snapshots(
+    conn: sqlite3.Connection, user_id: int, account: str = "manual", since: str | None = None,
+) -> list[EquitySnapshot]:
+    """Oldest first."""
+    cur = conn.execute(
+        "SELECT * FROM equity_snapshots WHERE user_id = ? AND account = ? AND date >= ? "
+        "ORDER BY date",
+        (user_id, account, since or ""),
+    )
+    return [EquitySnapshot(**dict(r)) for r in cur.fetchall()]
+
+
+def get_last_snapshot_before(
+    conn: sqlite3.Connection, user_id: int, account: str, date: str,
+) -> EquitySnapshot | None:
+    row = conn.execute(
+        "SELECT * FROM equity_snapshots WHERE user_id = ? AND account = ? AND date < ? "
+        "ORDER BY date DESC LIMIT 1",
+        (user_id, account, date),
+    ).fetchone()
+    return EquitySnapshot(**dict(row)) if row else None
+
+
+def get_flows_since(
+    conn: sqlite3.Connection, user_id: int, account: str, after: str, until: str,
+) -> dict[str, float]:
+    """{currency: net external flow} of ledger rows in (after, until]."""
+    cur = conn.execute(
+        "SELECT currency, SUM(flow) FROM transactions "
+        "WHERE user_id = ? AND account = ? AND executed_at > ? AND executed_at <= ? "
+        "AND flow != 0 GROUP BY currency",
+        (user_id, account, after, until),
+    )
+    return {r[0]: r[1] for r in cur.fetchall()}
+
+
+# ---------- demo trading bots ----------
+
+def _bot_from_row(row) -> Bot:
+    d = dict(row)
+    d["params"] = json.loads(d.pop("params_json") or "{}")
+    d["tickers"] = json.loads(d.pop("tickers_json") or "[]")
+    d["state"] = json.loads(d.pop("state_json") or "{}")
+    return Bot(**d)
+
+
+def _transfer(conn, user_id: int, from_acct: str, to_acct: str, ccy: str, amount: float,
+              source: str, at: str, ledger) -> None:
+    """WITHDRAW from one account, DEPOSIT into another; caller holds _immediate."""
+    for acct, side in ((from_acct, "WITHDRAW"), (to_acct, "DEPOSIT")):
+        _record_transaction(conn, Transaction(
+            user_id=user_id, account=acct, ticker=ccy, side=side, qty=amount, price=1.0,
+            currency=ccy, executed_at=at, source=source), True, ledger)
+
+
+def create_bot(conn: sqlite3.Connection, bot: Bot) -> Bot:
+    """Insert the bot and move its allocation out of manual cash, atomically.
+    Raises ledger.LedgerError (nothing written) when manual cash is short."""
+    from app import ledger
+
+    with _immediate(conn):
+        cur = conn.execute(
+            "INSERT INTO bots (user_id, name, strategy, params_json, tickers_json, watchlist_id, "
+            "currency, allocated, status, state_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', '{}', ?)",
+            (bot.user_id, bot.name, bot.strategy, json.dumps(bot.params), json.dumps(bot.tickers),
+             bot.watchlist_id, bot.currency, bot.allocated, bot.created_at),
+        )
+        bot = bot.model_copy(update={"id": cur.lastrowid})
+        _transfer(conn, bot.user_id, "manual", bot.account, bot.currency, bot.allocated,
+                  "bot_allocate", bot.created_at, ledger)
+        return bot
+
+
+def get_bot(conn: sqlite3.Connection, bot_id: int) -> Bot | None:
+    row = conn.execute("SELECT * FROM bots WHERE id = ?", (bot_id,)).fetchone()
+    return _bot_from_row(row) if row else None
+
+
+def get_bots(conn: sqlite3.Connection, user_id: int | None = None,
+             status: str | None = None) -> list[Bot]:
+    sql, args = "SELECT * FROM bots WHERE 1 = 1", []
+    if user_id is not None:
+        sql += " AND user_id = ?"
+        args.append(user_id)
+    if status:
+        sql += " AND status = ?"
+        args.append(status)
+    return [_bot_from_row(r) for r in conn.execute(sql + " ORDER BY id", args).fetchall()]
+
+
+def set_bot_status(conn: sqlite3.Connection, bot_id: int, status: str, from_statuses: tuple) -> bool:
+    """Conditional transition; False when the bot wasn't in `from_statuses`."""
+    cur = conn.execute(
+        f"UPDATE bots SET status = ? WHERE id = ? AND status IN ({','.join('?' * len(from_statuses))})",
+        (status, bot_id, *from_statuses))
+    conn.commit()
+    return cur.rowcount == 1
+
+
+def bot_trade(conn: sqlite3.Connection, bot: Bot, tx: Transaction, state: dict,
+              event: BotEvent) -> Transaction | None:
+    """One engine fill: the ledger row (positions + cash), the bot's new state
+    and its event, in one transaction — and only while the bot is still active,
+    so a stop that lands mid-run wins. Returns None when the bot had stopped."""
+    from app import ledger
+
+    with _immediate(conn):
+        live = conn.execute("SELECT status FROM bots WHERE id = ?", (bot.id,)).fetchone()
+        if live is None or live[0] != "active":
+            return None
+        tx = _record_transaction(conn, tx, True, ledger)
+        conn.execute("UPDATE bots SET state_json = ? WHERE id = ?", (json.dumps(state), bot.id))
+        _insert_bot_event(conn, event)
+        return tx
+
+
+def set_bot_state(conn: sqlite3.Connection, bot_id: int, state: dict) -> None:
+    conn.execute("UPDATE bots SET state_json = ? WHERE id = ? AND status = 'active'",
+                 (json.dumps(state), bot_id))
+    conn.commit()
+
+
+def stop_bot(conn: sqlite3.Connection, bot: Bot, fills: list[tuple[str, float, float, str]],
+             at: str) -> float | None:
+    """Close every position at the given (ticker, qty, price, reason) fills,
+    return all of the bot's cash to manual and mark it stopped — atomically.
+    Returns the amount returned, or None when it was already stopped."""
+    from app import ledger
+
+    with _immediate(conn):
+        cur = conn.execute(
+            "UPDATE bots SET status = 'stopped', stopped_at = ? WHERE id = ? AND status != 'stopped'",
+            (at, bot.id))
+        if cur.rowcount != 1:
+            return None
+        for ticker, qty, price, reason in fills:
+            _record_transaction(conn, Transaction(
+                user_id=bot.user_id, account=bot.account, ticker=ticker, side="SELL", qty=qty,
+                price=price, currency=bot.currency, executed_at=at, source="bot"), True, ledger)
+            _insert_bot_event(conn, BotEvent(bot_id=bot.id, user_id=bot.user_id, at=at, kind="sell",
+                                             ticker=ticker, qty=qty, price=price, reason=reason))
+        row = conn.execute(
+            "SELECT balance FROM cash_balances WHERE user_id = ? AND account = ? AND currency = ?",
+            (bot.user_id, bot.account, bot.currency)).fetchone()
+        cash = row[0] if row else 0.0
+        if cash > ledger.EPS:
+            _transfer(conn, bot.user_id, bot.account, "manual", bot.currency, cash,
+                      "bot_return", at, ledger)
+        conn.execute("UPDATE bots SET returned = ? WHERE id = ?", (round(cash, 2), bot.id))
+        _insert_bot_event(conn, BotEvent(
+            bot_id=bot.id, user_id=bot.user_id, at=at, kind="info",
+            reason=f"Stopped: {cash:,.2f} {bot.currency} returned to your Portfolio cash"))
+        return cash
+
+
+def _insert_bot_event(conn, e: BotEvent) -> None:
+    d = e.model_dump(exclude={"id"})
+    conn.execute(f"INSERT INTO bot_events ({', '.join(d)}) VALUES ({', '.join('?' * len(d))})",
+                 tuple(d.values()))
+
+
+def add_bot_event(conn: sqlite3.Connection, event: BotEvent) -> None:
+    _insert_bot_event(conn, event)
+    conn.commit()
+
+
+def get_bot_events(conn: sqlite3.Connection, bot_id: int, limit: int = 50) -> list[BotEvent]:
+    cur = conn.execute(
+        "SELECT * FROM bot_events WHERE bot_id = ? ORDER BY id DESC LIMIT ?", (bot_id, limit))
+    return [BotEvent(**dict(r)) for r in cur.fetchall()]
+
+
+def get_accounts_with_holdings(conn: sqlite3.Connection) -> list[tuple[int, str]]:
+    """Every (user_id, account) owning a position or a non-zero cash balance."""
+    cur = conn.execute(
+        "SELECT user_id, account FROM portfolio WHERE user_id > 0 "
+        "UNION SELECT user_id, account FROM cash_balances WHERE user_id > 0 AND balance != 0 "
+        "ORDER BY 1, 2")
+    return [(r[0], r[1]) for r in cur.fetchall()]
 
 
 def get_all_portfolio_tickers(conn: sqlite3.Connection) -> list[str]:
@@ -2574,24 +2989,27 @@ def prune_analyses(conn: sqlite3.Connection, keep: list[str]) -> int:
     return len(drop)
 
 
-def get_holding_categories(conn: sqlite3.Connection, user_id: int) -> dict[str, str]:
+def get_holding_categories(
+    conn: sqlite3.Connection, user_id: int, account: str = "manual"
+) -> dict[str, str]:
     """Manual category overrides for a user: {ticker: category}. Tickers with
     NULL category (auto) are omitted."""
     cur = conn.execute(
         "SELECT ticker, category FROM portfolio "
-        "WHERE user_id = ? AND category IS NOT NULL",
-        (user_id,),
+        "WHERE user_id = ? AND account = ? AND category IS NOT NULL",
+        (user_id, account),
     )
     return {row[0]: row[1] for row in cur.fetchall()}
 
 
 def set_holding_category(
-    conn: sqlite3.Connection, user_id: int, ticker: str, category: str | None
+    conn: sqlite3.Connection, user_id: int, ticker: str, category: str | None,
+    account: str = "manual",
 ) -> None:
     """Set (or clear, when None) a holding's manual theme override."""
     conn.execute(
-        "UPDATE portfolio SET category = ? WHERE user_id = ? AND ticker = ?",
-        (category, user_id, ticker),
+        "UPDATE portfolio SET category = ? WHERE user_id = ? AND account = ? AND ticker = ?",
+        (category, user_id, account, ticker),
     )
     conn.commit()
 
@@ -3037,6 +3455,11 @@ _PER_USER_TABLES = (
     "watchlist",
     "watchlists",
     "portfolio",
+    "transactions",
+    "cash_balances",
+    "equity_snapshots",
+    "bots",
+    "bot_events",
     "notify_profile",
     "alert_reads",
     "suggestion_history",
@@ -3187,7 +3610,8 @@ def claim_legacy_rows(conn: sqlite3.Connection, user_id: int) -> None:
     Called when the first account registers, so an existing single-user DB
     migrates to its owner. No-op on tables that predate the user_id column.
     """
-    for table in ("watchlist", "watchlists", "portfolio", "notify_profile"):
+    for table in ("watchlist", "watchlists", "portfolio", "transactions", "cash_balances",
+                  "notify_profile"):
         if _has_column(conn, table, "user_id"):
             conn.execute(f"UPDATE {table} SET user_id = ? WHERE user_id = 0", (user_id,))
     conn.commit()

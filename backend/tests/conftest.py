@@ -58,3 +58,13 @@ def authenticate(client, email="tester@example.com", password="hunter2-secure"):
         "/api/auth/totp/enable", json={"code": pyotp.TOTP(secret).now()})
     assert enabled.status_code == 200, enabled.text
     return secret
+
+
+def buy(conn, user_id, ticker, shares, avg_cost, currency="USD",
+        executed_at="2026-01-01T00:00:00+00:00", account="manual"):
+    """Seed a position through the ledger (the only write path)."""
+    from app import ledger
+
+    return ledger.record(
+        conn, user_id, ticker=ticker, side="BUY", qty=shares, price=avg_cost,
+        currency_code=currency, executed_at=executed_at, account=account)
