@@ -22,6 +22,7 @@ export const TITLES = {
   suggestions: "Suggestions",
   "suggestion-history": "Suggestion History",
   portfolio:   "Portfolio",
+  "trading-bot": "Trading Bot",
   x:           "X Watch",
   earnings:    "Earnings",
   // App-level utilities, grouped as they are in the account menu.

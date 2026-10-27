@@ -182,6 +182,18 @@ export const setCash = (currency, balance, account = "manual") =>
   request(`/api/portfolio/cash/${encodeURIComponent(currency)}`, {
     method: "PUT", body: { balance, account },
   });
+// ---------- demo trading bots ----------
+export const getBotStrategies = () => getJSON("/api/bots/strategies");
+export const getBots = () => getJSON("/api/bots");
+// body: { strategy, name, params, tickers | watchlist_id, amount, currency }.
+// A 422 carries field errors on ApiError.fields ("amount", "params.fast", …).
+export const createBot = (body) => request("/api/bots", { method: "POST", body });
+export const pauseBot = (id) => request(`/api/bots/${id}/pause`, { method: "POST" });
+export const resumeBot = (id) => request(`/api/bots/${id}/resume`, { method: "POST" });
+export const stopBot = (id) => request(`/api/bots/${id}/stop`, { method: "POST" });
+export const stopAllBots = () => request("/api/bots/stop-all", { method: "POST" });
+export const getBotEvents = (id, limit = 100) => getJSON(`/api/bots/${id}/events?limit=${limit}`);
+
 export const getTransactions = ({ account, ticker, limit } = {}) => {
   const q = new URLSearchParams();
   if (account) q.set("account", account);

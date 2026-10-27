@@ -34,7 +34,7 @@ MAX_TICKERS = 25
 _COMMON = [
     {"key": "size_pct", "label": "Position size", "unit": "% of bot equity",
      "default": 20, "min": 1, "max": 100, "step": 1},
-    {"key": "max_positions", "label": "Max open positions", "unit": "positions",
+    {"key": "max_positions", "label": "Max open positions", "unit": "",
      "default": 5, "min": 1, "max": 20, "step": 1},
 ]
 _STOP = {"key": "stop_pct", "label": "Stop loss", "unit": "% below entry",

@@ -235,6 +235,11 @@ export function useDashboardData() {
     patch({ cash: await apiSetCash(currency, balance) });
   }, [patch]);
 
+  // For changes made elsewhere (a bot allocating or returning cash).
+  const reloadCash = useCallback(async () => {
+    patch({ cash: await getCash() });
+  }, [patch]);
+
   const updateHolding = useCallback(async (ticker, shares, avgCost, currency = null) => {
     patch({ portfolio: await apiUpdateHolding(ticker, shares, avgCost, currency) });
   }, [patch]);
@@ -274,10 +279,11 @@ export function useDashboardData() {
     sellHolding,
     moveCash,
     setCash,
+    reloadCash,
     markAlertsRead,
   }), [
     data, loading, busy, error, refresh, refreshOne, addWatch, removeWatch,
     addHolding, updateHolding, setHoldingCategory, removeHolding, sellHolding,
-    moveCash, setCash, markAlertsRead,
+    moveCash, setCash, reloadCash, markAlertsRead,
   ]);
 }

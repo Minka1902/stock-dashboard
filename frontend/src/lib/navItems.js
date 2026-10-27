@@ -6,6 +6,7 @@ export const NAV_ITEMS = [
   { key: "suggestions", label: "Suggestions", icon: "spark",    hint: "what to do", short: "Ideas" },
   { key: "suggestion-history", label: "History", icon: "calendar", hint: "what happened next" },
   { key: "portfolio",   label: "Portfolio",   icon: "wallet",   hint: "your book" },
+  { key: "trading-bot", label: "Trading Bot", icon: "bot",      hint: "demo strategies" },
   { key: "trades",      label: "Trades",      icon: "trending", hint: "insiders" },
   { key: "news",        label: "News",        icon: "news",     hint: "the tape" },
   { key: "watchlist",   label: "Watchlist",   icon: "star",     hint: "charts & radar" },

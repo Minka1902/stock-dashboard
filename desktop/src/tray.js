@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   ["Market Sentiment", "/"],
   ["Suggestions", "/suggestions"],
   ["Portfolio", "/portfolio"],
+  ["Trading Bot", "/trading-bot"],
   ["Watchlist", "/watchlist"],
   ["Trades", "/trades"],
   ["News", "/news"],
