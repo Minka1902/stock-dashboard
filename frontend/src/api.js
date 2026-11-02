@@ -212,6 +212,15 @@ export const getRiskStatus = () => getJSON("/api/risk/status");
 // body: { max_drawdown_pct } (null turns the kill switch off). Returns the status.
 export const saveRiskSettings = (body) => request("/api/risk/settings", { method: "PUT", body });
 export const acknowledgeDrawdown = () => request("/api/risk/drawdown/acknowledge", { method: "POST" });
+// The global kill switch: halt cancels open paper orders and pauses every bot;
+// release needs a fresh authenticator code. Both return the risk status.
+export const haltTrading = (reason = "") => request("/api/risk/kill-switch", { method: "POST", body: { reason } });
+export const releaseTrading = (code) => request("/api/risk/kill-switch/release", { method: "POST", body: { code } });
+// { entries: [{ id, at, kind, detail (JSON), prev_hash, hash }], verify: { ok, n, broken_at, reason } }
+export const getAudit = (limit = 200) => getJSON(`/api/audit?limit=${limit}`);
+export const AUDIT_CSV_URL = `${BASE}/api/audit.csv`;
+// Admin: { chains: [{ user_id, ok, n, broken_at, reason }] }
+export const verifyAllAudit = () => getJSON("/api/server/audit/verify");
 // ---------- paper account ----------
 // { mode, modes, funded, cash, positions, open_orders, recent_orders, slippage, defaults }
 export const getPaper = () => getJSON("/api/paper");

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { animate } from "animejs";
 import { AnimatePresence, motion } from "motion/react";
+import AuditChainCheck from "./AuditChainCheck";
 import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import SchedulerSection from "./SchedulerSection";
@@ -325,6 +326,11 @@ export default function ServerPanel() {
       </section>
 
       <SchedulerSection schedules={schedules} setSchedules={setSchedules} />
+
+      <section className={styles.panel}>
+        <div className={styles.head}><span className="caption">Audit log integrity</span></div>
+        <AuditChainCheck />
+      </section>
 
       {/* ---- the timeline: every run, deferral and job event ---- */}
       <section className={styles.panel}>

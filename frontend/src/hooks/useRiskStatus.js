@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { acknowledgeDrawdown, getRiskStatus, saveRiskSettings } from "../api";
+import { acknowledgeDrawdown, getRiskStatus, haltTrading, releaseTrading, saveRiskSettings } from "../api";
 
 // The kill switch only trips on the evening equity snapshot (or a settings
 // save), so a slow poll is enough to catch a trip made elsewhere.
@@ -35,6 +35,27 @@ export async function setMaxDrawdown(pct) {
 /** What a risk-off regime does to new buys: "off" | "downgrade" | "pause". */
 export async function setRegimeGate(gate) {
   const data = await saveRiskSettings({ regime_gate: gate });
+  emit({ data, error: null });
+  return data;
+}
+
+/** Change any of the order guardrails ({ max_order_notional, … }). */
+export async function setGuardrails(limits) {
+  const data = await saveRiskSettings(limits);
+  emit({ data, error: null });
+  return data;
+}
+
+/** The global kill switch. */
+export async function haltAll(reason) {
+  const data = await haltTrading(reason);
+  emit({ data, error: null });
+  return data;
+}
+
+/** Lift the kill switch with a fresh authenticator code. */
+export async function releaseAll(code) {
+  const data = await releaseTrading(code);
   emit({ data, error: null });
   return data;
 }

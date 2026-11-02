@@ -14,12 +14,16 @@ export default function RiskBanner() {
   const { data } = useRiskStatus();
 
   if (!data?.halted) return null;
+  const killed = Boolean(data.kill_switch?.halted_at);
 
   return (
     <div className={styles.banner} role="status">
       <Icon name="shield" size={16} />
       <p className={styles.text}>
-        <strong>New entries paused.</strong> {data.reasons.join(" · ")}. Sells and exits keep running.
+        <strong>{killed ? "Trading halted." : "New entries paused."}</strong> {data.reasons.join(" · ")}.{" "}
+        {killed
+          ? "Every new order is refused and bots are paused until you re-enable trading. Nothing was sold."
+          : "Sells and exits keep running."}
       </p>
       <Button size="sm" variant="primary"
               onClick={() => navigateTo(RISK_TAB_ROUTE)}>

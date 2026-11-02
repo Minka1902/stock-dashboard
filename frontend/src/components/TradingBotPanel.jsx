@@ -1,4 +1,6 @@
+import AuditTab from "./AuditTab";
 import BotsTab from "./BotsTab";
+import KillSwitchButton from "./KillSwitchButton";
 import PaperTab from "./PaperTab";
 import PerformanceTab from "./PerformanceTab";
 import RiskTab from "./RiskTab";
@@ -16,6 +18,7 @@ const TABS = {
   risk: { label: "Risk", title: "Kill switch, regime, exit rules and signal mutes", render: () => <RiskTab /> },
   paper: { label: "Paper", title: "Paper account and order ticket", render: () => <PaperTab /> },
   performance: { label: "Performance", title: "Returns, drawdown, exposure and correlation per account", render: () => <PerformanceTab /> },
+  audit: { label: "Audit", title: "Append-only log of orders, refusals and setting changes", render: () => <AuditTab /> },
 };
 
 const TAB_OPTIONS = Object.entries(TABS).map(([value, t]) => ({ value, label: t.label, title: t.title }));
@@ -45,6 +48,7 @@ export default function TradingBotPanel(props) {
             stops and fills use live prices. No real orders are ever placed.
           </p>
         </div>
+        <KillSwitchButton />
       </header>
       <div className={styles.tabs}>
         <Segmented options={TAB_OPTIONS} value={tab} onChange={selectTab} ariaLabel="Trading Bot sections" />
