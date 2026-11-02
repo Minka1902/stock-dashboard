@@ -32,7 +32,7 @@ from pydantic import BaseModel
 
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, backtest, bots, chart_data, config, currency, db, equity, execution, exits, ingest, ledger, notify, quotes, report, risk, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
+from app import analysis, analyze, audit, auth, backtest, bots, chart_data, config, currency, db, equity, execution, exits, ingest, ledger, notify, quotes, report, risk, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
@@ -1657,10 +1657,12 @@ def create_bot(item: BotCreate, user=Depends(auth.get_current_user)):
         raise HTTPException(status_code=422, detail={
             "message": "Some fields need attention", "errors": errors})
     try:
-        db.create_bot(conn, bot)
+        created = db.create_bot(conn, bot)
     except ledger.LedgerError as exc:
         raise HTTPException(status_code=422, detail={
             "message": str(exc), "errors": {"amount": str(exc)}}) from None
+    audit.record(conn, user.id, "bot_created", bot_id=created.id, strategy=bot.strategy,
+                 amount=bot.allocated, currency=bot.currency)
     return {"bots": _bots_out(user.id)}
 
 
@@ -1669,14 +1671,18 @@ def pause_bot(bot_id: int, user=Depends(auth.get_current_user)):
     _own_bot(user.id, bot_id)
     if not db.set_bot_status(conn, bot_id, "paused", ("active",)):
         raise HTTPException(status_code=409, detail="only a running bot can be paused")
+    audit.record(conn, user.id, "bot_paused", bot_id=bot_id)
     return {"bots": _bots_out(user.id)}
 
 
 @app.post("/api/bots/{bot_id}/resume")
 def resume_bot(bot_id: int, user=Depends(auth.get_current_user)):
     _own_bot(user.id, bot_id)
+    if db.get_risk_settings(conn, user.id).trading_halted_at:
+        raise HTTPException(status_code=409, detail="trading is halted by your kill switch — re-enable it first")
     if not db.set_bot_status(conn, bot_id, "active", ("paused",)):
         raise HTTPException(status_code=409, detail="only a paused bot can be resumed")
+    audit.record(conn, user.id, "bot_resumed", bot_id=bot_id)
     return {"bots": _bots_out(user.id)}
 
 
@@ -1684,9 +1690,10 @@ def resume_bot(bot_id: int, user=Depends(auth.get_current_user)):
 def stop_bot(bot_id: int, user=Depends(auth.get_current_user)):
     """Close the bot's positions and return its cash to the Portfolio."""
     try:
-        bots.stop(conn, _own_bot(user.id, bot_id))
+        returned = bots.stop(conn, _own_bot(user.id, bot_id))
     except bots.BotError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+    audit.record(conn, user.id, "bot_stopped", bot_id=bot_id, returned=returned)
     return {"bots": _bots_out(user.id)}
 
 
@@ -1697,7 +1704,8 @@ def stop_all_bots(user=Depends(auth.get_current_user)):
         if bot.status == "stopped":
             continue
         try:
-            bots.stop(conn, bot)
+            returned = bots.stop(conn, bot)
+            audit.record(conn, user.id, "bot_stopped", bot_id=bot.id, returned=returned)
         except bots.BotError as exc:
             failed[bot.name] = str(exc)
     return {"bots": _bots_out(user.id), "failed": failed}

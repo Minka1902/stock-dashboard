@@ -11,12 +11,56 @@ in ``STOCKS_LOG_DIR``.
 """
 import logging
 import logging.handlers
+import re
 import sys
 import threading
 
 from app import config
 
 _FORMAT = "%(asctime)s %(levelname)-7s %(name)s: %(message)s"
+
+# Every secret the app reads from env. None/"" entries are skipped.
+_SECRET_SETTINGS = (
+    "SMTP_PASSWORD", "TWILIO_AUTH_TOKEN", "ALPHA_VANTAGE_KEY", "FMP_KEY", "TELEGRAM_BOT_TOKEN",
+    "OAUTH_GITHUB_CLIENT_SECRET", "OAUTH_GOOGLE_CLIENT_SECRET", "OAUTH_FACEBOOK_CLIENT_SECRET",
+)
+# Secret-shaped text even when it isn't one of ours: key=value credentials in
+# URLs and messages, Telegram bot tokens, and bearer headers.
+_SECRET_PATTERNS = (
+    re.compile(r"(?i)\b(token|password|passwd|secret|api[_-]?key|apikey|auth)=([^&\s'\"]+)"),
+    re.compile(r"\b\d{6,12}:[A-Za-z0-9_-]{30,}\b"),
+    re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._~+/=-]{16,}"),
+)
+REDACTED = "[redacted]"
+
+
+class RedactSecrets(logging.Filter):
+    """Masks secrets in every record before any handler writes it — the
+    message, its arguments and a formatted traceback alike."""
+
+    def __init__(self, secrets: tuple[str, ...] | None = None):
+        super().__init__()
+        self.secrets = secrets
+
+    def _known(self) -> list[str]:
+        if self.secrets is not None:
+            return list(self.secrets)
+        return [v for name in _SECRET_SETTINGS if (v := getattr(config, name, None)) and len(v) >= 4]
+
+    def scrub(self, text: str) -> str:
+        for value in self._known():
+            text = text.replace(value, REDACTED)
+        text = _SECRET_PATTERNS[0].sub(lambda m: f"{m.group(1)}={REDACTED}", text)
+        text = _SECRET_PATTERNS[1].sub(REDACTED, text)
+        return _SECRET_PATTERNS[2].sub(lambda m: f"{m.group(1)} {REDACTED}", text)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = self.scrub(record.getMessage())
+        record.args = None
+        if record.exc_info:
+            record.exc_text = self.scrub(logging.Formatter().formatException(record.exc_info))
+            record.exc_info = None
+        return True
 
 
 def _install_excepthooks() -> None:
@@ -77,6 +121,10 @@ def setup_logging(level: str | None = None) -> None:
             # A read-only or missing log dir must not stop the app from booting;
             # say so on stderr and carry on with console logging only.
             root.warning("file logging disabled (%s): %s", config.LOG_DIR, exc)
+
+    for h in root.handlers:
+        if not any(isinstance(f, RedactSecrets) for f in h.filters):
+            h.addFilter(RedactSecrets())
 
     # Uvicorn's access log is chatty at INFO; keep it but quiet noisy libraries.
     logging.getLogger("httpx").setLevel(logging.WARNING)

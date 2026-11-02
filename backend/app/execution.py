@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from typing import Callable, Protocol
 from zoneinfo import ZoneInfo
 
-from app import config, costs, db, ledger, quotes
+from app import audit, config, costs, db, ledger, quotes
 from app.ledger import BOT_ACCOUNT
 from app.market_calendar import exchange_for_ticker, is_trading_day, market_status, next_trading_day
 from app.models import Holding, Order, Transaction
@@ -129,7 +129,7 @@ def validate(order: Order) -> None:
 
 
 # Checks run by submit after validation, in order: each returns a refusal
-# reason or None. The guardrails (STC-50) are appended here.
+# reason or None. app/guardrails.py installs the guardrails (STC-50).
 CHECKS: list[Callable[[object, Order, datetime], str | None]] = []
 
 
@@ -137,6 +137,9 @@ def _run_checks(conn, order: Order, now: datetime) -> None:
     for check in CHECKS:
         reason = check(conn, order, now)
         if reason:
+            audit.record(conn, order.user_id, "order_refused", account=order.account, ticker=order.ticker,
+                         side=order.side, qty=order.qty, type=order.type, guardrail=check.__name__,
+                         reason=reason)
             raise OrderRejected(reason)
 
 
@@ -173,10 +176,15 @@ class PaperBroker:
             tx = ledger.build(order.user_id, ticker=order.ticker, side=order.side, qty=order.qty,
                               price=px, currency_code=order.currency, account=PAPER,
                               executed_at=_iso(now), source="paper_fill")
-            return db.fill_order(conn, order, tx, slippage_bps(order.side, px, order.reference_price))
+            done = db.fill_order(conn, order, tx, slippage_bps(order.side, px, order.reference_price))
         except ledger.LedgerError as exc:
             db.set_order_status(conn, order.id, "rejected", str(exc))
+            audit.record(conn, order.user_id, "order_rejected", order_id=order.id, reason=str(exc))
             return db.get_order(conn, order.id)
+        if done is not None:
+            audit.record(conn, order.user_id, "order_filled", order_id=order.id, ticker=order.ticker,
+                         side=order.side, qty=order.qty, price=px)
+        return done
 
     def poll_fills(self, conn, now: datetime, quote_getter=None) -> list[Order]:
         """Expire day orders whose session has passed, then fill whatever a
@@ -223,10 +231,18 @@ def submit(conn, order: Order, now: datetime | None = None, quote_getter=None,
             "status": "filled", "submitted_at": _iso(now), "filled_at": _iso(now),
             "slippage_bps": slippage_bps(order.side, order.fill_price, order.reference_price)})
         tx = fill(done)
-        return done.model_copy(update={"id": tx.order_id}) if tx is not None else None
+        if tx is None:
+            return None
+        audit.record(conn, order.user_id, "order_filled", order_id=tx.order_id, account=order.account,
+                     ticker=order.ticker, side=order.side, qty=order.qty, price=order.fill_price)
+        return done.model_copy(update={"id": tx.order_id})
     if order.account != PAPER:
         raise OrderRejected("orders on this account are placed by its bot")
-    return PAPER_BROKER.place_order(conn, order, now, quote_getter)
+    placed = PAPER_BROKER.place_order(conn, order, now, quote_getter)
+    audit.record(conn, order.user_id, "order_placed", order_id=placed.id, account=PAPER, ticker=order.ticker,
+                 side=order.side, qty=order.qty, type=order.type, limit=order.limit_price,
+                 stop=order.stop_price, tif=order.tif, status=placed.status)
+    return placed
 
 
 def cancel(conn, user_id: int, order_id: int) -> Order:
@@ -237,6 +253,7 @@ def cancel(conn, user_id: int, order_id: int) -> Order:
         raise OrderRejected("no such order")
     if o.account != PAPER or not PAPER_BROKER.cancel(conn, o):
         raise OrderRejected(f"this order is {o.status} and can't be cancelled")
+    audit.record(conn, user_id, "order_cancelled", order_id=order_id)
     return db.get_order(conn, order_id)
 
 
@@ -273,3 +290,9 @@ def reset_paper(conn, user_id: int, amount: float, ccy: str, now: datetime | Non
                           currency_code=c.currency, account=PAPER, executed_at=at, source="paper_reset")
     ledger.record(conn, user_id, ticker=ccy, side="DEPOSIT", qty=amount, currency_code=ccy,
                   account=PAPER, executed_at=at, source="paper_init")
+    audit.record(conn, user_id, "paper_reset", amount=amount, currency=ccy)
+
+
+# The guardrails install themselves into CHECKS; importing them here means
+# every path that can submit an order has them, whatever imported it first.
+from app import guardrails  # noqa: E402,F401

@@ -12,9 +12,10 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
-from app import auth, automute, config, db, exits, notify, quotes, risk
+from app import audit, auth, automute, config, db, exits, notify, quotes, risk
 from app.models import PositionRule
 from app.sources.boom_score import WEIGHTS
 from app.validation import clean_ticker, validate_exit_rule
@@ -34,6 +35,19 @@ class RiskSettingsBody(BaseModel):
     """Only the fields sent are changed."""
     max_drawdown_pct: float | None = None
     regime_gate: str | None = None
+    max_order_notional: float | None = None
+    max_orders_per_day: int | None = None
+    max_notional_per_day: float | None = None
+    max_position_pct: float | None = None
+    allow_outside_hours: bool | None = None
+
+
+class KillBody(BaseModel):
+    reason: str = ""
+
+
+class StepUpBody(BaseModel):
+    code: str
 
 
 class OverrideBody(BaseModel):
@@ -132,6 +146,7 @@ def build_router(conn) -> APIRouter:
         rule = db.upsert_position_rule(conn, PositionRule(
             user_id=user.id, account=acct, ticker=t, trail_high=trail_high,
             created_at=existing.created_at if existing else now, updated_at=now, **clean))
+        audit.record(conn, user.id, "exit_rule_saved", account=acct, ticker=t, **clean)
         return _view(conn, t, rule, holding, price)
 
     @router.delete("/api/portfolio/{ticker}/rules")
@@ -139,6 +154,7 @@ def build_router(conn) -> APIRouter:
         t, acct = clean_ticker(ticker), _account(account)
         if not db.delete_position_rule(conn, user.id, acct, t):
             raise HTTPException(status_code=404, detail="no rule for that ticker")
+        audit.record(conn, user.id, "exit_rule_deleted", account=acct, ticker=t)
         return {"deleted": t}
 
     @router.get("/api/risk/status")
@@ -155,6 +171,18 @@ def build_router(conn) -> APIRouter:
             errors["max_drawdown_pct"] = f"Between {lo:g}% and {hi:g}%, or off"
         if "regime_gate" in sent and body.regime_gate not in risk.REGIME_GATES:
             errors["regime_gate"] = f"One of: {', '.join(risk.REGIME_GATES)}"
+        limits = {}
+        for field, bounds in risk.GUARDRAIL_FIELDS.items():
+            if field not in sent:
+                continue
+            v = getattr(body, field)
+            if bounds is None:
+                if v is not None:
+                    limits[field] = bool(v)
+            elif v is None or not bounds[0] <= v <= bounds[1]:
+                errors[field] = f"Between {bounds[0]:,g} and {bounds[1]:,g}"
+            else:
+                limits[field] = v
         if errors:
             raise HTTPException(status_code=422, detail={
                 "message": "Some fields need attention", "errors": errors})
@@ -162,6 +190,11 @@ def build_router(conn) -> APIRouter:
             risk.set_max_drawdown(conn, user.id, pct)
         if "regime_gate" in sent:
             risk.set_regime_gate(conn, user.id, body.regime_gate)
+        if limits:
+            s = db.get_risk_settings(conn, user.id)
+            db.upsert_risk_settings(conn, s.model_copy(update={**limits, "updated_at": _now()}))
+        audit.record(conn, user.id, "risk_settings_changed",
+                     **{k: getattr(body, k) for k in sent})
         # A limit already exceeded trips now rather than at tonight's snapshot.
         alert = risk.check_user(conn, user.id)
         if alert:
@@ -172,7 +205,42 @@ def build_router(conn) -> APIRouter:
     def acknowledge(user=Depends(auth.get_current_user)):
         if not risk.acknowledge(conn, user.id):
             raise HTTPException(status_code=409, detail="the kill switch isn't tripped")
+        audit.record(conn, user.id, "drawdown_acknowledged")
         return risk.status(conn, user.id)
+
+    @router.post("/api/risk/kill-switch")
+    def kill_switch(body: KillBody, user=Depends(auth.get_current_user)):
+        if db.get_risk_settings(conn, user.id).trading_halted_at:
+            raise HTTPException(status_code=409, detail="trading is already halted")
+        risk.halt_trading(conn, user.id, body.reason.strip()[:200])
+        return risk.status(conn, user.id)
+
+    @router.post("/api/risk/kill-switch/release")
+    def release(body: StepUpBody, user=Depends(auth.get_current_user)):
+        if not db.get_risk_settings(conn, user.id).trading_halted_at:
+            raise HTTPException(status_code=409, detail="trading isn't halted")
+        if not auth.verify_step_up(user, body.code):
+            audit.record(conn, user.id, "step_up_failed", action="kill_switch_release")
+            raise HTTPException(status_code=422, detail={
+                "message": "That code didn't work", "errors": {"code": "Enter the current 6-digit code"}})
+        risk.release_trading(conn, user.id)
+        return risk.status(conn, user.id)
+
+    @router.get("/api/audit")
+    def audit_log(limit: int = 200, user=Depends(auth.get_current_user)):
+        rows = db.get_audit(conn, user.id, max(1, min(limit, 2000)))
+        return {"entries": [e.model_dump() for e in rows], "verify": audit.verify(conn, user.id)}
+
+    @router.get("/api/audit.csv", response_class=PlainTextResponse)
+    def audit_csv(user=Depends(auth.get_current_user)):
+        return PlainTextResponse(audit.to_csv(conn, user.id), media_type="text/csv", headers={
+            "Content-Disposition": 'attachment; filename="audit-log.csv"'})
+
+    @router.get("/api/server/audit/verify")
+    def audit_verify_all(user=Depends(auth.get_current_user)):
+        if not user.is_admin:
+            raise HTTPException(status_code=403, detail="admin only")
+        return {"chains": [{"user_id": uid, **audit.verify(conn, uid)} for uid in db.get_audit_user_ids(conn)]}
 
     @router.get("/api/automute")
     def get_automute(user=Depends(auth.get_current_user)):

@@ -523,6 +523,18 @@ class PositionRule(BaseModel):
     updated_at: str                   # a new value re-arms every kind
 
 
+class AuditEntry(BaseModel):
+    """One append-only audit row (STC-52). Each user's rows form a hash chain:
+    hash = sha256(prev_hash + the row's canonical content)."""
+    id: int | None = None
+    user_id: int
+    at: str
+    kind: str
+    detail: str          # JSON
+    prev_hash: str
+    hash: str
+
+
 class RegimeSnapshot(BaseModel):
     date: str            # YYYY-MM-DD — PRIMARY KEY; the day's latest computation
     label: str           # risk_on | neutral | risk_off | unknown
@@ -562,6 +574,16 @@ class RiskSettings(BaseModel):
     drawdown_pct: float | None = None          # the drawdown when it tripped
     drawdown_acknowledged_at: str | None = None
     regime_gate: str = "downgrade"
+    # Order guardrails (STC-50), enforced in execution.submit for paper and bots.
+    # Notional limits are in the user's base currency.
+    max_order_notional: float = 25_000.0
+    max_orders_per_day: int = 50
+    max_notional_per_day: float = 100_000.0
+    max_position_pct: float = 50.0
+    allow_outside_hours: bool = False
+    # Global kill switch (STC-53): set = every new order refused, bots paused.
+    trading_halted_at: str | None = None
+    trading_halt_reason: str | None = None
     updated_at: str = ""
 
 

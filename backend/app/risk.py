@@ -18,11 +18,19 @@ new entries.
 """
 from datetime import datetime, timezone
 
-from app import analytics, db, regime
+from app import analytics, audit, db, regime
 from app.models import Alert, RiskSettings
 
 MAX_DRAWDOWN_RANGE = (1.0, 90.0)
 REGIME_GATES = ("off", "downgrade", "pause")
+# Editable guardrail limits and their allowed ranges (STC-50).
+GUARDRAIL_FIELDS = {
+    "max_order_notional": (100.0, 10_000_000.0),
+    "max_orders_per_day": (1, 1_000),
+    "max_notional_per_day": (100.0, 50_000_000.0),
+    "max_position_pct": (1.0, 100.0),
+    "allow_outside_hours": None,
+}
 _ACCOUNT = "manual"
 
 
@@ -102,6 +110,8 @@ def gate(conn, user_id: int, current_regime: dict | None = None) -> dict:
     """{halted: [reasons new buys are suppressed], downgrade: reason | None}."""
     s = db.get_risk_settings(conn, user_id)
     halted, downgrade = [], None
+    if s.trading_halted_at:
+        halted.append(f"Kill switch: all trading halted ({s.trading_halt_reason})")
     if is_tripped(s):
         halted.append(f"Drawdown kill switch: {s.drawdown_pct:.1f}% below the high "
                       f"(limit {s.max_drawdown_pct:g}%)")
@@ -113,6 +123,40 @@ def gate(conn, user_id: int, current_regime: dict | None = None) -> dict:
         else:
             downgrade = why
     return {"halted": halted, "downgrade": downgrade}
+
+
+def halt_trading(conn, user_id: int, reason: str, now: str | None = None) -> dict:
+    """The global kill switch (STC-53): cancel every open paper order, pause
+    every running bot, and refuse every new order until released with a
+    fresh authenticator code. Nothing is sold."""
+    at = now or _now()
+    s = db.get_risk_settings(conn, user_id)
+    cancelled = [o.id for o in db.get_orders(conn, user_id, "paper", ("submitted",), limit=10_000)
+                 if db.set_order_status(conn, o.id, "cancelled", "kill switch")]
+    paused = [b.id for b in db.get_bots(conn, user_id, "active")
+              if db.set_bot_status(conn, b.id, "paused", ("active",))]
+    db.upsert_risk_settings(conn, s.model_copy(update={
+        "trading_halted_at": at, "trading_halt_reason": reason or "kill switch", "updated_at": at}))
+    audit.record(conn, user_id, "kill_switch_on", reason=reason, cancelled_orders=cancelled, paused_bots=paused)
+    db.upsert_alerts(conn, [Alert(
+        dedup_key=f"risk||{user_id}|kill_switch|{at}", created_at=at, ticker="", type="risk", severity="high",
+        title="Kill switch: trading halted",
+        message=(f"{len(cancelled)} open paper order(s) cancelled and {len(paused)} bot(s) paused. Every new "
+                 f"order is refused until you re-enable trading with an authenticator code."),
+        user_id=user_id)])
+    return {"cancelled_orders": cancelled, "paused_bots": paused}
+
+
+def release_trading(conn, user_id: int) -> bool:
+    """Lift the kill switch (the caller has checked a fresh TOTP). Bots stay
+    paused — resuming each is a decision of its own."""
+    s = db.get_risk_settings(conn, user_id)
+    if not s.trading_halted_at:
+        return False
+    db.upsert_risk_settings(conn, s.model_copy(update={
+        "trading_halted_at": None, "trading_halt_reason": None, "updated_at": _now()}))
+    audit.record(conn, user_id, "kill_switch_off", halted_since=s.trading_halted_at)
+    return True
 
 
 def halt_reasons(conn, user_id: int) -> list[str]:
@@ -139,6 +183,8 @@ def status(conn, user_id: int) -> dict:
         "downgrade": g["downgrade"],
         "regime": reg,
         "regime_gate": s.regime_gate,
+        "kill_switch": {"halted_at": s.trading_halted_at, "reason": s.trading_halt_reason},
+        "guardrails": {k: getattr(s, k) for k in GUARDRAIL_FIELDS},
         "regime_gates": REGIME_GATES,
         "drawdown": {
             "max_pct": s.max_drawdown_pct,

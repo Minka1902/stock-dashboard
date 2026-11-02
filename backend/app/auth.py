@@ -13,6 +13,7 @@ Design:
 import hashlib
 import logging
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 
 import pyotp
@@ -82,6 +83,27 @@ def verify_totp(secret: str, code: str) -> bool:
     if not code.isdigit() or len(code) != 6:
         return False
     return pyotp.TOTP(secret).verify(code, valid_window=1)
+
+
+# Last TOTP time-step accepted for a step-up, per (user, secret): a code
+# proves "the owner is here now" once, so the same code can't be used twice;
+# re-enrolling an authenticator starts a fresh count.
+_STEP_UP_USED: dict[tuple[int, str], int] = {}
+
+
+def verify_step_up(user, code: str) -> bool:
+    """A fresh authenticator code for a sensitive action (STC-51): valid now
+    (±30s) and not already used for a step-up."""
+    if not user.totp_secret or not verify_totp(user.totp_secret, code):
+        return False
+    totp = pyotp.TOTP(user.totp_secret)
+    now = int(time.time())
+    step = next((now // 30 + d for d in (0, -1, 1) if totp.at(now + d * 30) == code.strip()), None)
+    key = (user.id, user.totp_secret)
+    if step is None or _STEP_UP_USED.get(key, -1) >= step:
+        return False
+    _STEP_UP_USED[key] = step
+    return True
 
 
 # ---------- recovery codes ----------

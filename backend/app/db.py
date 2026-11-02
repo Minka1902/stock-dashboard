@@ -15,6 +15,7 @@ from app.models import (
     AaiiSentiment,
     Alert,
     AnalystSignal,
+    AuditEntry,
     AppSettings,
     AuthSession,
     BoomScore,
@@ -668,6 +669,18 @@ def init_schema(conn: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id, id DESC);
         CREATE INDEX IF NOT EXISTS idx_orders_open ON orders(status) WHERE status = 'submitted';
+        -- Append-only audit trail (STC-52), one hash chain per user so deleting
+        -- an account drops its whole chain without breaking anyone else's.
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id   INTEGER NOT NULL,
+            at        TEXT NOT NULL,
+            kind      TEXT NOT NULL,
+            detail    TEXT NOT NULL,
+            prev_hash TEXT NOT NULL,
+            hash      TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id, id);
         CREATE TABLE IF NOT EXISTS risk_settings (
             user_id                  INTEGER PRIMARY KEY,
             max_drawdown_pct         REAL,
@@ -951,6 +964,17 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _try_add_column(conn, "suggestion_history", "muted", "TEXT NOT NULL DEFAULT '[]'")
     _try_add_column(conn, "risk_settings", "regime_gate", "TEXT NOT NULL DEFAULT 'downgrade'")
     _try_add_column(conn, "yield_curve", "yr3m", "REAL")
+    # Order guardrails and the global kill switch (STC-50, STC-53).
+    for col, col_def in [
+        ("max_order_notional", "REAL NOT NULL DEFAULT 25000"),
+        ("max_orders_per_day", "INTEGER NOT NULL DEFAULT 50"),
+        ("max_notional_per_day", "REAL NOT NULL DEFAULT 100000"),
+        ("max_position_pct", "REAL NOT NULL DEFAULT 50"),
+        ("allow_outside_hours", "INTEGER NOT NULL DEFAULT 0"),
+        ("trading_halted_at", "TEXT"),
+        ("trading_halt_reason", "TEXT"),
+    ]:
+        _try_add_column(conn, "risk_settings", col, col_def)
     _migrate_ila_price_rows(conn)
     _migrate_econ_entities(conn)
     _seed_ledger(conn)
@@ -3208,13 +3232,19 @@ def mark_alert_pushed(conn: sqlite3.Connection, dedup_key: str) -> None:
     conn.commit()
 
 
+def _risk_from_row(row) -> RiskSettings:
+    d = dict(row)
+    d["allow_outside_hours"] = bool(d.get("allow_outside_hours", 0))
+    return RiskSettings(**d)
+
+
 def get_risk_settings(conn: sqlite3.Connection, user_id: int) -> RiskSettings:
     row = conn.execute("SELECT * FROM risk_settings WHERE user_id = ?", (user_id,)).fetchone()
-    return RiskSettings(**dict(row)) if row else RiskSettings(user_id=user_id)
+    return _risk_from_row(row) if row else RiskSettings(user_id=user_id)
 
 
 def get_all_risk_settings(conn: sqlite3.Connection) -> list[RiskSettings]:
-    return [RiskSettings(**dict(r)) for r in conn.execute("SELECT * FROM risk_settings")]
+    return [_risk_from_row(r) for r in conn.execute("SELECT * FROM risk_settings")]
 
 
 def upsert_risk_settings(conn: sqlite3.Connection, s: RiskSettings) -> RiskSettings:
@@ -3223,9 +3253,48 @@ def upsert_risk_settings(conn: sqlite3.Connection, s: RiskSettings) -> RiskSetti
         f"INSERT INTO risk_settings ({', '.join(cols)}) VALUES ({', '.join(':' + c for c in cols)}) "
         f"ON CONFLICT(user_id) DO UPDATE SET "
         + ", ".join(f"{c} = excluded.{c}" for c in cols if c != "user_id"),
-        s.model_dump())
+        {**s.model_dump(), "allow_outside_hours": int(s.allow_outside_hours)})
     conn.commit()
     return get_risk_settings(conn, s.user_id)
+
+
+def orders_today(conn: sqlite3.Connection, user_id: int, since: str) -> list[Order]:
+    """Every order placed since `since` (an ISO timestamp) that wasn't refused."""
+    cur = conn.execute("SELECT * FROM orders WHERE user_id = ? AND created_at >= ? AND status != 'rejected'",
+                       (user_id, since))
+    return [Order(**dict(r)) for r in cur.fetchall()]
+
+
+# ---------- audit log ----------
+
+def append_audit(conn: sqlite3.Connection, user_id: int, at: str, kind: str, detail: str,
+                 hasher) -> AuditEntry:
+    """Append one row to the user's chain. The previous hash is read and the
+    row written in one transaction, so two writers can't fork the chain."""
+    with _immediate(conn):
+        row = conn.execute("SELECT hash FROM audit_log WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+                           (user_id,)).fetchone()
+        prev = row[0] if row else ""
+        digest = hasher(prev, user_id, at, kind, detail)
+        cur = conn.execute(
+            "INSERT INTO audit_log (user_id, at, kind, detail, prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, at, kind, detail, prev, digest))
+    return AuditEntry(id=cur.lastrowid, user_id=user_id, at=at, kind=kind, detail=detail,
+                      prev_hash=prev, hash=digest)
+
+
+def get_audit(conn: sqlite3.Connection, user_id: int, limit: int | None = None,
+              newest_first: bool = True) -> list[AuditEntry]:
+    sql = f"SELECT * FROM audit_log WHERE user_id = ? ORDER BY id {'DESC' if newest_first else 'ASC'}"
+    args: list = [user_id]
+    if limit:
+        sql += " LIMIT ?"
+        args.append(limit)
+    return [AuditEntry(**dict(r)) for r in conn.execute(sql, args)]
+
+
+def get_audit_user_ids(conn: sqlite3.Connection) -> list[int]:
+    return [r[0] for r in conn.execute("SELECT DISTINCT user_id FROM audit_log ORDER BY user_id")]
 
 
 # ---------- demo trading bots ----------
@@ -3929,6 +3998,7 @@ _PER_USER_TABLES = (
     "bots",
     "bot_events",
     "orders",
+    "audit_log",
     "position_rules",
     "risk_settings",
     "signal_mute_overrides",

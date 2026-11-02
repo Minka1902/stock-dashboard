@@ -33,6 +33,13 @@ def _order(user_id, **kw):
     return Order(**{**base, **kw})
 
 
+def _loosen(conn, user_id, **limits):
+    s = db.get_risk_settings(conn, user_id)
+    db.upsert_risk_settings(conn, s.model_copy(update={
+        "allow_outside_hours": True, "max_order_notional": 1e9, "max_notional_per_day": 1e9,
+        "max_position_pct": 1e6, **limits}))
+
+
 def _cash(conn, user_id):
     return {c.currency: c.balance for c in db.get_cash(conn, user_id, "paper")}
 
@@ -49,6 +56,7 @@ def test_a_market_order_fills_at_the_quote_plus_costs(conn, user):
 
 
 def test_a_market_order_placed_while_closed_waits_for_the_next_live_quote(conn, user):
+    _loosen(conn, user.id)
     o = execution.submit(conn, _order(user.id), CLOSED, _q(100.0))
     assert o.status == "submitted"
     assert execution.poll(conn, CLOSED, _q(100.0)) == 0
@@ -98,6 +106,7 @@ def test_the_ledger_replays_to_the_paper_tables(conn, user):
 # ---------- refusals and races ----------
 
 def test_not_enough_paper_cash_rejects_the_order_with_the_reason(conn, user):
+    _loosen(conn, user.id)
     o = execution.submit(conn, _order(user.id, qty=1000), LIVE, _q(100.0))
     assert o.status == "rejected" and "not enough USD cash" in o.reason
     assert db.get_portfolio(conn, user.id, "paper") == []
@@ -170,6 +179,7 @@ def test_api_fund_order_cancel(client):
     s = client.get("/api/paper").json()
     assert s["funded"] is False and s["modes"][1] == {"value": "live", "available": False,
                                                        "reason": "no broker connected"}
+    client.put("/api/risk/settings", json={"allow_outside_hours": True})
     s = client.post("/api/paper/reset", json={}).json()
     assert s["cash"][0]["balance"] == config.PAPER_START_CASH
     r = client.post("/api/paper/orders", json={"ticker": "aapl", "side": "buy", "qty": 5, "type": "limit",
