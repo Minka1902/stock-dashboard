@@ -44,8 +44,9 @@ Standard npm scripts (`install` / `dev` / `build` / `lint`) — see `package.jso
   `http://localhost:5173` (override with `STOCKS_CORS_ORIGINS`; wildcard rejected because requests
   carry the session cookie).
 
-**Run exactly one uvicorn worker.** The scheduler, TTL caches, rate limiter and the shared
-SQLite connection are all in-process; scaling out means moving all four out of the process first.
+**Run exactly one uvicorn worker.** The scheduler, TTL caches, rate limiter, the shared
+SQLite connection and the server-sent-events bus (`app/events.py`) are all in-process; scaling
+out means moving all five out of the process first.
 
 ### Extension (`extension/`) — MV3 browser extension, Chrome + Firefox
 ```bash
@@ -141,7 +142,10 @@ No root package manager, so the companions copy rather than share:
   `(user_id, account, ticker)`, each row has a native `currency`), `transactions` (the ledger),
   `cash_balances`, `equity_snapshots`, `bots` / `bot_events`, `notify_profile`
   (PK `user_id`, carries `base_currency`), `alert_reads`, `fx_watch` (carousel FX pairs, PK
-  `(user_id, pair)`). **Shared**: all market-data tables, `stock_analysis` (stored
+  `(user_id, pair)`), and the trading-bot tables: `orders`, `audit_log`, `position_rules`,
+  `risk_settings`, `signal_mute_overrides`, `saved_rules` / `rule_variants` / `rule_signals`,
+  `scanner_prefs` / `scanner_alert_log`, `telegram_links` / `telegram_codes`. `alerts` rows with a
+  `user_id` belong to that user; `NULL` means market-wide. **Shared**: all market-data tables, `stock_analysis` (stored
   *unsized*; `analysis.apply_sizing` personalizes at read time), `app_settings` (PUT is
   admin-only). The first registered account becomes admin and claims legacy `user_id=0` rows
   (`db.claim_legacy_rows`); old single-user DBs are rebuilt in place by `init_schema`.
@@ -233,10 +237,13 @@ the Server page) is what runs.
 - A non-forced manual refresh of a source with a registry `min_interval` that is still fresh
   answers `queued: false` with the reason and next run (no run row); `force=1` is admin-only.
 
-**Derived step:** `boom_score` (a pure DB computation that reads every other source) then `alerts`
+**Derived step:** `boom_score` (a pure DB computation that reads every other source), `alerts`
 (diffs the fresh boom scores against the prior `alert_state` snapshot to fire transition events
-exactly once, deduped by `dedup_key`) run together, in that order, as the `derived` job. It has its
-own schedule row and is pulled forward to `DERIVED_DEBOUNCE_SECONDS` after any upstream success.
+exactly once, deduped by `dedup_key`), `regime` (today's risk-on / neutral / risk-off label),
+`automute` (per-signal hit rates, mute with hysteresis) and `rules` (users' saved rules on
+completed bars) run together, in that order, as the `derived` job (`schedules.DERIVED_MEMBERS`).
+It has its own schedule row and is pulled forward to `DERIVED_DEBOUNCE_SECONDS` after any
+upstream success. Sources nothing derived reads set `requests_derived=False`.
 
 **Boom Score** (`app/sources/boom_score.py`) combines all signals into a weighted `-90…+100`
 composite per watchlist ticker. `WEIGHTS` defines each component's contribution; congress weight is
@@ -247,7 +254,7 @@ score, and each run also appends to boom-score history.
 (an `ADJUST`), removal (`ADJUST` to 0), sale, deposit and withdrawal is a `transactions` row;
 `portfolio` and `cash_balances` are materialized from it by `db.record_transaction` in one
 `BEGIN IMMEDIATE` transaction (two connections write, so read-modify-write takes the lock first).
-Accounts: `manual` (hand-tracked), `paper` (reserved), `live` (refused: no broker), and
+Accounts: `manual` (hand-tracked), `paper` (the paper broker), `live` (refused: no broker), and
 `bot:<id>`. The pure arithmetic lives in `ledger.apply`, and `ledger.replay` must always
 reproduce the materialized tables (tested). Each row also stores the `flow` it caused, the
 external capital in/out that time-weighted returns need. `equity` (the `equity_snapshot` source,
@@ -259,10 +266,40 @@ breakout) trading simulated fills in their own `bot:<id>` ledger account. Creati
 its allocation out of manual cash, and stopping it closes the positions and hands the cash back,
 each atomically (`db.create_bot`, `db.stop_bot`). `bots.decide` is pure and reads **completed
 daily closes only** (no look-ahead, at most one change of mind per session). Stops, targets
-and fills use the live quote, moved `BOT_COST_BPS` against the bot. The engine is the 1-minute
+and fills use the live quote via `quotes.tradable_price` (LIVE and no older than
+`ENGINE_QUOTE_MAX_AGE_SECONDS`), moved against the bot by `costs.apply` at `BOT_COST_BPS`. A
+fifth strategy, `rule`, trades a saved rule. The engine is the 1-minute
 `bots` job, a member of `_QUIET_JOBS` (only its errors reach `job_runs`). It trades a ticker
 only while that ticker's exchange is LIVE, and a fill (`db.bot_trade`) re-checks inside its
 transaction that the bot is still active.
+
+**Trading & risk** — no broker exists, so nothing here can place a real order.
+- **`execution.submit` is the only way an order happens**, paper and bot alike. It runs the
+  `CHECKS` that `app/guardrails.py` installs (imported at the end of `execution.py`): kill switch,
+  market hours, per-order / per-day notional, orders per day, position % of the account. Then it
+  writes the `orders` row and the ledger, audits the order, publishes an `order` event and (for bots)
+  queues a Telegram message. Bots pass `fill=` so `db.bot_trade` keeps its in-transaction
+  "still active" re-check. A new order path that skips `submit` is the regression to watch for.
+- **`costs.apply`** is the one cost model (suggestion net returns, paper and bot fills, the bar
+  backtester). `model_version.current()` hashes the weights and thresholds, so the track record
+  never mixes versions. A saved rule's version is `rule:<hash>`.
+- **Risk switches** (`risk_settings`): drawdown kill switch (after each equity snapshot), regime
+  gate (off / downgrade / pause), and a global kill switch whose release needs a fresh TOTP
+  (`auth.verify_step_up`). All three block **new entries** only; exits and stops keep running.
+- **`audit_log`** is one hash chain per user (so `delete_user` can drop a chain whole).
+  Verification is admin-only on the Server page.
+- **Rules** (`app/rules.py`) take price/volume indicators only. Anything stored only as a latest
+  snapshot (fundamentals, analyst, congress, Boom Score…) is refused as not point-in-time.
+  `bar_backtest` fills at the next open and stops intrabar, and shows no metrics below 20 trades.
+- **Scanner** (`app/scanner.py`): three sources (`universe` monthly from Wikipedia,
+  `scan_history` daily bars, `scanner` batched Yahoo v7 quotes). While every market in the
+  universe is closed it defers instead of calling out. The scans are rule-schema groups.
+- **Push**: `GET /api/stream` (server-sent events from `app/events.py`). The frontend opens it only
+  on the Trading Bot page and only while the tab is visible (`lib/eventStream.js`). Browsers allow
+  ~6 HTTP/1.1 connections per origin and every stock page is its own tab. `run_server.py` bounds
+  graceful shutdown to 5s so an open stream can't block the WAL checkpoint.
+- **Telegram** (`app/telegram.py`, token `STOCKS_TELEGRAM_BOT_TOKEN`): the token is in every
+  request URL, so errors are re-raised without the URL. Never log or store a raw httpx error from it.
 
 ### Adding a new data source
 Step-by-step checklist lives in the `adding-a-data-source` skill
@@ -287,6 +324,10 @@ sitting in context every session.
   phone tab bar (`MobileNav`, ≤640px: the five core views plus a "More" sheet). On a phone the
   TopBar is one row, and refresh / theme / dyslexia / tour move into `UserMenu` `phoneItems`.
   Breakpoints and the `(pointer: coarse)` → `--tap` (40px) rule are documented in DESIGN.md.
+- The **Trading Bot page** (`TradingBotPanel`) is a tab host. Every bot/risk/paper/rules/scanner
+  /audit UI lives in a `*Tab` there, deep-linked with `?tab=` (`navigateTo({kind: "view", view:
+  "trading-bot", tab})`). Other pages only get small entry points that open the same shared
+  component (e.g. `PaperTradeButton`, an exit-rule `Dialog`).
 - Shared primitives for new UI: `Dialog` (portaled, focus-trapped, a bottom sheet on phones),
   `ConfirmDialog`, `Field` (label + hint + field error), `Button`, and `ScrollHint` (edge fade on
   sideways-scrolling tables). `ApiError.fields` carries the backend's field-level errors

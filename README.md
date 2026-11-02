@@ -17,7 +17,15 @@ Architecturally it is a **FastAPI + SQLite + APScheduler** backend that ingests 
 - **Alerts and digests** — transition-based alerts that fire exactly once, plus an optional pre-market email/SMS digest.
 - **Analysis for any ticker** — a Cmd/Ctrl+K search palette and on-demand analysis (2-year bars, seasonality anchors, HTML report), including for tickers you don't watch.
 - **Portfolio and watchlists** — multiple named watchlists and a multi-currency portfolio with position sizing, all per user. Every trade, correction and cash movement is a row in a transaction ledger, with cash balances, recorded sales (realized P&L) and a daily equity snapshot.
-- **Demo trading bots** — the Trading Bot page runs preset strategies (Follow Suggestions, Trend, Dip-buy, Breakout) on simulated fills, each funded with cash set aside from your portfolio and returned with its P&L when stopped. No real orders are placed.
+- **Trading Bot page** — everything bot-related, in tabs (no real orders are ever placed; there is no broker connection):
+  - **Bots**: preset strategies (Follow Suggestions, Trend, Dip-buy, Breakout) plus a *Custom rule* bot that trades one of your saved rules, on simulated fills. Each bot is funded from your portfolio cash and hands it back with its P&L when stopped.
+  - **Risk**: stop / take-profit / trailing exit rules per holding, a drawdown kill switch, the market regime gate, and signal auto-mute.
+  - **Paper**: a paper account with market, limit and stop orders, an order ticket with a review step, and slippage tracking.
+  - **Performance**: time-weighted returns vs a benchmark, drawdown, Sharpe/Sortino, beta, exposure and correlations for any account.
+  - **Rules**: build price/volume rules and backtest them over full adjusted history. Results are split into in-sample and out-of-sample, every variant you test is counted, and no metrics are shown below 20 trades. Saved rules signal daily.
+  - **Scanner**: a market-wide intraday scanner (unusual volume, gaps, 52-week highs/lows, breakouts, RSI extremes) over a configurable universe, pushed live over server-sent events, with opt-in, throttled alerts.
+  - **Audit**: a per-user, hash-chained audit log, plus a global kill switch that needs a fresh TOTP to release.
+- **Telegram** — link a private chat in Settings to get high-severity alerts and bot fills, and ask the bot `/status`, `/bots`, `/watchlist` or `/alerts` (read-only).
 - **Works on a phone** — a bottom tab bar, one-row top bar, stacked portfolio cards and 40px touch targets below 640px.
 - **Charts** — candlestick charts with extended hours, drawing tools and saved drafts.
 - **Multi-user with mandatory 2FA** — Argon2id passwords, TOTP (Google/Microsoft Authenticator), recovery codes, optional OAuth sign-in. Market data is shared; watchlists, portfolio and notifications are per user.
@@ -186,9 +194,18 @@ All backend configuration comes from `STOCKS_*` environment variables with defau
 | `STOCKS_UPDATE_MODE` | *(auto-detected)* | `service` \| `dev` — overrides the updater's detection of whether it runs under the NSSM service |
 | `STOCKS_ALPHA_VANTAGE_KEY`, `STOCKS_FMP_KEY`, `STOCKS_X_BEARER` | — | Optional API keys |
 | `STOCKS_BENCHMARKS` | `SPY,^TA125.TA` | Benchmark series the `ohlc` source always fetches |
-| `STOCKS_BOT_COST_BPS` | `10` | Demo-bot simulated cost per side, in basis points |
+| `STOCKS_COST_BPS_PER_SIDE` | `10` | The one cost model (basis points each side) for net returns, paper and bot fills, and the backtester |
+| `STOCKS_BOT_COST_BPS` | `10` | Bot-only override of the cost per side (defaults to the above) |
 | `STOCKS_BOT_MAX_BOTS` | `10` | Bots per user that aren't stopped |
 | `STOCKS_BOT_INTERVAL_SECONDS` | `60` | Demo-bot engine cadence |
+| `STOCKS_PAPER_START_CASH` / `_CURRENCY` | `100000` / `USD` | What "Fund / Reset" puts in the paper account |
+| `STOCKS_SCANNER_UNIVERSES` | `majors,mine` | Scanner universe: a union of `majors`, `mine` (held + watched), `sp500`, `ndx100`, `ta125` |
+| `STOCKS_SCANNER_MAX_TICKERS` / `_INTERVAL_SECONDS` | `600` / `300` | Scanner cap and cadence (it defers while every market in the universe is closed) |
+| `STOCKS_SCANNER_ALERTS_PER_HOUR` | `3` | Default hourly cap for users who opt in to scanner alerts |
+| `STOCKS_STREAM_MAX_SECONDS` | `300` | Lifetime of one `/api/stream` connection before the browser reconnects |
+| `STOCKS_TELEGRAM_BOT_TOKEN` | — | Telegram bot token from @BotFather (secret); Telegram is off while unset |
+
+The regime thresholds (`STOCKS_REGIME_*`), auto-mute (`STOCKS_SIGNAL_*`), backtest history (`STOCKS_DAILY_MAX_*`) and the scanner's finer settings are listed with their defaults in [`backend/.env.example`](backend/.env.example).
 
 **Ports:** the backend uses `8000` and the Vite dev server uses `5173`. Both can be changed with `start.ps1 -ApiPort` / `-WebPort`. In dev, `VITE_API_BASE` stays empty (same-origin through the proxy); set it only if you run a cross-origin backend.
 
@@ -295,6 +312,13 @@ Interactive OpenAPI docs are served by FastAPI at **`/docs`** (and `/openapi.jso
 | Watchlists | `GET/POST /api/watchlists`, `PATCH/DELETE /api/watchlists/{id}`, `GET/POST /api/watchlist`, `PATCH/DELETE /api/watchlist/{ticker}` |
 | Portfolio and profile | `GET/POST /api/portfolio`, `PUT/DELETE /api/portfolio/{ticker}`, `POST /api/portfolio/{ticker}/sell`, `PUT /api/portfolio/{ticker}/category`, `GET/POST /api/portfolio/cash`, `PUT /api/portfolio/cash/{currency}`, `GET /api/portfolio/transactions` (all take `?account=`), `GET/PUT /api/profile`, `GET/PUT /api/fx-watch`, `GET /api/fx/rates` |
 | Demo bots | `GET /api/bots`, `/bots/strategies`, `/bots/{id}/events`; `POST /api/bots`, `/bots/{id}/pause`, `/bots/{id}/resume`, `/bots/{id}/stop`, `/bots/stop-all` |
+| Risk | `GET /api/portfolio/rules`, `GET/PUT/DELETE /api/portfolio/{ticker}/rules`, `GET /api/risk/status`, `PUT /api/risk/settings`, `POST /api/risk/drawdown/acknowledge`, `/risk/kill-switch`, `/risk/kill-switch/release` (fresh TOTP), `GET /api/automute`, `PUT /api/automute/{component}` |
+| Paper trading | `GET /api/paper`, `/paper/ticket-defaults`; `POST /api/paper/reset`, `/paper/orders`, `/paper/orders/{id}/cancel` |
+| Analytics | `GET /api/portfolio/analytics?account=` |
+| Rules and backtests | `GET /api/rules/schema`, `GET/POST /api/rules`, `PUT/DELETE /api/rules/{id}`, `POST /api/rules/backtest` |
+| Scanner and push | `GET /api/scanner`, `PUT /api/scanner/prefs`, `GET /api/stream` (server-sent events) |
+| Audit | `GET /api/audit`, `/audit.csv`, `/server/audit/verify` (admin) |
+| Telegram | `GET/PUT/DELETE /api/telegram`, `POST /api/telegram/link` |
 | Signals | `GET /api/contracts`, `/news`, `/trades`, `/congress-trades`, `/signals`, `/short-interest`, `/social`, `/analyst`, `/fundamentals`, `/earnings`, `/earnings/{ticker}`, `/seasonality`, `/x-posts` |
 | Market sentiment | `GET /api/sentiment`, `/fear-greed`, `/vix`, `/aaii`, `/put-call`, `/margin-debt`, `/yield-curve`, `/econ-calendar` |
 | Scores and analysis | `GET /api/boom-scores`, `/boom-scores/history/{ticker}`, `/analysis`, `/analysis/{ticker}`, `/analysis/{ticker}/report`, `/analyze/{ticker}`, `/suggestions`, `/suggestions/history`, `/suggestions/log`, `/backtest/track-record`, `/backtest/signal-replay`; `POST /api/suggestions/send-test` |
