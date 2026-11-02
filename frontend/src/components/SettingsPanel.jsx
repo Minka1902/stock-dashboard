@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Icon from "./Icon";
 import SelectMenu from "./SelectMenu";
+import TelegramCard from "./TelegramCard";
 import FxWatchEditor from "./FxWatchEditor";
 import Tooltip from "./Tooltip";
 import { useProfile } from "../hooks/useProfile";
@@ -514,6 +515,9 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
             tab.
           </p>
         </fieldset>
+
+        {/* Telegram: alerts and bot fills to a linked chat, read-only commands */}
+        <TelegramCard />
 
         {/* Seasonality windows */}
         <fieldset className={styles.group}>

@@ -444,6 +444,11 @@ SCANNER_ALERTS_PER_HOUR = int(os.environ.get("STOCKS_SCANNER_ALERTS_PER_HOUR", "
 # client reconnects, so no connection outlives a restart by more than this.
 STREAM_MAX_SECONDS = int(os.environ.get("STOCKS_STREAM_MAX_SECONDS", "300"))
 
+# Telegram bot (app/telegram.py): alerts out, read-only commands in. A secret,
+# so env only; everything Telegram no-ops (and says so) while it's unset.
+TELEGRAM_BOT_TOKEN = os.environ.get("STOCKS_TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_POLL_SECONDS = int(os.environ.get("STOCKS_TELEGRAM_POLL_SECONDS", "5"))
+
 # --- OAuth social login (optional; each provider no-ops when unset) ---
 # Base URL the provider redirects back to (the backend origin). The callback is
 # f"{OAUTH_REDIRECT_BASE}/api/auth/oauth/{provider}/callback".

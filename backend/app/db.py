@@ -742,6 +742,24 @@ def init_schema(conn: sqlite3.Connection) -> None:
             digested_at TEXT,
             PRIMARY KEY (user_id, ticker, day)
         );
+        -- Telegram (STC-79): one linked private chat per user, the pending
+        -- one-time link code (hashed), and the getUpdates offset.
+        CREATE TABLE IF NOT EXISTS telegram_links (
+            user_id   INTEGER PRIMARY KEY,
+            chat_id   INTEGER NOT NULL UNIQUE,
+            username  TEXT NOT NULL DEFAULT '',
+            enabled   INTEGER NOT NULL DEFAULT 1,
+            linked_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS telegram_codes (
+            user_id    INTEGER PRIMARY KEY,
+            code_hash  TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS telegram_state (
+            id            INTEGER PRIMARY KEY CHECK (id = 1),
+            update_offset INTEGER NOT NULL DEFAULT 0
+        );
         -- Append-only audit trail (STC-52), one hash chain per user so deleting
         -- an account drops its whole chain without breaking anyone else's.
         CREATE TABLE IF NOT EXISTS audit_log (
@@ -3512,6 +3530,64 @@ def mark_scanner_digested(conn: sqlite3.Connection, user_id: int, tickers: list[
                      "WHERE user_id = ? AND ticker = ? AND day = ?", [(at, user_id, t, day) for t in tickers])
 
 
+# ---------- Telegram ----------
+
+def get_telegram_link(conn: sqlite3.Connection, user_id: int | None = None,
+                      chat_id: int | None = None) -> dict | None:
+    col, val = ("user_id", user_id) if user_id is not None else ("chat_id", chat_id)
+    row = conn.execute(f"SELECT * FROM telegram_links WHERE {col} = ?", (val,)).fetchone()
+    return {**dict(row), "enabled": bool(row["enabled"])} if row else None
+
+
+def set_telegram_code(conn: sqlite3.Connection, user_id: int, code_hash: str, expires_at: str) -> None:
+    conn.execute("INSERT INTO telegram_codes (user_id, code_hash, expires_at) VALUES (?, ?, ?) "
+                 "ON CONFLICT(user_id) DO UPDATE SET code_hash = excluded.code_hash, expires_at = excluded.expires_at",
+                 (user_id, code_hash, expires_at))
+    conn.commit()
+
+
+def redeem_telegram_code(conn: sqlite3.Connection, code_hash: str, now: str, chat_id: int,
+                         username: str) -> int | None:
+    """Link `chat_id` to the code's owner and spend the code, atomically.
+    Returns the user id, or None for an unknown or expired code. A chat
+    linked to another account moves to this one."""
+    with _immediate(conn):
+        row = conn.execute("SELECT user_id FROM telegram_codes WHERE code_hash = ? AND expires_at > ?",
+                           (code_hash, now)).fetchone()
+        if row is None:
+            return None
+        uid = row[0]
+        conn.execute("DELETE FROM telegram_codes WHERE user_id = ?", (uid,))
+        conn.execute("DELETE FROM telegram_links WHERE chat_id = ? OR user_id = ?", (chat_id, uid))
+        conn.execute("INSERT INTO telegram_links (user_id, chat_id, username, enabled, linked_at) "
+                     "VALUES (?, ?, ?, 1, ?)", (uid, chat_id, username, now))
+    return uid
+
+
+def set_telegram_enabled(conn: sqlite3.Connection, user_id: int, enabled: bool) -> bool:
+    cur = conn.execute("UPDATE telegram_links SET enabled = ? WHERE user_id = ?", (int(enabled), user_id))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def delete_telegram_link(conn: sqlite3.Connection, user_id: int | None = None, chat_id: int | None = None) -> bool:
+    col, val = ("user_id", user_id) if user_id is not None else ("chat_id", chat_id)
+    cur = conn.execute(f"DELETE FROM telegram_links WHERE {col} = ?", (val,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def get_telegram_offset(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT update_offset FROM telegram_state WHERE id = 1").fetchone()
+    return row[0] if row else 0
+
+
+def set_telegram_offset(conn: sqlite3.Connection, offset: int) -> None:
+    conn.execute("INSERT INTO telegram_state (id, update_offset) VALUES (1, ?) "
+                 "ON CONFLICT(id) DO UPDATE SET update_offset = excluded.update_offset", (offset,))
+    conn.commit()
+
+
 def upsert_rule_signals(conn: sqlite3.Connection, rows: list[RuleSignal]) -> None:
     conn.executemany(
         "INSERT OR IGNORE INTO rule_signals (user_id, rule_id, ticker, day, kind, model_version, computed_at) "
@@ -4265,6 +4341,8 @@ _PER_USER_TABLES = (
     "rule_signals",
     "scanner_prefs",
     "scanner_alert_log",
+    "telegram_links",
+    "telegram_codes",
     "position_rules",
     "risk_settings",
     "signal_mute_overrides",

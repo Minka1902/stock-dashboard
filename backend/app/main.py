@@ -36,7 +36,7 @@ from app import analysis, analyze, audit, auth, backtest, bots, chart_data, conf
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
-from app import automute, model_version, regime, routes_analytics, routes_chart, routes_paper, routes_risk, routes_rules, routes_scanner, routes_update, rule_source, scanner, updater
+from app import automute, model_version, regime, routes_analytics, routes_chart, routes_paper, routes_risk, routes_rules, routes_scanner, routes_telegram, routes_update, rule_source, scanner, telegram, updater
 
 # Optional: the Server page degrades to "unavailable" rather than reporting
 # zeros, which would look identical to a genuinely idle machine.
@@ -712,7 +712,7 @@ def _run_daily_analysis():
 
 # Minute-cadence jobs: a row per run would be ~1,400 a day of noise, so only
 # their errors (and late starts) are recorded.
-_QUIET_JOBS = {"bots", "exits"}
+_QUIET_JOBS = {"bots", "exits", "telegram"}
 
 _JOB_EVENT_NAMES = {
     EVENT_JOB_EXECUTED: "executed",
@@ -837,6 +837,15 @@ async def lifespan(app: FastAPI):
             start_date=datetime.now(timezone.utc)
             + timedelta(seconds=config.SCHEDULER_STARTUP_DELAY_SECONDS)),
         "exits")
+    # Telegram: answer commands and send queued bot fills (only with a token).
+    if telegram.configured():
+        _add_timed_job(
+            lambda: telegram.poll(refresh_conn),
+            IntervalTrigger(
+                seconds=config.TELEGRAM_POLL_SECONDS,
+                start_date=datetime.now(timezone.utc)
+                + timedelta(seconds=config.SCHEDULER_STARTUP_DELAY_SECONDS)),
+            "telegram")
     # 6-hourly GitHub update check. Runs on the default executor, not the
     # serial "refresh" one: it only shells out to git and never touches SQLite.
     updater.schedule(scheduler)
@@ -911,6 +920,8 @@ app.include_router(routes_risk.build_router(conn))
 app.include_router(routes_analytics.build_router(conn))
 # Market-wide scanner and the server-sent events stream.
 app.include_router(routes_scanner.build_router(conn))
+# Linking a Telegram chat for alerts and read-only commands.
+app.include_router(routes_telegram.build_router(conn))
 # The paper account and its order ticket.
 app.include_router(routes_paper.build_router(conn))
 # The rule builder: schema, saved rules, backtests.

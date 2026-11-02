@@ -369,3 +369,9 @@ export const deleteDrawingDraft = (id) =>
 export const getScanner = () => getJSON("/api/scanner");
 export const saveScannerPrefs = (prefs) => request("/api/scanner/prefs", { method: "PUT", body: prefs });
 export const streamUrl = () => `${BASE}/api/stream`;
+
+// Telegram (STC-79): link a chat for alerts and read-only commands.
+export const getTelegram = () => getJSON("/api/telegram");
+export const linkTelegram = () => request("/api/telegram/link", { method: "POST" });
+export const setTelegramEnabled = (enabled) => request("/api/telegram", { method: "PUT", body: { enabled } });
+export const unlinkTelegram = () => request("/api/telegram", { method: "DELETE" });

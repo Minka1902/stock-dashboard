@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from typing import Callable, Protocol
 from zoneinfo import ZoneInfo
 
-from app import audit, config, costs, db, events, ledger, quotes
+from app import audit, config, costs, db, events, ledger, quotes, telegram
 from app.ledger import BOT_ACCOUNT
 from app.market_calendar import exchange_for_ticker, is_trading_day, market_status, next_trading_day
 from app.models import Holding, Order, Transaction
@@ -238,6 +238,9 @@ def submit(conn, order: Order, now: datetime | None = None, quote_getter=None,
                      ticker=order.ticker, side=order.side, qty=order.qty, price=order.fill_price)
         events.publish("order", {"account": order.account, "ticker": order.ticker, "side": order.side},
                        order.user_id)
+        if order.account.startswith("bot:"):
+            telegram.queue(order.user_id, f"Bot fill ({order.account}): {order.side} {order.qty:g} {order.ticker} "
+                                          f"at {order.fill_price:g} {order.currency}. {order.reason or ''}".strip())
         return done.model_copy(update={"id": tx.order_id})
     if order.account != PAPER:
         raise OrderRejected("orders on this account are placed by its bot")
