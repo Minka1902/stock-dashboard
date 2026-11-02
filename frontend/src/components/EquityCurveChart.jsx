@@ -5,10 +5,12 @@ const pct = (v) => (v == null ? "—" : `${((v - 1) * 100).toFixed(1)}%`);
 
 /**
  * Growth of 1 over time for an account (time-weighted, net of flows) against a
- * benchmark on the same days. Props: series ([{ date, index, benchmark }]),
- * label ("Portfolio"), benchmarkLabel ("SPY"), height (220).
+ * benchmark on the same days (left out when the series has none). Props:
+ * series ([{ date, index, benchmark }]), label ("Portfolio"), benchmarkLabel
+ * ("SPY"), height (220).
  */
 export default function EquityCurveChart({ series, label = "Portfolio", benchmarkLabel = "Benchmark", height = 220 }) {
+  const hasBenchmark = series.some((p) => p.benchmark != null);
   return (
     <ResponsiveContainer width="100%" height={height}>
       <LineChart data={series} margin={{ top: 8, right: 12, bottom: 4, left: 0 }}>
@@ -21,8 +23,10 @@ export default function EquityCurveChart({ series, label = "Portfolio", benchmar
         <Legend wrapperStyle={{ fontSize: 11, color: "var(--text-muted)" }} />
         <Line name={label} type="monotone" dataKey="index" stroke="var(--accent)" strokeWidth={2}
               dot={false} isAnimationActive={false} />
-        <Line name={benchmarkLabel} type="monotone" dataKey="benchmark" stroke="var(--text-faint)"
-              strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls isAnimationActive={false} />
+        {hasBenchmark && (
+          <Line name={benchmarkLabel} type="monotone" dataKey="benchmark" stroke="var(--text-faint)"
+                strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls isAnimationActive={false} />
+        )}
       </LineChart>
     </ResponsiveContainer>
   );

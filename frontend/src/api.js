@@ -221,6 +221,16 @@ export const getAudit = (limit = 200) => getJSON(`/api/audit?limit=${limit}`);
 export const AUDIT_CSV_URL = `${BASE}/api/audit.csv`;
 // Admin: { chains: [{ user_id, ok, n, broken_at, reason }] }
 export const verifyAllAudit = () => getJSON("/api/server/audit/verify");
+// ---------- rule builder ----------
+// { indicators: [{ name, label, period, bounds }], ops, max_conditions, min_trades, in_sample }
+export const getRuleSchema = () => getJSON("/api/rules/schema");
+export const getSavedRules = () => getJSON("/api/rules");
+// A 422 carries field errors keyed by the spec path ("entry.conditions.0...").
+export const saveRule = (spec, active = true, id = null) =>
+  request(id ? `/api/rules/${id}` : "/api/rules", { method: id ? "PUT" : "POST", body: { spec, active } });
+export const deleteRule = (id) => request(`/api/rules/${id}`, { method: "DELETE" });
+export const backtestRule = (spec, ticker) => request("/api/rules/backtest", { method: "POST", body: { spec, ticker } });
+
 // ---------- paper account ----------
 // { mode, modes, funded, cash, positions, open_orders, recent_orders, slippage, defaults }
 export const getPaper = () => getJSON("/api/paper");

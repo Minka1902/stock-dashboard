@@ -4,6 +4,7 @@ import KillSwitchButton from "./KillSwitchButton";
 import PaperTab from "./PaperTab";
 import PerformanceTab from "./PerformanceTab";
 import RiskTab from "./RiskTab";
+import RulesTab from "./RulesTab";
 import Segmented from "./Segmented";
 import { useRoute } from "../hooks/useRoute";
 import { navigateTo } from "../lib/nav";
@@ -18,6 +19,7 @@ const TABS = {
   risk: { label: "Risk", title: "Kill switch, regime, exit rules and signal mutes", render: () => <RiskTab /> },
   paper: { label: "Paper", title: "Paper account and order ticket", render: () => <PaperTab /> },
   performance: { label: "Performance", title: "Returns, drawdown, exposure and correlation per account", render: () => <PerformanceTab /> },
+  rules: { label: "Rules", title: "Build, backtest and save your own trading rules", render: () => <RulesTab /> },
   audit: { label: "Audit", title: "Append-only log of orders, refusals and setting changes", render: () => <AuditTab /> },
 };
 
