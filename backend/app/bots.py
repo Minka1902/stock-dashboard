@@ -25,9 +25,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from app import config, costs, currency, db, quotes, regime, risk
+from app import config, costs, currency, db, execution, quotes, regime, risk
 from app.market_calendar import exchange_for_ticker, market_status
-from app.models import Bot, BotEvent, OHLCBar, Transaction
+from app.models import Bot, BotEvent, OHLCBar, Order, Transaction
 from app.sources.technical import compute_ma, compute_rsi
 from app.validation import TICKER_RE
 
@@ -260,12 +260,25 @@ def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: 
     fills = 0
     dirty = len(cooldown) != len(old_cooldown)
 
-    def trade(side, ticker, qty, px, new_state, reason):
-        tx = Transaction(user_id=bot.user_id, account=bot.account, ticker=ticker, side=side,
-                         qty=qty, price=px, currency=bot.currency, executed_at=at, source="bot")
-        done = db.bot_trade(conn, bot, tx, new_state, BotEvent(
-            bot_id=bot.id, user_id=bot.user_id, at=at, kind=side.lower(), ticker=ticker,
-            qty=qty, price=px, reason=reason))
+    def trade(side, ticker, qty, px, quoted, new_state, reason):
+        """Send the fill through execution.submit (its checks apply to bots
+        too) and write it with the bot's state. "rejected" when a check
+        refused it, None when the bot stopped meanwhile."""
+        def write(order):
+            tx = Transaction(user_id=bot.user_id, account=bot.account, ticker=ticker, side=side,
+                             qty=qty, price=px, currency=bot.currency, executed_at=at, source="bot")
+            return db.bot_trade(conn, bot, tx, new_state, BotEvent(
+                bot_id=bot.id, user_id=bot.user_id, at=at, kind=side.lower(), ticker=ticker,
+                qty=qty, price=px, reason=reason), order)
+
+        order = Order(user_id=bot.user_id, account=bot.account, ticker=ticker, side=side, qty=qty,
+                      currency=bot.currency, created_at=at, fill_price=px, reference_price=quoted,
+                      source="bot", reason=reason)
+        try:
+            done = execution.submit(conn, order, now, fill=write)
+        except execution.OrderRejected as exc:
+            _skip(conn, bot, ticker, f"{ticker}: {side.lower()} refused — {exc.reason}", at)
+            return "rejected"
         _LAST_SKIP.pop((bot.id, ticker), None)
         return done
 
@@ -288,10 +301,15 @@ def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: 
         if d.action != "sell":
             continue
         px = fill_price(price, "SELL")
-        state["pos"].pop(t, None)
-        state["cooldown"][t] = _local_today(t, now).isoformat()
-        if trade("SELL", t, h.shares, px, state, f"Sold {h.shares:g} {t} at {_money(px)} — {d.reason}") is None:
+        new_state = {"pos": {k: v for k, v in state["pos"].items() if k != t},
+                     "cooldown": {**state["cooldown"], t: _local_today(t, now).isoformat()}}
+        done = trade("SELL", t, h.shares, px, price, new_state,
+                     f"Sold {h.shares:g} {t} at {_money(px)} — {d.reason}")
+        if done is None:
             return fills
+        if done == "rejected":
+            continue
+        state = new_state
         fills += 1
         dirty = False
         cash += h.shares * px
@@ -326,12 +344,17 @@ def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: 
             continue
         stop = d.stop if d.stop is not None else (
             px * (1 - p["stop_pct"] / 100) if "stop_pct" in p else None)
-        state["pos"][t] = {"entry": px, "stop": stop, "target": d.target, "high": price}
+        new_state = {"pos": {**state["pos"], t: {"entry": px, "stop": stop, "target": d.target, "high": price}},
+                     "cooldown": state["cooldown"]}
         stop_note = f" Stop {_money(stop)}." if stop else ""
         target_note = f" Target {_money(d.target)}." if d.target else ""
-        if trade("BUY", t, qty, px, state,
-                 f"Bought {qty} {t} at {_money(px)} — {d.reason}.{stop_note}{target_note}") is None:
+        done = trade("BUY", t, qty, px, price, new_state,
+                     f"Bought {qty} {t} at {_money(px)} — {d.reason}.{stop_note}{target_note}")
+        if done is None:
             return fills
+        if done == "rejected":
+            continue
+        state = new_state
         fills += 1
         dirty = False
         cash -= qty * px

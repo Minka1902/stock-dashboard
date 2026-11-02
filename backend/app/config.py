@@ -374,7 +374,11 @@ SIGNAL_UNMUTE_MARGIN = float(os.environ.get("STOCKS_SIGNAL_UNMUTE_MARGIN", "5"))
 BOT_COST_BPS = float(os.environ.get("STOCKS_BOT_COST_BPS", str(COST_BPS_PER_SIDE)))
 BOT_MAX_BOTS = int(os.environ.get("STOCKS_BOT_MAX_BOTS", "10"))
 BOT_INTERVAL_SECONDS = int(os.environ.get("STOCKS_BOT_INTERVAL_SECONDS", "60"))
-# Exit-rule evaluator (app/exits.py) cadence.
+# Paper account (app/execution.py): what "Fund / Reset" deposits by default.
+PAPER_START_CASH = float(os.environ.get("STOCKS_PAPER_START_CASH", "100000"))
+PAPER_START_CURRENCY = os.environ.get("STOCKS_PAPER_START_CURRENCY", "USD").upper()
+# Exit-rule evaluator (app/exits.py) cadence; resting paper orders are
+# evaluated on the same minute pass.
 EXITS_INTERVAL_SECONDS = int(os.environ.get("STOCKS_EXITS_INTERVAL_SECONDS", "60"))
 # The oldest quote the 1-minute engines (bots, exits) act on. The quote cache
 # serves stale-while-revalidate, so a ticker only an engine asks for is about

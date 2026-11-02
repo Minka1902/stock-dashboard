@@ -32,11 +32,11 @@ from pydantic import BaseModel
 
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, backtest, bots, chart_data, config, currency, db, equity, exits, ingest, ledger, notify, quotes, report, risk, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
+from app import analysis, analyze, auth, backtest, bots, chart_data, config, currency, db, equity, execution, exits, ingest, ledger, notify, quotes, report, risk, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
-from app import automute, model_version, regime, routes_analytics, routes_chart, routes_risk, routes_update, updater
+from app import automute, model_version, regime, routes_analytics, routes_chart, routes_paper, routes_risk, routes_update, updater
 
 # Optional: the Server page degrades to "unavailable" rather than reporting
 # zeros, which would look identical to a genuinely idle machine.
@@ -807,9 +807,10 @@ async def lifespan(app: FastAPI):
             start_date=datetime.now(timezone.utc)
             + timedelta(seconds=config.SCHEDULER_STARTUP_DELAY_SECONDS)),
         "bots")
-    # Exit rules on holdings: same minute cadence and the same hold-back.
+    # Exit rules on holdings and resting paper orders: same minute cadence and
+    # the same hold-back.
     _add_timed_job(
-        lambda: exits.run(refresh_conn),
+        lambda: (execution.poll(refresh_conn), exits.run(refresh_conn)),
         IntervalTrigger(
             seconds=config.EXITS_INTERVAL_SECONDS,
             start_date=datetime.now(timezone.utc)
@@ -887,6 +888,8 @@ app.include_router(routes_chart.build_router(conn))
 app.include_router(routes_risk.build_router(conn))
 # Portfolio performance & risk analytics.
 app.include_router(routes_analytics.build_router(conn))
+# The paper account and its order ticket.
+app.include_router(routes_paper.build_router(conn))
 
 
 @app.exception_handler(Exception)

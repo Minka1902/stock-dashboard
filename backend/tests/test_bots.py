@@ -396,3 +396,14 @@ def test_api_bots_are_private(client):
     assert client.get("/api/bots").json()["bots"] == []
     assert client.post(f"/api/bots/{bot_id}/stop").status_code == 404
     assert client.get(f"/api/bots/{bot_id}/events").status_code == 404
+
+
+def test_every_bot_fill_is_a_filled_order_linked_to_its_ledger_row(conn, user):
+    _seed_bars(conn, "AAPL", _bars(UP))
+    bot = _make_bot(conn, user.id)
+    bots.run(conn, LIVE, _quotes({"AAPL": 100.0}))
+    [order] = db.get_orders(conn, user.id, bot.account)
+    assert (order.status, order.side, order.qty, order.fill_price, order.slippage_bps, order.source) == (
+        "filled", "BUY", 19, 100.1, 10.0, "bot")
+    tx = next(t for t in db.get_transactions(conn, user.id, account=bot.account) if t.side == "BUY")
+    assert tx.order_id == order.id

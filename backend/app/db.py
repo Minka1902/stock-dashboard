@@ -31,6 +31,7 @@ from app.models import (
     Fundamentals,
     Holding,
     OAuthIdentity,
+    Order,
     PositionRule,
     RegimeSnapshot,
     RiskSettings,
@@ -638,6 +639,35 @@ def init_schema(conn: sqlite3.Connection) -> None:
             PRIMARY KEY (user_id, account, ticker),
             CHECK (stop_price IS NULL OR stop_pct IS NULL)
         );
+        -- Orders (STC-41): paper tickets rest here until a quote crosses them;
+        -- bot fills are written already filled, in the same transaction.
+        CREATE TABLE IF NOT EXISTS orders (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id         INTEGER NOT NULL,
+            account         TEXT NOT NULL,
+            ticker          TEXT NOT NULL,
+            side            TEXT NOT NULL CHECK (side IN ('BUY', 'SELL')),
+            qty             REAL NOT NULL,
+            type            TEXT NOT NULL CHECK (type IN ('market', 'limit', 'stop')),
+            limit_price     REAL,
+            stop_price      REAL,
+            tif             TEXT NOT NULL DEFAULT 'day',
+            status          TEXT NOT NULL,
+            broker_order_id TEXT,
+            currency        TEXT NOT NULL,
+            created_at      TEXT NOT NULL,
+            submitted_at    TEXT,
+            filled_at       TEXT,
+            fill_price      REAL,
+            fees            REAL NOT NULL DEFAULT 0,
+            suggestion_id   INTEGER,
+            reference_price REAL,
+            slippage_bps    REAL,
+            source          TEXT NOT NULL DEFAULT 'ticket',
+            reason          TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_orders_open ON orders(status) WHERE status = 'submitted';
         CREATE TABLE IF NOT EXISTS risk_settings (
             user_id                  INTEGER PRIMARY KEY,
             max_drawdown_pct         REAL,
@@ -2971,6 +3001,101 @@ def get_flows_since(
     return {r[0]: r[1] for r in cur.fetchall()}
 
 
+# ---------- orders ----------
+
+OPEN_STATUSES = ("new", "submitted", "partially_filled")
+
+
+def _order_cols(o: Order) -> dict:
+    return o.model_dump(exclude={"id"})
+
+
+def _insert_order(conn: sqlite3.Connection, o: Order) -> Order:
+    d = _order_cols(o)
+    cur = conn.execute(f"INSERT INTO orders ({', '.join(d)}) VALUES ({', '.join(':' + k for k in d)})", d)
+    return o.model_copy(update={"id": cur.lastrowid})
+
+
+def insert_order(conn: sqlite3.Connection, o: Order) -> Order:
+    out = _insert_order(conn, o)
+    conn.commit()
+    return out
+
+
+def get_order(conn: sqlite3.Connection, order_id: int) -> Order | None:
+    row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    return Order(**dict(row)) if row else None
+
+
+def get_orders(conn: sqlite3.Connection, user_id: int | None = None, account: str | None = None,
+               statuses: tuple[str, ...] | None = None, limit: int = 200) -> list[Order]:
+    """Newest first."""
+    sql, args = "SELECT * FROM orders WHERE 1 = 1", []
+    if user_id is not None:
+        sql += " AND user_id = ?"
+        args.append(user_id)
+    if account is not None:
+        sql += " AND account = ?"
+        args.append(account)
+    if statuses:
+        sql += f" AND status IN ({', '.join('?' * len(statuses))})"
+        args.extend(statuses)
+    sql += " ORDER BY id DESC LIMIT ?"
+    args.append(limit)
+    return [Order(**dict(r)) for r in conn.execute(sql, args)]
+
+
+def set_order_status(conn: sqlite3.Connection, order_id: int, status: str, reason: str,
+                     from_statuses: tuple[str, ...] = OPEN_STATUSES) -> bool:
+    """Move an open order to `status` (cancelled / rejected). False when it was
+    no longer in `from_statuses` — e.g. it filled first."""
+    cur = conn.execute(
+        f"UPDATE orders SET status = ?, reason = ? WHERE id = ? AND status IN "
+        f"({', '.join('?' * len(from_statuses))})", (status, reason, order_id, *from_statuses))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def fill_order(conn: sqlite3.Connection, order: Order, tx: Transaction,
+               slippage_bps: float | None) -> Order | None:
+    """Fill a resting order: the ledger row (position + cash) and the order's
+    new status in one transaction, only if it is still open — a cancel that
+    got there first wins. Raises ledger.LedgerError (nothing written) when the
+    ledger refuses the fill, e.g. not enough cash."""
+    from app import ledger
+
+    with _immediate(conn):
+        row = conn.execute("SELECT status FROM orders WHERE id = ?", (order.id,)).fetchone()
+        if row is None or row[0] not in OPEN_STATUSES:
+            return None
+        _record_transaction(conn, tx.model_copy(update={"order_id": order.id}), True, ledger)
+        conn.execute(
+            "UPDATE orders SET status = 'filled', filled_at = ?, fill_price = ?, fees = ?, "
+            "slippage_bps = ? WHERE id = ?",
+            (tx.executed_at, tx.price, tx.fees, slippage_bps, order.id))
+    return get_order(conn, order.id)
+
+
+def get_slippage(conn: sqlite3.Connection, user_id: int | None, account: str) -> list[float]:
+    """Measured slippage (bps, + = cost) of every filled order in an account."""
+    sql = "SELECT slippage_bps FROM orders WHERE account = ? AND status = 'filled' AND slippage_bps IS NOT NULL"
+    args: list = [account]
+    if user_id is not None:
+        sql += " AND user_id = ?"
+        args.append(user_id)
+    return [r[0] for r in conn.execute(sql, args)]
+
+
+def get_suggestion_ref(conn: sqlite3.Connection, user_id: int, ticker: str,
+                       for_date: str) -> tuple[int, float | None] | None:
+    """(rowid, recorded price) of a recorded suggestion — what an order placed
+    from it links to and measures its slippage against."""
+    row = conn.execute(
+        "SELECT rowid, price FROM suggestion_history WHERE user_id = ? AND ticker = ? AND for_date = ?",
+        (user_id, ticker, for_date)).fetchone()
+    return (row[0], row[1]) if row else None
+
+
 # ---------- exit rules & risk settings ----------
 
 def _rule_from_row(row) -> PositionRule:
@@ -3168,16 +3293,19 @@ def set_bot_status(conn: sqlite3.Connection, bot_id: int, status: str, from_stat
 
 
 def bot_trade(conn: sqlite3.Connection, bot: Bot, tx: Transaction, state: dict,
-              event: BotEvent) -> Transaction | None:
-    """One engine fill: the ledger row (positions + cash), the bot's new state
-    and its event, in one transaction — and only while the bot is still active,
-    so a stop that lands mid-run wins. Returns None when the bot had stopped."""
+              event: BotEvent, order: Order | None = None) -> Transaction | None:
+    """One engine fill: the order (written filled), the ledger row (positions +
+    cash), the bot's new state and its event, in one transaction — and only
+    while the bot is still active, so a stop that lands mid-run wins. Returns
+    None when the bot had stopped."""
     from app import ledger
 
     with _immediate(conn):
         live = conn.execute("SELECT status FROM bots WHERE id = ?", (bot.id,)).fetchone()
         if live is None or live[0] != "active":
             return None
+        if order is not None:
+            tx = tx.model_copy(update={"order_id": _insert_order(conn, order).id})
         tx = _record_transaction(conn, tx, True, ledger)
         conn.execute("UPDATE bots SET state_json = ? WHERE id = ?", (json.dumps(state), bot.id))
         _insert_bot_event(conn, event)
@@ -3800,6 +3928,7 @@ _PER_USER_TABLES = (
     "equity_snapshots",
     "bots",
     "bot_events",
+    "orders",
     "position_rules",
     "risk_settings",
     "signal_mute_overrides",

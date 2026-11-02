@@ -477,6 +477,35 @@ class EquitySnapshot(BaseModel):
     computed_at: str
 
 
+class Order(BaseModel):
+    """One order (STC-41). Status: new → submitted → filled | partially_filled |
+    cancelled | rejected. Paper orders rest as `submitted` until a quote
+    crosses them; a bot's fill is priced by its engine and written filled."""
+    id: int | None = None
+    user_id: int
+    account: str                  # paper | bot:<id> (live once a broker exists)
+    ticker: str
+    side: str                     # BUY | SELL
+    qty: float
+    type: str = "market"          # market | limit | stop
+    limit_price: float | None = None
+    stop_price: float | None = None
+    tif: str = "day"              # day (expires after its session) | gtc
+    status: str = "new"
+    broker_order_id: str | None = None
+    currency: str = "USD"
+    created_at: str
+    submitted_at: str | None = None
+    filled_at: str | None = None
+    fill_price: float | None = None
+    fees: float = 0.0
+    suggestion_id: int | None = None    # suggestion_history rowid it came from
+    reference_price: float | None = None  # the price the decision was made at
+    slippage_bps: float | None = None   # fill vs reference, + = cost to you
+    source: str = "ticket"        # ticket | bot
+    reason: str = ""              # why it was placed (bots), rejected or cancelled
+
+
 class PositionRule(BaseModel):
     """A holding's exit rule: alerts first; orders once execution exists.
     Prices are in the holding's own currency (ILS, never agorot, for .TA)."""
