@@ -8,6 +8,7 @@ is read, so it is always current and can never drift from the price data.
 History accrues from the day this ships. There is no backfill: reconstructing
 suggestions we never made would be inventing them.
 """
+import json
 from datetime import date, datetime, timedelta, timezone
 
 from app import costs, db, model_version
@@ -38,6 +39,7 @@ def collect(conn, digest: dict, user_id: int) -> list[SuggestionHistoryEntry]:
     """
     for_date = digest["for_date"]
     now = _now_iso()
+    muted = json.dumps(digest.get("muted", []))
     rows: list[SuggestionHistoryEntry] = []
     seen: set[str] = set()
 
@@ -48,7 +50,7 @@ def collect(conn, digest: dict, user_id: int) -> list[SuggestionHistoryEntry]:
         rows.append(SuggestionHistoryEntry(
             user_id=user_id, ticker=ticker, for_date=for_date, kind=kind,
             action=action, price=_reference_price(conn, ticker, price),
-            created_at=now, model_version=model_version.current(),
+            created_at=now, model_version=model_version.current(), muted=muted,
         ))
 
     for a in digest.get("holdings_alerts", []):

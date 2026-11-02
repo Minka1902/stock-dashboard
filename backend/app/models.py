@@ -276,7 +276,8 @@ class BoomScore(BaseModel):
     ticker: str         # PRIMARY KEY
     computed_at: str
     score: int          # can be negative (−90 … +100)
-    components: str     # JSON dict of fired signals and their points
+    components: str     # JSON dict of fired signals and their points (muted ones included)
+    muted: str = "[]"   # JSON list of fired components not counted (auto-muted)
     # bullish signals
     golden_cross: bool
     rsi_recovery: bool
@@ -360,6 +361,7 @@ class SuggestionHistoryEntry(BaseModel):
     price: float | None
     created_at: str
     model_version: str = "legacy"   # app/model_version.py; rows before versioning are legacy
+    muted: str = "[]"               # JSON list of the signals muted for this user at the time
 
 
 class CompanyHolder(BaseModel):
@@ -491,14 +493,45 @@ class PositionRule(BaseModel):
     updated_at: str                   # a new value re-arms every kind
 
 
+class RegimeSnapshot(BaseModel):
+    date: str            # YYYY-MM-DD — PRIMARY KEY; the day's latest computation
+    label: str           # risk_on | neutral | risk_off | unknown
+    score: int           # sum of the input votes
+    inputs: str          # JSON list of {key, label, value, vote, detail, as_of}
+    computed_at: str
+
+
+class SignalPerformance(BaseModel):
+    component: str
+    horizon_days: int
+    window_days: int
+    n: int
+    hits: int
+    hit_rate: float | None
+    mean_net: float | None   # mean net-of-cost return in the component's direction, %
+    computed_at: str
+
+
+class SignalMute(BaseModel):
+    component: str
+    muted: bool
+    since: str | None
+    hit_rate: float | None
+    n: int
+    reason: str
+    updated_at: str
+
+
 class RiskSettings(BaseModel):
     """Per-user risk switches. The drawdown kill switch is off while
-    max_drawdown_pct is None; once tripped it holds until acknowledged."""
+    max_drawdown_pct is None; once tripped it holds until acknowledged.
+    regime_gate: what a risk-off regime does to new buys (off | downgrade | pause)."""
     user_id: int
     max_drawdown_pct: float | None = None
     drawdown_tripped_at: str | None = None
     drawdown_pct: float | None = None          # the drawdown when it tripped
     drawdown_acknowledged_at: str | None = None
+    regime_gate: str = "downgrade"
     updated_at: str = ""
 
 

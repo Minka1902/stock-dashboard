@@ -4,16 +4,19 @@
   holding that has none; `/api/portfolio/{ticker}/rules` reads, saves and
   deletes one. Rules belong to a held position, so saving one for a ticker
   you don't hold is refused.
-- `/api/risk/*` is the drawdown kill switch: its limit, its state and the
-  acknowledge that re-enables new entries after a trip.
+- `/api/risk/*` is the drawdown kill switch (its limit, its state and the
+  acknowledge that re-enables new entries after a trip) and the regime gate.
+- `/api/automute` lists each Boom component's recent hit rate and mute state
+  with this user's override; `/api/automute/{component}` sets the override.
 """
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app import auth, db, exits, notify, quotes, risk
+from app import auth, automute, config, db, exits, notify, quotes, risk
 from app.models import PositionRule
+from app.sources.boom_score import WEIGHTS
 from app.validation import clean_ticker, validate_exit_rule
 
 RULE_ACCOUNTS = ("manual", "paper")
@@ -28,7 +31,13 @@ class RuleBody(BaseModel):
 
 
 class RiskSettingsBody(BaseModel):
+    """Only the fields sent are changed."""
     max_drawdown_pct: float | None = None
+    regime_gate: str | None = None
+
+
+class OverrideBody(BaseModel):
+    mode: str   # auto | on | off
 
 
 def _now() -> str:
@@ -138,13 +147,21 @@ def build_router(conn) -> APIRouter:
 
     @router.put("/api/risk/settings")
     def put_risk_settings(body: RiskSettingsBody, user=Depends(auth.get_current_user)):
+        sent = body.model_fields_set
         pct = body.max_drawdown_pct
         lo, hi = risk.MAX_DRAWDOWN_RANGE
-        if pct is not None and not lo <= pct <= hi:
+        errors = {}
+        if "max_drawdown_pct" in sent and pct is not None and not lo <= pct <= hi:
+            errors["max_drawdown_pct"] = f"Between {lo:g}% and {hi:g}%, or off"
+        if "regime_gate" in sent and body.regime_gate not in risk.REGIME_GATES:
+            errors["regime_gate"] = f"One of: {', '.join(risk.REGIME_GATES)}"
+        if errors:
             raise HTTPException(status_code=422, detail={
-                "message": "Some fields need attention",
-                "errors": {"max_drawdown_pct": f"Between {lo:g}% and {hi:g}%, or off"}})
-        risk.set_max_drawdown(conn, user.id, pct)
+                "message": "Some fields need attention", "errors": errors})
+        if "max_drawdown_pct" in sent:
+            risk.set_max_drawdown(conn, user.id, pct)
+        if "regime_gate" in sent:
+            risk.set_regime_gate(conn, user.id, body.regime_gate)
         # A limit already exceeded trips now rather than at tonight's snapshot.
         alert = risk.check_user(conn, user.id)
         if alert:
@@ -156,5 +173,36 @@ def build_router(conn) -> APIRouter:
         if not risk.acknowledge(conn, user.id):
             raise HTTPException(status_code=409, detail="the kill switch isn't tripped")
         return risk.status(conn, user.id)
+
+    @router.get("/api/automute")
+    def get_automute(user=Depends(auth.get_current_user)):
+        states = {m.component: m for m in db.get_signal_mutes(conn)}
+        overrides = db.get_mute_overrides(conn, user.id)
+        effective = automute.muted_for(conn, user.id)
+        perf = db.get_signal_performance(conn)
+        items = [{
+            "component": c, "label": automute.label(c), "weight": WEIGHTS[c],
+            "auto_muted": states[c].muted if c in states else False,
+            "since": states[c].since if c in states else None,
+            "hit_rate": states[c].hit_rate if c in states else None,
+            "n": states[c].n if c in states else 0,
+            "reason": states[c].reason if c in states else "not measured yet",
+            "override": overrides.get(c, "auto"),
+            "counts": c not in effective,
+        } for c in sorted(WEIGHTS)]
+        return {"items": items, "performance": [p.model_dump() for p in perf], "rules": {
+            "window_days": config.SIGNAL_WINDOW_DAYS, "mute_below": config.SIGNAL_MUTE_BELOW,
+            "unmute_at": config.SIGNAL_MUTE_BELOW + config.SIGNAL_UNMUTE_MARGIN,
+            "min_n": config.SIGNAL_MUTE_MIN_N, "horizon_days": automute.PRIMARY_HORIZON}}
+
+    @router.put("/api/automute/{component}")
+    def put_override(component: str, body: OverrideBody, user=Depends(auth.get_current_user)):
+        if component not in WEIGHTS:
+            raise HTTPException(status_code=404, detail="no such signal")
+        if body.mode not in ("auto", *automute.OVERRIDE_MODES):
+            raise HTTPException(status_code=422, detail={
+                "message": "Some fields need attention", "errors": {"mode": "auto, on or off"}})
+        db.set_mute_override(conn, user.id, component, None if body.mode == "auto" else body.mode)
+        return get_automute(user)
 
     return router

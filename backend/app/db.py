@@ -32,7 +32,10 @@ from app.models import (
     Holding,
     OAuthIdentity,
     PositionRule,
+    RegimeSnapshot,
     RiskSettings,
+    SignalMute,
+    SignalPerformance,
     InsiderTrade,
     MarginDebtPoint,
     NewsArticle,
@@ -225,7 +228,17 @@ def _migrate_per_user_tables(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _rebuild_per_run_component_history(conn: sqlite3.Connection) -> None:
+    """boom_component_history briefly stored one row per scoring run (no
+    `day`). Per-signal outcomes are measured on daily closes, so it is now one
+    row per (ticker, day, component); the old shape is dropped and rebuilt."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(boom_component_history)")}
+    if cols and "day" not in cols:
+        conn.execute("DROP TABLE boom_component_history")
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
+    _rebuild_per_run_component_history(conn)
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS contracts (
@@ -465,14 +478,50 @@ def init_schema(conn: sqlite3.Connection) -> None:
         );
         -- Which components fired in each scoring run, at what weight (STC-20):
         -- what per-signal performance and auto-mute are measured from.
+        -- One row per (ticker, day, component): the score is recomputed every
+        -- few minutes, and per-signal outcomes are measured on daily closes.
         CREATE TABLE IF NOT EXISTS boom_component_history (
             ticker      TEXT NOT NULL,
-            computed_at TEXT NOT NULL,
+            day         TEXT NOT NULL,
             component   TEXT NOT NULL,
-            weight      REAL NOT NULL
+            weight      REAL NOT NULL,
+            computed_at TEXT NOT NULL,
+            PRIMARY KEY (ticker, day, component)
         );
-        CREATE INDEX IF NOT EXISTS idx_boom_components_at ON boom_component_history(computed_at);
-        CREATE INDEX IF NOT EXISTS idx_boom_components_ticker ON boom_component_history(ticker, computed_at);
+        CREATE INDEX IF NOT EXISTS idx_boom_components_day ON boom_component_history(day);
+        CREATE TABLE IF NOT EXISTS regime_history (
+            date        TEXT PRIMARY KEY,
+            label       TEXT NOT NULL,
+            score       INTEGER NOT NULL,
+            inputs      TEXT NOT NULL,
+            computed_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS signal_performance (
+            component    TEXT NOT NULL,
+            horizon_days INTEGER NOT NULL,
+            window_days  INTEGER NOT NULL,
+            n            INTEGER NOT NULL,
+            hits         INTEGER NOT NULL,
+            hit_rate     REAL,
+            mean_net     REAL,
+            computed_at  TEXT NOT NULL,
+            PRIMARY KEY (component, horizon_days)
+        );
+        CREATE TABLE IF NOT EXISTS signal_mutes (
+            component  TEXT PRIMARY KEY,
+            muted      INTEGER NOT NULL,
+            since      TEXT,
+            hit_rate   REAL,
+            n          INTEGER NOT NULL,
+            reason     TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS signal_mute_overrides (
+            user_id   INTEGER NOT NULL,
+            component TEXT NOT NULL,
+            mode      TEXT NOT NULL CHECK (mode IN ('on', 'off')),
+            PRIMARY KEY (user_id, component)
+        );
         CREATE TABLE IF NOT EXISTS seasonality (
             ticker        TEXT PRIMARY KEY,
             computed_at   TEXT NOT NULL,
@@ -867,6 +916,10 @@ def init_schema(conn: sqlite3.Connection) -> None:
     # Model version of each call and score (STC-19); rows from before are 'legacy'.
     _try_add_column(conn, "suggestion_history", "model_version", "TEXT NOT NULL DEFAULT 'legacy'")
     _try_add_column(conn, "boom_score_history", "model_version", "TEXT NOT NULL DEFAULT 'legacy'")
+    # Auto-mute (STC-29): what each score left out, and the set in force per call.
+    _try_add_column(conn, "boom_scores", "muted", "TEXT NOT NULL DEFAULT '[]'")
+    _try_add_column(conn, "suggestion_history", "muted", "TEXT NOT NULL DEFAULT '[]'")
+    _try_add_column(conn, "risk_settings", "regime_gate", "TEXT NOT NULL DEFAULT 'downgrade'")
     _migrate_ila_price_rows(conn)
     _migrate_econ_entities(conn)
     _seed_ledger(conn)
@@ -1607,7 +1660,7 @@ def prune_history(
         ("source_runs", "started_at", source_run_days),
         ("job_runs", "at", job_run_days),
         ("boom_score_history", "computed_at", boom_history_days),
-        ("boom_component_history", "computed_at", boom_history_days),
+        ("boom_component_history", "day", boom_history_days),
     ):
         cur = conn.execute(
             f"DELETE FROM {table} WHERE {column} < datetime('now', ?)",  # noqa: S608 - table/col are literals above
@@ -2101,7 +2154,7 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              analyst_downgrade_cluster, extreme_greed, earnings_soon, mixed_signals,
              vix_spike_contrarian, aaii_bearish_extreme, put_call_fear, aaii_bullish_euphoria,
              margin_debt_deleveraging, margin_debt_euphoria,
-             not_applicable, score_note)
+             not_applicable, score_note, muted)
         VALUES
             (:ticker, :computed_at, :score, :components,
              :golden_cross, :rsi_recovery, :insider_cluster_buy, :congress_buy,
@@ -2112,7 +2165,7 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              :analyst_downgrade_cluster, :extreme_greed, :earnings_soon, :mixed_signals,
              :vix_spike_contrarian, :aaii_bearish_extreme, :put_call_fear, :aaii_bullish_euphoria,
              :margin_debt_deleveraging, :margin_debt_euphoria,
-             :not_applicable, :score_note)
+             :not_applicable, :score_note, :muted)
         ON CONFLICT(ticker) DO UPDATE SET
             computed_at=excluded.computed_at, score=excluded.score,
             components=excluded.components,
@@ -2139,7 +2192,8 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
             margin_debt_deleveraging=excluded.margin_debt_deleveraging,
             margin_debt_euphoria=excluded.margin_debt_euphoria,
             not_applicable=excluded.not_applicable,
-            score_note=excluded.score_note
+            score_note=excluded.score_note,
+            muted=excluded.muted
         """,
         [r.model_dump() for r in records],
     )
@@ -2338,8 +2392,9 @@ def record_suggestion_history(
     cur = conn.executemany(
         """
         INSERT INTO suggestion_history
-            (user_id, ticker, for_date, kind, action, price, created_at, model_version)
-        VALUES (:user_id, :ticker, :for_date, :kind, :action, :price, :created_at, :model_version)
+            (user_id, ticker, for_date, kind, action, price, created_at, model_version, muted)
+        VALUES (:user_id, :ticker, :for_date, :kind, :action, :price, :created_at, :model_version,
+                :muted)
         ON CONFLICT(user_id, ticker, for_date) DO NOTHING
         """,
         [r.model_dump() for r in records],
@@ -2355,7 +2410,7 @@ def get_suggestion_history(
     months: int = 6,
 ) -> list[SuggestionHistoryEntry]:
     sql = (
-        "SELECT user_id, ticker, for_date, kind, action, price, created_at, model_version "
+        "SELECT user_id, ticker, for_date, kind, action, price, created_at, model_version, muted "
         "FROM suggestion_history WHERE user_id = ? "
         f"AND for_date >= date('now', '-{int(months)} months')"
     )
@@ -2522,19 +2577,92 @@ def insert_boom_score_history(conn: sqlite3.Connection, scores: list[BoomScore],
         [(s.ticker, s.score, s.computed_at, model_version) for s in scores],
     )
     conn.executemany(
-        "INSERT INTO boom_component_history (ticker, computed_at, component, weight) VALUES (?, ?, ?, ?)",
-        [(s.ticker, s.computed_at, k, w) for s in scores
+        "INSERT OR IGNORE INTO boom_component_history (ticker, day, component, weight, computed_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        [(s.ticker, s.computed_at[:10], k, w, s.computed_at) for s in scores
          for k, w in json.loads(s.components or "{}").items()],
     )
     conn.commit()
 
 
 def get_boom_component_history(conn: sqlite3.Connection, since: str) -> list[dict]:
-    """Every component firing since a timestamp, oldest first."""
+    """Every (ticker, day) a component fired since `since` (a date), oldest first."""
     cur = conn.execute(
-        "SELECT ticker, computed_at, component, weight FROM boom_component_history "
-        "WHERE computed_at >= ? ORDER BY computed_at", (since,))
+        "SELECT ticker, day, component, weight, computed_at FROM boom_component_history "
+        "WHERE day >= ? ORDER BY day", (since,))
     return [dict(r) for r in cur.fetchall()]
+
+
+# ---------- market regime & signal mutes ----------
+
+def upsert_regime(conn: sqlite3.Connection, snaps: list[RegimeSnapshot]) -> None:
+    conn.executemany(
+        "INSERT INTO regime_history (date, label, score, inputs, computed_at) "
+        "VALUES (:date, :label, :score, :inputs, :computed_at) "
+        "ON CONFLICT(date) DO UPDATE SET label = excluded.label, score = excluded.score, "
+        "inputs = excluded.inputs, computed_at = excluded.computed_at",
+        [s.model_dump() for s in snaps])
+    conn.commit()
+
+
+def get_latest_regime(conn: sqlite3.Connection) -> RegimeSnapshot | None:
+    row = conn.execute("SELECT * FROM regime_history ORDER BY date DESC LIMIT 1").fetchone()
+    return RegimeSnapshot(**dict(row)) if row else None
+
+
+def get_regime_history(conn: sqlite3.Connection, days: int = 90) -> list[RegimeSnapshot]:
+    cur = conn.execute("SELECT * FROM regime_history WHERE date >= date('now', ?) ORDER BY date",
+                       (f"-{int(days)} days",))
+    return [RegimeSnapshot(**dict(r)) for r in cur.fetchall()]
+
+
+def replace_signal_performance(conn: sqlite3.Connection, rows: list[SignalPerformance]) -> None:
+    """The whole table is one rolling computation, so it is replaced, not merged."""
+    with _immediate(conn):
+        conn.execute("DELETE FROM signal_performance")
+        conn.executemany(
+            "INSERT INTO signal_performance (component, horizon_days, window_days, n, hits, hit_rate, "
+            "mean_net, computed_at) VALUES (:component, :horizon_days, :window_days, :n, :hits, "
+            ":hit_rate, :mean_net, :computed_at)", [r.model_dump() for r in rows])
+
+
+def get_signal_performance(conn: sqlite3.Connection) -> list[SignalPerformance]:
+    cur = conn.execute("SELECT * FROM signal_performance ORDER BY component, horizon_days")
+    return [SignalPerformance(**dict(r)) for r in cur.fetchall()]
+
+
+def get_signal_mutes(conn: sqlite3.Connection) -> list[SignalMute]:
+    cur = conn.execute("SELECT * FROM signal_mutes ORDER BY component")
+    return [SignalMute(**{**dict(r), "muted": bool(r["muted"])}) for r in cur.fetchall()]
+
+
+def upsert_signal_mutes(conn: sqlite3.Connection, rows: list[SignalMute]) -> None:
+    conn.executemany(
+        "INSERT INTO signal_mutes (component, muted, since, hit_rate, n, reason, updated_at) "
+        "VALUES (:component, :muted, :since, :hit_rate, :n, :reason, :updated_at) "
+        "ON CONFLICT(component) DO UPDATE SET muted = excluded.muted, since = excluded.since, "
+        "hit_rate = excluded.hit_rate, n = excluded.n, reason = excluded.reason, "
+        "updated_at = excluded.updated_at",
+        [{**r.model_dump(), "muted": int(r.muted)} for r in rows])
+    conn.commit()
+
+
+def get_mute_overrides(conn: sqlite3.Connection, user_id: int) -> dict[str, str]:
+    cur = conn.execute("SELECT component, mode FROM signal_mute_overrides WHERE user_id = ?", (user_id,))
+    return {r[0]: r[1] for r in cur.fetchall()}
+
+
+def set_mute_override(conn: sqlite3.Connection, user_id: int, component: str, mode: str | None) -> None:
+    """mode 'on' (always count), 'off' (never count) or None (follow the auto-mute)."""
+    if mode is None:
+        conn.execute("DELETE FROM signal_mute_overrides WHERE user_id = ? AND component = ?",
+                     (user_id, component))
+    else:
+        conn.execute(
+            "INSERT INTO signal_mute_overrides (user_id, component, mode) VALUES (?, ?, ?) "
+            "ON CONFLICT(user_id, component) DO UPDATE SET mode = excluded.mode",
+            (user_id, component, mode))
+    conn.commit()
 
 
 def get_boom_score_history(conn: sqlite3.Connection, ticker: str, days: int = 30) -> list[dict]:
@@ -3666,6 +3794,7 @@ _PER_USER_TABLES = (
     "bot_events",
     "position_rules",
     "risk_settings",
+    "signal_mute_overrides",
     "alerts",
     "notify_profile",
     "alert_reads",

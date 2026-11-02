@@ -4,7 +4,7 @@
 //
 // Keys match the `source` field returned by GET /api/sources (see build_sources in
 // backend/app/main.py). Only the external feeds are listed; internal computations
-// (boom_score, alerts, analysis, ohlc) are intentionally omitted from the guide.
+// (boom_score, alerts, regime, automute, analysis, ohlc) are intentionally omitted from the guide.
 
 export const SOURCE_META = {
   usaspending: {

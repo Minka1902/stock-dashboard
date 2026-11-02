@@ -343,6 +343,30 @@ OPPORTUNITY_CANDIDATES = int(os.environ.get("STOCKS_OPPORTUNITY_CANDIDATES", "40
 COST_BPS_PER_SIDE = float(os.environ.get("STOCKS_COST_BPS_PER_SIDE", "10"))
 # Below this many scored outcomes a hit rate is flagged "not enough data".
 MIN_TRACK_SAMPLE = int(os.environ.get("STOCKS_MIN_TRACK_SAMPLE", "30"))
+# Market regime (app/regime.py). Each input votes risk-on (+1), risk-off (−1)
+# or neutral (0); fewer than REGIME_MIN_INPUTS available → "unknown", never a
+# guess. A total of ±REGIME_SCORE_THRESHOLD or beyond sets the label. An input
+# older than REGIME_MAX_INPUT_AGE_DAYS is treated as unavailable.
+REGIME_VIX_RISK_ON = float(os.environ.get("STOCKS_REGIME_VIX_RISK_ON", "16"))
+REGIME_VIX_RISK_OFF = float(os.environ.get("STOCKS_REGIME_VIX_RISK_OFF", "25"))
+REGIME_VIX_TREND_PCT = float(os.environ.get("STOCKS_REGIME_VIX_TREND_PCT", "20"))  # 5-session move
+REGIME_FG_RISK_OFF = float(os.environ.get("STOCKS_REGIME_FG_RISK_OFF", "25"))
+REGIME_FG_RISK_ON = float(os.environ.get("STOCKS_REGIME_FG_RISK_ON", "55"))
+REGIME_PC_RISK_OFF = float(os.environ.get("STOCKS_REGIME_PC_RISK_OFF", "1.0"))
+REGIME_PC_RISK_ON = float(os.environ.get("STOCKS_REGIME_PC_RISK_ON", "0.8"))
+REGIME_CURVE_RISK_ON = float(os.environ.get("STOCKS_REGIME_CURVE_RISK_ON", "0.25"))  # 10y−2y, pts
+REGIME_SPY_MA_DAYS = int(os.environ.get("STOCKS_REGIME_SPY_MA_DAYS", "200"))
+REGIME_MIN_INPUTS = int(os.environ.get("STOCKS_REGIME_MIN_INPUTS", "3"))
+REGIME_SCORE_THRESHOLD = int(os.environ.get("STOCKS_REGIME_SCORE_THRESHOLD", "2"))
+REGIME_MAX_INPUT_AGE_DAYS = int(os.environ.get("STOCKS_REGIME_MAX_INPUT_AGE_DAYS", "10"))
+# Signal auto-mute (app/signals.py): a Boom component whose hit rate over the
+# last SIGNAL_WINDOW_DAYS of firings (7-day forward, net of costs) falls below
+# SIGNAL_MUTE_BELOW % on at least SIGNAL_MUTE_MIN_N outcomes stops counting;
+# it counts again only above SIGNAL_MUTE_BELOW + SIGNAL_UNMUTE_MARGIN.
+SIGNAL_WINDOW_DAYS = int(os.environ.get("STOCKS_SIGNAL_WINDOW_DAYS", "30"))
+SIGNAL_MUTE_BELOW = float(os.environ.get("STOCKS_SIGNAL_MUTE_BELOW", "40"))
+SIGNAL_MUTE_MIN_N = int(os.environ.get("STOCKS_SIGNAL_MUTE_MIN_N", "12"))
+SIGNAL_UNMUTE_MARGIN = float(os.environ.get("STOCKS_SIGNAL_UNMUTE_MARGIN", "5"))
 # Demo trading bots (app/bots.py): simulated fills move the live price this
 # many basis points against the bot (each side; defaults to the shared cost
 # model); at most this many bots per

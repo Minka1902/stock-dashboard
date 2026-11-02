@@ -12,8 +12,8 @@ acts on a ticker while that ticker's own exchange is in its regular session,
 and only on a quote that is itself LIVE and no older than
 config.ENGINE_QUOTE_MAX_AGE_SECONDS (quotes.tradable_price).
 
-New entries wait while the owner's risk switches are tripped
-(risk.halt_reasons); exits and stops never do.
+New entries wait while the owner's risk switches are tripped or a risk-off
+regime is gated (risk.entry_blockers); exits and stops never do.
 
 Nothing is guessed: a missing price or history is a logged skip, never an
 estimated fill.
@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from app import config, costs, currency, db, quotes, risk
+from app import config, costs, currency, db, quotes, regime, risk
 from app.market_calendar import exchange_for_ticker, market_status
 from app.models import Bot, BotEvent, OHLCBar, Transaction
 from app.sources.technical import compute_ma, compute_rsi
@@ -355,7 +355,8 @@ def run(conn, now: datetime | None = None, quote_getter=None) -> int:
     if not live:
         return 0
     by_ticker = {q.ticker: q for q in (quote_getter or quotes.get_quotes)(sorted(live))}
-    halts = {uid: risk.halt_reasons(conn, uid) for uid in {b.user_id for b in bots}}
+    reg = regime.latest(conn)
+    halts = {uid: risk.entry_blockers(conn, uid, reg) for uid in {b.user_id for b in bots}}
     fills = 0
     for bot in bots:
         try:

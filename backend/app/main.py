@@ -36,7 +36,7 @@ from app import analysis, analyze, auth, backtest, bots, chart_data, config, cur
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
-from app import model_version, routes_chart, routes_risk, routes_update, updater
+from app import automute, model_version, regime, routes_chart, routes_risk, routes_update, updater
 
 # Optional: the Server page degrades to "unavailable" rather than reporting
 # zeros, which would look identical to a genuinely idle machine.
@@ -178,7 +178,8 @@ def score_fetch(conn):
     tickers = db.get_all_watched_tickers(conn)
     if not tickers:
         return []
-    return boom_score_source.compute_all(tickers, conn, model_version.current())
+    return boom_score_source.compute_all(tickers, conn, model_version.current(),
+                                         automute.global_mutes(conn))
 
 
 def econ_calendar_fetch(conn):
@@ -325,6 +326,9 @@ def build_sources(conn):
         "ohlc":           (lambda: ohlc_fetch(conn), db.upsert_ohlc, config.OHLC_MIN_INTERVAL_SECONDS),  # 2y history barely moves intraday
         "analysis":       (lambda: analysis_fetch(conn), db.upsert_analyses, config.ANALYSIS_MIN_INTERVAL_SECONDS),  # after ohlc; cheap DB+quote read
         "alerts":         (lambda: alerts_source.detect(conn), db.upsert_alerts, None),  # derived: after boom_score
+        # derived: today's market regime, then per-signal performance + auto-mute
+        "regime":         (lambda: regime.compute(conn), db.upsert_regime, None),
+        "automute":       (lambda: automute.performance(conn), automute.store, None),
         # Closing value of every account (seeded at-times, after the US close).
         "equity_snapshot": SourceSpec(lambda: equity.snapshot_all(conn), _store_equity,
                                       retry_interval=3600, force_on_daily=False,
@@ -446,7 +450,7 @@ def _timed_job(job_id: str, fn, *args):
 
 
 def _run_derived() -> None:
-    """boom_score reads every other source; alerts diffs boom_score. In order."""
+    """boom_score, alerts, regime, automute — in order (schedules.DERIVED_MEMBERS)."""
     for name in schedules.DERIVED_MEMBERS:
         spec = SOURCES[name]
         ingest.run_source(refresh_conn, name, spec.fetch, spec.store)

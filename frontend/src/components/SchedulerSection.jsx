@@ -271,8 +271,8 @@ function ScheduleRow({ row, error, note, onSave, onRunNow, reduced }) {
 }
 
 /**
- * The scheduler: one row per source (plus the derived boom_score → alerts
- * step). Edits apply optimistically and roll back with the server's reason
+ * The scheduler: one row per source (plus the derived boom_score → alerts →
+ * regime → automute step). Edits apply optimistically and roll back with the server's reason
  * if they are rejected.
  */
 export default function SchedulerSection({ schedules, setSchedules }) {

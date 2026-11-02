@@ -1,4 +1,4 @@
-"""Account-level risk switches that pause new entries (STC-14).
+"""Account-level risk switches that pause new entries (STC-14, STC-27).
 
 The drawdown kill switch measures the manual account's time-weighted equity
 (analytics.twr_index over equity_snapshots) against its high-water mark. Bots
@@ -9,13 +9,20 @@ A trip holds until the user acknowledges it. Acknowledging resets the high to
 the snapshots from that day on, so a drawdown that is still there doesn't trip
 again the next evening. While tripped, new-buy suggestions and new bot entries
 are paused; sells, exits and stops carry on. Nothing is ever sold for you.
+
+The regime gate (risk_settings.regime_gate) acts only on a risk-off market
+regime (regime.py): "downgrade" turns new buys into watch with the reason,
+"pause" suppresses them like the kill switch, "off" ignores the regime. An
+unknown regime gates nothing. Bots can't "watch", so either gate holds their
+new entries.
 """
 from datetime import datetime, timezone
 
-from app import analytics, db
+from app import analytics, db, regime
 from app.models import Alert, RiskSettings
 
 MAX_DRAWDOWN_RANGE = (1.0, 90.0)
+REGIME_GATES = ("off", "downgrade", "pause")
 _ACCOUNT = "manual"
 
 
@@ -86,22 +93,53 @@ def set_max_drawdown(conn, user_id: int, pct: float | None) -> RiskSettings:
     return db.upsert_risk_settings(conn, s.model_copy(update={"max_drawdown_pct": pct, "updated_at": _now()}))
 
 
-def halt_reasons(conn, user_id: int) -> list[str]:
-    """Why new entries are paused for this user right now (empty = they aren't)."""
+def set_regime_gate(conn, user_id: int, gate: str) -> RiskSettings:
     s = db.get_risk_settings(conn, user_id)
+    return db.upsert_risk_settings(conn, s.model_copy(update={"regime_gate": gate, "updated_at": _now()}))
+
+
+def gate(conn, user_id: int, current_regime: dict | None = None) -> dict:
+    """{halted: [reasons new buys are suppressed], downgrade: reason | None}."""
+    s = db.get_risk_settings(conn, user_id)
+    halted, downgrade = [], None
     if is_tripped(s):
-        return [f"Drawdown kill switch: {s.drawdown_pct:.1f}% below the high "
-                f"(limit {s.max_drawdown_pct:g}%)"]
-    return []
+        halted.append(f"Drawdown kill switch: {s.drawdown_pct:.1f}% below the high "
+                      f"(limit {s.max_drawdown_pct:g}%)")
+    reg = current_regime if current_regime is not None else regime.latest(conn)
+    if reg["label"] == "risk_off" and s.regime_gate != "off":
+        why = f"Risk-off market regime (score {reg['score']:+d} on {reg['date']})"
+        if s.regime_gate == "pause":
+            halted.append(why)
+        else:
+            downgrade = why
+    return {"halted": halted, "downgrade": downgrade}
+
+
+def halt_reasons(conn, user_id: int) -> list[str]:
+    """Why new-buy suggestions are suppressed for this user right now."""
+    return gate(conn, user_id)["halted"]
+
+
+def entry_blockers(conn, user_id: int, current_regime: dict | None = None) -> list[str]:
+    """Why a bot may not open a position right now: everything that halts
+    suggestions, plus a downgrade (a bot has no 'watch')."""
+    g = gate(conn, user_id, current_regime)
+    return g["halted"] + ([g["downgrade"]] if g["downgrade"] else [])
 
 
 def status(conn, user_id: int) -> dict:
     """Everything the Risk tab and the banner show."""
     s = db.get_risk_settings(conn, user_id)
-    reasons = halt_reasons(conn, user_id)
+    reg = regime.latest(conn)
+    g = gate(conn, user_id, reg)
+    reasons = g["halted"]
     return {
         "halted": bool(reasons),
         "reasons": reasons,
+        "downgrade": g["downgrade"],
+        "regime": reg,
+        "regime_gate": s.regime_gate,
+        "regime_gates": REGIME_GATES,
         "drawdown": {
             "max_pct": s.max_drawdown_pct,
             "tripped": is_tripped(s),

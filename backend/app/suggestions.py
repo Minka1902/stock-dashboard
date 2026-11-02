@@ -9,7 +9,7 @@ Nothing here is financial advice; every rendering carries that disclaimer.
 import json
 from datetime import date, datetime, timezone
 
-from app import config, db, risk
+from app import automute, config, db, risk
 from app.market_calendar import next_trading_day
 
 DISCLAIMER = "Signals, not financial advice. Do your own research."
@@ -165,7 +165,9 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
         for_date = next_trading_day().isoformat()
     ref = date.fromisoformat(for_date)
 
-    boom = {b.ticker: b for b in db.get_boom_scores(conn)}
+    # Scores as this user counts them: the shared auto-mutes plus their overrides.
+    muted = automute.muted_for(conn, user_id)
+    boom = {b.ticker: automute.apply_mutes(b, muted) for b in db.get_boom_scores(conn)}
     tech = {t.ticker: t for t in db.get_technical_signals(conn)}
     analyst = {a.ticker: a for a in db.get_analyst_signals(conn)}
     portfolio = db.get_portfolio(conn, user_id)
@@ -303,11 +305,15 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
     seasonality.sort(key=lambda x: x["avg_pct"], reverse=True)
     seasonality = seasonality[: config.SUGGESTIONS_COUNT]
 
-    # A tripped kill switch pauses new buys only; holdings alerts (the sells)
-    # always go out.
-    paused = risk.halt_reasons(conn, user_id)
+    # Risk switches touch new buys only; holdings alerts (the sells) always go
+    # out. Paused: no new buys. Downgraded (risk-off regime): shown as watch.
+    gate = risk.gate(conn, user_id)
+    paused = gate["halted"]
     if paused:
         opportunities, new_ideas = [], []
+    elif gate["downgrade"]:
+        opportunities = [_downgrade(o, gate["downgrade"]) for o in opportunities]
+        new_ideas = [_downgrade(o, gate["downgrade"]) for o in new_ideas]
 
     return {
         "for_date": for_date,
@@ -319,7 +325,17 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
         "new_ideas": new_ideas,
         "seasonality": seasonality,
         "paused": paused,
+        "downgraded": gate["downgrade"],
+        "muted": sorted(muted),
     }
+
+
+def _downgrade(o: dict, why: str) -> dict:
+    """A new buy re-labelled watch, with the reason attached."""
+    out = {**o, "regime_note": why}
+    if not o.get("ta_pending"):
+        out["recommendation"] = "watch"
+    return out
 
 
 # ---------- renderers ----------
@@ -352,7 +368,9 @@ def render_email(digest: dict) -> tuple[str, str, str]:
 
     lines = [d["market_context"]["summary"], ""]
     for reason in d.get("paused", []):
-        lines += [f"NEW BUYS PAUSED — {reason}. Acknowledge it on the Trading Bot page.", ""]
+        lines += [f"NEW BUYS PAUSED — {reason}. Review it on the Trading Bot page.", ""]
+    if d.get("downgraded"):
+        lines += [f"NEW BUYS SHOWN AS WATCH — {d['downgraded']}.", ""]
     if d["holdings_alerts"]:
         lines.append("YOUR HOLDINGS")
         lines += [f"  • {_alert_line(a)}" for a in d["holdings_alerts"]]
@@ -388,7 +406,9 @@ def render_email(digest: dict) -> tuple[str, str, str]:
     ]
     for reason in d.get("paused", []):
         html_parts.append(f"<p><b>New buys paused</b> — {esc(reason)}. "
-                          f"Acknowledge it on the Trading Bot page.</p>")
+                          f"Review it on the Trading Bot page.</p>")
+    if d.get("downgraded"):
+        html_parts.append(f"<p><b>New buys shown as watch</b> — {esc(d['downgraded'])}.</p>")
     if d["holdings_alerts"]:
         html_parts.append("<h3>Your holdings</h3><ul>")
         html_parts += [f"<li>{esc(_alert_line(a))}</li>" for a in d["holdings_alerts"]]
@@ -432,7 +452,8 @@ def render_email(digest: dict) -> tuple[str, str, str]:
 
 def render_sms(digest: dict, max_len: int = 320) -> str:
     d = digest
-    bits = ["New buys paused (kill switch)."] if d.get("paused") else []
+    bits = ["New buys paused."] if d.get("paused") else (
+        ["Risk-off: buys shown as watch."] if d.get("downgraded") else [])
     if d["market_context"]["fear_greed_rating"]:
         bits.append(f"Mkt {d['market_context']['fear_greed_rating']} "
                     f"{d['market_context']['fear_greed_score']:.0f}.")
