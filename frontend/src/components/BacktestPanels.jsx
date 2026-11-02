@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
+import HitRateCell from "./HitRateCell";
 import Segmented from "./Segmented";
 import Skeleton from "./Skeleton";
+import VersionPicker from "./VersionPicker";
 import { getSignalReplay, getTrackRecord } from "../api";
 import styles from "./BacktestPanels.module.css";
 import Term from "./Term";
 import ScrollHint from "./ScrollHint";
+
+const BASIS_OPTIONS = [
+  { value: "net", label: "Net", title: "After paying the cost model on the way in and out" },
+  { value: "gross", label: "Gross", title: "The raw price move, before costs" },
+];
 
 /** null means "we don't know", and must never render as 0. */
 function num(v, suffix = "") {
@@ -26,8 +33,8 @@ function Coverage({ coverage, caveat }) {
   );
 }
 
-function StatRow({ bucket, horizon }) {
-  const h = bucket[`d${horizon}`] || {};
+function StatRow({ bucket, horizon, basis }) {
+  const h = bucket[`d${horizon}${basis === "net" ? "_net" : ""}`] || {};
   const pending = bucket[`d${horizon}_pending`] ?? 0;
   return (
     <tr>
@@ -37,9 +44,7 @@ function StatRow({ bucket, horizon }) {
       <td className={styles.num} data-pending={pending > 0 ? "yes" : "no"}>
         {pending > 0 ? pending : "—"}
       </td>
-      <td className={styles.num} data-tone={h.hit_rate == null ? "" : h.hit_rate >= 50 ? "pos" : "neg"}>
-        {num(h.hit_rate, "%")}
-      </td>
+      <td className={styles.num}><HitRateCell stats={h} /></td>
       <td className={styles.num} data-tone={h.median == null ? "" : h.median >= 0 ? "pos" : "neg"}>
         {num(h.median, "%")}
       </td>
@@ -54,14 +59,16 @@ function TrackRecord() {
   const [error, setError] = useState(null);
   const [horizon, setHorizon] = useState(7);
   const [groupBy, setGroupBy] = useState("action");
+  const [basis, setBasis] = useState("net");
+  const [version, setVersion] = useState(null);
 
   useEffect(() => {
     let alive = true;
-    getTrackRecord(12)
+    getTrackRecord(12, version)
       .then((d) => { if (alive) { setData(d); setError(null); } })
       .catch((e) => { if (alive) setError(e.message); });
     return () => { alive = false; };
-  }, []);
+  }, [version]);
 
   if (error) return <p className={styles.error}>Couldn&apos;t load the track record: {error}</p>;
   if (!data) return <Skeleton w="100%" h="260px" />;
@@ -81,6 +88,7 @@ function TrackRecord() {
       <Coverage coverage={data.coverage} caveat={data.caveat} />
 
       <div className={styles.controls}>
+        <VersionPicker versions={data.versions} value={data.model_version} onChange={setVersion} />
         <Segmented
           ariaLabel="Horizon"
           value={String(horizon)}
@@ -90,6 +98,7 @@ function TrackRecord() {
             { value: "30", label: "30 days" },
           ]}
         />
+        <Segmented ariaLabel="Gross or net of costs" value={basis} onChange={setBasis} options={BASIS_OPTIONS} />
         <Segmented
           ariaLabel="Group by"
           value={groupBy}
@@ -121,12 +130,12 @@ function TrackRecord() {
                 <th>{groupBy === "ticker" ? "Stock" : "Bucket"}</th>
                 <th className={styles.num}>Total</th>
                 <th className={styles.num}><Term tip="Entries whose forward window has ended, so a price change can be measured">Scored</Term></th><th className={styles.num}><Term tip="Entries whose window has not ended yet — counted neither as hits nor as misses">Pending</Term></th>
-                <th className={styles.num}><Term tip="Share of scored entries whose price was higher at the end of the window. It does not look at which way the suggestion pointed.">Hit rate</Term></th><th className={styles.num}><Term tip="Median price change over the window, across scored entries">Median</Term></th>
+                <th className={styles.num}><Term tip="Share of scored entries whose price was higher at the end of the window, with its 95% interval. It does not look at which way the suggestion pointed. Fewer than 30 outcomes show as not enough data.">Hit rate</Term></th><th className={styles.num}><Term tip="Median price change over the window, across scored entries">Median</Term></th>
                 <th className={styles.num}>Best</th><th className={styles.num}>Worst</th>
               </tr>
             </thead>
             <tbody>
-              {buckets.map((b) => <StatRow key={b.label} bucket={b} horizon={horizon} />)}
+              {buckets.map((b) => <StatRow key={b.label} bucket={b} horizon={horizon} basis={basis} />)}
             </tbody>
           </table>
         </ScrollHint>
@@ -139,14 +148,16 @@ function SignalReplay() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [horizon, setHorizon] = useState(7);
+  const [basis, setBasis] = useState("net");
+  const [version, setVersion] = useState(null);
 
   useEffect(() => {
     let alive = true;
-    getSignalReplay({ horizon, months: 12 })
+    getSignalReplay({ horizon, months: 12, version })
       .then((d) => { if (alive) { setData(d); setError(null); } })
       .catch((e) => { if (alive) setError(e.message); });
     return () => { alive = false; };
-  }, [horizon]);
+  }, [horizon, version]);
 
   if (error) return <p className={styles.error}>Couldn&apos;t run the replay: {error}</p>;
   if (!data) return <Skeleton w="100%" h="260px" />;
@@ -158,6 +169,7 @@ function SignalReplay() {
       <Coverage coverage={data.coverage} caveat={data.caveat} />
 
       <div className={styles.controls}>
+        <VersionPicker versions={data.versions} value={data.model_version} onChange={setVersion} />
         <Segmented
           ariaLabel="Forward window"
           value={String(horizon)}
@@ -167,6 +179,7 @@ function SignalReplay() {
             { value: "30", label: "30 days" },
           ]}
         />
+        <Segmented ariaLabel="Gross or net of costs" value={basis} onChange={setBasis} options={BASIS_OPTIONS} />
         <span className={styles.benchmark}>
           Where does the boom score become useful? Each row is every upward
           crossing of that level, and what price did next.
@@ -185,12 +198,14 @@ function SignalReplay() {
               <tr>
                 <th>Threshold</th><th className={styles.num}>Crossings</th>
                 <th className={styles.num}><Term tip="Entries whose forward window has ended, so a price change can be measured">Scored</Term></th><th className={styles.num}><Term tip="Entries whose window has not ended yet — counted neither as hits nor as misses">Pending</Term></th>
-                <th className={styles.num}><Term tip="Share of scored entries whose price was higher at the end of the window. It does not look at which way the suggestion pointed.">Hit rate</Term></th><th className={styles.num}><Term tip="Median price change over the window, across scored entries">Median</Term></th>
+                <th className={styles.num}><Term tip="Share of scored entries whose price was higher at the end of the window, with its 95% interval. It does not look at which way the suggestion pointed. Fewer than 30 outcomes show as not enough data.">Hit rate</Term></th><th className={styles.num}><Term tip="Median price change over the window, across scored entries">Median</Term></th>
                 <th>Sample</th>
               </tr>
             </thead>
             <tbody>
-              {data.thresholds.map((t) => (
+              {data.thresholds.map((t) => {
+                const st = basis === "net" ? t.net : t;
+                return (
                 <tr key={t.threshold}>
                   <td className={styles.label}>≥ {t.threshold}</td>
                   <td className={styles.num}>{t.crossings}</td>
@@ -198,11 +213,9 @@ function SignalReplay() {
                   <td className={styles.num} data-pending={t.pending > 0 ? "yes" : "no"}>
                     {t.pending > 0 ? t.pending : "—"}
                   </td>
-                  <td className={styles.num} data-tone={t.hit_rate == null ? "" : t.hit_rate >= 50 ? "pos" : "neg"}>
-                    {num(t.hit_rate, "%")}
-                  </td>
-                  <td className={styles.num} data-tone={t.median == null ? "" : t.median >= 0 ? "pos" : "neg"}>
-                    {num(t.median, "%")}
+                  <td className={styles.num}><HitRateCell stats={st} /></td>
+                  <td className={styles.num} data-tone={st.median == null ? "" : st.median >= 0 ? "pos" : "neg"}>
+                    {num(st.median, "%")}
                   </td>
                   <td>
                     {/* Bar width is sample size, so a 100% hit rate off two
@@ -212,7 +225,8 @@ function SignalReplay() {
                     </span>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </ScrollHint>

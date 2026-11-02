@@ -124,10 +124,12 @@ export const getSuggestionHistory = ({ ticker, months } = {}) => {
   const qs = q.toString();
   return getJSON(`/api/suggestions/history${qs ? `?${qs}` : ""}`);
 };
-export const getTrackRecord = (months = 12) =>
-  getJSON(`/api/backtest/track-record?months=${months}`);
-export const getSignalReplay = ({ horizon = 7, months = 12 } = {}) =>
-  getJSON(`/api/backtest/signal-replay?horizon=${horizon}&months=${months}`);
+// `version` picks a model version (the running one when omitted); the reply
+// lists every version with data under `versions`.
+export const getTrackRecord = (months = 12, version = null) =>
+  getJSON(`/api/backtest/track-record?months=${months}${version ? `&version=${encodeURIComponent(version)}` : ""}`);
+export const getSignalReplay = ({ horizon = 7, months = 12, version = null } = {}) =>
+  getJSON(`/api/backtest/signal-replay?horizon=${horizon}&months=${months}${version ? `&version=${encodeURIComponent(version)}` : ""}`);
 export const getOAuthProviders = () => getJSON("/api/auth/oauth/providers");
 // "open" | "invite" | "closed" — decides whether to offer a sign-up tab at all.
 export const getRegistrationMode = () => getJSON("/api/auth/registration");
