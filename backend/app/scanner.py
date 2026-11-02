@@ -260,8 +260,6 @@ def store(conn, hits: list[ScanHit], now: datetime | None = None) -> None:
     alerts = alerts_for(conn, hits, now)
     db.upsert_alerts(conn, alerts)
     events.publish("scanner", {"as_of": now.isoformat(timespec="seconds"), "matches": len(hits)})
-    for uid in {a.user_id for a in alerts}:
-        events.publish("alerts", {"count": sum(a.user_id == uid for a in alerts)}, uid)
 
 
 # ---------- the API view ----------

@@ -5,6 +5,7 @@ import PaperTab from "./PaperTab";
 import PerformanceTab from "./PerformanceTab";
 import RiskTab from "./RiskTab";
 import RulesTab from "./RulesTab";
+import ScannerTab from "./ScannerTab";
 import Segmented from "./Segmented";
 import { useRoute } from "../hooks/useRoute";
 import { navigateTo } from "../lib/nav";
@@ -20,6 +21,7 @@ const TABS = {
   paper: { label: "Paper", title: "Paper account and order ticket", render: () => <PaperTab /> },
   performance: { label: "Performance", title: "Returns, drawdown, exposure and correlation per account", render: () => <PerformanceTab /> },
   rules: { label: "Rules", title: "Build, backtest and save your own trading rules", render: () => <RulesTab /> },
+  scanner: { label: "Scanner", title: "Today's matches across the market, live", render: () => <ScannerTab /> },
   audit: { label: "Audit", title: "Append-only log of orders, refusals and setting changes", render: () => <AuditTab /> },
 };
 

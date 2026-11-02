@@ -2,6 +2,7 @@
 rule engine, history, alert throttling and the server-sent events stream."""
 import asyncio
 import json
+import threading
 from datetime import date, datetime, timedelta, timezone
 
 import httpx
@@ -299,3 +300,15 @@ def test_api_view_and_prefs(client):
     assert c.put("/api/scanner/prefs", json={"alerts_enabled": True, "per_hour": 0}).status_code == 422
     assert c.put("/api/scanner/prefs", json={"alerts_enabled": True, "per_hour": 5}).json()["per_hour"] == 5
     assert c.get("/api/scanner").json()["prefs"]["alerts_enabled"] is True
+
+
+def test_api_stream_delivers_a_published_event_over_http(client, monkeypatch):
+    c, _ = client
+    monkeypatch.setattr(config, "STREAM_MAX_SECONDS", 1.5)
+    timer = threading.Timer(0.5, lambda: events.publish("scanner", {"matches": 7}))
+    timer.start()
+    r = c.get("/api/stream")
+    timer.join()
+    assert r.headers["content-type"].startswith("text/event-stream")
+    assert r.text.startswith("retry: 3000\n\nevent: hello\n")
+    assert 'event: scanner\ndata: {"matches":7}\n\n' in r.text

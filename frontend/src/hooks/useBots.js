@@ -2,14 +2,18 @@ import { useCallback, useEffect, useState } from "react";
 import {
   createBot, getBotStrategies, getBots, pauseBot, resumeBot, stopAllBots, stopBot,
 } from "../api";
+import { useEventStream, useStreamConnected } from "./useEventStream";
 
-const POLL_MS = 30000;
+const POLL_MS = 30_000;
+const LIVE_POLL_MS = 120_000;
 
 /**
  * The Trading Bot page's data: the user's bots (with positions, P&L and
- * recent events), the strategy catalog, and the actions. Polls every 30s;
- * every action returns the fresh list. `onCashChanged` runs after anything
- * that moves Portfolio cash (create, stop).
+ * recent events), the strategy catalog, and the actions. A fill reloads it
+ * at once over the event stream; it also polls for fresh marks, every 2 min
+ * while the stream is up and every 30s when it isn't. Every action returns
+ * the fresh list. `onCashChanged` runs after anything that moves Portfolio
+ * cash (create, stop).
  */
 export function useBots(onCashChanged) {
   const [bots, setBots] = useState([]);
@@ -17,6 +21,7 @@ export function useBots(onCashChanged) {
   const [costBps, setCostBps] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const live = useStreamConnected();
 
   const load = useCallback(async () => {
     try {
@@ -31,14 +36,19 @@ export function useBots(onCashChanged) {
     }
   }, []);
 
+  useEventStream("order", load);
+
   useEffect(() => {
-    // Intentional: initial load on mount, then poll.
+    // Intentional: initial load on mount.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
     getBotStrategies().then((s) => setStrategies(s.strategies)).catch(() => {});
-    const id = setInterval(load, POLL_MS);
-    return () => clearInterval(id);
   }, [load]);
+
+  useEffect(() => {
+    const id = setInterval(() => { if (!document.hidden) load(); }, live ? LIVE_POLL_MS : POLL_MS);
+    return () => clearInterval(id);
+  }, [live, load]);
 
   const act = useCallback(async (fn, movesCash = false) => {
     const out = await fn();

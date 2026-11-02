@@ -364,3 +364,8 @@ export const updateDrawingDraft = (id, patch) =>
   request(`/api/drawings/drafts/${encodeURIComponent(id)}`, { method: "PUT", body: patch });
 export const deleteDrawingDraft = (id) =>
   request(`/api/drawings/drafts/${encodeURIComponent(id)}`, { method: "DELETE" });
+
+// Market-wide scanner (STC-69) and the server-sent events stream (STC-73).
+export const getScanner = () => getJSON("/api/scanner");
+export const saveScannerPrefs = (prefs) => request("/api/scanner/prefs", { method: "PUT", body: prefs });
+export const streamUrl = () => `${BASE}/api/stream`;

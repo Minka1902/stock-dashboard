@@ -97,6 +97,21 @@ export const SOURCE_META = {
     provider: "Yahoo Finance",
     blurb: "A ticker's historical tendency for this time of year.",
   },
+  universe: {
+    label: "Scanner Universes",
+    provider: "Wikipedia",
+    blurb: "S&P 500, Nasdaq-100 and TA-125 constituents for the market scanner, monthly.",
+  },
+  scan_history: {
+    label: "Scanner History",
+    provider: "Yahoo Finance",
+    blurb: "Daily bars the market scanner needs for tickers you don't hold or watch.",
+  },
+  scanner: {
+    label: "Market Scanner",
+    provider: "Yahoo Finance",
+    blurb: "Today's session for the whole universe, run through the built-in scans while markets are open.",
+  },
 };
 
 // Ordered list of external sources for the Settings guide (registry order).
