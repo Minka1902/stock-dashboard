@@ -14,6 +14,10 @@ from app.market_calendar import next_trading_day
 
 DISCLAIMER = "Signals, not financial advice. Do your own research."
 
+# Part of the scoring model's version (app/model_version.py).
+EARNINGS_RISK_DAYS = 7     # a holding reporting within this many days is an earnings risk
+HOT_BOOM_SCORE = 50        # a watched name at or above this Boom Score counts as "hot"
+
 # BoomScore boolean flags → short human labels.
 _BEARISH_LABELS = {
     "death_cross": "death cross",
@@ -172,7 +176,7 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
 
     fg_score = db.get_latest_fear_greed_score(conn)
     uninversion = db.has_yield_uninversion(conn)
-    hot_count = sum(1 for t in watchlist if t in boom and boom[t].score >= 50)
+    hot_count = sum(1 for t in watchlist if t in boom and boom[t].score >= HOT_BOOM_SCORE)
 
     rating = _fg_rating(fg_score)
     ctx_bits = []
@@ -180,7 +184,7 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
         ctx_bits.append(f"{rating} ({fg_score:.0f})")
     if uninversion:
         ctx_bits.append("yield curve normalizing")
-    ctx_bits.append(f"{hot_count} watchlist name{'s' if hot_count != 1 else ''} hot (Boom ≥ 50)")
+    ctx_bits.append(f"{hot_count} watchlist name{'s' if hot_count != 1 else ''} hot (Boom ≥ {HOT_BOOM_SCORE})")
     market_context = {
         "fear_greed_score": fg_score,
         "fear_greed_rating": rating,
@@ -206,7 +210,7 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
             reasons += bearish
         a = analyst.get(h.ticker)
         edays = _days_until(a.next_earnings, ref) if a else None
-        earnings_soon = edays is not None and 0 <= edays <= 7
+        earnings_soon = edays is not None and 0 <= edays <= EARNINGS_RISK_DAYS
         if earnings_soon:
             reasons.append(f"earnings in {edays}d")
         mixed = bool(b and b.mixed_signals)

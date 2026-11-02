@@ -36,7 +36,7 @@ from app import analysis, analyze, auth, backtest, bots, chart_data, config, cur
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
-from app import routes_chart, routes_risk, routes_update, updater
+from app import model_version, routes_chart, routes_risk, routes_update, updater
 
 # Optional: the Server page degrades to "unavailable" rather than reporting
 # zeros, which would look identical to a genuinely idle machine.
@@ -178,7 +178,7 @@ def score_fetch(conn):
     tickers = db.get_all_watched_tickers(conn)
     if not tickers:
         return []
-    return boom_score_source.compute_all(tickers, conn)
+    return boom_score_source.compute_all(tickers, conn, model_version.current())
 
 
 def econ_calendar_fetch(conn):
@@ -2051,18 +2051,22 @@ def earnings_for(ticker: str, user=Depends(auth.get_current_user)):
 
 
 @app.get("/api/backtest/track-record")
-def backtest_track_record(months: int = 12, user=Depends(auth.get_current_user)):
-    """How the app's own suggestions have actually turned out, for this user."""
-    return backtest.track_record(conn, user.id, months=max(1, min(months, 60)))
+def backtest_track_record(months: int = 12, version: str | None = None,
+                          user=Depends(auth.get_current_user)):
+    """How the app's own suggestions have actually turned out, for this user —
+    one model version at a time (the running one unless `version` is given)."""
+    return backtest.track_record(conn, user.id, months=max(1, min(months, 60)), version=version)
 
 
 @app.get("/api/backtest/signal-replay")
 def backtest_signal_replay(
-    horizon: int = 7, months: int = 12, user=Depends(auth.get_current_user)
+    horizon: int = 7, months: int = 12, version: str | None = None,
+    user=Depends(auth.get_current_user),
 ):
     """Boom-score threshold crossings vs the forward move that followed."""
     return backtest.signal_replay(
-        conn, horizon_days=max(1, min(horizon, 90)), months=max(1, min(months, 60)))
+        conn, horizon_days=max(1, min(horizon, 90)), months=max(1, min(months, 60)),
+        version=version)
 
 
 @app.get("/api/sources")

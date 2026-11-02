@@ -10,7 +10,7 @@ suggestions we never made would be inventing them.
 """
 from datetime import date, datetime, timedelta, timezone
 
-from app import db
+from app import costs, db, model_version
 from app.models import SuggestionHistoryEntry
 
 # Horizons reported for every entry, in calendar days.
@@ -48,7 +48,7 @@ def collect(conn, digest: dict, user_id: int) -> list[SuggestionHistoryEntry]:
         rows.append(SuggestionHistoryEntry(
             user_id=user_id, ticker=ticker, for_date=for_date, kind=kind,
             action=action, price=_reference_price(conn, ticker, price),
-            created_at=now,
+            created_at=now, model_version=model_version.current(),
         ))
 
     for a in digest.get("holdings_alerts", []):
@@ -91,8 +91,16 @@ def _pct(from_price: float | None, to_price: float | None) -> float | None:
     return round((to_price / from_price - 1) * 100, 1)
 
 
+def _net_pct(from_price: float | None, to_price: float | None) -> float | None:
+    """The same move after a round trip's costs (costs.round_trip)."""
+    if not from_price or to_price is None:
+        return None
+    return round(costs.round_trip(from_price, to_price), 1)
+
+
 def with_outcomes(conn, entries: list[SuggestionHistoryEntry]) -> list[dict]:
-    """Attach the realised move at each horizon, plus the move to date.
+    """Attach the realised move at each horizon, plus the move to date —
+    gross in `outcomes`, after a round trip's costs in `outcomes_net`.
 
     A horizon that hasn't elapsed yet — or has no bar to measure against —
     reports None, which the UI renders as "pending" rather than as zero.
@@ -109,17 +117,20 @@ def with_outcomes(conn, entries: list[SuggestionHistoryEntry]) -> list[dict]:
 
         row = e.model_dump()
         row["outcomes"] = {}
+        row["outcomes_net"] = {}
         for days in HORIZONS:
+            key = f"d{days}"
+            row["outcomes"][key] = row["outcomes_net"][key] = None
             try:
                 target = (date.fromisoformat(e.for_date) + timedelta(days=days)).isoformat()
             except ValueError:
-                row["outcomes"][f"d{days}"] = None
                 continue
             if target > today:
-                row["outcomes"][f"d{days}"] = None  # not elapsed yet
-                continue
+                continue  # not elapsed yet
             hit = _close_on_or_after(closes, target)
-            row["outcomes"][f"d{days}"] = _pct(e.price, hit[1] if hit else None)
+            exit_price = hit[1] if hit else None
+            row["outcomes"][key] = _pct(e.price, exit_price)
+            row["outcomes_net"][key] = _net_pct(e.price, exit_price)
 
         row["outcomes"]["since"] = _pct(e.price, closes[-1][1] if closes else None)
         row["last_close"] = closes[-1][1] if closes else None

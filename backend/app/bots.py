@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from app import config, currency, db, quotes, risk
+from app import config, costs, currency, db, quotes, risk
 from app.market_calendar import exchange_for_ticker, market_status
 from app.models import Bot, BotEvent, OHLCBar, Transaction
 from app.sources.technical import compute_ma, compute_rsi
@@ -189,9 +189,8 @@ def decide(strategy: str, p: dict, bars: list[OHLCBar], price: float,
 
 
 def fill_price(price: float, side: str) -> float:
-    """The simulated fill: the quote moved against the bot by the cost bps."""
-    bps = config.BOT_COST_BPS / 10_000
-    return round(price * (1 + bps if side == "BUY" else 1 - bps), 4)
+    """The simulated fill: the quote moved against the bot by the cost model."""
+    return costs.apply(price, side, config.BOT_COST_BPS)
 
 
 def _local_today(ticker: str, now: datetime):

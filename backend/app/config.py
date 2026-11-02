@@ -337,10 +337,17 @@ OHLC_MAX_TICKERS = int(os.environ.get("STOCKS_OHLC_MAX_TICKERS", "60"))
 # Raised from 20: suggestions now rank tracked names and brand-new ideas in
 # separate pools, so the candidate list has to be deep enough to fill both.
 OPPORTUNITY_CANDIDATES = int(os.environ.get("STOCKS_OPPORTUNITY_CANDIDATES", "40"))
+# Trading costs (app/costs.py): every simulated fill and every track-record
+# outcome pays this many basis points per side, plus half the spread when a
+# bid/ask is known. One model, so a backtest and a paper fill cost the same.
+COST_BPS_PER_SIDE = float(os.environ.get("STOCKS_COST_BPS_PER_SIDE", "10"))
+# Below this many scored outcomes a hit rate is flagged "not enough data".
+MIN_TRACK_SAMPLE = int(os.environ.get("STOCKS_MIN_TRACK_SAMPLE", "30"))
 # Demo trading bots (app/bots.py): simulated fills move the live price this
-# many basis points against the bot (each side); at most this many bots per
+# many basis points against the bot (each side; defaults to the shared cost
+# model); at most this many bots per
 # user that aren't stopped; the engine's cadence.
-BOT_COST_BPS = float(os.environ.get("STOCKS_BOT_COST_BPS", "10"))
+BOT_COST_BPS = float(os.environ.get("STOCKS_BOT_COST_BPS", str(COST_BPS_PER_SIDE)))
 BOT_MAX_BOTS = int(os.environ.get("STOCKS_BOT_MAX_BOTS", "10"))
 BOT_INTERVAL_SECONDS = int(os.environ.get("STOCKS_BOT_INTERVAL_SECONDS", "60"))
 # Exit-rule evaluator (app/exits.py) cadence.

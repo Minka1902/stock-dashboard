@@ -463,6 +463,16 @@ def init_schema(conn: sqlite3.Connection) -> None:
             score       INTEGER NOT NULL,
             computed_at TEXT NOT NULL
         );
+        -- Which components fired in each scoring run, at what weight (STC-20):
+        -- what per-signal performance and auto-mute are measured from.
+        CREATE TABLE IF NOT EXISTS boom_component_history (
+            ticker      TEXT NOT NULL,
+            computed_at TEXT NOT NULL,
+            component   TEXT NOT NULL,
+            weight      REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_boom_components_at ON boom_component_history(computed_at);
+        CREATE INDEX IF NOT EXISTS idx_boom_components_ticker ON boom_component_history(ticker, computed_at);
         CREATE TABLE IF NOT EXISTS seasonality (
             ticker        TEXT PRIMARY KEY,
             computed_at   TEXT NOT NULL,
@@ -854,6 +864,9 @@ def init_schema(conn: sqlite3.Connection) -> None:
     ]:
         _try_add_column(conn, "alert_state", col, col_def)
     _try_add_column(conn, "alerts", "user_id", "INTEGER")
+    # Model version of each call and score (STC-19); rows from before are 'legacy'.
+    _try_add_column(conn, "suggestion_history", "model_version", "TEXT NOT NULL DEFAULT 'legacy'")
+    _try_add_column(conn, "boom_score_history", "model_version", "TEXT NOT NULL DEFAULT 'legacy'")
     _migrate_ila_price_rows(conn)
     _migrate_econ_entities(conn)
     _seed_ledger(conn)
@@ -1594,6 +1607,7 @@ def prune_history(
         ("source_runs", "started_at", source_run_days),
         ("job_runs", "at", job_run_days),
         ("boom_score_history", "computed_at", boom_history_days),
+        ("boom_component_history", "computed_at", boom_history_days),
     ):
         cur = conn.execute(
             f"DELETE FROM {table} WHERE {column} < datetime('now', ?)",  # noqa: S608 - table/col are literals above
@@ -2324,8 +2338,8 @@ def record_suggestion_history(
     cur = conn.executemany(
         """
         INSERT INTO suggestion_history
-            (user_id, ticker, for_date, kind, action, price, created_at)
-        VALUES (:user_id, :ticker, :for_date, :kind, :action, :price, :created_at)
+            (user_id, ticker, for_date, kind, action, price, created_at, model_version)
+        VALUES (:user_id, :ticker, :for_date, :kind, :action, :price, :created_at, :model_version)
         ON CONFLICT(user_id, ticker, for_date) DO NOTHING
         """,
         [r.model_dump() for r in records],
@@ -2341,7 +2355,7 @@ def get_suggestion_history(
     months: int = 6,
 ) -> list[SuggestionHistoryEntry]:
     sql = (
-        "SELECT user_id, ticker, for_date, kind, action, price, created_at "
+        "SELECT user_id, ticker, for_date, kind, action, price, created_at, model_version "
         "FROM suggestion_history WHERE user_id = ? "
         f"AND for_date >= date('now', '-{int(months)} months')"
     )
@@ -2500,12 +2514,27 @@ def get_fundamentals_for(conn: sqlite3.Connection, ticker: str) -> "Fundamentals
 
 # ---------- boom score history ----------
 
-def insert_boom_score_history(conn: sqlite3.Connection, scores: list[BoomScore]) -> None:
+def insert_boom_score_history(conn: sqlite3.Connection, scores: list[BoomScore],
+                              model_version: str = "legacy") -> None:
+    """Append each score, and every component that fired with its weight."""
     conn.executemany(
-        "INSERT INTO boom_score_history (ticker, score, computed_at) VALUES (?, ?, ?)",
-        [(s.ticker, s.score, s.computed_at) for s in scores],
+        "INSERT INTO boom_score_history (ticker, score, computed_at, model_version) VALUES (?, ?, ?, ?)",
+        [(s.ticker, s.score, s.computed_at, model_version) for s in scores],
+    )
+    conn.executemany(
+        "INSERT INTO boom_component_history (ticker, computed_at, component, weight) VALUES (?, ?, ?, ?)",
+        [(s.ticker, s.computed_at, k, w) for s in scores
+         for k, w in json.loads(s.components or "{}").items()],
     )
     conn.commit()
+
+
+def get_boom_component_history(conn: sqlite3.Connection, since: str) -> list[dict]:
+    """Every component firing since a timestamp, oldest first."""
+    cur = conn.execute(
+        "SELECT ticker, computed_at, component, weight FROM boom_component_history "
+        "WHERE computed_at >= ? ORDER BY computed_at", (since,))
+    return [dict(r) for r in cur.fetchall()]
 
 
 def get_boom_score_history(conn: sqlite3.Connection, ticker: str, days: int = 30) -> list[dict]:
@@ -2529,13 +2558,14 @@ def get_boom_score_history_all(conn: sqlite3.Connection, since: str) -> list[dic
     """
     cur = conn.execute(
         """
-        SELECT ticker, computed_at, score FROM boom_score_history
+        SELECT ticker, computed_at, score, model_version FROM boom_score_history
         WHERE computed_at >= ?
         ORDER BY ticker ASC, computed_at ASC
         """,
         (since,),
     )
-    return [{"ticker": r[0], "computed_at": r[1], "score": r[2]} for r in cur.fetchall()]
+    return [{"ticker": r[0], "computed_at": r[1], "score": r[2], "model_version": r[3]}
+            for r in cur.fetchall()]
 
 
 # ---------- seasonality ----------

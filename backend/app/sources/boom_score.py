@@ -335,7 +335,7 @@ def _score_ticker(
     )
 
 
-def compute_all(tickers: list[str], conn) -> list[BoomScore]:
+def compute_all(tickers: list[str], conn, model_version: str = "legacy") -> list[BoomScore]:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     fg_score = db.get_latest_fear_greed_score(conn)
     has_uninversion = db.has_yield_uninversion(conn)
@@ -351,5 +351,5 @@ def compute_all(tickers: list[str], conn) -> list[BoomScore]:
         _score_ticker(t, conn, now, fg_score, has_uninversion, vix_close, aaii, pc_ratio, md_yoy)
         for t in tickers
     ]
-    db.insert_boom_score_history(conn, scores)
+    db.insert_boom_score_history(conn, scores, model_version)
     return scores

@@ -359,6 +359,7 @@ class SuggestionHistoryEntry(BaseModel):
     action: str
     price: float | None
     created_at: str
+    model_version: str = "legacy"   # app/model_version.py; rows before versioning are legacy
 
 
 class CompanyHolder(BaseModel):
