@@ -339,15 +339,18 @@ OHLC_MAX_TICKERS = int(os.environ.get("STOCKS_OHLC_MAX_TICKERS", "60"))
 OPPORTUNITY_CANDIDATES = int(os.environ.get("STOCKS_OPPORTUNITY_CANDIDATES", "40"))
 # Demo trading bots (app/bots.py): simulated fills move the live price this
 # many basis points against the bot (each side); at most this many bots per
-# user that aren't stopped; the engine's cadence; the oldest quote a bot will
-# act on. The quote cache serves stale-while-revalidate, so a ticker only the
-# engine asks for is about one interval old on every pass — the default allows
-# that and refuses anything older (a refresh that has been failing).
+# user that aren't stopped; the engine's cadence.
 BOT_COST_BPS = float(os.environ.get("STOCKS_BOT_COST_BPS", "10"))
 BOT_MAX_BOTS = int(os.environ.get("STOCKS_BOT_MAX_BOTS", "10"))
 BOT_INTERVAL_SECONDS = int(os.environ.get("STOCKS_BOT_INTERVAL_SECONDS", "60"))
-BOT_QUOTE_MAX_AGE_SECONDS = int(os.environ.get(
-    "STOCKS_BOT_QUOTE_MAX_AGE_SECONDS", str(2 * BOT_INTERVAL_SECONDS)))
+# Exit-rule evaluator (app/exits.py) cadence.
+EXITS_INTERVAL_SECONDS = int(os.environ.get("STOCKS_EXITS_INTERVAL_SECONDS", "60"))
+# The oldest quote the 1-minute engines (bots, exits) act on. The quote cache
+# serves stale-while-revalidate, so a ticker only an engine asks for is about
+# one interval old on every pass — the default allows that and refuses anything
+# older (a refresh that has been failing).
+ENGINE_QUOTE_MAX_AGE_SECONDS = int(os.environ.get(
+    "STOCKS_ENGINE_QUOTE_MAX_AGE_SECONDS", str(2 * BOT_INTERVAL_SECONDS)))
 # Benchmark series fetched by the ohlc source whether or not anyone holds them
 # (analytics beta / relative return, the regime gate's SPY vs 200-day MA).
 BENCHMARK_TICKERS = [

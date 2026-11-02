@@ -32,11 +32,11 @@ from pydantic import BaseModel
 
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, backtest, bots, chart_data, config, currency, db, equity, ingest, ledger, notify, quotes, report, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
+from app import analysis, analyze, auth, backtest, bots, chart_data, config, currency, db, equity, exits, ingest, ledger, notify, quotes, report, risk, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
-from app import routes_chart, routes_update, updater
+from app import routes_chart, routes_risk, routes_update, updater
 
 # Optional: the Server page degrades to "unavailable" rather than reporting
 # zeros, which would look identical to a genuinely idle machine.
@@ -272,6 +272,12 @@ def _us_only(tickers: list[str]) -> list[str]:
     return [t for t in tickers if currency.market_for_symbol(t) == "US"]
 
 
+def _store_equity(conn, snaps) -> None:
+    """Store the closing values, then trip any drawdown kill switch they breach."""
+    db.upsert_equity_snapshots(conn, snaps)
+    notify.push_stored(conn, risk.check_drawdowns(conn))
+
+
 def build_sources(conn):
     """Registry bound to a connection: name -> SourceSpec.
 
@@ -320,7 +326,7 @@ def build_sources(conn):
         "analysis":       (lambda: analysis_fetch(conn), db.upsert_analyses, config.ANALYSIS_MIN_INTERVAL_SECONDS),  # after ohlc; cheap DB+quote read
         "alerts":         (lambda: alerts_source.detect(conn), db.upsert_alerts, None),  # derived: after boom_score
         # Closing value of every account (seeded at-times, after the US close).
-        "equity_snapshot": SourceSpec(lambda: equity.snapshot_all(conn), db.upsert_equity_snapshots,
+        "equity_snapshot": SourceSpec(lambda: equity.snapshot_all(conn), _store_equity,
                                       retry_interval=3600, force_on_daily=False,
                                       requests_derived=False),
     }
@@ -681,7 +687,7 @@ def _run_daily_analysis():
 
 # Minute-cadence jobs: a row per run would be ~1,400 a day of noise, so only
 # their errors (and late starts) are recorded.
-_QUIET_JOBS = {"bots"}
+_QUIET_JOBS = {"bots", "exits"}
 
 _JOB_EVENT_NAMES = {
     EVENT_JOB_EXECUTED: "executed",
@@ -797,6 +803,14 @@ async def lifespan(app: FastAPI):
             start_date=datetime.now(timezone.utc)
             + timedelta(seconds=config.SCHEDULER_STARTUP_DELAY_SECONDS)),
         "bots")
+    # Exit rules on holdings: same minute cadence and the same hold-back.
+    _add_timed_job(
+        lambda: exits.run(refresh_conn),
+        IntervalTrigger(
+            seconds=config.EXITS_INTERVAL_SECONDS,
+            start_date=datetime.now(timezone.utc)
+            + timedelta(seconds=config.SCHEDULER_STARTUP_DELAY_SECONDS)),
+        "exits")
     # 6-hourly GitHub update check. Runs on the default executor, not the
     # serial "refresh" one: it only shells out to git and never touches SQLite.
     updater.schedule(scheduler)
@@ -865,6 +879,8 @@ app.include_router(routes_oauth.build_router(conn))
 app.include_router(routes_update.build_router())
 # Chart workspace extras (drawing drafts, extended-hours print).
 app.include_router(routes_chart.build_router(conn))
+# Exit rules on holdings and the risk switches (kill switch).
+app.include_router(routes_risk.build_router(conn))
 
 
 @app.exception_handler(Exception)

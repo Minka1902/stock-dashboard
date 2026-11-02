@@ -9,7 +9,7 @@ Nothing here is financial advice; every rendering carries that disclaimer.
 import json
 from datetime import date, datetime, timezone
 
-from app import config, db
+from app import config, db, risk
 from app.market_calendar import next_trading_day
 
 DISCLAIMER = "Signals, not financial advice. Do your own research."
@@ -299,6 +299,12 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
     seasonality.sort(key=lambda x: x["avg_pct"], reverse=True)
     seasonality = seasonality[: config.SUGGESTIONS_COUNT]
 
+    # A tripped kill switch pauses new buys only; holdings alerts (the sells)
+    # always go out.
+    paused = risk.halt_reasons(conn, user_id)
+    if paused:
+        opportunities, new_ideas = [], []
+
     return {
         "for_date": for_date,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -308,6 +314,7 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
         "opportunities": opportunities,
         "new_ideas": new_ideas,
         "seasonality": seasonality,
+        "paused": paused,
     }
 
 
@@ -340,6 +347,8 @@ def render_email(digest: dict) -> tuple[str, str, str]:
     subject = f"Trading suggestions for {d['for_date']}"
 
     lines = [d["market_context"]["summary"], ""]
+    for reason in d.get("paused", []):
+        lines += [f"NEW BUYS PAUSED — {reason}. Acknowledge it on the Trading Bot page.", ""]
     if d["holdings_alerts"]:
         lines.append("YOUR HOLDINGS")
         lines += [f"  • {_alert_line(a)}" for a in d["holdings_alerts"]]
@@ -373,6 +382,9 @@ def render_email(digest: dict) -> tuple[str, str, str]:
         f"<h2 style='margin:0 0 4px'>Suggestions for {esc(d['for_date'])}</h2>",
         f"<p style='color:#555'>{esc(d['market_context']['summary'])}</p>",
     ]
+    for reason in d.get("paused", []):
+        html_parts.append(f"<p><b>New buys paused</b> — {esc(reason)}. "
+                          f"Acknowledge it on the Trading Bot page.</p>")
     if d["holdings_alerts"]:
         html_parts.append("<h3>Your holdings</h3><ul>")
         html_parts += [f"<li>{esc(_alert_line(a))}</li>" for a in d["holdings_alerts"]]
@@ -416,7 +428,7 @@ def render_email(digest: dict) -> tuple[str, str, str]:
 
 def render_sms(digest: dict, max_len: int = 320) -> str:
     d = digest
-    bits = []
+    bits = ["New buys paused (kill switch)."] if d.get("paused") else []
     if d["market_context"]["fear_greed_rating"]:
         bits.append(f"Mkt {d['market_context']['fear_greed_rating']} "
                     f"{d['market_context']['fear_greed_score']:.0f}.")

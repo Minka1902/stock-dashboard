@@ -31,6 +31,8 @@ from app.models import (
     Fundamentals,
     Holding,
     OAuthIdentity,
+    PositionRule,
+    RiskSettings,
     InsiderTrade,
     MarginDebtPoint,
     NewsArticle,
@@ -559,6 +561,32 @@ def init_schema(conn: sqlite3.Connection) -> None:
             computed_at   TEXT NOT NULL,
             PRIMARY KEY (user_id, account, date)
         );
+        -- Exit rules per holding (STC-9). trail_high only ratchets up;
+        -- fired_json lists the kinds already alerted since updated_at.
+        CREATE TABLE IF NOT EXISTS position_rules (
+            user_id      INTEGER NOT NULL,
+            account      TEXT NOT NULL DEFAULT 'manual',
+            ticker       TEXT NOT NULL,
+            stop_price   REAL,
+            stop_pct     REAL,
+            take_profit  REAL,
+            trailing_pct REAL,
+            trail_high   REAL,
+            fired_json   TEXT NOT NULL DEFAULT '[]',
+            active       INTEGER NOT NULL DEFAULT 1,
+            created_at   TEXT NOT NULL,
+            updated_at   TEXT NOT NULL,
+            PRIMARY KEY (user_id, account, ticker),
+            CHECK (stop_price IS NULL OR stop_pct IS NULL)
+        );
+        CREATE TABLE IF NOT EXISTS risk_settings (
+            user_id                  INTEGER PRIMARY KEY,
+            max_drawdown_pct         REAL,
+            drawdown_tripped_at      TEXT,
+            drawdown_pct             REAL,
+            drawdown_acknowledged_at TEXT,
+            updated_at               TEXT NOT NULL DEFAULT ''
+        );
         -- Per-user FX pairs shown in the ticker carousel ("USDILS=X", ...).
         -- Seeded lazily from config.FX_PAIRS on first read (get_fx_watch).
         CREATE TABLE IF NOT EXISTS fx_watch (
@@ -825,6 +853,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         ("ta_conviction",      "INTEGER"),
     ]:
         _try_add_column(conn, "alert_state", col, col_def)
+    _try_add_column(conn, "alerts", "user_id", "INTEGER")
     _migrate_ila_price_rows(conn)
     _migrate_econ_entities(conn)
     _seed_ledger(conn)
@@ -2776,6 +2805,138 @@ def get_flows_since(
     return {r[0]: r[1] for r in cur.fetchall()}
 
 
+# ---------- exit rules & risk settings ----------
+
+def _rule_from_row(row) -> PositionRule:
+    d = dict(row)
+    d["fired"] = json.loads(d.pop("fired_json") or "[]")
+    d["active"] = bool(d["active"])
+    return PositionRule(**d)
+
+
+def get_position_rules(conn: sqlite3.Connection, user_id: int | None = None,
+                       account: str | None = None, active_only: bool = False) -> list[PositionRule]:
+    sql, args = "SELECT * FROM position_rules WHERE 1 = 1", []
+    if user_id is not None:
+        sql += " AND user_id = ?"
+        args.append(user_id)
+    if account is not None:
+        sql += " AND account = ?"
+        args.append(account)
+    if active_only:
+        sql += " AND active = 1"
+    return [_rule_from_row(r) for r in conn.execute(sql + " ORDER BY user_id, account, ticker", args)]
+
+
+def get_position_rule(conn: sqlite3.Connection, user_id: int, account: str,
+                      ticker: str) -> PositionRule | None:
+    row = conn.execute(
+        "SELECT * FROM position_rules WHERE user_id = ? AND account = ? AND ticker = ?",
+        (user_id, account, ticker)).fetchone()
+    return _rule_from_row(row) if row else None
+
+
+def upsert_position_rule(conn: sqlite3.Connection, rule: PositionRule) -> PositionRule:
+    """Insert or replace a rule's levels. A save re-arms every kind (fired is
+    cleared) and keeps created_at. trail_high is whatever the caller passes:
+    kept across edits while a trail stays on, None when it's turned off."""
+    conn.execute(
+        """
+        INSERT INTO position_rules (user_id, account, ticker, stop_price, stop_pct, take_profit,
+                                    trailing_pct, trail_high, fired_json, active, created_at,
+                                    updated_at)
+        VALUES (:user_id, :account, :ticker, :stop_price, :stop_pct, :take_profit, :trailing_pct,
+                :trail_high, '[]', :active, :created_at, :updated_at)
+        ON CONFLICT(user_id, account, ticker) DO UPDATE SET
+            stop_price = excluded.stop_price, stop_pct = excluded.stop_pct,
+            take_profit = excluded.take_profit, trailing_pct = excluded.trailing_pct,
+            trail_high = excluded.trail_high, fired_json = '[]', active = excluded.active,
+            updated_at = excluded.updated_at
+        """,
+        {**rule.model_dump(exclude={"fired"}), "active": int(rule.active)},
+    )
+    conn.commit()
+    return get_position_rule(conn, rule.user_id, rule.account, rule.ticker)
+
+
+def delete_position_rule(conn: sqlite3.Connection, user_id: int, account: str, ticker: str) -> bool:
+    cur = conn.execute(
+        "DELETE FROM position_rules WHERE user_id = ? AND account = ? AND ticker = ?",
+        (user_id, account, ticker))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def ratchet_trail_high(conn: sqlite3.Connection, rule: PositionRule, price: float) -> float | None:
+    """Raise trail_high to `price` if higher; never lowers it. Only touches the
+    version of the rule that was read (an edit in between wins). Returns the
+    stored high, or None when the rule changed or went away."""
+    cur = conn.execute(
+        "UPDATE position_rules SET trail_high = MAX(COALESCE(trail_high, ?), ?) "
+        "WHERE user_id = ? AND account = ? AND ticker = ? AND updated_at = ?",
+        (price, price, rule.user_id, rule.account, rule.ticker, rule.updated_at))
+    conn.commit()
+    if cur.rowcount == 0:
+        return None
+    return conn.execute(
+        "SELECT trail_high FROM position_rules WHERE user_id = ? AND account = ? AND ticker = ?",
+        (rule.user_id, rule.account, rule.ticker)).fetchone()[0]
+
+
+def fire_rule(conn: sqlite3.Connection, rule: PositionRule, kind: str, alert: Alert) -> bool:
+    """Record that `kind` fired and store its alert, atomically, only if the
+    rule is still the version that was evaluated, still active, and hasn't
+    already fired that kind. Returns whether the alert was written."""
+    with _immediate(conn):
+        row = conn.execute(
+            "SELECT fired_json FROM position_rules WHERE user_id = ? AND account = ? "
+            "AND ticker = ? AND updated_at = ? AND active = 1",
+            (rule.user_id, rule.account, rule.ticker, rule.updated_at)).fetchone()
+        if row is None:
+            return False
+        fired = json.loads(row[0] or "[]")
+        if kind in fired:
+            return False
+        conn.execute(
+            "UPDATE position_rules SET fired_json = ? WHERE user_id = ? AND account = ? AND ticker = ?",
+            (json.dumps([*fired, kind]), rule.user_id, rule.account, rule.ticker))
+        cur = conn.execute(
+            """
+            INSERT INTO alerts (dedup_key, created_at, ticker, type, severity, title, message,
+                                read, pushed, user_id)
+            VALUES (:dedup_key, :created_at, :ticker, :type, :severity, :title, :message, :read,
+                    :pushed, :user_id)
+            ON CONFLICT(dedup_key) DO NOTHING
+            """,
+            alert.model_dump())
+    return cur.rowcount > 0
+
+
+def mark_alert_pushed(conn: sqlite3.Connection, dedup_key: str) -> None:
+    conn.execute("UPDATE alerts SET pushed = 1 WHERE dedup_key = ?", (dedup_key,))
+    conn.commit()
+
+
+def get_risk_settings(conn: sqlite3.Connection, user_id: int) -> RiskSettings:
+    row = conn.execute("SELECT * FROM risk_settings WHERE user_id = ?", (user_id,)).fetchone()
+    return RiskSettings(**dict(row)) if row else RiskSettings(user_id=user_id)
+
+
+def get_all_risk_settings(conn: sqlite3.Connection) -> list[RiskSettings]:
+    return [RiskSettings(**dict(r)) for r in conn.execute("SELECT * FROM risk_settings")]
+
+
+def upsert_risk_settings(conn: sqlite3.Connection, s: RiskSettings) -> RiskSettings:
+    cols = list(RiskSettings.model_fields)
+    conn.execute(
+        f"INSERT INTO risk_settings ({', '.join(cols)}) VALUES ({', '.join(':' + c for c in cols)}) "
+        f"ON CONFLICT(user_id) DO UPDATE SET "
+        + ", ".join(f"{c} = excluded.{c}" for c in cols if c != "user_id"),
+        s.model_dump())
+    conn.commit()
+    return get_risk_settings(conn, s.user_id)
+
+
 # ---------- demo trading bots ----------
 
 def _bot_from_row(row) -> Bot:
@@ -3251,8 +3412,10 @@ def get_recent_suggestions(conn: sqlite3.Connection, limit: int = 20) -> list[Su
 def upsert_alerts(conn: sqlite3.Connection, records: list[Alert]) -> None:
     conn.executemany(
         """
-        INSERT INTO alerts (dedup_key, created_at, ticker, type, severity, title, message, read, pushed)
-        VALUES (:dedup_key, :created_at, :ticker, :type, :severity, :title, :message, :read, :pushed)
+        INSERT INTO alerts (dedup_key, created_at, ticker, type, severity, title, message, read,
+                            pushed, user_id)
+        VALUES (:dedup_key, :created_at, :ticker, :type, :severity, :title, :message, :read,
+                :pushed, :user_id)
         ON CONFLICT(dedup_key) DO NOTHING
         """,
         [r.model_dump() for r in records],
@@ -3267,17 +3430,19 @@ def _row_to_alert(d: dict) -> Alert:
 
 
 def get_alerts(conn: sqlite3.Connection, user_id: int, limit: int = 100) -> list[Alert]:
-    """Alerts are global (market events); read-state is per user via alert_reads."""
+    """Market alerts (user_id NULL) plus this user's own; read-state is per
+    user via alert_reads."""
     cur = conn.execute(
         """
         SELECT a.dedup_key, a.created_at, a.ticker, a.type, a.severity, a.title,
-               a.message, (ar.dedup_key IS NOT NULL) AS read, a.pushed
+               a.message, (ar.dedup_key IS NOT NULL) AS read, a.pushed, a.user_id
         FROM alerts a
         LEFT JOIN alert_reads ar
             ON ar.dedup_key = a.dedup_key AND ar.user_id = ?
+        WHERE a.user_id IS NULL OR a.user_id = ?
         ORDER BY a.id DESC LIMIT ?
         """,
-        (user_id, limit),
+        (user_id, user_id, limit),
     )
     return [_row_to_alert(dict(row)) for row in cur.fetchall()]
 
@@ -3289,17 +3454,17 @@ def get_alerts_for(
     cur = conn.execute(
         """
         SELECT a.dedup_key, a.created_at, a.ticker, a.type, a.severity, a.title,
-               a.message, (ar.dedup_key IS NOT NULL) AS read, a.pushed
+               a.message, (ar.dedup_key IS NOT NULL) AS read, a.pushed, a.user_id
         FROM alerts a
         LEFT JOIN alert_reads ar
             ON ar.dedup_key = a.dedup_key AND ar.user_id = ?
-        WHERE a.ticker = ?
+        WHERE a.ticker = ? AND (a.user_id IS NULL OR a.user_id = ?)
         -- created_at, not id. Insertion order tracks time for alerts the
         -- detector fires live, but it is not the same thing, and this list is
         -- labelled "newest first" in the UI. id breaks ties deterministically.
         ORDER BY a.created_at DESC, a.id DESC LIMIT ?
         """,
-        (user_id, ticker, limit),
+        (user_id, ticker, user_id, limit),
     )
     return [_row_to_alert(dict(row)) for row in cur.fetchall()]
 
@@ -3368,12 +3533,13 @@ def count_unread_alerts(conn: sqlite3.Connection, user_id: int) -> int:
     return conn.execute(
         """
         SELECT COUNT(*) FROM alerts a
-        WHERE NOT EXISTS (
+        WHERE (a.user_id IS NULL OR a.user_id = ?)
+        AND NOT EXISTS (
             SELECT 1 FROM alert_reads ar
             WHERE ar.user_id = ? AND ar.dedup_key = a.dedup_key
         )
         """,
-        (user_id,),
+        (user_id, user_id),
     ).fetchone()[0]
 
 
@@ -3387,8 +3553,8 @@ def mark_alerts_read(conn: sqlite3.Connection, user_id: int,
     else:
         conn.execute(
             "INSERT OR IGNORE INTO alert_reads (user_id, dedup_key, read_at) "
-            "SELECT ?, dedup_key, ? FROM alerts",
-            (user_id, read_at),
+            "SELECT ?, dedup_key, ? FROM alerts WHERE user_id IS NULL OR user_id = ?",
+            (user_id, read_at, user_id),
         )
     conn.commit()
 
@@ -3468,6 +3634,9 @@ _PER_USER_TABLES = (
     "equity_snapshots",
     "bots",
     "bot_events",
+    "position_rules",
+    "risk_settings",
+    "alerts",
     "notify_profile",
     "alert_reads",
     "suggestion_history",
@@ -3483,8 +3652,9 @@ _PER_USER_TABLES = (
 def delete_user(conn: sqlite3.Connection, user_id: int) -> bool:
     """Delete an account and every row it owns. Returns False if unknown.
 
-    Shared market data (ticker-keyed tables, `stock_analysis`, `alerts`) is
-    deliberately untouched — it belongs to the instance, not to the account.
+    Shared market data (ticker-keyed tables, `stock_analysis`, market alerts
+    with no user_id) is deliberately untouched — it belongs to the instance,
+    not to the account.
     """
     if get_user(conn, user_id) is None:
         return False

@@ -10,7 +10,10 @@ hasn't closed. Stops, targets and the fill price use the live quote. Fills
 are the live price moved against the bot by config.BOT_COST_BPS. A bot only
 acts on a ticker while that ticker's own exchange is in its regular session,
 and only on a quote that is itself LIVE and no older than
-config.BOT_QUOTE_MAX_AGE_SECONDS.
+config.ENGINE_QUOTE_MAX_AGE_SECONDS (quotes.tradable_price).
+
+New entries wait while the owner's risk switches are tripped
+(risk.halt_reasons); exits and stops never do.
 
 Nothing is guessed: a missing price or history is a logged skip, never an
 estimated fill.
@@ -22,7 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from app import config, currency, db, quotes
+from app import config, currency, db, quotes, risk
 from app.market_calendar import exchange_for_ticker, market_status
 from app.models import Bot, BotEvent, OHLCBar, Transaction
 from app.sources.technical import compute_ma, compute_rsi
@@ -200,22 +203,6 @@ def _is_live(ticker: str, now: datetime) -> bool:
     return exchange is not None and market_status(now, exchange) == "LIVE"
 
 
-def tradable_price(q, now: datetime) -> tuple[float | None, str | None]:
-    """(price, None) when the quote can be traded on now, else (None, why not):
-    no price, a quote that isn't in its regular session, or one too old."""
-    if q is None or not q.price:
-        return None, "no live price"
-    if q.market_state != "LIVE":
-        return None, f"the quote says the market is {q.market_state}"
-    try:
-        age = (now - datetime.fromisoformat(q.fetched_at)).total_seconds()
-    except (TypeError, ValueError):
-        return None, "the quote has no usable timestamp"
-    if age > config.BOT_QUOTE_MAX_AGE_SECONDS:
-        return None, f"the quote is {age:.0f}s old"
-    return q.price, None
-
-
 def _rank(analysis) -> tuple:
     """Follow's entry order: highest conviction, then R/R, like Suggestions."""
     if analysis is None:
@@ -241,7 +228,7 @@ def universe(conn, bot: Bot) -> list[str]:
     return [t for t in names if currency.currency_for_symbol(t) == bot.currency]
 
 
-def _skip(conn, bot: Bot, ticker: str, reason: str, at: str) -> None:
+def _skip(conn, bot: Bot, ticker: str | None, reason: str, at: str) -> None:
     key = (bot.id, ticker)
     if _LAST_SKIP.get(key) == reason:
         return
@@ -250,7 +237,8 @@ def _skip(conn, bot: Bot, ticker: str, reason: str, at: str) -> None:
                                     ticker=ticker, reason=reason))
 
 
-def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: datetime) -> int:
+def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: datetime,
+             halted: list[str] = ()) -> int:
     at = now.isoformat(timespec="seconds")
     p = params_for(bot.strategy, bot.params)
     old_cooldown = bot.state.get("cooldown", {})
@@ -285,7 +273,7 @@ def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: 
     for t, h in list(positions.items()):
         if t not in live:
             continue
-        price, why = tradable_price(by_ticker.get(t), now)
+        price, why = quotes.tradable_price(by_ticker.get(t), now)
         if price is None:
             _skip(conn, bot, t, f"{t}: {why} — holding until a fresh one arrives", at)
             continue
@@ -311,12 +299,16 @@ def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: 
         del positions[t]
 
     holding = set(positions)
+    if halted:
+        # Exits above still ran; only new entries wait.
+        _skip(conn, bot, None, f"New entries paused — {halted[0]}", at)
+        names = []
     for t in names:
         if len(holding) >= int(p["max_positions"]):
             break
         if t in holding or t not in live or state["cooldown"].get(t) == _local_today(t, now).isoformat():
             continue
-        price, why = tradable_price(by_ticker.get(t), now)
+        price, why = quotes.tradable_price(by_ticker.get(t), now)
         if price is None:
             _skip(conn, bot, t, f"{t}: {why}", at)
             continue
@@ -364,10 +356,11 @@ def run(conn, now: datetime | None = None, quote_getter=None) -> int:
     if not live:
         return 0
     by_ticker = {q.ticker: q for q in (quote_getter or quotes.get_quotes)(sorted(live))}
+    halts = {uid: risk.halt_reasons(conn, uid) for uid in {b.user_id for b in bots}}
     fills = 0
     for bot in bots:
         try:
-            fills += _run_bot(conn, bot, names[bot.id], live, by_ticker, now)
+            fills += _run_bot(conn, bot, names[bot.id], live, by_ticker, now, halts[bot.user_id])
         except Exception as exc:  # noqa: BLE001 - one bot's failure must not stop the others
             logger.exception("bot %s failed", bot.id)
             db.add_bot_event(conn, BotEvent(

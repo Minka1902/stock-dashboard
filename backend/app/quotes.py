@@ -217,3 +217,21 @@ def get_quotes(tickers: list[str], ttl_seconds: float | None = None) -> list[Liv
     # the carousel depended on which quotes happened to be cache hits.
     order = {t: i for i, t in enumerate(tickers)}
     return sorted(hits + fetched, key=lambda q: order.get(q.ticker, len(order)))
+
+
+def tradable_price(q: LiveQuote | None, now: datetime,
+                   max_age_seconds: float | None = None) -> tuple[float | None, str | None]:
+    """(price, None) when an engine may act on the quote now, else (None, why
+    not): no price, a quote outside its regular session, or one too old."""
+    if q is None or not q.price:
+        return None, "no live price"
+    if q.market_state != "LIVE":
+        return None, f"the quote says the market is {q.market_state}"
+    try:
+        age = (now - datetime.fromisoformat(q.fetched_at)).total_seconds()
+    except (TypeError, ValueError):
+        return None, "the quote has no usable timestamp"
+    limit = config.ENGINE_QUOTE_MAX_AGE_SECONDS if max_age_seconds is None else max_age_seconds
+    if age > limit:
+        return None, f"the quote is {age:.0f}s old"
+    return q.price, None

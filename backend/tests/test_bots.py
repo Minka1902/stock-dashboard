@@ -203,7 +203,7 @@ def test_a_non_live_or_stale_quote_is_a_skip_not_a_fill(conn, user):
     _seed_bars(conn, "AAPL", _bars(UP))
     bot = _make_bot(conn, user.id)
     assert bots.run(conn, LIVE, lambda ts: [_quote("AAPL", 100.0, market_state="POST")]) == 0
-    old = LIVE - timedelta(seconds=bots.config.BOT_QUOTE_MAX_AGE_SECONDS + 1)
+    old = LIVE - timedelta(seconds=bots.config.ENGINE_QUOTE_MAX_AGE_SECONDS + 1)
     assert bots.run(conn, LIVE, lambda ts: [_quote("AAPL", 100.0, fetched_at=old)]) == 0
     reasons = [e.reason for e in db.get_bot_events(conn, bot.id)]
     assert reasons[1] == "AAPL: the quote says the market is POST"
@@ -215,7 +215,7 @@ def test_a_stale_quote_never_trips_a_stop(conn, user):
     _seed_bars(conn, "AAPL", _bars(UP))
     bot = _make_bot(conn, user.id)
     bots.run(conn, LIVE, _quotes({"AAPL": 100.0}))
-    old = LIVE - timedelta(seconds=bots.config.BOT_QUOTE_MAX_AGE_SECONDS + 1)
+    old = LIVE - timedelta(seconds=bots.config.ENGINE_QUOTE_MAX_AGE_SECONDS + 1)
     assert bots.run(conn, LIVE, lambda ts: [_quote("AAPL", 50.0, fetched_at=old)]) == 0
     assert [h.ticker for h in db.get_portfolio(conn, user.id, bot.account)] == ["AAPL"]
 

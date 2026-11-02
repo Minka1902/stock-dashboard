@@ -473,6 +473,34 @@ class EquitySnapshot(BaseModel):
     computed_at: str
 
 
+class PositionRule(BaseModel):
+    """A holding's exit rule: alerts first; orders once execution exists.
+    Prices are in the holding's own currency (ILS, never agorot, for .TA)."""
+    user_id: int
+    account: str = "manual"
+    ticker: str
+    stop_price: float | None = None   # exclusive with stop_pct
+    stop_pct: float | None = None     # % below the position's average cost
+    take_profit: float | None = None
+    trailing_pct: float | None = None
+    trail_high: float | None = None   # highest live price since the trail began; only rises
+    fired: list[str] = []             # kinds already alerted for this version of the rule
+    active: bool = True
+    created_at: str
+    updated_at: str                   # a new value re-arms every kind
+
+
+class RiskSettings(BaseModel):
+    """Per-user risk switches. The drawdown kill switch is off while
+    max_drawdown_pct is None; once tripped it holds until acknowledged."""
+    user_id: int
+    max_drawdown_pct: float | None = None
+    drawdown_tripped_at: str | None = None
+    drawdown_pct: float | None = None          # the drawdown when it tripped
+    drawdown_acknowledged_at: str | None = None
+    updated_at: str = ""
+
+
 class NotifyProfile(BaseModel):
     email: str | None = None
     phone: str | None = None       # E.164, e.g. +14155551234
@@ -733,3 +761,6 @@ class Alert(BaseModel):
     message: str
     read: bool = False
     pushed: bool = False
+    # None = a market event every account sees; set = one account's own alert
+    # (an exit-rule hit, a risk trip), visible to and pushed to that user only.
+    user_id: int | None = None
