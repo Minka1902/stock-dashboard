@@ -24,8 +24,11 @@ const NAV_EVENT = "app:navigate";
  * stock page was opened in this tab. Its absence is how `leaveStock` knows the
  * page owns a tab of its own and should close it rather than navigate.
  *
+ * `tab` selects a sub-view inside a page (e.g. /trading-bot?tab=risk); the page
+ * owns its list of tabs and falls back to its first one for an unknown value.
+ *
  * @returns {{kind: "stock", ticker: string, alertKey: string|null, from: string|null}
- *          |{kind: "view", view: string, known: boolean}}
+ *          |{kind: "view", view: string, known: boolean, tab: string|null}}
  */
 export function parseRoute(pathname = window.location.pathname, search = window.location.search) {
   const segments = pathname.split("/").filter(Boolean);
@@ -44,11 +47,12 @@ export function parseRoute(pathname = window.location.pathname, search = window.
     }
   }
 
-  if (segments.length === 0) return { kind: "view", view: DEFAULT_VIEW, known: true };
+  const tab = params.get("tab");
+  if (segments.length === 0) return { kind: "view", view: DEFAULT_VIEW, known: true, tab };
   const view = segments[0];
   // `known: false` lets the app rewrite a junk URL to "/" instead of rendering
   // a blank screen for a typo'd path.
-  return { kind: "view", view: isViewKey(view) ? view : DEFAULT_VIEW, known: isViewKey(view) };
+  return { kind: "view", view: isViewKey(view) ? view : DEFAULT_VIEW, known: isViewKey(view), tab };
 }
 
 /** Build the path for a route. The inverse of parseRoute. */
@@ -61,7 +65,8 @@ export function routeToPath(route) {
     const q = params.toString();
     return `/${STOCK_SEGMENT}/${encodeURIComponent(route.ticker)}${q ? `?${q}` : ""}`;
   }
-  return route.view === DEFAULT_VIEW ? "/" : `/${route.view}`;
+  const q = route.tab ? `?tab=${encodeURIComponent(route.tab)}` : "";
+  return `${route.view === DEFAULT_VIEW ? "/" : `/${route.view}`}${q}`;
 }
 
 /** Navigate in the current tab and tell subscribers. */
