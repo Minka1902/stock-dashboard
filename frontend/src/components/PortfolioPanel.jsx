@@ -18,7 +18,7 @@ import Tooltip from "./Tooltip";
 import { useFxRates } from "../hooks/useFxRates";
 import { useProfile } from "../hooks/useProfile";
 import { useSparklines } from "../hooks/useSparklines";
-import { openTickerTab } from "../lib/nav";
+import { navigateTo, openTickerTab, routeToPath } from "../lib/nav";
 import { fadeRise, prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import {
   currencyForSymbol, currencySymbol, formatMoney, formatMoneySigned, marketForSymbol,
@@ -27,6 +27,7 @@ import { convertAmount, convertCash, summarizeByCurrency } from "../lib/portfoli
 import styles from "./PortfolioPanel.module.css";
 
 const DIRECTIVE_TONE = { Accumulate: "buy", Hold: "hold", Reduce: "warn", Avoid: "sell" };
+const ANALYTICS_ROUTE = { kind: "view", view: "trading-bot", tab: "performance" };
 
 // Mirrors backend/app/themes.py THEMES (validated server-side too).
 const THEMES = [
@@ -284,6 +285,12 @@ export default function PortfolioPanel({
             />
           </span>
           {!showEmpty && <SparkRange value={range} onChange={setRange} />}
+          {!showEmpty && (
+            <a className={styles.analyticsLink} href={routeToPath(ANALYTICS_ROUTE)}
+               onClick={(e) => { e.preventDefault(); navigateTo(ANALYTICS_ROUTE); }}>
+              Analytics →
+            </a>
+          )}
         </div>
       </header>
 

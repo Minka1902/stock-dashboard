@@ -1,4 +1,5 @@
 import BotsTab from "./BotsTab";
+import PerformanceTab from "./PerformanceTab";
 import RiskTab from "./RiskTab";
 import Segmented from "./Segmented";
 import { useRoute } from "../hooks/useRoute";
@@ -11,7 +12,8 @@ const VIEW = "trading-bot";
 // other pages can deep-link straight to one (e.g. /trading-bot?tab=risk).
 const TABS = {
   bots: { label: "Bots", title: "Demo bots and their activity", render: (p) => <BotsTab cash={p.cash} onCashChanged={p.onCashChanged} /> },
-  risk: { label: "Risk", title: "Kill switch and exit rules", render: () => <RiskTab /> },
+  risk: { label: "Risk", title: "Kill switch, regime, exit rules and signal mutes", render: () => <RiskTab /> },
+  performance: { label: "Performance", title: "Returns, drawdown, exposure and correlation per account", render: () => <PerformanceTab /> },
 };
 
 const TAB_OPTIONS = Object.entries(TABS).map(([value, t]) => ({ value, label: t.label, title: t.title }));

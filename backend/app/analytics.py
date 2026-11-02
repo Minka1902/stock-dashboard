@@ -227,6 +227,14 @@ def _priced_positions(conn, holdings, base: str) -> tuple[list[dict], list[str]]
     return out, unpriced
 
 
+def _account_label(account: str) -> str:
+    if account == "manual":
+        return "your Portfolio"
+    if account == "paper":
+        return "the paper account"
+    return f"bot {account.split(':', 1)[1]}"
+
+
 def report(conn, user_id: int, account: str) -> dict:
     """Everything the Performance tab shows for one account, TTL-cached."""
     key = (user_id, account)
@@ -257,7 +265,8 @@ def report(conn, user_id: int, account: str) -> dict:
         "account": account,
         "base_currency": base,
         "performance": {
-            "source": f"daily equity snapshots of {account}, in {base}, net of deposits and withdrawals",
+            "source": f"daily equity snapshots of {_account_label(account)}, in {base}, "
+                      f"net of deposits and withdrawals",
             "as_of": dates[-1] if dates else None,
             "n_snapshots": len(index),
             "min_snapshots": MIN_SNAPSHOTS,
