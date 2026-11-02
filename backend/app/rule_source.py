@@ -18,22 +18,25 @@ def fetch(conn, now: datetime | None = None) -> list[RuleSignal]:
     today = now.date().isoformat()
     at = now.isoformat(timespec="seconds")
     out: list[RuleSignal] = []
-    by_user: dict[int, set[str]] = {}
+    by_user: dict[int, tuple[set[str], list[str]]] = {}
+    by_ticker: dict[str, tuple[str, dict] | None] = {}
     for rule in db.get_saved_rules(conn, active_only=True):
         spec = rules.RuleSpec.model_validate_json(rule.spec)
         if rule.user_id not in by_user:
             held = {h.ticker for h in db.get_portfolio(conn, rule.user_id)}
-            by_user[rule.user_id] = held | set(db.get_watched_tickers_for_user(conn, rule.user_id))
-        held = {h.ticker for h in db.get_portfolio(conn, rule.user_id)}
-        for t in sorted(by_user[rule.user_id]):
-            bars = [b for b in db.get_ohlc(conn, t, "daily") if b.date < today]
-            if len(bars) < 2:
+            by_user[rule.user_id] = held, sorted(held | set(db.get_watched_tickers_for_user(conn, rule.user_id)))
+        held, universe = by_user[rule.user_id]
+        for t in universe:
+            if t not in by_ticker:
+                bars = [b for b in db.get_ohlc(conn, t, "daily") if b.date < today]
+                by_ticker[t] = (bars[-1].date, rules.arrays(bars)) if len(bars) >= 2 else None
+            if by_ticker[t] is None:
                 continue
-            arr = rules.arrays(bars)
+            day, arr = by_ticker[t]
             fired = [("entry", rules.evaluate(spec.entry, arr)[-1])]
             if spec.exit is not None and t in held:
                 fired.append(("exit", rules.evaluate(spec.exit, arr)[-1]))
-            out += [RuleSignal(user_id=rule.user_id, rule_id=rule.id, ticker=t, day=bars[-1].date, kind=k,
+            out += [RuleSignal(user_id=rule.user_id, rule_id=rule.id, ticker=t, day=day, kind=k,
                                model_version=rule.model_version, computed_at=at) for k, hit in fired if hit]
     return out
 
