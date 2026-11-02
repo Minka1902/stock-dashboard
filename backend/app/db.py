@@ -36,6 +36,8 @@ from app.models import (
     PositionRule,
     RegimeSnapshot,
     RiskSettings,
+    RuleSignal,
+    SavedRule,
     SignalMute,
     SignalPerformance,
     InsiderTrade,
@@ -669,6 +671,36 @@ def init_schema(conn: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id, id DESC);
         CREATE INDEX IF NOT EXISTS idx_orders_open ON orders(status) WHERE status = 'submitted';
+        -- Saved trading rules (STC-67) and the distinct variants tested per
+        -- rule (STC-65), plus what each active rule fired on.
+        CREATE TABLE IF NOT EXISTS saved_rules (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id         INTEGER NOT NULL,
+            name            TEXT NOT NULL,
+            spec            TEXT NOT NULL,
+            model_version   TEXT NOT NULL,
+            active          INTEGER NOT NULL DEFAULT 1,
+            created_at      TEXT NOT NULL,
+            updated_at      TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_rules_name ON saved_rules(user_id, name);
+        CREATE TABLE IF NOT EXISTS rule_variants (
+            user_id   INTEGER NOT NULL,
+            rule_key  TEXT NOT NULL,
+            spec_hash TEXT NOT NULL,
+            tested_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, rule_key, spec_hash)
+        );
+        CREATE TABLE IF NOT EXISTS rule_signals (
+            user_id       INTEGER NOT NULL,
+            rule_id       INTEGER NOT NULL,
+            ticker        TEXT NOT NULL,
+            day           TEXT NOT NULL,
+            kind          TEXT NOT NULL,
+            model_version TEXT NOT NULL,
+            computed_at   TEXT NOT NULL,
+            PRIMARY KEY (user_id, rule_id, ticker, day, kind)
+        );
         -- Append-only audit trail (STC-52), one hash chain per user so deleting
         -- an account drops its whole chain without breaking anyone else's.
         CREATE TABLE IF NOT EXISTS audit_log (
@@ -3265,6 +3297,77 @@ def orders_today(conn: sqlite3.Connection, user_id: int, since: str) -> list[Ord
     return [Order(**dict(r)) for r in cur.fetchall()]
 
 
+# ---------- saved rules ----------
+
+_SAVED_RULE_SELECT = ("SELECT s.*, (SELECT COUNT(*) FROM rule_variants v WHERE v.user_id = s.user_id "
+                      "AND v.rule_key = s.name) AS variants_tested FROM saved_rules s")
+
+
+def _saved_rule(row) -> SavedRule:
+    return SavedRule(**{**dict(row), "active": bool(row["active"])})
+
+
+def get_saved_rules(conn: sqlite3.Connection, user_id: int | None = None,
+                    active_only: bool = False) -> list[SavedRule]:
+    sql, args = _SAVED_RULE_SELECT + " WHERE 1 = 1", []
+    if user_id is not None:
+        sql += " AND s.user_id = ?"
+        args.append(user_id)
+    if active_only:
+        sql += " AND s.active = 1"
+    return [_saved_rule(r) for r in conn.execute(sql + " ORDER BY s.id", args)]
+
+
+def get_saved_rule(conn: sqlite3.Connection, rule_id: int) -> SavedRule | None:
+    row = conn.execute(_SAVED_RULE_SELECT + " WHERE s.id = ?", (rule_id,)).fetchone()
+    return _saved_rule(row) if row else None
+
+
+def save_rule(conn: sqlite3.Connection, r: SavedRule) -> SavedRule:
+    d = {**r.model_dump(exclude={"id", "variants_tested"}), "active": int(r.active)}
+    if r.id is None:
+        cur = conn.execute(f"INSERT INTO saved_rules ({', '.join(d)}) VALUES ({', '.join(':' + k for k in d)})", d)
+        rid = cur.lastrowid
+    else:
+        conn.execute("UPDATE saved_rules SET name = :name, spec = :spec, model_version = :model_version, "
+                     "active = :active, updated_at = :updated_at WHERE id = :id AND user_id = :user_id",
+                     {**d, "id": r.id})
+        rid = r.id
+    conn.commit()
+    return get_saved_rule(conn, rid)
+
+
+def delete_saved_rule(conn: sqlite3.Connection, user_id: int, rule_id: int) -> bool:
+    cur = conn.execute("DELETE FROM saved_rules WHERE id = ? AND user_id = ?", (rule_id, user_id))
+    conn.execute("DELETE FROM rule_signals WHERE rule_id = ? AND user_id = ?", (rule_id, user_id))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def note_variant(conn: sqlite3.Connection, user_id: int, rule_key: str, spec_hash: str, at: str) -> int:
+    """Record that this variant was tested; returns how many distinct
+    variants of the rule this user has tested."""
+    conn.execute("INSERT OR IGNORE INTO rule_variants (user_id, rule_key, spec_hash, tested_at) "
+                 "VALUES (?, ?, ?, ?)", (user_id, rule_key, spec_hash, at))
+    conn.commit()
+    return conn.execute("SELECT COUNT(*) FROM rule_variants WHERE user_id = ? AND rule_key = ?",
+                        (user_id, rule_key)).fetchone()[0]
+
+
+def upsert_rule_signals(conn: sqlite3.Connection, rows: list[RuleSignal]) -> None:
+    conn.executemany(
+        "INSERT OR IGNORE INTO rule_signals (user_id, rule_id, ticker, day, kind, model_version, computed_at) "
+        "VALUES (:user_id, :rule_id, :ticker, :day, :kind, :model_version, :computed_at)",
+        [r.model_dump() for r in rows])
+    conn.commit()
+
+
+def get_rule_signals(conn: sqlite3.Connection, user_id: int, since: str) -> list[RuleSignal]:
+    cur = conn.execute("SELECT * FROM rule_signals WHERE user_id = ? AND day >= ? ORDER BY day DESC, ticker",
+                       (user_id, since))
+    return [RuleSignal(**dict(r)) for r in cur.fetchall()]
+
+
 # ---------- audit log ----------
 
 def append_audit(conn: sqlite3.Connection, user_id: int, at: str, kind: str, detail: str,
@@ -3999,6 +4102,9 @@ _PER_USER_TABLES = (
     "bot_events",
     "orders",
     "audit_log",
+    "saved_rules",
+    "rule_variants",
+    "rule_signals",
     "position_rules",
     "risk_settings",
     "signal_mute_overrides",

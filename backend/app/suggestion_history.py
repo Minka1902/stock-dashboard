@@ -43,14 +43,14 @@ def collect(conn, digest: dict, user_id: int) -> list[SuggestionHistoryEntry]:
     rows: list[SuggestionHistoryEntry] = []
     seen: set[str] = set()
 
-    def add(ticker: str, kind: str, action: str, price: float | None):
+    def add(ticker: str, kind: str, action: str, price: float | None, version: str | None = None):
         if not ticker or ticker in seen:
             return
         seen.add(ticker)
         rows.append(SuggestionHistoryEntry(
             user_id=user_id, ticker=ticker, for_date=for_date, kind=kind,
             action=action, price=_reference_price(conn, ticker, price),
-            created_at=now, model_version=model_version.current(), muted=muted,
+            created_at=now, model_version=version or model_version.current(), muted=muted,
         ))
 
     for a in digest.get("holdings_alerts", []):
@@ -64,6 +64,12 @@ def collect(conn, digest: dict, user_id: int) -> list[SuggestionHistoryEntry]:
             if o.get("conviction") is not None:
                 action += f" · conv {o['conviction']}"
         add(o["ticker"], "watchlist", action, o.get("entry"))
+
+    # A saved rule's signal is tracked under that rule's own version, so its
+    # record never mixes with the app's model or with another rule.
+    for r in digest.get("rule_signals", []):
+        if r["kind"] == "entry":
+            add(r["ticker"], "rule", f"RULE {r['rule']} · entry", None, r["model_version"])
 
     return rows
 

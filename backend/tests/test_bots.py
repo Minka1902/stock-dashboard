@@ -364,7 +364,7 @@ def client(tmp_path, monkeypatch):
 
 def test_api_create_list_pause_resume_stop(client):
     assert {s["key"] for s in client.get("/api/bots/strategies").json()["strategies"]} == {
-        "follow", "trend", "dip", "breakout"}
+        "follow", "trend", "dip", "breakout", "rule"}
     r = client.post("/api/bots", json={"strategy": "trend", "tickers": "AAPL, MSFT",
                                        "amount": 2000, "currency": "USD"})
     assert r.status_code == 200, r.text

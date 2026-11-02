@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from app import config, costs, currency, db, execution, quotes, regime, risk
+from app import config, costs, currency, db, execution, quotes, regime, risk, rules
 from app.market_calendar import exchange_for_ticker, market_status
 from app.models import Bot, BotEvent, OHLCBar, Order, Transaction
 from app.sources.technical import compute_ma, compute_rsi
@@ -93,6 +93,18 @@ STRATEGIES = {
             *_COMMON,
         ],
     },
+    "rule": {
+        "label": "Custom rule",
+        "summary": "Trades one of your saved rules (Rules tab): buys when its entry conditions hold on "
+                   "a completed close, sells on its exit conditions, or at its stop, target or "
+                   "trailing stop.",
+        "needs_tickers": True,
+        "params": [
+            {"key": "rule_id", "label": "Saved rule", "unit": "", "default": 0, "min": 1,
+             "max": 1_000_000_000, "step": 1, "choices": "saved_rules"},
+            *_COMMON,
+        ],
+    },
 }
 
 _EXCHANGE_TZ = {"NYSE": ZoneInfo("America/New_York"), "TASE": ZoneInfo("Asia/Jerusalem")}
@@ -125,11 +137,14 @@ def _money(v: float) -> str:
 
 
 def decide(strategy: str, p: dict, bars: list[OHLCBar], price: float,
-           held: dict | None, analysis=None) -> Decision:
+           held: dict | None, analysis=None, rule: rules.RuleSpec | None = None) -> Decision:
     """What `strategy` does now, from completed daily `bars` (oldest first),
     the live `price` and the position's state (`held`: entry, stop, target,
-    high; None when not held). Pure: no clock, no I/O."""
+    high; None when not held). `rule` is the saved rule a "rule" bot trades.
+    Pure: no clock, no I/O."""
     closes = [b.close for b in bars]
+    if strategy == "rule":
+        return _decide_rule(rule, bars, price, held)
     if held is not None:
         stop, target = held.get("stop"), held.get("target")
         if stop is not None and price <= stop:
@@ -186,6 +201,34 @@ def decide(strategy: str, p: dict, bars: list[OHLCBar], price: float,
         return Decision("buy", f"Suggestions rate it a buy (conviction {analysis.conviction}, "
                                f"R/R {analysis.rr:.1f})", stop=analysis.stop, target=analysis.target)
     return Decision(None, "not a buy")
+
+
+def _decide_rule(rule: rules.RuleSpec | None, bars: list[OHLCBar], price: float,
+                 held: dict | None) -> Decision:
+    if rule is None:
+        return Decision(None, "its saved rule no longer exists")
+    if len(bars) < 2:
+        return Decision(None, "needs more history")
+    arr = rules.arrays(bars)
+    if held is not None:
+        stop, target = held.get("stop"), held.get("target")
+        if stop is not None and price <= stop:
+            return Decision("sell", f"Stop hit: {_money(price)} ≤ stop {_money(stop)}")
+        if target is not None and price >= target:
+            return Decision("sell", f"Target reached: {_money(price)} ≥ {_money(target)}")
+        if rule.trail_pct:
+            high = max(held.get("high") or price, price)
+            if price <= high * (1 - rule.trail_pct / 100):
+                return Decision("sell", f"Trailing stop: {_money(price)} is {rule.trail_pct:g}% or more "
+                                        f"below the high of {_money(high)}")
+        if rule.exit is not None and rules.evaluate(rule.exit, arr)[-1]:
+            return Decision("sell", f"Rule \"{rule.name}\" exit conditions held on the {bars[-1].date} close")
+        return Decision(None, "hold")
+    if rules.evaluate(rule.entry, arr)[-1]:
+        return Decision("buy", f"Rule \"{rule.name}\" entry conditions held on the {bars[-1].date} close",
+                        stop=price * (1 - rule.stop_pct / 100) if rule.stop_pct else None,
+                        target=price * (1 + rule.target_pct / 100) if rule.target_pct else None)
+    return Decision(None, "no entry")
 
 
 def fill_price(price: float, side: str) -> float:
@@ -249,6 +292,9 @@ def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: 
                  if c.currency == bot.currency), 0.0)
     analyses = ({t: db.get_analysis(conn, t) for t in {*names, *positions}}
                 if bot.strategy == "follow" else {})
+    saved = db.get_saved_rule(conn, int(p["rule_id"])) if bot.strategy == "rule" else None
+    spec = rules.RuleSpec.model_validate_json(saved.spec) if saved and saved.user_id == bot.user_id else None
+    trails = bot.strategy == "breakout" or (spec is not None and spec.trail_pct)
     if analyses:
         names = sorted(names, key=lambda t: _rank(analyses.get(t)))
 
@@ -293,11 +339,11 @@ def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: 
             state["pos"][t] = {"entry": h.avg_cost}
             dirty = True
         held = state["pos"][t]
-        if bot.strategy == "breakout" and price > (held.get("high") or 0):
+        if trails and price > (held.get("high") or 0):
             held["high"] = price
             dirty = True
         bars = [b for b in db.get_ohlc(conn, t, "daily") if b.date < _local_today(t, now).isoformat()]
-        d = decide(bot.strategy, p, bars, price, held, analyses.get(t))
+        d = decide(bot.strategy, p, bars, price, held, analyses.get(t), spec)
         if d.action != "sell":
             continue
         px = fill_price(price, "SELL")
@@ -330,9 +376,9 @@ def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: 
             _skip(conn, bot, t, f"{t}: {why}", at)
             continue
         bars = [b for b in db.get_ohlc(conn, t, "daily") if b.date < _local_today(t, now).isoformat()]
-        d = decide(bot.strategy, p, bars, price, None, analyses.get(t))
+        d = decide(bot.strategy, p, bars, price, None, analyses.get(t), spec)
         if d.action != "buy":
-            if d.reason.startswith("needs") or d.reason == "no stored analysis":
+            if d.reason.startswith("needs") or d.reason in ("no stored analysis", "its saved rule no longer exists"):
                 _skip(conn, bot, t, f"{t}: {d.reason}", at)
             continue
         px = fill_price(price, "BUY")
@@ -443,6 +489,10 @@ def validate_new(conn, user_id: int, body: dict) -> tuple[Bot | None, dict]:
     if strategy == "dip" and "rsi_buy" in params and "rsi_exit" in params \
             and params["rsi_buy"] >= params["rsi_exit"]:
         errors["params.rsi_exit"] = "Sell level must be above the buy level"
+    if strategy == "rule":
+        saved = db.get_saved_rule(conn, int(params.get("rule_id") or 0))
+        if saved is None or saved.user_id != user_id:
+            errors["params.rule_id"] = "Pick one of your saved rules (Rules tab)"
 
     ccy = str(body.get("currency") or "").strip().upper()
     cash = {c.currency: c.balance for c in db.get_cash(conn, user_id)}

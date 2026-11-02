@@ -36,7 +36,7 @@ from app import analysis, analyze, audit, auth, backtest, bots, chart_data, conf
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
-from app import automute, model_version, regime, routes_analytics, routes_chart, routes_paper, routes_risk, routes_update, updater
+from app import automute, model_version, regime, routes_analytics, routes_chart, routes_paper, routes_risk, routes_rules, routes_update, rule_source, updater
 
 # Optional: the Server page degrades to "unavailable" rather than reporting
 # zeros, which would look identical to a genuinely idle machine.
@@ -204,7 +204,15 @@ def ohlc_fetch(conn):
     universe.sort(key=lambda t: fetched.get(t, ""))  # "" (never fetched) sorts first
     # Benchmarks always ride along, outside the cap: analytics (beta, relative
     # return) and the regime gate need them whether or not anyone holds them.
-    return ohlc_source.fetch(config.BENCHMARK_TICKERS + universe[: config.OHLC_MAX_TICKERS])
+    out = ohlc_source.fetch(config.BENCHMARK_TICKERS + universe[: config.OHLC_MAX_TICKERS])
+    # The backtester's full adjusted history: watchlist + benchmarks, weekly,
+    # stalest first, a few per run.
+    stale_before = (datetime.now(timezone.utc) - timedelta(days=config.DAILY_MAX_REFRESH_DAYS)).isoformat()
+    have = db.get_ohlc_fetched_at(conn, "daily_max")
+    due = sorted((t for t in [*config.BENCHMARK_TICKERS, *db.get_all_watched_tickers(conn)]
+                  if have.get(t, "") < stale_before), key=lambda t: have.get(t, ""))
+    return out + ohlc_source.fetch(list(dict.fromkeys(due))[: config.DAILY_MAX_PER_RUN],
+                                   ohlc_source.MAX_SERIES)
 
 
 def analysis_fetch(conn):
@@ -329,6 +337,8 @@ def build_sources(conn):
         # derived: today's market regime, then per-signal performance + auto-mute
         "regime":         (lambda: regime.compute(conn), db.upsert_regime, None),
         "automute":       (lambda: automute.performance(conn), automute.store, None),
+        # derived: saved rules evaluated on completed bars (STC-67)
+        "rules":          (lambda: rule_source.fetch(conn), rule_source.store, None),
         # Closing value of every account (seeded at-times, after the US close).
         "equity_snapshot": SourceSpec(lambda: equity.snapshot_all(conn), _store_equity,
                                       retry_interval=3600, force_on_daily=False,
@@ -450,7 +460,7 @@ def _timed_job(job_id: str, fn, *args):
 
 
 def _run_derived() -> None:
-    """boom_score, alerts, regime, automute — in order (schedules.DERIVED_MEMBERS)."""
+    """boom_score, alerts, regime, automute, rules — in order (schedules.DERIVED_MEMBERS)."""
     for name in schedules.DERIVED_MEMBERS:
         spec = SOURCES[name]
         ingest.run_source(refresh_conn, name, spec.fetch, spec.store)
@@ -890,6 +900,8 @@ app.include_router(routes_risk.build_router(conn))
 app.include_router(routes_analytics.build_router(conn))
 # The paper account and its order ticket.
 app.include_router(routes_paper.build_router(conn))
+# The rule builder: schema, saved rules, backtests.
+app.include_router(routes_rules.build_router(conn))
 
 
 @app.exception_handler(Exception)

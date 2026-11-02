@@ -374,6 +374,10 @@ SIGNAL_UNMUTE_MARGIN = float(os.environ.get("STOCKS_SIGNAL_UNMUTE_MARGIN", "5"))
 BOT_COST_BPS = float(os.environ.get("STOCKS_BOT_COST_BPS", str(COST_BPS_PER_SIDE)))
 BOT_MAX_BOTS = int(os.environ.get("STOCKS_BOT_MAX_BOTS", "10"))
 BOT_INTERVAL_SECONDS = int(os.environ.get("STOCKS_BOT_INTERVAL_SECONDS", "60"))
+# Full adjusted daily history for the bar backtester (sources/ohlc.py
+# MAX_SERIES): refreshed this often per ticker, at most this many per run.
+DAILY_MAX_REFRESH_DAYS = int(os.environ.get("STOCKS_DAILY_MAX_REFRESH_DAYS", "7"))
+DAILY_MAX_PER_RUN = int(os.environ.get("STOCKS_DAILY_MAX_PER_RUN", "10"))
 # Paper account (app/execution.py): what "Fund / Reset" deposits by default.
 PAPER_START_CASH = float(os.environ.get("STOCKS_PAPER_START_CASH", "100000"))
 PAPER_START_CURRENCY = os.environ.get("STOCKS_PAPER_START_CURRENCY", "USD").upper()

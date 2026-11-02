@@ -331,7 +331,7 @@ def test_run_now_on_derived_runs_its_members_in_order(client, app_module):
     try:
         assert client.post(f"/api/server/schedules/{schedules.DERIVED}/run-now").status_code == 202
         drain_refresh()
-        assert order == ["boom_score", "alerts", "regime", "automute"]
+        assert order == ["boom_score", "alerts", "regime", "automute", "rules"]
     finally:
         app_module.SOURCES.update(saved)
 

@@ -7,7 +7,7 @@ in-app Suggestions panel (`GET /api/suggestions`) and the email/SMS delivery.
 Nothing here is financial advice; every rendering carries that disclaimer.
 """
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from app import automute, config, db, risk
 from app.market_calendar import next_trading_day
@@ -17,6 +17,7 @@ DISCLAIMER = "Signals, not financial advice. Do your own research."
 # Part of the scoring model's version (app/model_version.py).
 EARNINGS_RISK_DAYS = 7     # a holding reporting within this many days is an earnings risk
 HOT_BOOM_SCORE = 50        # a watched name at or above this Boom Score counts as "hot"
+RULE_SIGNAL_DAYS = 5       # how far back the digest lists your saved rules' signals
 
 # BoomScore boolean flags → short human labels.
 _BEARISH_LABELS = {
@@ -315,6 +316,14 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
         opportunities = [_downgrade(o, gate["downgrade"]) for o in opportunities]
         new_ideas = [_downgrade(o, gate["downgrade"]) for o in new_ideas]
 
+    # What your saved rules fired on lately, each under its rule's own version.
+    rule_names = {r.id: r.name for r in db.get_saved_rules(conn, user_id)}
+    rule_signals = [
+        {**s.model_dump(), "rule": rule_names[s.rule_id]}
+        for s in db.get_rule_signals(conn, user_id, (ref - timedelta(days=RULE_SIGNAL_DAYS)).isoformat())
+        if s.rule_id in rule_names
+    ]
+
     return {
         "for_date": for_date,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -327,6 +336,7 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
         "paused": paused,
         "downgraded": gate["downgrade"],
         "muted": sorted(muted),
+        "rule_signals": rule_signals,
     }
 
 

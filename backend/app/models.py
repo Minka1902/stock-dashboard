@@ -523,6 +523,31 @@ class PositionRule(BaseModel):
     updated_at: str                   # a new value re-arms every kind
 
 
+class SavedRule(BaseModel):
+    """A user's saved trading rule (STC-67): its spec as JSON and the model
+    version its signals and suggestions are tracked under."""
+    id: int | None = None
+    user_id: int
+    name: str
+    spec: str            # RuleSpec JSON
+    model_version: str   # rules.version(spec)
+    active: bool = True  # evaluated in the derived step
+    variants_tested: int = 0   # read from rule_variants, never stored
+    created_at: str
+    updated_at: str
+
+
+class RuleSignal(BaseModel):
+    """A saved rule's entry or exit firing on a ticker's completed bar."""
+    user_id: int
+    rule_id: int
+    ticker: str
+    day: str             # the bar's date
+    kind: str            # entry | exit
+    model_version: str
+    computed_at: str
+
+
 class AuditEntry(BaseModel):
     """One append-only audit row (STC-52). Each user's rows form a hash chain:
     hash = sha256(prev_hash + the row's canonical content)."""
