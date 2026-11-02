@@ -291,3 +291,12 @@
 }
 .paused strong { font-family: var(--mono); color: var(--negative); }
 .paused a { color: var(--accent-text); }
+.downgraded {
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--caution);
+  border-radius: var(--r-sm);
+  background: var(--caution-weak);
+  font-size: 13px;
+}
+.downgraded strong { font-family: var(--mono); color: var(--caution); }
+.downgraded a { color: var(--accent-text); }

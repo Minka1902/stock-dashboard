@@ -6,11 +6,10 @@ import TickerLabel from "./TickerLabel";
 import { navigateTo, openTickerTab, routeToPath } from "../lib/nav";
 import { getSuggestionLog } from "../api";
 import { formatRelativeTime } from "../lib/format";
+import { RISK_TAB_ROUTE } from "../lib/regime";
 import styles from "./SuggestionsPanel.module.css";
 import Tooltip from "./Tooltip";
 import Term from "./Term";
-
-const RISK_ROUTE = { kind: "view", view: "trading-bot", tab: "risk" };
 
 function statusTone(status) {
   if (status.startsWith("sent")) return "pos";
@@ -213,8 +212,16 @@ export default function SuggestionsPanel({ data, loading, busy, onRefresh, onAdd
           {data.paused?.length > 0 && (
             <p className={styles.paused} role="status">
               <strong>New buys paused</strong> — {data.paused.join(" · ")}. Holdings alerts still come through.{" "}
-              <a href={routeToPath(RISK_ROUTE)} onClick={(e) => { e.preventDefault(); navigateTo(RISK_ROUTE); }}>
+              <a href={routeToPath(RISK_TAB_ROUTE)} onClick={(e) => { e.preventDefault(); navigateTo(RISK_TAB_ROUTE); }}>
                 Review it on the Trading Bot page
+              </a>
+            </p>
+          )}
+          {data.downgraded && (
+            <p className={styles.downgraded} role="status">
+              <strong>New buys shown as watch</strong> — {data.downgraded}.{" "}
+              <a href={routeToPath(RISK_TAB_ROUTE)} onClick={(e) => { e.preventDefault(); navigateTo(RISK_TAB_ROUTE); }}>
+                See the regime
               </a>
             </p>
           )}

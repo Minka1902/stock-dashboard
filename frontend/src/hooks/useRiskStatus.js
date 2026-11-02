@@ -32,6 +32,13 @@ export async function setMaxDrawdown(pct) {
   return data;
 }
 
+/** What a risk-off regime does to new buys: "off" | "downgrade" | "pause". */
+export async function setRegimeGate(gate) {
+  const data = await saveRiskSettings({ regime_gate: gate });
+  emit({ data, error: null });
+  return data;
+}
+
 /** Re-enable new entries after a trip. */
 export async function acknowledgeTrip() {
   const data = await acknowledgeDrawdown();

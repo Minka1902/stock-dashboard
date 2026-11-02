@@ -27,10 +27,16 @@ from app.sources import boom_score
 HORIZONS = (7, 30)
 PRIMARY_HORIZON = 7
 OVERRIDE_MODES = ("on", "off")
+_ACRONYMS = {"wsb": "WSB", "rsi": "RSI", "macd": "MACD", "vix": "VIX", "aaii": "AAII", "52w": "52w"}
 
 
 def label(component: str) -> str:
-    return component.replace("_", " ").capitalize()
+    """'wsb_rising' → 'WSB rising'."""
+    words = component.split("_")
+    out = [_ACRONYMS.get(w, w) for w in words]
+    if out[0] == words[0]:
+        out[0] = out[0].capitalize()
+    return " ".join(out)
 
 
 def _close_on_or_after(closes: list[tuple[str, float]], target: str) -> float | None:

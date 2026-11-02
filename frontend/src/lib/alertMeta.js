@@ -1,4 +1,5 @@
 /** Presentation for alert types, shared by the bell and the analysis pane. */
+import { RISK_TAB_ROUTE } from "./regime";
 
 export const TYPE_ICON = {
   boom_cross: "spark",
@@ -35,5 +36,5 @@ export function alertTypeLabel(type) {
 export function alertRoute(alert) {
   return alert.ticker
     ? { kind: "stock", ticker: alert.ticker, alertKey: alert.dedup_key }
-    : { kind: "view", view: "trading-bot", tab: "risk" };
+    : RISK_TAB_ROUTE;
 }

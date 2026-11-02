@@ -6,6 +6,7 @@ import UserMenu from "./UserMenu";
 import Tooltip from "./Tooltip";
 import { formatRelativeTime } from "../lib/format";
 import { LEAN_READ, leanLabel, leanTone } from "../lib/lean";
+import RegimeChip from "./RegimeChip";
 import styles from "./TopBar.module.css";
 
 // Theme switcher: a trigger button + motion popover of the available themes,
@@ -121,6 +122,8 @@ export default function TopBar({
             </span>
           </Tooltip>
         )}
+
+        <RegimeChip />
 
         <Tooltip side="bottom" content="Jump to a view, or search any stock"
                  shortcut={[["Ctrl", "K"], ["⌘", "K"]]}>

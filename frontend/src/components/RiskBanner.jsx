@@ -2,6 +2,7 @@ import Button from "./Button";
 import Icon from "./Icon";
 import { useRiskStatus } from "../hooks/useRiskStatus";
 import { navigateTo } from "../lib/nav";
+import { RISK_TAB_ROUTE } from "../lib/regime";
 import styles from "./RiskBanner.module.css";
 
 /**
@@ -21,7 +22,7 @@ export default function RiskBanner() {
         <strong>New entries paused.</strong> {data.reasons.join(" · ")}. Sells and exits keep running.
       </p>
       <Button size="sm" variant="primary"
-              onClick={() => navigateTo({ kind: "view", view: "trading-bot", tab: "risk" })}>
+              onClick={() => navigateTo(RISK_TAB_ROUTE)}>
         Review
       </Button>
     </div>

@@ -212,6 +212,11 @@ export const getRiskStatus = () => getJSON("/api/risk/status");
 // body: { max_drawdown_pct } (null turns the kill switch off). Returns the status.
 export const saveRiskSettings = (body) => request("/api/risk/settings", { method: "PUT", body });
 export const acknowledgeDrawdown = () => request("/api/risk/drawdown/acknowledge", { method: "POST" });
+// { items: [{ component, label, weight, auto_muted, hit_rate, n, reason, override, counts }], performance, rules }
+export const getAutomute = () => getJSON("/api/automute");
+// mode: "auto" (follow the auto-mute) | "on" (always count) | "off" (never count)
+export const setMuteOverride = (component, mode) =>
+  request(`/api/automute/${encodeURIComponent(component)}`, { method: "PUT", body: { mode } });
 
 export const getTransactions = ({ account, ticker, limit } = {}) => {
   const q = new URLSearchParams();
