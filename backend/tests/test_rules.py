@@ -60,7 +60,7 @@ def test_the_version_ignores_the_name_but_not_the_logic():
 
 @pytest.mark.parametrize("name,period", [("sma", 20), ("ema", 20), ("rsi", 14), ("atr", 14), ("macd", None),
                                          ("macd_signal", None), ("bb_upper", 20), ("rvol", 20),
-                                         ("high_n", 20), ("low_n", 20)])
+                                         ("high_n", 20), ("low_n", 20), ("gap_pct", None), ("change_pct", None)])
 def test_perturbing_future_bars_never_changes_past_values(name, period):
     closes = _wave(300)
     a = rules.arrays(_bars(closes))

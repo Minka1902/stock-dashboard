@@ -38,6 +38,8 @@ from app.models import (
     RiskSettings,
     RuleSignal,
     SavedRule,
+    ScanHit,
+    ScannerPrefs,
     SignalMute,
     SignalPerformance,
     InsiderTrade,
@@ -65,6 +67,7 @@ from app.models import (
     WatchlistMeta,
     XPost,
     YieldPoint,
+    UniverseMember,
 )
 
 
@@ -700,6 +703,44 @@ def init_schema(conn: sqlite3.Connection) -> None:
             model_version TEXT NOT NULL,
             computed_at   TEXT NOT NULL,
             PRIMARY KEY (user_id, rule_id, ticker, day, kind)
+        );
+        -- Market-wide scanner (STC-69): fetched index constituents, today's
+        -- scan matches (shared market data), and per-user alert preferences
+        -- and the throttle's log (STC-75).
+        CREATE TABLE IF NOT EXISTS universe_members (
+            universe     TEXT NOT NULL,
+            ticker       TEXT NOT NULL,
+            name         TEXT NOT NULL DEFAULT '',
+            refreshed_at TEXT NOT NULL,
+            PRIMARY KEY (universe, ticker)
+        );
+        CREATE TABLE IF NOT EXISTS scan_hits (
+            scan          TEXT NOT NULL,
+            ticker        TEXT NOT NULL,
+            day           TEXT NOT NULL,
+            price         REAL NOT NULL,
+            change_pct    REAL,
+            metric        REAL,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at  TEXT NOT NULL,
+            PRIMARY KEY (scan, ticker, day)
+        );
+        CREATE INDEX IF NOT EXISTS idx_scan_hits_day ON scan_hits(day, last_seen_at);
+        CREATE TABLE IF NOT EXISTS scanner_prefs (
+            user_id        INTEGER PRIMARY KEY,
+            alerts_enabled INTEGER NOT NULL DEFAULT 0,
+            per_hour       INTEGER NOT NULL DEFAULT 3,
+            updated_at     TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS scanner_alert_log (
+            user_id     INTEGER NOT NULL,
+            ticker      TEXT NOT NULL,
+            day         TEXT NOT NULL,
+            scan        TEXT NOT NULL,
+            state       TEXT NOT NULL,      -- sent | pending | digested
+            logged_at   TEXT NOT NULL,
+            digested_at TEXT,
+            PRIMARY KEY (user_id, ticker, day)
         );
         -- Append-only audit trail (STC-52), one hash chain per user so deleting
         -- an account drops its whole chain without breaking anyone else's.
@@ -3354,6 +3395,123 @@ def note_variant(conn: sqlite3.Connection, user_id: int, rule_key: str, spec_has
                         (user_id, rule_key)).fetchone()[0]
 
 
+# ---------- market-wide scanner ----------
+
+def replace_universe(conn: sqlite3.Connection, members: list[UniverseMember]) -> None:
+    """Swap each fetched universe's constituents for the new list in one go."""
+    names = {m.universe for m in members}
+    with _immediate(conn):
+        conn.executemany("DELETE FROM universe_members WHERE universe = ?", [(n,) for n in names])
+        conn.executemany("INSERT OR IGNORE INTO universe_members (universe, ticker, name, refreshed_at) "
+                         "VALUES (:universe, :ticker, :name, :refreshed_at)", [m.model_dump() for m in members])
+
+
+def get_universe(conn: sqlite3.Connection, universe: str) -> list[UniverseMember]:
+    cur = conn.execute("SELECT * FROM universe_members WHERE universe = ? ORDER BY ticker", (universe,))
+    return [UniverseMember(**dict(r)) for r in cur.fetchall()]
+
+
+def get_universe_refreshed(conn: sqlite3.Connection) -> dict[str, tuple[int, str]]:
+    """{universe: (member count, refreshed_at)} for the fetched universes."""
+    cur = conn.execute("SELECT universe, COUNT(*), MAX(refreshed_at) FROM universe_members GROUP BY universe")
+    return {r[0]: (r[1], r[2]) for r in cur.fetchall()}
+
+
+def get_all_held_tickers(conn: sqlite3.Connection) -> list[str]:
+    return [r[0] for r in conn.execute("SELECT DISTINCT ticker FROM portfolio ORDER BY ticker")]
+
+
+def get_latest_ohlc_fetched(conn: sqlite3.Connection, tickers: list[str],
+                            intervals: tuple[str, ...]) -> dict[str, str]:
+    """{ticker: newest fetched_at across `intervals`} for the given tickers."""
+    if not tickers:
+        return {}
+    marks, imarks = ",".join("?" * len(tickers)), ",".join("?" * len(intervals))
+    cur = conn.execute(f"SELECT ticker, MAX(fetched_at) FROM ohlc_series WHERE ticker IN ({marks}) "
+                       f"AND interval IN ({imarks}) GROUP BY ticker", [*tickers, *intervals])
+    return {r[0]: r[1] for r in cur.fetchall()}
+
+
+def prune_ohlc(conn: sqlite3.Connection, interval: str, keep: list[str]) -> int:
+    """Drop `interval` series for tickers no longer in `keep`."""
+    marks = ",".join("?" * len(keep)) or "''"
+    cur = conn.execute(f"DELETE FROM ohlc_series WHERE interval = ? AND ticker NOT IN ({marks})", [interval, *keep])
+    conn.commit()
+    return cur.rowcount
+
+
+def upsert_scan_hits(conn: sqlite3.Connection, hits: list[ScanHit]) -> None:
+    conn.executemany(
+        "INSERT INTO scan_hits (scan, ticker, day, price, change_pct, metric, first_seen_at, last_seen_at) "
+        "VALUES (:scan, :ticker, :day, :price, :change_pct, :metric, :first_seen_at, :last_seen_at) "
+        "ON CONFLICT(scan, ticker, day) DO UPDATE SET price = excluded.price, change_pct = excluded.change_pct, "
+        "metric = excluded.metric, last_seen_at = excluded.last_seen_at",
+        [h.model_dump() for h in hits])
+    conn.commit()
+
+
+def get_scan_hits(conn: sqlite3.Connection, day: str | None = None) -> list[ScanHit]:
+    """Every match of `day` (default: the latest day with any)."""
+    if day is None:
+        day = conn.execute("SELECT MAX(day) FROM scan_hits").fetchone()[0]
+        if day is None:
+            return []
+    cur = conn.execute("SELECT * FROM scan_hits WHERE day = ? ORDER BY first_seen_at DESC", (day,))
+    return [ScanHit(**dict(r)) for r in cur.fetchall()]
+
+
+def prune_scan_hits(conn: sqlite3.Connection, before_day: str) -> int:
+    cur = conn.execute("DELETE FROM scan_hits WHERE day < ?", (before_day,))
+    conn.execute("DELETE FROM scanner_alert_log WHERE day < ?", (before_day,))
+    conn.commit()
+    return cur.rowcount
+
+
+def get_scanner_prefs(conn: sqlite3.Connection, user_id: int, default_per_hour: int = 3) -> ScannerPrefs:
+    row = conn.execute("SELECT * FROM scanner_prefs WHERE user_id = ?", (user_id,)).fetchone()
+    if row is None:
+        return ScannerPrefs(user_id=user_id, per_hour=default_per_hour)
+    return ScannerPrefs(**{**dict(row), "alerts_enabled": bool(row["alerts_enabled"])})
+
+
+def upsert_scanner_prefs(conn: sqlite3.Connection, p: ScannerPrefs) -> ScannerPrefs:
+    conn.execute("INSERT INTO scanner_prefs (user_id, alerts_enabled, per_hour, updated_at) "
+                 "VALUES (:user_id, :alerts_enabled, :per_hour, :updated_at) ON CONFLICT(user_id) DO UPDATE SET "
+                 "alerts_enabled = excluded.alerts_enabled, per_hour = excluded.per_hour, "
+                 "updated_at = excluded.updated_at", {**p.model_dump(), "alerts_enabled": int(p.alerts_enabled)})
+    conn.commit()
+    return get_scanner_prefs(conn, p.user_id)
+
+
+def get_scanner_alert_users(conn: sqlite3.Connection) -> list[ScannerPrefs]:
+    cur = conn.execute("SELECT * FROM scanner_prefs WHERE alerts_enabled = 1")
+    return [ScannerPrefs(**{**dict(r), "alerts_enabled": True}) for r in cur.fetchall()]
+
+
+def get_scanner_log(conn: sqlite3.Connection, user_id: int, day: str) -> list[dict]:
+    cur = conn.execute("SELECT * FROM scanner_alert_log WHERE user_id = ? AND day = ?", (user_id, day))
+    return [dict(r) for r in cur.fetchall()]
+
+
+def get_scanner_sends_since(conn: sqlite3.Connection, user_id: int, since: str) -> tuple[int, str | None]:
+    """(individual alerts sent since `since`, the newest digest time ever)."""
+    sent = conn.execute("SELECT COUNT(*) FROM scanner_alert_log WHERE user_id = ? AND state = 'sent' "
+                        "AND logged_at >= ?", (user_id, since)).fetchone()[0]
+    digest = conn.execute("SELECT MAX(digested_at) FROM scanner_alert_log WHERE user_id = ?",
+                          (user_id,)).fetchone()[0]
+    return sent, digest
+
+
+def log_scanner_alerts(conn: sqlite3.Connection, rows: list[dict]) -> None:
+    conn.executemany("INSERT OR IGNORE INTO scanner_alert_log (user_id, ticker, day, scan, state, logged_at) "
+                     "VALUES (:user_id, :ticker, :day, :scan, :state, :logged_at)", rows)
+
+
+def mark_scanner_digested(conn: sqlite3.Connection, user_id: int, tickers: list[str], day: str, at: str) -> None:
+    conn.executemany("UPDATE scanner_alert_log SET state = 'digested', digested_at = ? "
+                     "WHERE user_id = ? AND ticker = ? AND day = ?", [(at, user_id, t, day) for t in tickers])
+
+
 def upsert_rule_signals(conn: sqlite3.Connection, rows: list[RuleSignal]) -> None:
     conn.executemany(
         "INSERT OR IGNORE INTO rule_signals (user_id, rule_id, ticker, day, kind, model_version, computed_at) "
@@ -4105,6 +4263,8 @@ _PER_USER_TABLES = (
     "saved_rules",
     "rule_variants",
     "rule_signals",
+    "scanner_prefs",
+    "scanner_alert_log",
     "position_rules",
     "risk_settings",
     "signal_mute_overrides",

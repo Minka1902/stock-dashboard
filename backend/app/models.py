@@ -875,3 +875,49 @@ class Alert(BaseModel):
     # None = a market event every account sees; set = one account's own alert
     # (an exit-rule hit, a risk trip), visible to and pushed to that user only.
     user_id: int | None = None
+
+
+# ---------- Market-wide scanner (STC-69) ----------
+
+class UniverseMember(BaseModel):
+    """One constituent of a fetched index universe (sp500, ndx100, ta125)."""
+    universe: str
+    ticker: str
+    name: str = ""
+    refreshed_at: str
+
+
+class IntradayQuote(BaseModel):
+    """Today's session so far for one ticker, from Yahoo's batched quote API,
+    in the listing's major currency."""
+    ticker: str
+    day: str                 # the session date (YYYY-MM-DD)
+    price: float
+    open: float
+    high: float
+    low: float
+    volume: float
+    previous_close: float | None = None
+    market_state: str        # PRE | LIVE | POST | CLOSED
+    currency: str | None = None
+    fetched_at: str
+
+
+class ScanHit(BaseModel):
+    """A ticker matching a built-in scan in today's session. first_seen_at
+    stays put; last_seen_at moves with every scan that still matches."""
+    scan: str
+    ticker: str
+    day: str
+    price: float
+    change_pct: float | None = None
+    metric: float | None = None
+    first_seen_at: str
+    last_seen_at: str
+
+
+class ScannerPrefs(BaseModel):
+    user_id: int
+    alerts_enabled: bool = False
+    per_hour: int = 3
+    updated_at: str = ""

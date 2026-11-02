@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from typing import Callable, Protocol
 from zoneinfo import ZoneInfo
 
-from app import audit, config, costs, db, ledger, quotes
+from app import audit, config, costs, db, events, ledger, quotes
 from app.ledger import BOT_ACCOUNT
 from app.market_calendar import exchange_for_ticker, is_trading_day, market_status, next_trading_day
 from app.models import Holding, Order, Transaction
@@ -184,6 +184,7 @@ class PaperBroker:
         if done is not None:
             audit.record(conn, order.user_id, "order_filled", order_id=order.id, ticker=order.ticker,
                          side=order.side, qty=order.qty, price=px)
+            events.publish("order", {"account": PAPER, "ticker": order.ticker, "side": order.side}, order.user_id)
         return done
 
     def poll_fills(self, conn, now: datetime, quote_getter=None) -> list[Order]:
@@ -235,6 +236,8 @@ def submit(conn, order: Order, now: datetime | None = None, quote_getter=None,
             return None
         audit.record(conn, order.user_id, "order_filled", order_id=tx.order_id, account=order.account,
                      ticker=order.ticker, side=order.side, qty=order.qty, price=order.fill_price)
+        events.publish("order", {"account": order.account, "ticker": order.ticker, "side": order.side},
+                       order.user_id)
         return done.model_copy(update={"id": tx.order_id})
     if order.account != PAPER:
         raise OrderRejected("orders on this account are placed by its bot")

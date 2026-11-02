@@ -36,7 +36,7 @@ from app import analysis, analyze, audit, auth, backtest, bots, chart_data, conf
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
-from app import automute, model_version, regime, routes_analytics, routes_chart, routes_paper, routes_risk, routes_rules, routes_update, rule_source, updater
+from app import automute, model_version, regime, routes_analytics, routes_chart, routes_paper, routes_risk, routes_rules, routes_scanner, routes_update, rule_source, scanner, updater
 
 # Optional: the Server page degrades to "unavailable" rather than reporting
 # zeros, which would look identical to a genuinely idle machine.
@@ -339,6 +339,17 @@ def build_sources(conn):
         "automute":       (lambda: automute.performance(conn), automute.store, None),
         # derived: saved rules evaluated on completed bars (STC-67)
         "rules":          (lambda: rule_source.fetch(conn), rule_source.store, None),
+        # Market-wide scanner (STC-69): index constituents monthly, the daily
+        # bars the scans need, and the intraday scan itself (defers while
+        # every exchange in the universe is outside its regular session).
+        "universe":       SourceSpec(lambda: scanner.universe_fetch(), db.replace_universe,
+                                     30 * 86400, retry_interval=6 * 3600, force_on_daily=False,
+                                     requests_derived=False),
+        "scan_history":   SourceSpec(lambda: scanner.history_fetch(conn), scanner.history_store,
+                                     900, retry_interval=1800, force_on_daily=False, requests_derived=False),
+        "scanner":        SourceSpec(lambda: scanner.fetch(conn), scanner.store,
+                                     config.SCANNER_INTERVAL_SECONDS, retry_interval=config.SCANNER_INTERVAL_SECONDS,
+                                     force_on_daily=False, requests_derived=False),
         # Closing value of every account (seeded at-times, after the US close).
         "equity_snapshot": SourceSpec(lambda: equity.snapshot_all(conn), _store_equity,
                                       retry_interval=3600, force_on_daily=False,
@@ -898,6 +909,8 @@ app.include_router(routes_chart.build_router(conn))
 app.include_router(routes_risk.build_router(conn))
 # Portfolio performance & risk analytics.
 app.include_router(routes_analytics.build_router(conn))
+# Market-wide scanner and the server-sent events stream.
+app.include_router(routes_scanner.build_router(conn))
 # The paper account and its order ticket.
 app.include_router(routes_paper.build_router(conn))
 # The rule builder: schema, saved rules, backtests.

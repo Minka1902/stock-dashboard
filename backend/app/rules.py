@@ -24,12 +24,14 @@ INDICATORS: dict[str, tuple[int | None, tuple[int, int] | None]] = {
     "macd": (None, None), "macd_signal": (None, None), "macd_hist": (None, None),
     "bb_upper": (20, (5, 200)), "bb_lower": (20, (5, 200)),
     "rvol": (20, (2, 200)), "high_n": (20, (2, 400)), "low_n": (20, (2, 400)),
+    "gap_pct": (None, None), "change_pct": (None, None),
 }
 LABELS = {
     "close": "Close", "open": "Open", "high": "High", "low": "Low", "volume": "Volume",
     "sma": "SMA", "ema": "EMA", "rsi": "RSI", "atr": "ATR", "macd": "MACD", "macd_signal": "MACD signal",
     "macd_hist": "MACD histogram", "bb_upper": "Bollinger upper", "bb_lower": "Bollinger lower",
     "rvol": "Relative volume", "high_n": "N-day high (before today)", "low_n": "N-day low (before today)",
+    "gap_pct": "Gap % (open vs previous close)", "change_pct": "Change % (vs previous close)",
 }
 # Stored as latest snapshots only, so never point-in-time.
 NOT_POINT_IN_TIME = {
@@ -188,6 +190,11 @@ def series(name: str, period: int | None, b: dict[str, np.ndarray]) -> np.ndarra
         sq = _sma(c * c, period)
         sd = np.sqrt(np.maximum(sq - mean * mean, 0))
         return mean + 2 * sd if name == "bb_upper" else mean - 2 * sd
+    if name in ("gap_pct", "change_pct"):
+        prev = np.roll(c, 1)
+        prev[0] = np.nan
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return ((o if name == "gap_pct" else c) / prev - 1) * 100
     if name == "rvol":
         avg = _sma(v, period)
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -202,10 +209,19 @@ def arrays(bars: list[OHLCBar]) -> dict[str, np.ndarray]:
             for k in ("open", "high", "low", "close", "volume")}
 
 
+def value(name: str, period: int | None, b: dict) -> np.ndarray:
+    """An indicator's values, memoized on `b` so conditions sharing one
+    (several scans on one ticker) compute it once."""
+    memo = b.setdefault("memo", {})
+    if (name, period) not in memo:
+        memo[(name, period)] = series(name, period, b)
+    return memo[(name, period)]
+
+
 def _operand(op: Operand, b: dict) -> np.ndarray:
     if op.kind == "value":
         return np.full(len(b["close"]), op.value)
-    return series(op.name, op.period, b)
+    return value(op.name, op.period, b)
 
 
 def _condition(cond: Condition, b: dict) -> np.ndarray:

@@ -423,6 +423,27 @@ EARNINGS_RETRY_INTERVAL_SECONDS = int(
 # Boom Score level whose upward crossing fires a high-severity alert.
 ALERT_BOOM_THRESHOLD = int(os.environ.get("STOCKS_ALERT_BOOM_THRESHOLD", "60"))
 
+# Market-wide scanner (app/scanner.py). Universes: "majors" (data/majors.py),
+# "mine" (every holding and watchlist), "sp500" / "ndx100" / "ta125" (index
+# constituents from Wikipedia, refreshed monthly by the `universe` source).
+SCANNER_UNIVERSES = [u.strip().lower() for u in
+                     os.environ.get("STOCKS_SCANNER_UNIVERSES", "majors,mine").split(",") if u.strip()]
+SCANNER_MAX_TICKERS = int(os.environ.get("STOCKS_SCANNER_MAX_TICKERS", "600"))
+SCANNER_INTERVAL_SECONDS = int(os.environ.get("STOCKS_SCANNER_INTERVAL_SECONDS", "300"))
+SCANNER_QUOTE_BATCH = int(os.environ.get("STOCKS_SCANNER_QUOTE_BATCH", "150"))
+# Daily bars the scans need, for tickers the OHLC job doesn't already keep:
+# this many per run, refetched once older than this.
+SCANNER_HISTORY_PER_RUN = int(os.environ.get("STOCKS_SCANNER_HISTORY_PER_RUN", "40"))
+SCANNER_HISTORY_MAX_AGE_HOURS = int(os.environ.get("STOCKS_SCANNER_HISTORY_MAX_AGE_HOURS", "18"))
+SCANNER_RVOL_MIN = float(os.environ.get("STOCKS_SCANNER_RVOL_MIN", "2.0"))
+SCANNER_GAP_PCT = float(os.environ.get("STOCKS_SCANNER_GAP_PCT", "3.0"))
+# Scanner alerts are opt-in per user; at most this many an hour by default,
+# the rest batched into one digest an hour.
+SCANNER_ALERTS_PER_HOUR = int(os.environ.get("STOCKS_SCANNER_ALERTS_PER_HOUR", "3"))
+# Server-sent events (/api/stream): a stream ends after this long and the
+# client reconnects, so no connection outlives a restart by more than this.
+STREAM_MAX_SECONDS = int(os.environ.get("STOCKS_STREAM_MAX_SECONDS", "300"))
+
 # --- OAuth social login (optional; each provider no-ops when unset) ---
 # Base URL the provider redirects back to (the backend origin). The callback is
 # f"{OAUTH_REDIRECT_BASE}/api/auth/oauth/{provider}/callback".
