@@ -3,7 +3,7 @@ import Icon from "./Icon";
 import Popover from "./Popover";
 import Tooltip from "./Tooltip";
 import TickerLabel from "./TickerLabel";
-import { alertIcon } from "../lib/alertMeta";
+import { alertIcon, alertRoute } from "../lib/alertMeta";
 import { routeToPath } from "../lib/nav";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./AlertsBell.module.css";
@@ -81,7 +81,7 @@ export default function AlertsBell({ alerts = [], unread = 0, onMarkRead, onOpen
                       intercepts a plain left click. */}
                   <a
                     className={styles.body}
-                    href={routeToPath({ kind: "stock", ticker: a.ticker, alertKey: a.dedup_key })}
+                    href={routeToPath(alertRoute(a))}
                     onClick={(e) => {
                       if (e.defaultPrevented || e.button !== 0
                           || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
@@ -92,7 +92,9 @@ export default function AlertsBell({ alerts = [], unread = 0, onMarkRead, onOpen
                     }}
                   >
                     <div className={styles.line1}>
-                      <TickerLabel ticker={a.ticker} className={styles.symbol} />
+                      {a.ticker
+                        ? <TickerLabel ticker={a.ticker} className={styles.symbol} />
+                        : <span className={styles.symbol}>Account</span>}
                       <Icon name={alertIcon(a.type)} size={13} />
                       <Tooltip truncate><span className={styles.title}>{a.title}</span></Tooltip>
                       <span className={styles.time}>{formatRelativeTime(a.created_at)}</span>

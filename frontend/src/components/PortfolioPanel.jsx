@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
 import AnimatedNumber from "./AnimatedNumber";
 import CashBalances from "./CashBalances";
+import ExitRuleDialog from "./ExitRuleDialog";
 import ExtHoursBadge from "./ExtHoursBadge";
 import InfoTip from "./InfoTip";
 import MenuButton, { MenuDivider, MenuItem, MenuLabel } from "./MenuButton";
@@ -70,6 +71,7 @@ export default function PortfolioPanel({
   // null = follow the default (on when that currency already has cash).
   const [payCash, setPayCash] = useState(null);
   const [selling, setSelling] = useState(null);
+  const [ruling, setRuling] = useState(null);
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
   const [mergeNote, setMergeNote] = useState(null);
@@ -608,6 +610,10 @@ export default function PortfolioPanel({
                                 <button className={styles.textAction} onClick={() => setSelling(h)}
                                         aria-label={`Sell ${h.ticker}`}>Sell</button>
                               </Tooltip>
+                              <Tooltip content={`Exit rule for ${h.ticker}: stop, take-profit, trailing stop (alerts only)`}>
+                                <button className={styles.iconAction} onClick={() => setRuling(h.ticker)}
+                                        aria-label={`Exit rule for ${h.ticker}`}><Icon name="shield" size={14} /></button>
+                              </Tooltip>
                               <Tooltip content={`Correct ${h.ticker} (recorded as an adjustment)`}>
                                 <button className={styles.iconAction} onClick={() => startEdit(h)}
                                         aria-label={`Edit ${h.ticker}`}>✎</button>
@@ -665,6 +671,7 @@ export default function PortfolioPanel({
           onClose={() => setSelling(null)}
         />
       )}
+      {ruling && <ExitRuleDialog ticker={ruling} onClose={() => setRuling(null)} />}
     </section>
   );
 }

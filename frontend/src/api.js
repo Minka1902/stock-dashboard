@@ -104,7 +104,7 @@ export const getSeasonality = () => getJSON("/api/seasonality");
 export const getAnalyses = () => getJSON("/api/analysis");
 export const getAnalysis = (ticker) => getJSON(`/api/analysis/${encodeURIComponent(ticker)}`);
 export const getBoomScoreHistory = (ticker) => getJSON(`/api/boom-scores/history/${encodeURIComponent(ticker)}`);
-const accountQuery = (account) => (account && account !== "manual" ? `?account=${account}` : "");
+const accountQuery = (account) => (account && account !== "manual" ? `?account=${encodeURIComponent(account)}` : "");
 export const getPortfolio = (account = "manual") => getJSON(`/api/portfolio${accountQuery(account)}`);
 export const getCash = (account = "manual") => getJSON(`/api/portfolio/cash${accountQuery(account)}`);
 export const getProfile = () => getJSON("/api/profile");
@@ -193,6 +193,23 @@ export const resumeBot = (id) => request(`/api/bots/${id}/resume`, { method: "PO
 export const stopBot = (id) => request(`/api/bots/${id}/stop`, { method: "POST" });
 export const stopAllBots = () => request("/api/bots/stop-all", { method: "POST" });
 export const getBotEvents = (id, limit = 100) => getJSON(`/api/bots/${id}/events?limit=${limit}`);
+
+// ---------- exit rules & risk switches ----------
+const rulePath = (ticker, account) =>
+  `/api/portfolio/${encodeURIComponent(ticker)}/rules${accountQuery(account)}`;
+// { account, items: [{ ticker, held, avg_cost, currency, price, price_source, rule, levels, suggested }] }
+export const getExitRules = (account = "manual") => getJSON(`/api/portfolio/rules${accountQuery(account)}`);
+export const getExitRule = (ticker, account = "manual") => getJSON(rulePath(ticker, account));
+// body: { stop_price | stop_pct, take_profit, trailing_pct, active }. A 422
+// carries field errors on ApiError.fields; returns the same shape as getExitRule.
+export const saveExitRule = (ticker, body, account = "manual") =>
+  request(rulePath(ticker, account), { method: "PUT", body });
+export const deleteExitRule = (ticker, account = "manual") =>
+  request(rulePath(ticker, account), { method: "DELETE" });
+export const getRiskStatus = () => getJSON("/api/risk/status");
+// body: { max_drawdown_pct } (null turns the kill switch off). Returns the status.
+export const saveRiskSettings = (body) => request("/api/risk/settings", { method: "PUT", body });
+export const acknowledgeDrawdown = () => request("/api/risk/drawdown/acknowledge", { method: "POST" });
 
 export const getTransactions = ({ account, ticker, limit } = {}) => {
   const q = new URLSearchParams();

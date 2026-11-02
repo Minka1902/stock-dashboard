@@ -35,6 +35,7 @@ import SuggestionsPanel from "./components/SuggestionsPanel";
 import SuggestionHistoryPanel from "./components/SuggestionHistoryPanel";
 import EarningsPanel from "./components/EarningsPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
+import RiskBanner from "./components/RiskBanner";
 import TradingBotPanel from "./components/TradingBotPanel";
 import XPostsPanel from "./components/XPostsPanel";
 import InfoPanel from "./components/InfoPanel";
@@ -43,6 +44,7 @@ import StockDetailPanel from "./components/StockDetailPanel";
 import BackToTop from "./components/BackToTop";
 import Tour from "./components/Tour";
 import { TOURS } from "./lib/tours";
+import { alertRoute } from "./lib/alertMeta";
 import { AnimatePresence, motion } from "motion/react";
 import { leaveStock, navigateTo, openTickerTab } from "./lib/nav";
 import { DEFAULT_VIEW, TITLES } from "./lib/routes";
@@ -221,7 +223,7 @@ export default function App({ auth }) {
   // Only what App itself renders (chrome, banners, the detail overlay). Panel
   // data reaches the views through `viewProps`, which spreads `data` wholesale.
   const {
-    sources, watchlist, sentiment, alerts, unreadAlerts,
+    sources, watchlist, portfolio, sentiment, alerts, unreadAlerts,
     loading, busy, error, refresh, addWatch, markAlertsRead,
   } = data;
 
@@ -237,9 +239,7 @@ export default function App({ auth }) {
   const openAlert = useCallback((alert) => {
     markAlertsRead([alert.dedup_key]).catch(() => {});
     // `from` is what sends Back to this view rather than closing the tab.
-    navigateTo({
-      kind: "stock", ticker: alert.ticker, alertKey: alert.dedup_key, from: view,
-    });
+    navigateTo({ ...alertRoute(alert), from: view });
   }, [markAlertsRead, view]);
 
   // Only auto-run tours for a genuinely first-time account. Captured once at
@@ -359,6 +359,7 @@ export default function App({ auth }) {
               </div>
             )}
 
+            {!detailTicker && <RiskBanner />}
             {!detailTicker && <SourceStatus sources={sources} onOpenDetails={openSourceDetails} />}
 
             <AnimatePresence mode="wait" initial={false}>
@@ -375,6 +376,7 @@ export default function App({ auth }) {
                   onBack={closeDetail}
                   watchlist={watchlist}
                   onAddWatch={addWatch}
+                  held={Boolean(portfolio?.some((h) => h.ticker === detailTicker))}
                   // From /stock/X?alert=<dedup_key>: which alert brought you here.
                   focusAlertKey={route.kind === "stock" ? route.alertKey : null}
                 />

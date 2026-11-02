@@ -3,12 +3,14 @@ import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import EmptyState from "./EmptyState";
 import TickerLabel from "./TickerLabel";
-import { openTickerTab } from "../lib/nav";
+import { navigateTo, openTickerTab, routeToPath } from "../lib/nav";
 import { getSuggestionLog } from "../api";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./SuggestionsPanel.module.css";
 import Tooltip from "./Tooltip";
 import Term from "./Term";
+
+const RISK_ROUTE = { kind: "view", view: "trading-bot", tab: "risk" };
 
 function statusTone(status) {
   if (status.startsWith("sent")) return "pos";
@@ -180,7 +182,8 @@ export default function SuggestionsPanel({ data, loading, busy, onRefresh, onAdd
     && data.holdings_alerts.length === 0
     && data.opportunities.length === 0
     && newIdeas.length === 0
-    && data.seasonality.length === 0;
+    && data.seasonality.length === 0
+    && !data.paused?.length;
 
   return (
     <section className={styles.panel} id="suggestions">
@@ -207,6 +210,14 @@ export default function SuggestionsPanel({ data, loading, busy, onRefresh, onAdd
         />
       ) : (
         <div className={styles.body}>
+          {data.paused?.length > 0 && (
+            <p className={styles.paused} role="status">
+              <strong>New buys paused</strong> — {data.paused.join(" · ")}. Holdings alerts still come through.{" "}
+              <a href={routeToPath(RISK_ROUTE)} onClick={(e) => { e.preventDefault(); navigateTo(RISK_ROUTE); }}>
+                Review it on the Trading Bot page
+              </a>
+            </p>
+          )}
           {data.holdings_alerts.length > 0 && (
             <div className={styles.section}>
               <h3 className={styles.sectionTitle}>Your holdings</h3>
