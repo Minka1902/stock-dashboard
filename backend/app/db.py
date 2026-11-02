@@ -920,6 +920,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _try_add_column(conn, "boom_scores", "muted", "TEXT NOT NULL DEFAULT '[]'")
     _try_add_column(conn, "suggestion_history", "muted", "TEXT NOT NULL DEFAULT '[]'")
     _try_add_column(conn, "risk_settings", "regime_gate", "TEXT NOT NULL DEFAULT 'downgrade'")
+    _try_add_column(conn, "yield_curve", "yr3m", "REAL")
     _migrate_ila_price_rows(conn)
     _migrate_econ_entities(conn)
     _seed_ledger(conn)
@@ -1675,15 +1676,22 @@ def prune_history(
 def upsert_yield_curve(conn: sqlite3.Connection, records: list[YieldPoint]) -> None:
     conn.executemany(
         """
-        INSERT INTO yield_curve (date, yr2, yr10, yr30, spread)
-        VALUES (:date, :yr2, :yr10, :yr30, :spread)
+        INSERT INTO yield_curve (date, yr3m, yr2, yr10, yr30, spread)
+        VALUES (:date, :yr3m, :yr2, :yr10, :yr30, :spread)
         ON CONFLICT(date) DO UPDATE SET
-            yr2=excluded.yr2, yr10=excluded.yr10,
+            yr3m=excluded.yr3m, yr2=excluded.yr2, yr10=excluded.yr10,
             yr30=excluded.yr30, spread=excluded.spread
         """,
         [r.model_dump() for r in records],
     )
     conn.commit()
+
+
+def get_latest_bill_rate(conn: sqlite3.Connection) -> tuple[float, str] | None:
+    """(3-month Treasury yield in %, its date) — the risk-free rate."""
+    row = conn.execute(
+        "SELECT yr3m, date FROM yield_curve WHERE yr3m IS NOT NULL ORDER BY date DESC LIMIT 1").fetchone()
+    return (row[0], row[1]) if row else None
 
 
 def get_yield_curve(conn: sqlite3.Connection, days: int = 90) -> list[YieldPoint]:

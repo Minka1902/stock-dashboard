@@ -36,7 +36,7 @@ from app import analysis, analyze, auth, backtest, bots, chart_data, config, cur
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
-from app import automute, model_version, regime, routes_chart, routes_risk, routes_update, updater
+from app import automute, model_version, regime, routes_analytics, routes_chart, routes_risk, routes_update, updater
 
 # Optional: the Server page degrades to "unavailable" rather than reporting
 # zeros, which would look identical to a genuinely idle machine.
@@ -885,6 +885,8 @@ app.include_router(routes_update.build_router())
 app.include_router(routes_chart.build_router(conn))
 # Exit rules on holdings and the risk switches (kill switch).
 app.include_router(routes_risk.build_router(conn))
+# Portfolio performance & risk analytics.
+app.include_router(routes_analytics.build_router(conn))
 
 
 @app.exception_handler(Exception)

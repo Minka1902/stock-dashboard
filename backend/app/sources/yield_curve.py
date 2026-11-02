@@ -31,11 +31,12 @@ def parse_response(xml_text: str) -> list[YieldPoint]:
         if date_elem is None or not date_elem.text:
             continue
         iso_date = date_elem.text[:10]  # drop T00:00:00
+        yr3m = _float_or_none(props.find(f"{{{_NS_D}}}BC_3MONTH"))
         yr2 = _float_or_none(props.find(f"{{{_NS_D}}}BC_2YEAR"))
         yr10 = _float_or_none(props.find(f"{{{_NS_D}}}BC_10YEAR"))
         yr30 = _float_or_none(props.find(f"{{{_NS_D}}}BC_30YEAR"))
         spread = round(yr10 - yr2, 4) if yr10 is not None and yr2 is not None else None
-        points.append(YieldPoint(date=iso_date, yr2=yr2, yr10=yr10, yr30=yr30, spread=spread))
+        points.append(YieldPoint(date=iso_date, yr3m=yr3m, yr2=yr2, yr10=yr10, yr30=yr30, spread=spread))
     return points
 
 

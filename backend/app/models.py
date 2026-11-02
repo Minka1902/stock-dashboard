@@ -113,6 +113,7 @@ class JobRun(BaseModel):
 
 class YieldPoint(BaseModel):
     date: str           # YYYY-MM-DD — PRIMARY KEY
+    yr3m: float | None = None   # 3-month bill: the risk-free rate for Sharpe/Sortino
     yr2: float | None
     yr10: float | None
     yr30: float | None
