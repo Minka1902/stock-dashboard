@@ -8,7 +8,9 @@ Signals (entries and strategy exits) are read on *completed* daily closes, so
 a bot changes its mind at most once a session and never sees a bar that
 hasn't closed. Stops, targets and the fill price use the live quote. Fills
 are the live price moved against the bot by config.BOT_COST_BPS. A bot only
-acts on a ticker while that ticker's own exchange is in its regular session.
+acts on a ticker while that ticker's own exchange is in its regular session,
+and only on a quote that is itself LIVE and no older than
+config.BOT_QUOTE_MAX_AGE_SECONDS.
 
 Nothing is guessed: a missing price or history is a logged skip, never an
 estimated fill.
@@ -198,6 +200,29 @@ def _is_live(ticker: str, now: datetime) -> bool:
     return exchange is not None and market_status(now, exchange) == "LIVE"
 
 
+def tradable_price(q, now: datetime) -> tuple[float | None, str | None]:
+    """(price, None) when the quote can be traded on now, else (None, why not):
+    no price, a quote that isn't in its regular session, or one too old."""
+    if q is None or not q.price:
+        return None, "no live price"
+    if q.market_state != "LIVE":
+        return None, f"the quote says the market is {q.market_state}"
+    try:
+        age = (now - datetime.fromisoformat(q.fetched_at)).total_seconds()
+    except (TypeError, ValueError):
+        return None, "the quote has no usable timestamp"
+    if age > config.BOT_QUOTE_MAX_AGE_SECONDS:
+        return None, f"the quote is {age:.0f}s old"
+    return q.price, None
+
+
+def _rank(analysis) -> tuple:
+    """Follow's entry order: highest conviction, then R/R, like Suggestions."""
+    if analysis is None:
+        return (1, 0, 0)
+    return (0, -analysis.conviction, -(analysis.rr or 0))
+
+
 def universe(conn, bot: Bot) -> list[str]:
     """The tickers a bot may buy: its own list, else a watchlist, else (Follow
     Suggestions) the same pool Suggestions draws from. Only listings in the
@@ -207,8 +232,12 @@ def universe(conn, bot: Bot) -> list[str]:
     elif bot.watchlist_id is not None:
         names = [w.ticker for w in db.get_watchlist(conn, bot.user_id, bot.watchlist_id)]
     else:
-        names = sorted(set(db.get_watched_tickers_for_user(conn, bot.user_id))
-                       | set(db.get_signal_candidate_tickers(conn, config.OPPORTUNITY_CANDIDATES)))
+        # Like Suggestions, nothing you already hold by hand: a bot buying it
+        # too would only double the exposure.
+        held = {h.ticker for h in db.get_portfolio(conn, bot.user_id)}
+        names = sorted((set(db.get_watched_tickers_for_user(conn, bot.user_id))
+                        | set(db.get_signal_candidate_tickers(conn, config.OPPORTUNITY_CANDIDATES)))
+                       - held)
     return [t for t in names if currency.currency_for_symbol(t) == bot.currency]
 
 
@@ -224,18 +253,25 @@ def _skip(conn, bot: Bot, ticker: str, reason: str, at: str) -> None:
 def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: datetime) -> int:
     at = now.isoformat(timespec="seconds")
     p = params_for(bot.strategy, bot.params)
-    state = {"pos": dict(bot.state.get("pos", {})), "cooldown": dict(bot.state.get("cooldown", {}))}
+    old_cooldown = bot.state.get("cooldown", {})
+    # A cooldown only ever blocks a same-day rebuy, so earlier days are dropped.
+    cooldown = {t: d for t, d in old_cooldown.items() if d >= _local_today(t, now).isoformat()}
+    state = {"pos": dict(bot.state.get("pos", {})), "cooldown": cooldown}
     positions = {h.ticker: h for h in db.get_portfolio(conn, bot.user_id, bot.account)}
     cash = next((c.balance for c in db.get_cash(conn, bot.user_id, bot.account)
                  if c.currency == bot.currency), 0.0)
+    analyses = ({t: db.get_analysis(conn, t) for t in {*names, *positions}}
+                if bot.strategy == "follow" else {})
+    if analyses:
+        names = sorted(names, key=lambda t: _rank(analyses.get(t)))
 
-    def price_of(t):
+    def valuation_of(t):
         q = by_ticker.get(t)
         return q.price if q and q.price else None
 
-    equity = cash + sum(h.shares * (price_of(t) or h.avg_cost) for t, h in positions.items())
+    equity = cash + sum(h.shares * (valuation_of(t) or h.avg_cost) for t, h in positions.items())
     fills = 0
-    dirty = False
+    dirty = len(cooldown) != len(old_cooldown)
 
     def trade(side, ticker, qty, px, new_state, reason):
         tx = Transaction(user_id=bot.user_id, account=bot.account, ticker=ticker, side=side,
@@ -249,9 +285,9 @@ def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: 
     for t, h in list(positions.items()):
         if t not in live:
             continue
-        price = price_of(t)
+        price, why = tradable_price(by_ticker.get(t), now)
         if price is None:
-            _skip(conn, bot, t, f"{t}: no live price — holding until one arrives", at)
+            _skip(conn, bot, t, f"{t}: {why} — holding until a fresh one arrives", at)
             continue
         if t not in state["pos"]:
             state["pos"][t] = {"entry": h.avg_cost}
@@ -261,7 +297,7 @@ def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: 
             held["high"] = price
             dirty = True
         bars = [b for b in db.get_ohlc(conn, t, "daily") if b.date < _local_today(t, now).isoformat()]
-        d = decide(bot.strategy, p, bars, price, held, db.get_analysis(conn, t))
+        d = decide(bot.strategy, p, bars, price, held, analyses.get(t))
         if d.action != "sell":
             continue
         px = fill_price(price, "SELL")
@@ -280,12 +316,12 @@ def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: 
             break
         if t in holding or t not in live or state["cooldown"].get(t) == _local_today(t, now).isoformat():
             continue
-        price = price_of(t)
+        price, why = tradable_price(by_ticker.get(t), now)
         if price is None:
-            _skip(conn, bot, t, f"{t}: no live price", at)
+            _skip(conn, bot, t, f"{t}: {why}", at)
             continue
         bars = [b for b in db.get_ohlc(conn, t, "daily") if b.date < _local_today(t, now).isoformat()]
-        d = decide(bot.strategy, p, bars, price, None, db.get_analysis(conn, t))
+        d = decide(bot.strategy, p, bars, price, None, analyses.get(t))
         if d.action != "buy":
             if d.reason.startswith("needs") or d.reason == "no stored analysis":
                 _skip(conn, bot, t, f"{t}: {d.reason}", at)

@@ -2966,7 +2966,15 @@ def get_analysis_universe(conn: sqlite3.Connection, candidate_limit: int = 20) -
     background technical-analysis engine covers."""
     universe = set(get_all_portfolio_tickers(conn)) | set(get_all_watched_tickers(conn))
     universe |= set(get_signal_candidate_tickers(conn, candidate_limit))
+    universe |= set(get_active_bot_tickers(conn))
     return sorted(universe)
+
+
+def get_active_bot_tickers(conn: sqlite3.Connection) -> list[str]:
+    """Tickers typed into bots that aren't stopped. They need price history
+    even when nobody holds or watches them, or the bot can never trade them."""
+    rows = conn.execute("SELECT tickers_json FROM bots WHERE status != 'stopped'").fetchall()
+    return sorted({t for (raw,) in rows for t in json.loads(raw or "[]")})
 
 
 def get_ohlc_fetched_at(conn: sqlite3.Connection, interval: str = "daily") -> dict[str, str]:

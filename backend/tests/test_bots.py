@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import bots, db, ledger
-from app.models import Bot, LiveQuote, OHLCBar, OHLCSeries, StockAnalysis
+from app.models import Bot, LiveQuote, OHLCBar, OHLCSeries, StockAnalysis, WatchItem
 from tests.conftest import authenticate
 
 LIVE = datetime(2026, 10, 27, 15, 0, tzinfo=timezone.utc)    # Tue 11:00 New York
@@ -31,9 +31,10 @@ def _seed_bars(conn, ticker, bars):
                                      fetched_at="t")])
 
 
-def _quote(ticker, price):
+def _quote(ticker, price, market_state="LIVE", fetched_at=LIVE):
     return LiveQuote(ticker=ticker, price=price, regular_price=price, change_pct=0.0,
-                     previous_close=price, market_state="LIVE", fetched_at="t",
+                     previous_close=price, market_state=market_state,
+                     fetched_at=fetched_at.isoformat(timespec="seconds"),
                      currency="ILS" if ticker.endswith(".TA") else "USD")
 
 
@@ -43,6 +44,13 @@ def _quotes(prices):
 
 UP = [100 + i for i in range(60)]          # steady uptrend: 20-day avg > 50-day avg
 DOWN = [160 - i for i in range(60)]
+
+
+@pytest.fixture(autouse=True)
+def _fresh_skip_log():
+    # Bot ids restart at 1 in every test DB, so the engine's skip dedup would
+    # otherwise carry one test's last skip into the next.
+    bots._LAST_SKIP.clear()
 
 
 @pytest.fixture
@@ -189,6 +197,65 @@ def test_max_positions_caps_the_entries(conn, user):
     bot = _make_bot(conn, user.id, tickers=("AAPL", "MSFT", "NVDA"), max_positions=2)
     bots.run(conn, LIVE, _quotes({"AAPL": 100.0, "MSFT": 100.0, "NVDA": 100.0}))
     assert len(db.get_portfolio(conn, user.id, bot.account)) == 2
+
+
+def test_a_non_live_or_stale_quote_is_a_skip_not_a_fill(conn, user):
+    _seed_bars(conn, "AAPL", _bars(UP))
+    bot = _make_bot(conn, user.id)
+    assert bots.run(conn, LIVE, lambda ts: [_quote("AAPL", 100.0, market_state="POST")]) == 0
+    old = LIVE - timedelta(seconds=bots.config.BOT_QUOTE_MAX_AGE_SECONDS + 1)
+    assert bots.run(conn, LIVE, lambda ts: [_quote("AAPL", 100.0, fetched_at=old)]) == 0
+    reasons = [e.reason for e in db.get_bot_events(conn, bot.id)]
+    assert reasons[1] == "AAPL: the quote says the market is POST"
+    assert reasons[0].startswith("AAPL: the quote is ") and reasons[0].endswith("s old")
+    assert db.get_portfolio(conn, user.id, bot.account) == []
+
+
+def test_a_stale_quote_never_trips_a_stop(conn, user):
+    _seed_bars(conn, "AAPL", _bars(UP))
+    bot = _make_bot(conn, user.id)
+    bots.run(conn, LIVE, _quotes({"AAPL": 100.0}))
+    old = LIVE - timedelta(seconds=bots.config.BOT_QUOTE_MAX_AGE_SECONDS + 1)
+    assert bots.run(conn, LIVE, lambda ts: [_quote("AAPL", 50.0, fetched_at=old)]) == 0
+    assert [h.ticker for h in db.get_portfolio(conn, user.id, bot.account)] == ["AAPL"]
+
+
+def _follow_setup(conn, user, picks):
+    for t, conviction, rr in picks:
+        db.add_watch(conn, user.id, WatchItem(ticker=t, note="", added_at="t"))
+        db.upsert_analyses(conn, [StockAnalysis(
+            ticker=t, computed_at="t", price=100.0, recommendation="buy", rr_pass=True,
+            rr=rr, conviction=conviction, stop=90.0, target=130.0)])
+    return _make_bot(conn, user.id, strategy="follow", tickers=(), max_positions=1)
+
+
+def test_follow_buys_the_highest_conviction_first(conn, user):
+    bot = _follow_setup(conn, user, [("AAPL", 50, 3.1), ("MSFT", 70, 3.5), ("NVDA", 70, 3.2)])
+    bots.run(conn, LIVE, _quotes({"AAPL": 100.0, "MSFT": 100.0, "NVDA": 100.0}))
+    assert [h.ticker for h in db.get_portfolio(conn, user.id, bot.account)] == ["MSFT"]
+
+
+def test_follow_skips_names_already_held_by_hand(conn, user):
+    bot = _follow_setup(conn, user, [("AAPL", 50, 3.1), ("MSFT", 70, 3.5)])
+    ledger.record(conn, user.id, ticker="MSFT", side="BUY", qty=1, price=100.0, currency_code="USD")
+    assert "MSFT" not in bots.universe(conn, db.get_bot(conn, bot.id))
+    bots.run(conn, LIVE, _quotes({"AAPL": 100.0, "MSFT": 100.0}))
+    assert [h.ticker for h in db.get_portfolio(conn, user.id, bot.account)] == ["AAPL"]
+
+
+def test_cooldowns_from_earlier_days_are_dropped(conn, user):
+    _seed_bars(conn, "AAPL", _bars(UP))
+    bot = _make_bot(conn, user.id, tickers=("AAPL", "MSFT"))
+    db.set_bot_state(conn, bot.id, {"pos": {}, "cooldown": {"AAPL": "2026-10-26", "MSFT": "2026-10-27"}})
+    bots.run(conn, LIVE, _quotes({}))
+    assert db.get_bot(conn, bot.id).state["cooldown"] == {"MSFT": "2026-10-27"}
+
+
+def test_typed_bot_tickers_join_the_analysis_universe_until_the_bot_stops(conn, user):
+    bot = _make_bot(conn, user.id, tickers=("ZZZZ",))
+    assert "ZZZZ" in db.get_analysis_universe(conn)
+    bots.stop(conn, db.get_bot(conn, bot.id), LIVE, _quotes({}))
+    assert "ZZZZ" not in db.get_analysis_universe(conn)
 
 
 def test_paused_and_stopped_bots_dont_trade(conn, user):
