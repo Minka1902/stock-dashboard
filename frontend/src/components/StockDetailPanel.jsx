@@ -4,6 +4,7 @@ import ChartPro from "./ChartPro";
 import CollapsibleSection from "./CollapsibleSection";
 import CompanyInfo from "./CompanyInfo";
 import ExitRuleDialog from "./ExitRuleDialog";
+import PaperTradeButton from "./PaperTradeButton";
 import InsiderTrades from "./InsiderTrades";
 import Skeleton from "./Skeleton";
 import StockAlerts from "./StockAlerts";
@@ -279,6 +280,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
           </span>
           </Tooltip>
         )}
+        <PaperTradeButton ticker={ticker} className={styles.reportBtn} />
         {held && (
           <Tooltip content="Stop, take-profit and trailing stop on your holding — alerts only">
             <button type="button" className={styles.reportBtn} onClick={() => setRuling(true)}>

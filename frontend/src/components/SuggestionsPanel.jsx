@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import EmptyState from "./EmptyState";
+import PaperTradeButton from "./PaperTradeButton";
 import TickerLabel from "./TickerLabel";
 import { navigateTo, openTickerTab, routeToPath } from "../lib/nav";
 import { getSuggestionLog } from "../api";
@@ -139,8 +140,13 @@ function OpportunityBody({ o }) {
   );
 }
 
-function OpportunityRow({ o }) {
-  return <li className={styles.alert}><OpportunityBody o={o} /></li>;
+function OpportunityRow({ o, forDate }) {
+  return (
+    <li className={styles.alert}>
+      <OpportunityBody o={o} />
+      {!o.ta_pending && <PaperTradeButton ticker={o.ticker} suggestionForDate={forDate} className={styles.watchBtn} />}
+    </li>
+  );
 }
 
 /** A candidate you don't track yet — adoptable in one click. */
@@ -238,7 +244,7 @@ export default function SuggestionsPanel({ data, loading, busy, onRefresh, onAdd
             <div className={styles.section}>
               <h3 className={styles.sectionTitle}>On your watchlists</h3>
               <ul className={styles.list}>
-                {data.opportunities.map((o) => <OpportunityRow key={o.ticker} o={o} />)}
+                {data.opportunities.map((o) => <OpportunityRow key={o.ticker} o={o} forDate={data.for_date} />)}
               </ul>
             </div>
           )}

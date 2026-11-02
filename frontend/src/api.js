@@ -212,6 +212,18 @@ export const getRiskStatus = () => getJSON("/api/risk/status");
 // body: { max_drawdown_pct } (null turns the kill switch off). Returns the status.
 export const saveRiskSettings = (body) => request("/api/risk/settings", { method: "PUT", body });
 export const acknowledgeDrawdown = () => request("/api/risk/drawdown/acknowledge", { method: "POST" });
+// ---------- paper account ----------
+// { mode, modes, funded, cash, positions, open_orders, recent_orders, slippage, defaults }
+export const getPaper = () => getJSON("/api/paper");
+// body: { amount, currency } — funds a new paper account or starts it over.
+export const resetPaper = (body = {}) => request("/api/paper/reset", { method: "POST", body });
+// { price, price_source, currency, qty, stop, target, held, sizing_note, risk_pct }
+export const getTicketDefaults = (ticker, side = "BUY") =>
+  getJSON(`/api/paper/ticket-defaults?ticker=${encodeURIComponent(ticker)}&side=${side}`);
+// body: { ticker, side, qty, type, limit_price, stop_price, tif, suggestion_for_date }.
+// A 422 carries field errors on ApiError.fields.
+export const placePaperOrder = (body) => request("/api/paper/orders", { method: "POST", body });
+export const cancelPaperOrder = (id) => request(`/api/paper/orders/${id}/cancel`, { method: "POST" });
 // { performance, exposure, correlation, risk_read } for "manual" | "paper" | "bot:<id>"
 export const getPortfolioAnalytics = (account = "manual") =>
   getJSON(`/api/portfolio/analytics${accountQuery(account)}`);

@@ -1,4 +1,5 @@
 import BotsTab from "./BotsTab";
+import PaperTab from "./PaperTab";
 import PerformanceTab from "./PerformanceTab";
 import RiskTab from "./RiskTab";
 import Segmented from "./Segmented";
@@ -13,6 +14,7 @@ const VIEW = "trading-bot";
 const TABS = {
   bots: { label: "Bots", title: "Demo bots and their activity", render: (p) => <BotsTab cash={p.cash} onCashChanged={p.onCashChanged} /> },
   risk: { label: "Risk", title: "Kill switch, regime, exit rules and signal mutes", render: () => <RiskTab /> },
+  paper: { label: "Paper", title: "Paper account and order ticket", render: () => <PaperTab /> },
   performance: { label: "Performance", title: "Returns, drawdown, exposure and correlation per account", render: () => <PerformanceTab /> },
 };
 

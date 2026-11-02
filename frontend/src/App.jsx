@@ -36,6 +36,7 @@ import SuggestionHistoryPanel from "./components/SuggestionHistoryPanel";
 import EarningsPanel from "./components/EarningsPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
 import RiskBanner from "./components/RiskBanner";
+import OrderTicket from "./components/OrderTicket";
 import TradingBotPanel from "./components/TradingBotPanel";
 import XPostsPanel from "./components/XPostsPanel";
 import InfoPanel from "./components/InfoPanel";
@@ -148,6 +149,7 @@ export default function App({ auth }) {
   const { theme, setTheme, toggle, themes } = useTheme();
   const { settings, setSetting, labelFor } = useSettingsContext();
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [ticketOpen, setTicketOpen] = useState(false);
   const scrollRef = useRef(null);
 
   // The address bar is the single source of truth for both the current view and
@@ -305,6 +307,7 @@ export default function App({ auth }) {
     ...(auth?.user?.is_admin
       ? [{ id: "server", label: "Server", hint: "health & errors", icon: "layers", run: () => navigate("server") }]
       : []),
+    { id: "paper-trade", label: "Paper trade…", hint: "simulated order ticket", icon: "bot", run: () => setTicketOpen(true) },
     { id: "refresh",     label: "Refresh all sources", hint: "sync now", icon: "refresh", run: () => refresh() },
     { id: "theme",       label: "Toggle theme", hint: theme === "dark" ? "to light" : "to dark", icon: theme === "dark" ? "sun" : "moon", run: () => toggle() },
     { id: "dyslexia",    label: "Dyslexia-friendly mode", hint: settings.dyslexia ? "on" : "off", icon: "book", run: () => setSetting("dyslexia", !settings.dyslexia) },
@@ -406,6 +409,8 @@ export default function App({ auth }) {
           onOpenTicker={openTickerTab}
         />
       )}
+
+      {ticketOpen && <OrderTicket onClose={() => setTicketOpen(false)} />}
 
       {tourView && TOURS[tourView] && (
         <Tour steps={TOURS[tourView]} onClose={closeTour} />

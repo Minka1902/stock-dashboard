@@ -19,9 +19,11 @@ function statusOf(item) {
 /**
  * Every holding in one book with its exit rule: the levels in force, whether
  * each has alerted, and the plan's suggested stop where there's no stop yet.
- * Rows open ExitRuleDialog. Props: account ("manual" | "paper"), title.
+ * Rows open ExitRuleDialog. Props: account ("manual" | "paper"), title,
+ * emptyText (shown when the book holds nothing).
  */
-export default function ExitRulesTable({ account = "manual", title = "Exit rules" }) {
+export default function ExitRulesTable({ account = "manual", title = "Exit rules",
+  emptyText = "No holdings in this book yet — add one on the Portfolio page." }) {
   const { items, loading, error, reload } = useExitRules(account);
   const [editing, setEditing] = useState(null);
 
@@ -38,7 +40,7 @@ export default function ExitRulesTable({ account = "manual", title = "Exit rules
       {loading ? (
         <p className={styles.empty}>Loading rules…</p>
       ) : held.length === 0 ? (
-        <p className={styles.empty}>No holdings in this book yet — add one on the Portfolio page.</p>
+        <p className={styles.empty}>{emptyText}</p>
       ) : (
         <div className={styles.wrap}>
           <table className={styles.table}>
