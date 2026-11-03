@@ -392,3 +392,9 @@ export const saveTargets = (account, targets) =>
   request("/api/portfolio/targets", { method: "PUT", body: { account, targets } });
 export const getRebalance = (account, band, minTrade) =>
   getJSON(`/api/portfolio/rebalance?account=${encodeURIComponent(account)}&band=${band}&min_trade=${minTrade}`);
+
+// The Alpaca broker account (paper first).
+export const getBroker = () => getJSON("/api/broker");
+export const placeBrokerOrder = (body) => request("/api/broker/orders", { method: "POST", body });
+export const cancelBrokerOrder = (id) => request(`/api/broker/orders/${id}/cancel`, { method: "POST" });
+export const syncBroker = () => request("/api/broker/sync", { method: "POST" });

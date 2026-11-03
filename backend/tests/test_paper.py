@@ -105,10 +105,15 @@ def test_the_ledger_replays_to_the_paper_tables(conn, user):
 
 # ---------- refusals and races ----------
 
-def test_not_enough_paper_cash_rejects_the_order_with_the_reason(conn, user):
+def test_not_enough_paper_cash_is_refused_up_front_and_again_at_the_fill(conn, user):
     _loosen(conn, user.id)
-    o = execution.submit(conn, _order(user.id, qty=1000), LIVE, _q(100.0))
-    assert o.status == "rejected" and "not enough USD cash" in o.reason
+    with pytest.raises(execution.OrderRejected, match="needs about 100,100.00 USD; the account has 10,000.00"):
+        execution.submit(conn, _order(user.id, qty=1000), LIVE, _q(100.0))
+    resting = execution.submit(conn, _order(user.id, qty=50, type="limit", limit_price=99.0, tif="gtc"), LIVE, _q(100.0))
+    ledger.record(conn, user.id, ticker="USD", side="WITHDRAW", qty=9_000, currency_code="USD", account="paper")
+    execution.poll(conn, LIVE, _q(98.0))
+    late = db.get_order(conn, resting.id)
+    assert late.status == "rejected" and "not enough USD cash" in late.reason
     assert db.get_portfolio(conn, user.id, "paper") == []
 
 

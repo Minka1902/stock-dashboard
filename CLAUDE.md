@@ -301,6 +301,13 @@ transaction that the bot is still active.
   on the Trading Bot page and only while the tab is visible (`lib/eventStream.js`). Browsers allow
   ~6 HTTP/1.1 connections per origin and every stock page is its own tab. `run_server.py` bounds
   graceful shutdown to 5s so an open stream can't block the WAL checkpoint.
+- **Alpaca** (`app/alpaca.py`, account `alpaca`): paper only. Live is refused in `submit` until
+  STC-51's per-order TOTP exists. Keys in env, sent in headers, never in errors. One account per
+  instance, owned by `STOCKS_ALPACA_OWNER` (default the first admin). `AlpacaBroker` in
+  `execution.py` places orders, `sync_broker` (the minute job) applies fills by cumulative
+  `filled_qty` and records bracket legs as `source="bracket"` orders. A reconcile records
+  position/cash differences as labelled ledger rows. Buys are cash-only (`guardrails.cash_only`); the
+  kill switch cancels open Alpaca orders but leaves bracket exit legs.
 - **Telegram** (`app/telegram.py`, token `STOCKS_TELEGRAM_BOT_TOKEN`): the token is in every
   request URL, so errors are re-raised without the URL. Never log or store a raw httpx error from it.
 

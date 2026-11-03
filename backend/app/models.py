@@ -522,6 +522,7 @@ class Order(BaseModel):
     reason: str = ""              # why it was placed (bots), rejected or cancelled
     plan_stop: float | None = None    # the protective stop the entry is planned with
     plan_target: float | None = None  # and its target; both feed the per-trade limits
+    filled_qty: float = 0.0           # a broker order's cumulative fill so far
 
 
 class PositionRule(BaseModel):

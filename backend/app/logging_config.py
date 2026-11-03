@@ -22,6 +22,7 @@ _FORMAT = "%(asctime)s %(levelname)-7s %(name)s: %(message)s"
 # Every secret the app reads from env. None/"" entries are skipped.
 _SECRET_SETTINGS = (
     "SMTP_PASSWORD", "TWILIO_AUTH_TOKEN", "ALPHA_VANTAGE_KEY", "FMP_KEY", "TELEGRAM_BOT_TOKEN",
+    "ALPACA_KEY_ID", "ALPACA_SECRET_KEY",
     "OAUTH_GITHUB_CLIENT_SECRET", "OAUTH_GOOGLE_CLIENT_SECRET", "OAUTH_FACEBOOK_CLIENT_SECRET",
 )
 # Secret-shaped text even when it isn't one of ours: key=value credentials in

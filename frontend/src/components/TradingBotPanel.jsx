@@ -1,5 +1,6 @@
 import AuditTab from "./AuditTab";
 import BotsTab from "./BotsTab";
+import BrokerTab from "./BrokerTab";
 import LotsTab from "./LotsTab";
 import KillSwitchButton from "./KillSwitchButton";
 import PaperTab from "./PaperTab";
@@ -20,6 +21,7 @@ const TABS = {
   bots: { label: "Bots", title: "Demo bots and their activity", render: (p) => <BotsTab cash={p.cash} onCashChanged={p.onCashChanged} /> },
   risk: { label: "Risk", title: "Kill switch, regime, exit rules and signal mutes", render: () => <RiskTab /> },
   paper: { label: "Paper", title: "Paper account and order ticket", render: () => <PaperTab /> },
+  broker: { label: "Broker", title: "Your Alpaca paper account: orders, fills and reconciliation", render: () => <BrokerTab /> },
   performance: { label: "Performance", title: "Returns, drawdown, exposure and correlation per account", render: () => <PerformanceTab /> },
   rules: { label: "Rules", title: "Build, backtest and save your own trading rules", render: () => <RulesTab /> },
   lots: { label: "Lots & rebalance", title: "Tax lots, wash sales and the plan back to your target weights", render: () => <LotsTab /> },
@@ -50,8 +52,8 @@ export default function TradingBotPanel(props) {
         <div>
           <h2 className={styles.title}>Trading Bot</h2>
           <p className={styles.subtitle}>
-            Demo bots, risk rules and paper trading. Signals read completed daily closes;
-            stops and fills use live prices. No real orders are ever placed.
+            Demo bots, risk rules, paper trading and an Alpaca paper account. Signals read completed daily
+            closes; stops and fills use live prices. No real money: live trading is off.
           </p>
         </div>
         <KillSwitchButton />

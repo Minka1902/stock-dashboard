@@ -1128,6 +1128,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _try_add_column(conn, "congress_trades", "source_url", "TEXT")
     _try_add_column(conn, "orders", "plan_stop", "REAL")
     _try_add_column(conn, "orders", "plan_target", "REAL")
+    _try_add_column(conn, "orders", "filled_qty", "REAL NOT NULL DEFAULT 0")
     _migrate_ila_price_rows(conn)
     _migrate_econ_entities(conn)
     _seed_ledger(conn)
@@ -3327,6 +3328,33 @@ def fill_order(conn: sqlite3.Connection, order: Order, tx: Transaction,
             "slippage_bps = ? WHERE id = ?",
             (tx.executed_at, tx.price, tx.fees, slippage_bps, order.id))
     return get_order(conn, order.id)
+
+
+def apply_broker_update(conn: sqlite3.Connection, order: Order, tx: Transaction | None, funded: bool,
+                        **fields) -> Order:
+    """A broker's news about an order: the ledger row for any new fill and
+    the order's new fields, in one transaction. Raises ledger.LedgerError
+    (nothing written) when the ledger refuses the fill."""
+    from app import ledger
+
+    with _immediate(conn):
+        if tx is not None:
+            _record_transaction(conn, tx.model_copy(update={"order_id": order.id}), funded, ledger)
+        if fields:
+            conn.execute(f"UPDATE orders SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
+                         (*fields.values(), order.id))
+    return get_order(conn, order.id)
+
+
+def get_order_by_broker_id(conn: sqlite3.Connection, broker_id: str) -> Order | None:
+    row = conn.execute("SELECT * FROM orders WHERE broker_order_id = ?", (broker_id,)).fetchone()
+    return Order(**dict(row)) if row else None
+
+
+def set_broker_order_id(conn: sqlite3.Connection, order_id: int, broker_id: str, status: str, reason: str = "") -> None:
+    conn.execute("UPDATE orders SET broker_order_id = ?, status = ?, reason = ? WHERE id = ?",
+                 (broker_id, status, reason, order_id))
+    conn.commit()
 
 
 def get_slippage(conn: sqlite3.Connection, user_id: int | None, account: str) -> list[float]:

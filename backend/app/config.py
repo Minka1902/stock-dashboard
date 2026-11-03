@@ -455,6 +455,14 @@ STREAM_MAX_SECONDS = int(os.environ.get("STOCKS_STREAM_MAX_SECONDS", "300"))
 # so env only; everything Telegram no-ops (and says so) while it's unset.
 TELEGRAM_BOT_TOKEN = os.environ.get("STOCKS_TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_POLL_SECONDS = int(os.environ.get("STOCKS_TELEGRAM_POLL_SECONDS", "5"))
+# Alpaca (app/alpaca.py), the first real broker: secrets, env only. Paper
+# unless STOCKS_ALPACA_PAPER=0 (live is refused until STC-51's step-up).
+# One account per instance, owned by STOCKS_ALPACA_OWNER (default: the admin).
+ALPACA_KEY_ID = os.environ.get("STOCKS_ALPACA_KEY_ID", "")
+ALPACA_SECRET_KEY = os.environ.get("STOCKS_ALPACA_SECRET_KEY", "")
+ALPACA_PAPER = os.environ.get("STOCKS_ALPACA_PAPER", "1") != "0"
+ALPACA_OWNER = os.environ.get("STOCKS_ALPACA_OWNER", "")
+ALPACA_RECONCILE_SECONDS = int(os.environ.get("STOCKS_ALPACA_RECONCILE_SECONDS", "900"))
 
 # --- OAuth social login (optional; each provider no-ops when unset) ---
 # Base URL the provider redirects back to (the backend origin). The callback is

@@ -18,7 +18,7 @@ from app.models import Holding, Transaction
 
 SIDES = ("BUY", "SELL", "ADJUST", "DEPOSIT", "WITHDRAW")
 CASH_SIDES = ("DEPOSIT", "WITHDRAW")
-ACCOUNTS = ("manual", "paper", "live")
+ACCOUNTS = ("manual", "paper", "live", "alpaca")
 # Each demo bot trades in an account of its own (app/bots.py).
 BOT_ACCOUNT = re.compile(r"bot:\d+")
 EPS = 1e-9

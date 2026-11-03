@@ -75,6 +75,28 @@ def _summary(conn, user_id: int) -> dict:
     }
 
 
+def place_ticket(conn, body: OrderBody, user_id: int, account: str) -> dict:
+    """An order ticket into `account` through execution.submit: priced at
+    the decision, linked to the suggestion it came from. 422 with the reason
+    when anything refuses it."""
+    t = clean_ticker(body.ticker)
+    ref, suggestion_id = _price(conn, t)[0], None
+    if body.suggestion_for_date:
+        found = db.get_suggestion_ref(conn, user_id, t, body.suggestion_for_date)
+        if found:
+            suggestion_id, ref = found[0], found[1] or ref
+    order = Order(user_id=user_id, account=account, ticker=t, side=body.side.upper(), qty=body.qty,
+                  type=body.type, limit_price=body.limit_price, stop_price=body.stop_price,
+                  tif=body.tif, currency=currency.currency_for_symbol(t) or "USD",
+                  created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                  suggestion_id=suggestion_id, reference_price=ref, source="ticket",
+                  plan_stop=body.plan_stop, plan_target=body.plan_target)
+    try:
+        return execution.submit(conn, order).model_dump()
+    except execution.OrderRejected as exc:
+        _reject(exc)
+
+
 def build_router(conn) -> APIRouter:
     router = APIRouter(prefix="/api/paper")
 
@@ -124,22 +146,7 @@ def build_router(conn) -> APIRouter:
 
     @router.post("/orders")
     def place(body: OrderBody, user=Depends(auth.get_current_user)):
-        t = clean_ticker(body.ticker)
-        ref, suggestion_id = _price(conn, t)[0], None
-        if body.suggestion_for_date:
-            found = db.get_suggestion_ref(conn, user.id, t, body.suggestion_for_date)
-            if found:
-                suggestion_id, ref = found[0], found[1] or ref
-        order = Order(user_id=user.id, account=PAPER, ticker=t, side=body.side.upper(), qty=body.qty,
-                      type=body.type, limit_price=body.limit_price, stop_price=body.stop_price,
-                      tif=body.tif, currency=currency.currency_for_symbol(t) or "USD",
-                      created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                      suggestion_id=suggestion_id, reference_price=ref, source="ticket",
-                      plan_stop=body.plan_stop, plan_target=body.plan_target)
-        try:
-            return execution.submit(conn, order).model_dump()
-        except execution.OrderRejected as exc:
-            _reject(exc)
+        return place_ticket(conn, body, user.id, PAPER)
 
     @router.post("/orders/{order_id}/cancel")
     def cancel(order_id: int, user=Depends(auth.get_current_user)):

@@ -4,7 +4,7 @@ import Dialog from "./Dialog";
 import Field from "./Field";
 import Segmented from "./Segmented";
 import TimeMachineOdds from "./TimeMachineOdds";
-import { getTicketDefaults, placePaperOrder } from "../api";
+import { getTicketDefaults, placeBrokerOrder, placePaperOrder } from "../api";
 import { formatMoney } from "../lib/format";
 import styles from "./OrderTicket.module.css";
 
@@ -18,6 +18,20 @@ const TIFS = [
   { value: "day", label: "Day", title: "Cancelled if not filled in its session" },
   { value: "gtc", label: "GTC", title: "Stays open until filled or cancelled" },
 ];
+
+const ACCOUNTS = {
+  paper: {
+    label: "paper", caption: "Paper order · simulated, no real money", badge: "PAPER",
+    note: "Fills are simulated at live quotes ± costs.", confirm: "Confirm paper", place: placePaperOrder,
+    placed: "Placed. It fills once a live quote crosses it — see the Paper tab.",
+  },
+  alpaca: {
+    label: "Alpaca", caption: "Alpaca paper account · sent to the broker", badge: "ALPACA PAPER",
+    note: "Sent to your Alpaca paper account; fills sync back within a minute. A buy with a plan stop and target goes as a bracket.",
+    confirm: "Send to Alpaca:", place: placeBrokerOrder,
+    placed: "Sent to Alpaca. Its fills sync back within a minute — see the Broker tab.",
+  },
+};
 
 const num = (v) => (v === "" || v == null ? null : Number(v));
 const str = (v) => (v == null ? "" : String(+Number(v).toFixed(4)));
@@ -36,13 +50,16 @@ function review({ side, qty, price, stop, target }) {
  * A paper order ticket: pre-filled from the stored analysis (size from your
  * risk %, stop from your exit rule or the trade plan), reviewed — notional,
  * money at risk to the stop and R — then confirmed. Keyboard-first: Enter
- * reviews, Enter confirms, Esc cancels. Always PAPER: no real order exists.
+ * reviews, Enter confirms, Esc cancels. Paper by default; the Alpaca account
+ * sends to its paper endpoint (live trading is refused server-side).
  *
- * Props: ticker (prefill; editable when empty), side ("BUY"), qty (prefill), suggestionForDate
+ * Props: ticker (prefill; editable when empty), side ("BUY"), qty (prefill),
+ * account ("paper" | "alpaca"), suggestionForDate
  * (links the order to the suggestion it came from), onPlaced(order), onClose.
  */
 export default function OrderTicket({ ticker: initialTicker = "", side: initialSide = "BUY", qty: initialQty = null,
-  suggestionForDate = null, onPlaced, onClose }) {
+  account = "paper", suggestionForDate = null, onPlaced, onClose }) {
+  const meta = ACCOUNTS[account];
   const [ticker, setTicker] = useState(initialTicker.toUpperCase());
   const [side, setSide] = useState(initialSide);
   const [type, setType] = useState("market");
@@ -101,7 +118,7 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
   async function confirm() {
     setPending(true);
     try {
-      const order = await placePaperOrder({
+      const order = await meta.place({
         ticker, side, qty: num(qty), type, tif, limit_price: num(limit), stop_price: num(stopPx),
         suggestion_for_date: suggestionForDate,
         plan_stop: buying ? num(planStop) : null, plan_target: buying ? num(planTarget) : null,
@@ -127,7 +144,7 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
     <>
       <Button variant="quiet" onClick={() => setStep("form")}>Back</Button>
       <Button ref={confirmRef} variant="primary" onClick={confirm} disabled={pending}>
-        {pending ? "Placing…" : `Confirm paper ${side.toLowerCase()}`}
+        {pending ? "Placing…" : `${meta.confirm} ${side.toLowerCase()}`}
       </Button>
     </>
   ) : (
@@ -135,10 +152,10 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
   );
 
   return (
-    <Dialog open size="md" tone="caution" caption="Paper order · simulated, no real money"
-            title={ticker ? `${side === "BUY" ? "Buy" : "Sell"} ${ticker}` : "New paper order"}
+    <Dialog open size="md" tone="caution" caption={meta.caption}
+            title={ticker ? `${side === "BUY" ? "Buy" : "Sell"} ${ticker}` : `New ${meta.label} order`}
             onClose={onClose} footer={footer}>
-      <div className={styles.paper} role="note"><strong>PAPER</strong> Fills are simulated at live quotes ± costs.</div>
+      <div className={styles.paper} role="note"><strong>{meta.badge}</strong> {meta.note}</div>
 
       {step === "form" && (
         <form id="order-ticket" className={styles.form} onSubmit={toReview}>
@@ -214,7 +231,7 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
             ? `Filled: ${placed.side} ${placed.qty} ${placed.ticker} at ${m(placed.fill_price)}.`
             : placed.status === "rejected"
               ? `Rejected: ${placed.reason}`
-              : "Placed. It fills once a live quote crosses it — see the Paper tab."}
+              : meta.placed}
         </p>
       )}
     </Dialog>

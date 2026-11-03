@@ -18,7 +18,7 @@ new entries.
 """
 from datetime import datetime, timezone
 
-from app import analytics, audit, db, regime
+from app import analytics, audit, db, execution, regime
 from app.models import Alert, RiskSettings
 
 MAX_DRAWDOWN_RANGE = (1.0, 90.0)
@@ -142,6 +142,7 @@ def halt_trading(conn, user_id: int, reason: str, now: str | None = None) -> dic
     s = db.get_risk_settings(conn, user_id)
     cancelled = [o.id for o in db.get_orders(conn, user_id, "paper", ("submitted",), limit=10_000)
                  if db.set_order_status(conn, o.id, "cancelled", "kill switch")]
+    cancelled += execution.cancel_broker_orders(conn, user_id)
     paused = [b.id for b in db.get_bots(conn, user_id, "active")
               if db.set_bot_status(conn, b.id, "paused", ("active",))]
     db.upsert_risk_settings(conn, s.model_copy(update={

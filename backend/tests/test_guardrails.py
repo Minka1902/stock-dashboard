@@ -84,7 +84,7 @@ def test_bots_cannot_bypass_the_guardrails(conn, user):
 
 
 def test_other_accounts_are_refused_at_the_choke_point(conn, user):
-    for account, msg in (("live", "no live broker"), ("manual", "paper or a bot account")):
+    for account, msg in (("live", "no live broker"), ("manual", "paper, alpaca or a bot account")):
         with pytest.raises(execution.OrderRejected) as e:
             execution.submit(conn, _order(user.id, account=account), LIVE, _q(100.0))
         assert msg in (e.value.reason + json.dumps(e.value.fields))

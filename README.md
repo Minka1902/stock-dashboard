@@ -25,6 +25,7 @@ Architecturally it is a **FastAPI + SQLite + APScheduler** backend that ingests 
   - **Rules**: build price/volume rules and backtest them over full adjusted history. Results are split into in-sample and out-of-sample, every variant you test is counted, and no metrics are shown below 20 trades. Saved rules signal daily.
   - **Scanner**: a market-wide intraday scanner (unusual volume, gaps, 52-week highs/lows, breakouts, RSI extremes) over a configurable universe, pushed live over server-sent events, with opt-in, throttled alerts.
   - **Audit**: a per-user, hash-chained audit log, plus a global kill switch that needs a fresh TOTP to release.
+- **Alpaca paper broker** — a Broker tab sends orders to your Alpaca paper account through the same guardrails, kill switch and audit log; fills sync back every minute and positions and cash are reconciled. Live trading stays off.
 - **Telegram** — link a private chat in Settings to get high-severity alerts and bot fills, and ask the bot `/status`, `/bots`, `/watchlist` or `/alerts` (read-only).
 - **Works on a phone** — a bottom tab bar, one-row top bar, stacked portfolio cards and 40px touch targets below 640px.
 - **Charts** — candlestick charts with extended hours, drawing tools and saved drafts.
@@ -208,6 +209,8 @@ All backend configuration comes from `STOCKS_*` environment variables with defau
 | `STOCKS_SCANNER_ALERTS_PER_HOUR` | `3` | Default hourly cap for users who opt in to scanner alerts |
 | `STOCKS_STREAM_MAX_SECONDS` | `300` | Lifetime of one `/api/stream` connection before the browser reconnects |
 | `STOCKS_TELEGRAM_BOT_TOKEN` | — | Telegram bot token from @BotFather (secret); Telegram is off while unset |
+| `STOCKS_ALPACA_KEY_ID` / `_SECRET_KEY` | — | Alpaca paper keys (secret); the Broker tab is off while unset |
+| `STOCKS_ALPACA_OWNER` | *(first admin)* | Email of the one user the Alpaca account belongs to |
 
 The regime thresholds (`STOCKS_REGIME_*`), auto-mute (`STOCKS_SIGNAL_*`), backtest history (`STOCKS_DAILY_MAX_*`) and the scanner's finer settings are listed with their defaults in [`backend/.env.example`](backend/.env.example).
 
@@ -323,6 +326,9 @@ Interactive OpenAPI docs are served by FastAPI at **`/docs`** (and `/openapi.jso
 | Scanner and push | `GET /api/scanner`, `PUT /api/scanner/prefs`, `GET /api/stream` (server-sent events) |
 | Audit | `GET /api/audit`, `/audit.csv`, `/server/audit/verify` (admin) |
 | Telegram | `GET/PUT/DELETE /api/telegram`, `POST /api/telegram/link` |
+| Broker (Alpaca paper) | `GET /api/broker`, `POST /api/broker/orders`, `/broker/orders/{id}/cancel`, `/broker/sync` |
+| Lots and rebalance | `GET /api/portfolio/lots`, `POST /api/portfolio/lots/sale`, `GET/PUT /api/portfolio/targets`, `GET /api/portfolio/rebalance` |
+| Time Machine and 13F | `POST /api/timemachine`, `GET /api/13f`, `/13f/{ticker}` |
 | Signals | `GET /api/contracts`, `/news`, `/trades`, `/congress-trades`, `/signals`, `/short-interest`, `/social`, `/analyst`, `/fundamentals`, `/earnings`, `/earnings/{ticker}`, `/seasonality`, `/x-posts` |
 | Market sentiment | `GET /api/sentiment`, `/fear-greed`, `/vix`, `/aaii`, `/put-call`, `/margin-debt`, `/yield-curve`, `/econ-calendar` |
 | Scores and analysis | `GET /api/boom-scores`, `/boom-scores/history/{ticker}`, `/analysis`, `/analysis/{ticker}`, `/analysis/{ticker}/report`, `/analyze/{ticker}`, `/suggestions`, `/suggestions/history`, `/suggestions/log`, `/backtest/track-record`, `/backtest/signal-replay`; `POST /api/suggestions/send-test` |

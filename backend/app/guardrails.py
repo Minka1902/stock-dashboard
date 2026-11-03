@@ -15,7 +15,7 @@ paper tickets and bot fills alike.
 import math
 from datetime import datetime, timedelta
 
-from app import currency, db, execution
+from app import costs, currency, db, execution
 from app.market_calendar import exchange_for_ticker, session_hours
 from app.models import Order, RiskSettings
 
@@ -135,6 +135,22 @@ def position_size(c: _Ctx) -> str | None:
     return None
 
 
+def cash_only(c: _Ctx) -> str | None:
+    """A paper or broker buy must fit the cash in its currency: this app
+    never borrows, whatever margin the broker would allow."""
+    o = c.o
+    if o.side != "BUY" or o.account not in ("paper", "alpaca") or o.fill_price is not None:
+        return None
+    px = entry_price(o)
+    if px is None:
+        return "no price to check the buy against your cash"
+    need = costs.apply(px, "BUY") * o.qty
+    cash = sum(x.balance for x in db.get_cash(c.conn, o.user_id, o.account) if x.currency == o.currency)
+    if need > cash + 1e-6:
+        return f"this buy needs about {need:,.2f} {o.currency}; the account has {cash:,.2f} — no margin here"
+    return None
+
+
 def stop_and_target(c: _Ctx) -> str | None:
     o, entry = c.o, entry_price(c.o)
     if o.plan_stop is None and c.s.require_stop:
@@ -197,7 +213,7 @@ def daily_loss(c: _Ctx) -> str | None:
     return None
 
 
-ENTRY_CHECKS = (kill_switch, market_hours, entry_window, order_notional, daily_limits, position_size,
+ENTRY_CHECKS = (kill_switch, market_hours, entry_window, order_notional, daily_limits, cash_only, position_size,
                 stop_and_target, loss_per_trade, reward_risk, daily_loss)
 
 
