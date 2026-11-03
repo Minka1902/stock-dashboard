@@ -1064,8 +1064,16 @@ def init_schema(conn: sqlite3.Connection) -> None:
         ("allow_outside_hours", "INTEGER NOT NULL DEFAULT 0"),
         ("trading_halted_at", "TEXT"),
         ("trading_halt_reason", "TEXT"),
+        ("max_loss_per_trade", "REAL"),
+        ("max_daily_loss", "REAL"),
+        ("min_reward_risk", "REAL"),
+        ("require_stop", "INTEGER NOT NULL DEFAULT 0"),
+        ("no_entry_after_open_min", "INTEGER"),
+        ("no_entry_before_close_min", "INTEGER"),
     ]:
         _try_add_column(conn, "risk_settings", col, col_def)
+    _try_add_column(conn, "orders", "plan_stop", "REAL")
+    _try_add_column(conn, "orders", "plan_target", "REAL")
     _migrate_ila_price_rows(conn)
     _migrate_econ_entities(conn)
     _seed_ledger(conn)
@@ -3326,6 +3334,7 @@ def mark_alert_pushed(conn: sqlite3.Connection, dedup_key: str) -> None:
 def _risk_from_row(row) -> RiskSettings:
     d = dict(row)
     d["allow_outside_hours"] = bool(d.get("allow_outside_hours", 0))
+    d["require_stop"] = bool(d.get("require_stop", 0))
     return RiskSettings(**d)
 
 
@@ -3344,7 +3353,7 @@ def upsert_risk_settings(conn: sqlite3.Connection, s: RiskSettings) -> RiskSetti
         f"INSERT INTO risk_settings ({', '.join(cols)}) VALUES ({', '.join(':' + c for c in cols)}) "
         f"ON CONFLICT(user_id) DO UPDATE SET "
         + ", ".join(f"{c} = excluded.{c}" for c in cols if c != "user_id"),
-        {**s.model_dump(), "allow_outside_hours": int(s.allow_outside_hours)})
+        {**s.model_dump(), "allow_outside_hours": int(s.allow_outside_hours), "require_stop": int(s.require_stop)})
     conn.commit()
     return get_risk_settings(conn, s.user_id)
 

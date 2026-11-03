@@ -51,8 +51,8 @@ async function request(path, { method = "GET", body } = {}) {
       window.dispatchEvent(new Event("auth:expired"));
     }
     const detail = (await res.json().catch(() => ({}))).detail;
-    throw new ApiError(
-      detailMessage(detail) || `request failed: ${path}`, res.status, detail?.errors || null);
+    const fields = detail?.errors && Object.keys(detail.errors).length ? detail.errors : null;
+    throw new ApiError(detailMessage(detail) || `request failed: ${path}`, res.status, fields);
   }
   return res.json();
 }

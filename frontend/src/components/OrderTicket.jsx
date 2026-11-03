@@ -49,6 +49,8 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
   const [qty, setQty] = useState("");
   const [limit, setLimit] = useState("");
   const [stopPx, setStopPx] = useState("");
+  const [planStop, setPlanStop] = useState("");
+  const [planTarget, setPlanTarget] = useState("");
   const [defaults, setDefaults] = useState(null);
   const [step, setStep] = useState("form");
   const [errors, setErrors] = useState({});
@@ -65,6 +67,8 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
         if (!live) return;
         setDefaults(d);
         setQty((q) => q || str(d.qty));
+        setPlanStop((v) => v || str(d.stop));
+        setPlanTarget((v) => v || str(d.target));
       }).catch(() => { if (live) setDefaults(null); });
     }, 250);
     return () => { live = false; clearTimeout(id); };
@@ -72,7 +76,9 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
 
   const price = type === "limit" ? num(limit) ?? defaults?.price : defaults?.price;
   const ccy = defaults?.currency || "USD";
-  const r = review({ side, qty: num(qty), price, stop: defaults?.stop, target: defaults?.target });
+  const buying = side === "BUY";
+  const r = review({ side, qty: num(qty), price, stop: buying ? num(planStop) : null,
+    target: buying ? num(planTarget) : null });
   const m = (v) => (v == null ? "—" : formatMoney(v, ccy));
 
   function toReview(e) {
@@ -84,6 +90,8 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
     if (!(num(qty) > 0)) errs.qty = "Enter a quantity above 0";
     if (type === "limit" && !(num(limit) > 0)) errs.limit_price = "Enter a limit price";
     if (type === "stop" && !(num(stopPx) > 0)) errs.stop_price = "Enter a stop price";
+    if (buying && planStop !== "" && !(num(planStop) > 0)) errs.plan_stop = "Above 0, or leave it empty";
+    if (buying && planTarget !== "" && !(num(planTarget) > 0)) errs.plan_target = "Above 0, or leave it empty";
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setStep("review");
     requestAnimationFrame(() => confirmRef.current?.focus());
@@ -95,6 +103,7 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
       const order = await placePaperOrder({
         ticker, side, qty: num(qty), type, tif, limit_price: num(limit), stop_price: num(stopPx),
         suggestion_for_date: suggestionForDate,
+        plan_stop: buying ? num(planStop) : null, plan_target: buying ? num(planTarget) : null,
       });
       setPlaced(order);
       setStep("done");
@@ -163,12 +172,23 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
               </Field>
             )}
           </div>
+          {buying && (
+            <div className={styles.row}>
+              <Field label="Plan stop" suffix={ccy} error={errors.plan_stop}
+                     hint={defaults?.stop != null ? "from your exit rule / the trade plan" : "optional; your limits may need one"}>
+                {(a) => <input {...a} type="number" min="0" step="any" inputMode="decimal" value={planStop}
+                               onChange={(e) => setPlanStop(e.target.value)} />}
+              </Field>
+              <Field label="Plan target" suffix={ccy} error={errors.plan_target} hint="optional">
+                {(a) => <input {...a} type="number" min="0" step="any" inputMode="decimal" value={planTarget}
+                               onChange={(e) => setPlanTarget(e.target.value)} />}
+              </Field>
+            </div>
+          )}
           <p className={styles.hint}>
             {defaults?.price != null
               ? `Last ${m(defaults.price)} (${defaults.price_source}).`
               : ticker ? "No price for this ticker yet." : ""}
-            {defaults?.stop != null ? ` Stop ${m(defaults.stop)}` : ""}
-            {defaults?.target != null ? ` · target ${m(defaults.target)}` : ""}
           </p>
           {formError && <p className={styles.error} role="alert">{formError}</p>}
         </form>

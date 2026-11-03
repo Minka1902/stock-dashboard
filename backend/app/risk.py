@@ -30,6 +30,15 @@ GUARDRAIL_FIELDS = {
     "max_notional_per_day": (100.0, 50_000_000.0),
     "max_position_pct": (1.0, 100.0),
     "allow_outside_hours": None,
+    "require_stop": None,
+}
+# Per-trade limits (STC-82): the same ranges, but null switches one off.
+PER_TRADE_FIELDS = {
+    "max_loss_per_trade": (1.0, 10_000_000.0),
+    "max_daily_loss": (1.0, 50_000_000.0),
+    "min_reward_risk": (0.1, 20.0),
+    "no_entry_after_open_min": (0, 300),
+    "no_entry_before_close_min": (0, 300),
 }
 _ACCOUNT = "manual"
 
@@ -184,7 +193,7 @@ def status(conn, user_id: int) -> dict:
         "regime": reg,
         "regime_gate": s.regime_gate,
         "kill_switch": {"halted_at": s.trading_halted_at, "reason": s.trading_halt_reason},
-        "guardrails": {k: getattr(s, k) for k in GUARDRAIL_FIELDS},
+        "guardrails": {k: getattr(s, k) for k in (*GUARDRAIL_FIELDS, *PER_TRADE_FIELDS)},
         "regime_gates": REGIME_GATES,
         "drawdown": {
             "max_pct": s.max_drawdown_pct,

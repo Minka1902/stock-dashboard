@@ -40,6 +40,12 @@ class RiskSettingsBody(BaseModel):
     max_notional_per_day: float | None = None
     max_position_pct: float | None = None
     allow_outside_hours: bool | None = None
+    require_stop: bool | None = None
+    max_loss_per_trade: float | None = None
+    max_daily_loss: float | None = None
+    min_reward_risk: float | None = None
+    no_entry_after_open_min: int | None = None
+    no_entry_before_close_min: int | None = None
 
 
 class KillBody(BaseModel):
@@ -181,6 +187,14 @@ def build_router(conn) -> APIRouter:
                     limits[field] = bool(v)
             elif v is None or not bounds[0] <= v <= bounds[1]:
                 errors[field] = f"Between {bounds[0]:,g} and {bounds[1]:,g}"
+            else:
+                limits[field] = v
+        for field, (lo, hi) in risk.PER_TRADE_FIELDS.items():
+            if field not in sent:
+                continue
+            v = getattr(body, field)
+            if v is not None and not lo <= v <= hi:
+                errors[field] = f"Between {lo:,g} and {hi:,g}, or empty for off"
             else:
                 limits[field] = v
         if errors:

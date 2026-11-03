@@ -120,6 +120,10 @@ def validate(order: Order) -> None:
         errors["limit_price"] = "A limit order needs a limit price above 0"
     if order.type == "stop" and not (order.stop_price and order.stop_price > 0):
         errors["stop_price"] = "A stop order needs a stop price above 0"
+    for field in ("plan_stop", "plan_target"):
+        v = getattr(order, field)
+        if v is not None and not (math.isfinite(v) and v > 0):
+            errors[field] = "Above 0, or leave it empty"
     if order.account == "live":
         raise OrderRejected("no live broker is connected — paper only")
     if order.account != PAPER and not BOT_ACCOUNT.fullmatch(order.account):
@@ -128,18 +132,19 @@ def validate(order: Order) -> None:
         raise OrderRejected("Some fields need attention", errors)
 
 
-# Checks run by submit after validation, in order: each returns a refusal
-# reason or None. app/guardrails.py installs the guardrails (STC-50).
-CHECKS: list[Callable[[object, Order, datetime], str | None]] = []
+# Checks run by submit after validation, in order: each returns None, a
+# refusal reason, or (the guardrail's name, the reason). app/guardrails.py
+# installs the guardrails (STC-50).
+CHECKS: list[Callable[[object, Order, datetime], str | tuple[str, str] | None]] = []
 
 
 def _run_checks(conn, order: Order, now: datetime) -> None:
     for check in CHECKS:
-        reason = check(conn, order, now)
-        if reason:
+        refusal = check(conn, order, now)
+        if refusal:
+            name, reason = refusal if isinstance(refusal, tuple) else (check.__name__, refusal)
             audit.record(conn, order.user_id, "order_refused", account=order.account, ticker=order.ticker,
-                         side=order.side, qty=order.qty, type=order.type, guardrail=check.__name__,
-                         reason=reason)
+                         side=order.side, qty=order.qty, type=order.type, guardrail=name, reason=reason)
             raise OrderRejected(reason)
 
 

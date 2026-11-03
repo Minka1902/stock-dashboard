@@ -90,6 +90,103 @@ def test_other_accounts_are_refused_at_the_choke_point(conn, user):
         assert msg in (e.value.reason + json.dumps(e.value.fields))
 
 
+# ---------- per-trade limits (STC-82) and exits ----------
+
+def _buy(conn, user_id, qty=10, **kw):
+    return execution.submit(conn, _order(user_id, qty=qty, **kw), LIVE, _q(100.0))
+
+
+def test_an_exit_passes_every_limit_even_the_kill_switch_but_a_bigger_sell_does_not(conn, user):
+    _buy(conn, user.id, 10)
+    _set(conn, user.id, trading_halted_at="2026-10-27T14:00:00+00:00", max_order_notional=100,
+         max_orders_per_day=1, no_entry_after_open_min=300, require_stop=True)
+    out = execution.submit(conn, _order(user.id, side="SELL", qty=10), CLOSED, _q(100.0))
+    assert out.status == "submitted"            # rests until the open; nothing refused it
+    with pytest.raises(execution.OrderRejected, match="kill switch"):
+        execution.submit(conn, _order(user.id, side="SELL", qty=11), LIVE, _q(100.0))
+
+
+def test_max_loss_per_trade_is_measured_at_the_stop_and_says_what_fits(conn, user):
+    _set(conn, user.id, max_loss_per_trade=100)
+    with pytest.raises(execution.OrderRejected, match="lose 150.00 at the stop.*20 shares would fit"):
+        _buy(conn, user.id, 30, plan_stop=95.0)
+    with pytest.raises(execution.OrderRejected, match="with no stop"):
+        _buy(conn, user.id, 10)
+    assert _buy(conn, user.id, 20, plan_stop=95.0).status == "filled"
+    assert _refused(conn, user.id)[0]["guardrail"] == "loss_per_trade"
+
+
+def test_a_market_entry_measures_risk_from_the_higher_of_decision_and_fill(conn, user):
+    from app import guardrails
+    o = _order(user.id, reference_price=100.0, fill_price=104.0, plan_stop=95.0)
+    assert guardrails.entry_price(o) == 104.0 and guardrails.loss_at_stop(o) == 90.0
+    assert guardrails.entry_price(_order(user.id, type="limit", limit_price=99.0)) == 99.0
+
+
+def test_stop_and_target_must_bracket_the_entry_and_can_be_required(conn, user):
+    with pytest.raises(execution.OrderRejected, match="stop 101 must be below the entry 100"):
+        _buy(conn, user.id, plan_stop=101.0)
+    with pytest.raises(execution.OrderRejected, match="target 99 must be above"):
+        _buy(conn, user.id, plan_stop=95.0, plan_target=99.0)
+    _set(conn, user.id, require_stop=True)
+    with pytest.raises(execution.OrderRejected, match="require a stop"):
+        _buy(conn, user.id)
+
+
+def test_minimum_reward_risk(conn, user):
+    _set(conn, user.id, min_reward_risk=1.5)
+    with pytest.raises(execution.OrderRejected, match="reward:risk is 0.80R; your minimum is 1.5R"):
+        _buy(conn, user.id, plan_stop=95.0, plan_target=104.0)
+    with pytest.raises(execution.OrderRejected, match="set a stop and a target"):
+        _buy(conn, user.id, plan_stop=95.0)
+    assert _buy(conn, user.id, plan_stop=95.0, plan_target=110.0).status == "filled"
+
+
+def test_the_daily_loss_limit_counts_todays_entries_at_their_stops(conn, user):
+    _set(conn, user.id, max_daily_loss=120)
+    _buy(conn, user.id, plan_stop=95.0)
+    resting = _buy(conn, user.id, type="limit", limit_price=90.0, tif="gtc", plan_stop=89.0)
+    execution.cancel(conn, user.id, resting.id)          # cancelled: no longer at risk
+    _buy(conn, user.id, plan_stop=95.0)
+    with pytest.raises(execution.OrderRejected, match="could lose 152.00 at their stops"):   # 51 + 51 (filled at 100.10) + 50
+        _buy(conn, user.id, plan_stop=95.0)
+
+
+@pytest.mark.parametrize("now,ticker,ok", [
+    (datetime(2026, 10, 27, 13, 40, tzinfo=timezone.utc), "AAPL", False),   # 09:40 New York
+    (datetime(2026, 10, 27, 13, 46, tzinfo=timezone.utc), "AAPL", True),    # 09:46
+    (datetime(2026, 10, 27, 19, 31, tzinfo=timezone.utc), "AAPL", False),   # 15:31
+    (datetime(2026, 11, 27, 17, 31, tzinfo=timezone.utc), "AAPL", False),   # 12:31 on a 13:00 half day
+    (datetime(2026, 11, 27, 17, 29, tzinfo=timezone.utc), "AAPL", True),
+])
+def test_the_entry_window_follows_each_days_real_session(conn, user, now, ticker, ok):
+    _set(conn, user.id, no_entry_after_open_min=15, no_entry_before_close_min=30)
+    order = _order(user.id, ticker=ticker)
+    if ok:
+        execution.submit(conn, order, now, _q(100.0))
+    else:
+        with pytest.raises(execution.OrderRejected, match="entry window"):
+            execution.submit(conn, order, now, _q(100.0))
+
+
+def test_a_bot_entry_carries_its_stop_and_target_to_the_checks(conn, user):
+    from tests.test_bots import UP, _bars, _seed_bars
+    from app import ledger
+    ledger.record(conn, user.id, ticker="USD", side="DEPOSIT", qty=10_000, currency_code="USD")
+    _seed_bars(conn, "AAPL", _bars(UP))
+    bot, _ = bots.validate_new(conn, user.id, {"strategy": "trend", "tickers": ["AAPL"], "amount": 5_000,
+                                               "currency": "USD", "params": {"size_pct": 10}})
+    bot = db.create_bot(conn, bot)
+    bots._LAST_SKIP.clear()
+    _set(conn, user.id, max_loss_per_trade=1)
+    assert bots.run(conn, LIVE, _q(100.0)) == 0
+    assert "max loss per trade is 1.00" in db.get_bot_events(conn, bot.id)[0].reason
+    _set(conn, user.id, max_loss_per_trade=None)
+    assert bots.run(conn, LIVE, _q(100.0)) == 1
+    placed = db.get_orders(conn, user.id, bot.account)[0]
+    assert placed.plan_stop == db.get_bot(conn, bot.id).state["pos"]["AAPL"]["stop"]
+
+
 # ---------- kill switch ----------
 
 def test_the_kill_switch_cancels_pauses_refuses_and_holds(conn, user):
@@ -205,3 +302,9 @@ def test_api_guardrail_settings_validate(client):
     g = c.put("/api/risk/settings", json={"max_orders_per_day": 5, "allow_outside_hours": True}).json()["guardrails"]
     assert g["max_orders_per_day"] == 5 and g["allow_outside_hours"] is True and g["max_position_pct"] == 50.0
     assert c.get("/api/server/audit/verify").status_code == 200   # first account is admin
+    bad = c.put("/api/risk/settings", json={"min_reward_risk": 50, "max_loss_per_trade": 0})
+    assert set(bad.json()["detail"]["errors"]) == {"min_reward_risk", "max_loss_per_trade"}
+    g = c.put("/api/risk/settings", json={"max_loss_per_trade": 250, "require_stop": True,
+                                          "no_entry_before_close_min": 30}).json()["guardrails"]
+    assert g["max_loss_per_trade"] == 250 and g["require_stop"] is True and g["no_entry_before_close_min"] == 30
+    assert c.put("/api/risk/settings", json={"max_loss_per_trade": None}).json()["guardrails"]["max_loss_per_trade"] is None

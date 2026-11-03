@@ -504,6 +504,8 @@ class Order(BaseModel):
     slippage_bps: float | None = None   # fill vs reference, + = cost to you
     source: str = "ticket"        # ticket | bot
     reason: str = ""              # why it was placed (bots), rejected or cancelled
+    plan_stop: float | None = None    # the protective stop the entry is planned with
+    plan_target: float | None = None  # and its target; both feed the per-trade limits
 
 
 class PositionRule(BaseModel):
@@ -606,6 +608,14 @@ class RiskSettings(BaseModel):
     max_notional_per_day: float = 100_000.0
     max_position_pct: float = 50.0
     allow_outside_hours: bool = False
+    # Per-trade limits (STC-82), each off while None / False. They apply to
+    # entries only: an order that just reduces a holding is never blocked.
+    max_loss_per_trade: float | None = None      # loss at the plan stop, base currency
+    max_daily_loss: float | None = None          # today's entries' losses at their stops
+    min_reward_risk: float | None = None         # (target − entry) / (entry − stop)
+    require_stop: bool = False
+    no_entry_after_open_min: int | None = None   # minutes after the session opens
+    no_entry_before_close_min: int | None = None # minutes before the session closes
     # Global kill switch (STC-53): set = every new order refused, bots paused.
     trading_halted_at: str | None = None
     trading_halt_reason: str | None = None

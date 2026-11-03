@@ -306,7 +306,7 @@ def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: 
     fills = 0
     dirty = len(cooldown) != len(old_cooldown)
 
-    def trade(side, ticker, qty, px, quoted, new_state, reason):
+    def trade(side, ticker, qty, px, quoted, new_state, reason, stop=None, target=None):
         """Send the fill through execution.submit (its checks apply to bots
         too) and write it with the bot's state. "rejected" when a check
         refused it, None when the bot stopped meanwhile."""
@@ -319,7 +319,7 @@ def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: 
 
         order = Order(user_id=bot.user_id, account=bot.account, ticker=ticker, side=side, qty=qty,
                       currency=bot.currency, created_at=at, fill_price=px, reference_price=quoted,
-                      source="bot", reason=reason)
+                      source="bot", reason=reason, plan_stop=stop, plan_target=target)
         try:
             done = execution.submit(conn, order, now, fill=write)
         except execution.OrderRejected as exc:
@@ -395,7 +395,8 @@ def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: 
         stop_note = f" Stop {_money(stop)}." if stop else ""
         target_note = f" Target {_money(d.target)}." if d.target else ""
         done = trade("BUY", t, qty, px, price, new_state,
-                     f"Bought {qty} {t} at {_money(px)} — {d.reason}.{stop_note}{target_note}")
+                     f"Bought {qty} {t} at {_money(px)} — {d.reason}.{stop_note}{target_note}",
+                     stop=stop, target=d.target)
         if done is None:
             return fills
         if done == "rejected":

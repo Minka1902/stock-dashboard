@@ -276,7 +276,10 @@ transaction that the bot is still active.
 **Trading & risk** — no broker exists, so nothing here can place a real order.
 - **`execution.submit` is the only way an order happens**, paper and bot alike. It runs the
   `CHECKS` that `app/guardrails.py` installs (imported at the end of `execution.py`): kill switch,
-  market hours, per-order / per-day notional, orders per day, position % of the account. Then it
+  market hours, entry window, per-order / per-day notional, orders per day, position % of the
+  account, and the per-trade limits (loss at the plan stop, daily loss at stops, min reward:risk,
+  require a stop). **An exit — a sell of no more than is held — skips every check, the kill
+  switch included**: getting out is never blocked. Orders carry `plan_stop` / `plan_target`. Then it
   writes the `orders` row and the ledger, audits the order, publishes an `order` event and (for bots)
   queues a Telegram message. Bots pass `fill=` so `db.bot_trade` keeps its in-transaction
   "still active" re-check. A new order path that skips `submit` is the regression to watch for.

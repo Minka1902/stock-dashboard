@@ -27,6 +27,8 @@ class OrderBody(BaseModel):
     stop_price: float | None = None
     tif: str = "day"
     suggestion_for_date: str | None = None   # the suggestion this ticket came from
+    plan_stop: float | None = None
+    plan_target: float | None = None
 
 
 class ResetBody(BaseModel):
@@ -132,7 +134,8 @@ def build_router(conn) -> APIRouter:
                       type=body.type, limit_price=body.limit_price, stop_price=body.stop_price,
                       tif=body.tif, currency=currency.currency_for_symbol(t) or "USD",
                       created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                      suggestion_id=suggestion_id, reference_price=ref, source="ticket")
+                      suggestion_id=suggestion_id, reference_price=ref, source="ticket",
+                      plan_stop=body.plan_stop, plan_target=body.plan_target)
         try:
             return execution.submit(conn, order).model_dump()
         except execution.OrderRejected as exc:
