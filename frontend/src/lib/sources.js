@@ -64,8 +64,8 @@ export const SOURCE_META = {
   },
   congress: {
     label: "Congressional Trades",
-    provider: "House/Senate Stock Watcher",
-    blurb: "Stock transactions disclosed by members of Congress.",
+    provider: "House Clerk (PTR filings) + Senate Stock Watcher",
+    blurb: "Stock transactions disclosed by members of Congress, each House trade linked to its filing.",
   },
   short_interest: {
     label: "Short Interest",

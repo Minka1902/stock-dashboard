@@ -23,6 +23,7 @@ from app.models import (
     BotEvent,
     CashBalance,
     CompanyHolder,
+    CongressFiling,
     CongressTrade,
     ContractRecord,
     EarningsEvent,
@@ -369,6 +370,17 @@ def init_schema(conn: sqlite3.Connection) -> None:
             amount_range      TEXT NOT NULL,
             filed_at          TEXT NOT NULL,
             chamber           TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS congress_filings (
+            doc_id     TEXT PRIMARY KEY,
+            chamber    TEXT NOT NULL,
+            member     TEXT NOT NULL,
+            district   TEXT NOT NULL,
+            filed_at   TEXT NOT NULL,
+            url        TEXT NOT NULL,
+            status     TEXT NOT NULL,
+            rows       INTEGER NOT NULL DEFAULT 0,
+            checked_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS short_interest (
             ticker             TEXT PRIMARY KEY,
@@ -1072,6 +1084,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
         ("no_entry_before_close_min", "INTEGER"),
     ]:
         _try_add_column(conn, "risk_settings", col, col_def)
+    _try_add_column(conn, "congress_trades", "doc_id", "TEXT")
+    _try_add_column(conn, "congress_trades", "source_url", "TEXT")
     _try_add_column(conn, "orders", "plan_stop", "REAL")
     _try_add_column(conn, "orders", "plan_target", "REAL")
     _migrate_ila_price_rows(conn)
@@ -2076,17 +2090,44 @@ def upsert_congress_trades(conn: sqlite3.Connection, records: list[CongressTrade
         INSERT INTO congress_trades
             (trade_hash, representative, party, state, ticker,
              asset_description, transaction_date, transaction_type,
-             amount_range, filed_at, chamber)
+             amount_range, filed_at, chamber, doc_id, source_url)
         VALUES
             (:trade_hash, :representative, :party, :state, :ticker,
              :asset_description, :transaction_date, :transaction_type,
-             :amount_range, :filed_at, :chamber)
+             :amount_range, :filed_at, :chamber, :doc_id, :source_url)
         ON CONFLICT(trade_hash) DO UPDATE SET
-            filed_at=excluded.filed_at, amount_range=excluded.amount_range
+            filed_at=excluded.filed_at, amount_range=excluded.amount_range,
+            source_url=excluded.source_url
         """,
         [r.model_dump() for r in records],
     )
     conn.commit()
+
+
+def upsert_congress_filings(conn: sqlite3.Connection, filings: list[CongressFiling]) -> None:
+    conn.executemany(
+        "INSERT INTO congress_filings (doc_id, chamber, member, district, filed_at, url, status, rows, checked_at) "
+        "VALUES (:doc_id, :chamber, :member, :district, :filed_at, :url, :status, :rows, :checked_at) "
+        "ON CONFLICT(doc_id) DO UPDATE SET status = excluded.status, rows = excluded.rows, "
+        "checked_at = excluded.checked_at", [f.model_dump() for f in filings])
+    conn.commit()
+
+
+def get_congress_filing_status(conn: sqlite3.Connection, doc_ids: list[str]) -> dict[str, str]:
+    out = {}
+    for i in range(0, len(doc_ids), 500):
+        chunk = doc_ids[i:i + 500]
+        cur = conn.execute(f"SELECT doc_id, status FROM congress_filings WHERE doc_id IN "
+                           f"({','.join('?' * len(chunk))})", chunk)
+        out.update({r[0]: r[1] for r in cur.fetchall()})
+    return out
+
+
+def delete_legacy_house_trades(conn: sqlite3.Connection) -> int:
+    """House rows from the old aggregator (no Clerk doc_id)."""
+    cur = conn.execute("DELETE FROM congress_trades WHERE chamber = 'house' AND doc_id IS NULL")
+    conn.commit()
+    return cur.rowcount
 
 
 def get_congress_trades(conn: sqlite3.Connection, limit: int = 100) -> list[CongressTrade]:

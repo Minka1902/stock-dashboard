@@ -47,6 +47,7 @@ function SkeletonRows({ rows = 8 }) {
       <td><Skeleton w="70px" /></td>
       <td><Skeleton w="120px" /></td>
       <td><Skeleton w="64px" /></td>
+      <td><Skeleton w="32px" /></td>
     </tr>
   ));
 }
@@ -88,6 +89,7 @@ export default function CongressPanel({ data, loading, busy, onRefresh, compact 
                 <SortHeader label="Type" {...sortProps("type")} />
                 <SortHeader label="Amount" {...sortProps("amount")} />
                 <SortHeader label="Date" {...sortProps("date")} />
+                <th>Filing</th>
               </tr>
             </thead>
             <tbody>
@@ -110,7 +112,11 @@ export default function CongressPanel({ data, loading, busy, onRefresh, compact 
                       ) : "—"}
                     </td>
                     <td>
-                      <span className={styles.ticker}>{t.ticker || "—"}</span>
+                      {t.asset_description ? (
+                        <Tooltip content={t.asset_description}>
+                          <span className={styles.ticker}>{t.ticker || "—"}</span>
+                        </Tooltip>
+                      ) : <span className={styles.ticker}>{t.ticker || "—"}</span>}
                     </td>
                     <td>
                       <span className={styles.badge} data-tone={typeTone(t.transaction_type)}>
@@ -119,6 +125,14 @@ export default function CongressPanel({ data, loading, busy, onRefresh, compact 
                     </td>
                     <td className={styles.amount}>{t.amount_range || "—"}</td>
                     <td className={styles.muted}>{formatDate(t.transaction_date)}</td>
+                    <td>
+                      {t.source_url ? (
+                        <a className={styles.link} href={t.source_url} target="_blank" rel="noreferrer"
+                           title={t.doc_id ? `House Clerk PTR ${t.doc_id}, filed ${t.filed_at}` : "Senate Stock Watcher"}>
+                          {t.doc_id ? "PTR ↗" : "source ↗"}
+                        </a>
+                      ) : <span className={styles.muted}>—</span>}
+                    </td>
                   </tr>
                 ))
               )}

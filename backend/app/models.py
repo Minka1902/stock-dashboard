@@ -215,6 +215,22 @@ class CongressTrade(BaseModel):
     amount_range: str      # e.g. "$1,001 - $15,000"
     filed_at: str
     chamber: str           # "house" | "senate"
+    doc_id: str | None = None      # the House Clerk PTR it came from
+    source_url: str | None = None  # that PTR (or the aggregator's link)
+
+
+class CongressFiling(BaseModel):
+    """One House Periodic Transaction Report from the Clerk's index, and
+    whether it has been read (each is downloaded once)."""
+    doc_id: str
+    chamber: str
+    member: str
+    district: str
+    filed_at: str
+    url: str
+    status: str = "unread"     # unread | read | no rows (a scanned filing)
+    rows: int = 0
+    checked_at: str = ""
 
 
 class ShortInterest(BaseModel):

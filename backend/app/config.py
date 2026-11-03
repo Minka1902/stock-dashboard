@@ -159,6 +159,10 @@ ALPHA_VANTAGE_KEY: str | None = os.environ.get("STOCKS_ALPHA_VANTAGE_KEY") or No
 # --- Congressional trades ---
 CONGRESS_LOOKBACK_DAYS = int(os.environ.get("STOCKS_CONGRESS_LOOKBACK_DAYS", "90"))
 CONGRESS_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_CONGRESS_MIN_INTERVAL_SECONDS", "21600"))
+# House PTR PDFs read per run (each once), and where pdftotext (poppler) is
+# when it isn't on PATH, e.g. for the Windows service.
+CONGRESS_PTR_PER_RUN = int(os.environ.get("STOCKS_CONGRESS_PTR_PER_RUN", "25"))
+PDFTOTEXT = os.environ.get("STOCKS_PDFTOTEXT", "")
 
 # --- Yield curve ---
 YIELD_CURVE_MONTHS = int(os.environ.get("STOCKS_YIELD_CURVE_MONTHS", "3"))

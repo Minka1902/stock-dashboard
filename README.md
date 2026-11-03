@@ -87,6 +87,10 @@ Architecturally it is a **FastAPI + SQLite + APScheduler** backend that ingests 
 - **Network** — outbound HTTPS to the public data sources (sec.gov, usaspending.gov, GDELT, Yahoo Finance, FINRA and others). No inbound access is needed unless you deliberately expose the app (see [Security considerations](#security-considerations)).
 - **Permissions** — a normal user is enough for development. Installing the Windows service needs an **elevated** PowerShell.
 - **No database server and no Docker** — SQLite is embedded.
+- **Optional: `pdftotext`** (poppler) for reading House congress trade filings. On a Raspberry Pi or
+  Debian it's `sudo apt install poppler-utils`; on Windows, install poppler and point
+  `STOCKS_PDFTOTEXT` at `pdftotext.exe` if it isn't on the service's `PATH`. Without it the filings
+  are listed but not read, and the Server page says so.
 
 ## Installation
 

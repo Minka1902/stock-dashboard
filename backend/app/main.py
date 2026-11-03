@@ -318,7 +318,7 @@ def build_sources(conn):
                                   config.MARGIN_DEBT_MIN_INTERVAL_SECONDS,
                                   retry_interval=config.MARGIN_DEBT_RETRY_INTERVAL_SECONDS,
                                   force_on_daily=False),
-        "congress":       (lambda: congress_source.fetch(config.CONGRESS_LOOKBACK_DAYS), db.upsert_congress_trades, config.CONGRESS_MIN_INTERVAL_SECONDS),
+        "congress":       (lambda: congress_source.fetch(conn, config.CONGRESS_LOOKBACK_DAYS), congress_source.store, config.CONGRESS_MIN_INTERVAL_SECONDS),
         # Short interest is a US-listing dataset: TASE (and other non-US)
         # symbols are left out rather than recorded as failures.
         "short_interest": (lambda: short_interest_source.fetch(_us_only(db.get_all_watched_tickers(conn))), db.upsert_short_interest, None),
