@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from app import config, currency
+from app import config, currency, db
 from app.models import LiveQuote
 from app.sources.technical import _YAHOO_HEADERS, _YAHOO_URL
 
@@ -235,3 +235,18 @@ def tradable_price(q: LiveQuote | None, now: datetime,
     if age > limit:
         return None, f"the quote is {age:.0f}s old"
     return q.price, None
+
+
+def latest_prices(conn, tickers: list[str]) -> dict[str, tuple[float, str]]:
+    """{ticker: (price, where it came from)}: the live quote, else the last
+    daily close. Tickers with neither are left out."""
+    live = {q.ticker: q.price for q in get_quotes(tickers) if q.price} if tickers else {}
+    out = {}
+    for t in tickers:
+        if t in live:
+            out[t] = (live[t], "live")
+            continue
+        bars = db.get_ohlc(conn, t, "daily")
+        if bars:
+            out[t] = (bars[-1].close, f"the {bars[-1].date} close")
+    return out

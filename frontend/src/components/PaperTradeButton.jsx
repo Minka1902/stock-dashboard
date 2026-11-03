@@ -5,10 +5,11 @@ import Tooltip from "./Tooltip";
 /**
  * A "Paper trade" trigger that opens the order ticket in place, for any page
  * that shows a ticker (a suggestion, the stock page). Props: ticker, side
- * ("BUY"), suggestionForDate, className (style the trigger like its
- * neighbours), label ("Paper trade"), onPlaced.
+ * ("BUY"), qty (prefill; else sized from the analysis), suggestionForDate,
+ * className (style the trigger like its neighbours), label ("Paper trade"),
+ * onPlaced.
  */
-export default function PaperTradeButton({ ticker, side = "BUY", suggestionForDate = null,
+export default function PaperTradeButton({ ticker, side = "BUY", qty = null, suggestionForDate = null,
   className, label = "Paper trade", onPlaced }) {
   const [open, setOpen] = useState(false);
   return (
@@ -17,7 +18,7 @@ export default function PaperTradeButton({ ticker, side = "BUY", suggestionForDa
         <button type="button" className={className} onClick={() => setOpen(true)}>{label}</button>
       </Tooltip>
       {open && (
-        <OrderTicket ticker={ticker} side={side} suggestionForDate={suggestionForDate}
+        <OrderTicket ticker={ticker} side={side} qty={qty} suggestionForDate={suggestionForDate}
                      onPlaced={onPlaced} onClose={() => setOpen(false)} />
       )}
     </>

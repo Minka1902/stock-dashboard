@@ -382,3 +382,13 @@ export const get13FHolders = (ticker) => getJSON(`/api/13f/${encodeURIComponent(
 
 // The Time Machine: replay a trade plan from the stock's own days.
 export const runTimeMachine = (plan) => request("/api/timemachine", { method: "POST", body: plan });
+
+// Tax lots, a sale check, target weights and the rebalance plan.
+export const getLots = (account, minLoss) =>
+  getJSON(`/api/portfolio/lots?account=${encodeURIComponent(account)}&min_loss=${minLoss}`);
+export const checkSale = (body) => request("/api/portfolio/lots/sale", { method: "POST", body });
+export const getTargets = (account) => getJSON(`/api/portfolio/targets?account=${encodeURIComponent(account)}`);
+export const saveTargets = (account, targets) =>
+  request("/api/portfolio/targets", { method: "PUT", body: { account, targets } });
+export const getRebalance = (account, band, minTrade) =>
+  getJSON(`/api/portfolio/rebalance?account=${encodeURIComponent(account)}&band=${band}&min_trade=${minTrade}`);

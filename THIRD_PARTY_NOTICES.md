@@ -16,6 +16,8 @@ Used in:
   diff, issuer-name ticker matching, the filer list and the share-class table (`trader-copycat`).
 - `backend/app/timemachine.py`: the Time Machine's replay, stop-first rule and verdict
   (`trader-timemachine`), adapted from 5-minute bars to a horizon of daily bars.
+- `backend/app/taxlots.py`: lots, lot methods, terms, wash sales and harvesting (`trader-tax`).
+- `backend/app/rebalance.py`: the drift band and sells-first plan (`trader-rebalance`).
 - Later ports name their source in the same way.
 
 The test fixtures under `backend/tests/fixtures/congress/` and

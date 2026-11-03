@@ -786,6 +786,14 @@ def init_schema(conn: sqlite3.Connection) -> None:
             digested_at TEXT,
             PRIMARY KEY (user_id, ticker, day)
         );
+        -- Rebalance targets (STC-85): a % of the account per ticker.
+        CREATE TABLE IF NOT EXISTS target_weights (
+            user_id INTEGER NOT NULL,
+            account TEXT NOT NULL,
+            ticker  TEXT NOT NULL,
+            weight  REAL NOT NULL,
+            PRIMARY KEY (user_id, account, ticker)
+        );
         -- Telegram (STC-79): one linked private chat per user, the pending
         -- one-time link code (hashed), and the getUpdates offset.
         CREATE TABLE IF NOT EXISTS telegram_links (
@@ -3152,6 +3160,27 @@ def get_cash(conn: sqlite3.Connection, user_id: int, account: str = "manual") ->
     return [CashBalance(**dict(row)) for row in cur.fetchall()]
 
 
+def get_target_weights(conn: sqlite3.Connection, user_id: int, account: str) -> dict[str, float]:
+    cur = conn.execute("SELECT ticker, weight FROM target_weights WHERE user_id = ? AND account = ? "
+                       "ORDER BY weight DESC", (user_id, account))
+    return {r[0]: r[1] for r in cur.fetchall()}
+
+
+def replace_target_weights(conn: sqlite3.Connection, user_id: int, account: str, weights: dict[str, float]) -> None:
+    with _immediate(conn):
+        conn.execute("DELETE FROM target_weights WHERE user_id = ? AND account = ?", (user_id, account))
+        conn.executemany("INSERT INTO target_weights (user_id, account, ticker, weight) VALUES (?, ?, ?, ?)",
+                         [(user_id, account, t, w) for t, w in weights.items()])
+
+
+def get_ledger(conn: sqlite3.Connection, user_id: int, accounts: tuple[str, ...]) -> list[Transaction]:
+    """Every ledger row of these accounts, oldest first (the whole history)."""
+    marks = ",".join("?" * len(accounts))
+    cur = conn.execute(f"SELECT * FROM transactions WHERE user_id = ? AND account IN ({marks}) "
+                       f"ORDER BY executed_at, id", (user_id, *accounts))
+    return [Transaction(**dict(r)) for r in cur.fetchall()]
+
+
 def get_transactions(
     conn: sqlite3.Connection, user_id: int, account: str | None = None,
     ticker: str | None = None, limit: int = 500,
@@ -4453,6 +4482,7 @@ _PER_USER_TABLES = (
     "scanner_alert_log",
     "telegram_links",
     "telegram_codes",
+    "target_weights",
     "position_rules",
     "risk_settings",
     "signal_mute_overrides",

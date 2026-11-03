@@ -1,5 +1,6 @@
 import AuditTab from "./AuditTab";
 import BotsTab from "./BotsTab";
+import LotsTab from "./LotsTab";
 import KillSwitchButton from "./KillSwitchButton";
 import PaperTab from "./PaperTab";
 import PerformanceTab from "./PerformanceTab";
@@ -21,6 +22,7 @@ const TABS = {
   paper: { label: "Paper", title: "Paper account and order ticket", render: () => <PaperTab /> },
   performance: { label: "Performance", title: "Returns, drawdown, exposure and correlation per account", render: () => <PerformanceTab /> },
   rules: { label: "Rules", title: "Build, backtest and save your own trading rules", render: () => <RulesTab /> },
+  lots: { label: "Lots & rebalance", title: "Tax lots, wash sales and the plan back to your target weights", render: () => <LotsTab /> },
   scanner: { label: "Scanner", title: "Today's matches across the market, live", render: () => <ScannerTab /> },
   audit: { label: "Audit", title: "Append-only log of orders, refusals and setting changes", render: () => <AuditTab /> },
 };

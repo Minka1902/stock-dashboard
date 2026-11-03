@@ -38,16 +38,16 @@ function review({ side, qty, price, stop, target }) {
  * money at risk to the stop and R — then confirmed. Keyboard-first: Enter
  * reviews, Enter confirms, Esc cancels. Always PAPER: no real order exists.
  *
- * Props: ticker (prefill; editable when empty), side ("BUY"), suggestionForDate
+ * Props: ticker (prefill; editable when empty), side ("BUY"), qty (prefill), suggestionForDate
  * (links the order to the suggestion it came from), onPlaced(order), onClose.
  */
-export default function OrderTicket({ ticker: initialTicker = "", side: initialSide = "BUY",
+export default function OrderTicket({ ticker: initialTicker = "", side: initialSide = "BUY", qty: initialQty = null,
   suggestionForDate = null, onPlaced, onClose }) {
   const [ticker, setTicker] = useState(initialTicker.toUpperCase());
   const [side, setSide] = useState(initialSide);
   const [type, setType] = useState("market");
   const [tif, setTif] = useState("day");
-  const [qty, setQty] = useState("");
+  const [qty, setQty] = useState(str(initialQty));
   const [limit, setLimit] = useState("");
   const [stopPx, setStopPx] = useState("");
   const [planStop, setPlanStop] = useState("");

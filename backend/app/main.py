@@ -36,7 +36,7 @@ from app import analysis, analyze, audit, auth, backtest, bots, chart_data, conf
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
-from app import automute, model_version, regime, routes_analytics, routes_chart, routes_investors, routes_paper, routes_risk, routes_rules, routes_scanner, routes_telegram, routes_timemachine, routes_update, rule_source, scanner, telegram, updater
+from app import automute, model_version, regime, routes_analytics, routes_chart, routes_investors, routes_lots, routes_paper, routes_risk, routes_rules, routes_scanner, routes_telegram, routes_timemachine, routes_update, rule_source, scanner, telegram, updater
 
 # Optional: the Server page degrades to "unavailable" rather than reporting
 # zeros, which would look identical to a genuinely idle machine.
@@ -929,6 +929,8 @@ app.include_router(routes_scanner.build_router(conn))
 app.include_router(routes_investors.build_router(conn))
 # The Time Machine: replay a trade plan from the stock's own days.
 app.include_router(routes_timemachine.build_router(conn))
+# Tax lots, wash sales, target weights and the rebalance plan.
+app.include_router(routes_lots.build_router(conn))
 # Linking a Telegram chat for alerts and read-only commands.
 app.include_router(routes_telegram.build_router(conn))
 # The paper account and its order ticket.

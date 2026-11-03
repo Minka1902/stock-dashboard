@@ -72,21 +72,6 @@ def _account(account: str) -> str:
     return account
 
 
-def _prices(conn, tickers: list[str]) -> dict[str, tuple[float, str]]:
-    """{ticker: (price, where it came from)}: the live quote, else the last
-    daily close. Tickers with neither are left out."""
-    live = {q.ticker: q.price for q in quotes.get_quotes(tickers) if q.price} if tickers else {}
-    out = {}
-    for t in tickers:
-        if t in live:
-            out[t] = (live[t], "live")
-            continue
-        bars = db.get_ohlc(conn, t, "daily")
-        if bars:
-            out[t] = (bars[-1].close, f"the {bars[-1].date} close")
-    return out
-
-
 def _view(conn, ticker: str, rule: PositionRule | None, holding,
           price: tuple[float, str] | None) -> dict:
     px = price[0] if price else None
@@ -119,7 +104,7 @@ def build_router(conn) -> APIRouter:
         holdings = {h.ticker: h for h in db.get_portfolio(conn, user.id, acct)}
         rules = {r.ticker: r for r in db.get_position_rules(conn, user.id, acct)}
         tickers = sorted(set(holdings) | set(rules))
-        prices = _prices(conn, sorted(holdings))
+        prices = quotes.latest_prices(conn, sorted(holdings))
         return {"account": acct, "items": [
             _view(conn, t, rules.get(t), holdings.get(t), prices.get(t)) for t in tickers]}
 
@@ -128,7 +113,7 @@ def build_router(conn) -> APIRouter:
         t, acct = clean_ticker(ticker), _account(account)
         holding = next((h for h in db.get_portfolio(conn, user.id, acct) if h.ticker == t), None)
         return _view(conn, t, db.get_position_rule(conn, user.id, acct, t), holding,
-                     _prices(conn, [t]).get(t) if holding else None)
+                     quotes.latest_prices(conn, [t]).get(t) if holding else None)
 
     @router.put("/api/portfolio/{ticker}/rules")
     def put_rule(ticker: str, body: RuleBody, account: str = "manual",
@@ -137,7 +122,7 @@ def build_router(conn) -> APIRouter:
         holding = next((h for h in db.get_portfolio(conn, user.id, acct) if h.ticker == t), None)
         if holding is None:
             raise HTTPException(status_code=409, detail=f"you don't hold {t} in this account")
-        price = _prices(conn, [t]).get(t) or (holding.avg_cost, "your average cost")
+        price = quotes.latest_prices(conn, [t]).get(t) or (holding.avg_cost, "your average cost")
         clean, errors = validate_exit_rule(body.model_dump(), price[0], holding.avg_cost)
         if errors:
             raise HTTPException(status_code=422, detail={

@@ -28,6 +28,7 @@ import styles from "./PortfolioPanel.module.css";
 
 const DIRECTIVE_TONE = { Accumulate: "buy", Hold: "hold", Reduce: "warn", Avoid: "sell" };
 const ANALYTICS_ROUTE = { kind: "view", view: "trading-bot", tab: "performance" };
+const LOTS_ROUTE = { kind: "view", view: "trading-bot", tab: "lots" };
 
 // Mirrors backend/app/themes.py THEMES (validated server-side too).
 const THEMES = [
@@ -289,6 +290,12 @@ export default function PortfolioPanel({
             <a className={styles.analyticsLink} href={routeToPath(ANALYTICS_ROUTE)}
                onClick={(e) => { e.preventDefault(); navigateTo(ANALYTICS_ROUTE); }}>
               Analytics →
+            </a>
+          )}
+          {!showEmpty && (
+            <a className={styles.analyticsLink} href={routeToPath(LOTS_ROUTE)}
+               onClick={(e) => { e.preventDefault(); navigateTo(LOTS_ROUTE); }}>
+              Lots &amp; rebalance →
             </a>
           )}
         </div>
