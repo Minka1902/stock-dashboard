@@ -4,6 +4,7 @@ import ChartPro from "./ChartPro";
 import CollapsibleSection from "./CollapsibleSection";
 import CompanyInfo from "./CompanyInfo";
 import ExitRuleDialog from "./ExitRuleDialog";
+import HeldBy13F from "./HeldBy13F";
 import PaperTradeButton from "./PaperTradeButton";
 import InsiderTrades from "./InsiderTrades";
 import Skeleton from "./Skeleton";
@@ -357,6 +358,13 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
                 ) : (
                   <InsiderTrades trades={insiderTrades} ticker={ticker} />
                 )}
+              </Pane>
+            )}
+
+            {!isTase && (
+              <Pane {...sec("investors")} caption="Famous investors"
+                    right={<span className={styles.muted}>SEC 13F · latest quarter-end</span>}>
+                <HeldBy13F ticker={ticker} />
               </Pane>
             )}
 

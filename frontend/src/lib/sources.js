@@ -97,6 +97,11 @@ export const SOURCE_META = {
     provider: "Yahoo Finance",
     blurb: "A ticker's historical tendency for this time of year.",
   },
+  holdings13f: {
+    label: "Famous Investors (13F)",
+    provider: "SEC EDGAR",
+    blurb: "Quarter-end holdings of well-known funds and what changed since the last quarter.",
+  },
   universe: {
     label: "Scanner Universes",
     provider: "Wikipedia",

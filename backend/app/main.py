@@ -36,7 +36,7 @@ from app import analysis, analyze, audit, auth, backtest, bots, chart_data, conf
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
-from app import automute, model_version, regime, routes_analytics, routes_chart, routes_paper, routes_risk, routes_rules, routes_scanner, routes_telegram, routes_update, rule_source, scanner, telegram, updater
+from app import automute, model_version, regime, routes_analytics, routes_chart, routes_investors, routes_paper, routes_risk, routes_rules, routes_scanner, routes_telegram, routes_update, rule_source, scanner, telegram, updater
 
 # Optional: the Server page degrades to "unavailable" rather than reporting
 # zeros, which would look identical to a genuinely idle machine.
@@ -60,6 +60,7 @@ import app.sources.aaii as aaii_source
 import app.sources.put_call as put_call_source
 import app.sources.margin_debt as margin_debt_source
 import app.sources.congress as congress_source
+import app.sources.holdings13f as holdings13f_source
 import app.sources.short_interest as short_interest_source
 import app.sources.social as social_source
 import app.sources.analyst as analyst_source
@@ -339,6 +340,10 @@ def build_sources(conn):
         "automute":       (lambda: automute.performance(conn), automute.store, None),
         # derived: saved rules evaluated on completed bars (STC-67)
         "rules":          (lambda: rule_source.fetch(conn), rule_source.store, None),
+        # Famous investors' 13F holdings: one SEC request per filer a day; a
+        # new quarter's tables are read only when one is filed.
+        "holdings13f":    SourceSpec(lambda: holdings13f_source.fetch(conn), holdings13f_source.store,
+                                     86400, retry_interval=6 * 3600, force_on_daily=False, requests_derived=False),
         # Market-wide scanner (STC-69): index constituents monthly, the daily
         # bars the scans need, and the intraday scan itself (defers while
         # every exchange in the universe is outside its regular session).
@@ -920,6 +925,8 @@ app.include_router(routes_risk.build_router(conn))
 app.include_router(routes_analytics.build_router(conn))
 # Market-wide scanner and the server-sent events stream.
 app.include_router(routes_scanner.build_router(conn))
+# Famous investors' 13F holdings.
+app.include_router(routes_investors.build_router(conn))
 # Linking a Telegram chat for alerts and read-only commands.
 app.include_router(routes_telegram.build_router(conn))
 # The paper account and its order ticket.

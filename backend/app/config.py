@@ -163,6 +163,9 @@ CONGRESS_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_CONGRESS_MIN_INTERVAL
 # when it isn't on PATH, e.g. for the Windows service.
 CONGRESS_PTR_PER_RUN = int(os.environ.get("STOCKS_CONGRESS_PTR_PER_RUN", "25"))
 PDFTOTEXT = os.environ.get("STOCKS_PDFTOTEXT", "")
+# Famous investors' 13F holdings (sources/holdings13f.py): narrow the built-in
+# filer list to these CIKs (comma-separated); empty keeps all of them.
+FILERS_13F = [c.strip() for c in os.environ.get("STOCKS_13F_FILERS", "").split(",") if c.strip()]
 
 # --- Yield curve ---
 YIELD_CURVE_MONTHS = int(os.environ.get("STOCKS_YIELD_CURVE_MONTHS", "3"))

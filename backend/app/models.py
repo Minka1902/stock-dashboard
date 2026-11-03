@@ -947,3 +947,38 @@ class ScannerPrefs(BaseModel):
     alerts_enabled: bool = False
     per_hour: int = 3
     updated_at: str = ""
+
+
+# ---------- Famous investors' 13F holdings ----------
+
+class Filing13F(BaseModel):
+    """A tracked filer's latest original 13F-HR."""
+    cik: str
+    filer: str
+    person: str
+    period: str            # the quarter's last day the holdings are as of
+    filed: str
+    accession: str
+    prior_period: str | None = None
+    positions: int
+    total_value: float     # dollars
+    checked_at: str
+
+
+class Holding13F(BaseModel):
+    """One position in a filer's latest 13F, and its change since the prior
+    quarter. SOLD OUT rows are what the prior quarter held and this one doesn't."""
+    cik: str
+    cusip: str
+    put_call: str = ""     # "" for shares, PUT / CALL for options
+    issuer: str
+    title: str
+    ticker: str | None = None
+    ticker_source: str = "unmatched"
+    value: float           # dollars
+    shares: float
+    prev_shares: float = 0.0
+    prev_value: float = 0.0
+    pct: float             # of the filer's whole 13F
+    change_pct: float | None = None
+    status: str            # NEW | ADDED | TRIMMED | UNCHANGED | SOLD OUT

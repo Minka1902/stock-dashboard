@@ -25,6 +25,8 @@ from app.models import (
     CompanyHolder,
     CongressFiling,
     CongressTrade,
+    Filing13F,
+    Holding13F,
     ContractRecord,
     EarningsEvent,
     EconEvent,
@@ -382,6 +384,36 @@ def init_schema(conn: sqlite3.Connection) -> None:
             rows       INTEGER NOT NULL DEFAULT 0,
             checked_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS filings_13f (
+            cik          TEXT PRIMARY KEY,
+            filer        TEXT NOT NULL,
+            person       TEXT NOT NULL,
+            period       TEXT NOT NULL,
+            filed        TEXT NOT NULL,
+            accession    TEXT NOT NULL,
+            prior_period TEXT,
+            positions    INTEGER NOT NULL,
+            total_value  REAL NOT NULL,
+            checked_at   TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS holdings_13f (
+            cik           TEXT NOT NULL,
+            cusip         TEXT NOT NULL,
+            put_call      TEXT NOT NULL DEFAULT '',
+            issuer        TEXT NOT NULL,
+            title         TEXT NOT NULL,
+            ticker        TEXT,
+            ticker_source TEXT NOT NULL,
+            value         REAL NOT NULL,
+            shares        REAL NOT NULL,
+            prev_shares   REAL NOT NULL,
+            prev_value    REAL NOT NULL,
+            pct           REAL NOT NULL,
+            change_pct    REAL,
+            status        TEXT NOT NULL,
+            PRIMARY KEY (cik, cusip, put_call)
+        );
+        CREATE INDEX IF NOT EXISTS idx_holdings_13f_ticker ON holdings_13f(ticker);
         CREATE TABLE IF NOT EXISTS short_interest (
             ticker             TEXT PRIMARY KEY,
             fetched_at         TEXT NOT NULL,
@@ -2121,6 +2153,34 @@ def get_congress_filing_status(conn: sqlite3.Connection, doc_ids: list[str]) -> 
                            f"({','.join('?' * len(chunk))})", chunk)
         out.update({r[0]: r[1] for r in cur.fetchall()})
     return out
+
+
+def replace_holdings_13f(conn: sqlite3.Connection, filings: list[Filing13F], holdings: list[Holding13F]) -> None:
+    """Each filing replaces its filer's holdings, all in one transaction."""
+    if not filings:
+        return
+    cols = Filing13F.model_fields
+    insert = f"INSERT OR REPLACE INTO filings_13f ({', '.join(cols)}) VALUES ({', '.join(':' + k for k in cols)})"
+    with _immediate(conn):
+        for f in filings:
+            conn.execute("DELETE FROM holdings_13f WHERE cik = ?", (f.cik,))
+            conn.execute(insert, f.model_dump())
+        conn.executemany(f"INSERT INTO holdings_13f ({', '.join(Holding13F.model_fields)}) "
+                         f"VALUES ({', '.join(':' + k for k in Holding13F.model_fields)})",
+                         [h.model_dump() for h in holdings])
+
+
+def get_filings_13f(conn: sqlite3.Connection) -> list[Filing13F]:
+    return [Filing13F(**dict(r)) for r in conn.execute("SELECT * FROM filings_13f ORDER BY filed DESC, filer")]
+
+
+def get_holdings_13f(conn: sqlite3.Connection, ticker: str | None = None) -> list[Holding13F]:
+    if ticker is None:
+        cur = conn.execute("SELECT * FROM holdings_13f")
+    else:
+        cur = conn.execute("SELECT * FROM holdings_13f WHERE ticker = ? AND status != 'SOLD OUT' "
+                           "ORDER BY pct DESC", (ticker.upper(),))
+    return [Holding13F(**dict(r)) for r in cur.fetchall()]
 
 
 def delete_legacy_house_trades(conn: sqlite3.Connection) -> int:

@@ -13,6 +13,7 @@ export const TITLES = {
   signals:     "Signals",
   "fear-greed": "Fear & Greed",
   congress:    "Congress",
+  investors:   "Famous Investors",
   "boom-score": "Boom Score",
   short:       "Short Interest",
   social:      "WSB Sentiment",

@@ -24,6 +24,7 @@ import TechnicalPanel from "./components/TechnicalPanel";
 import FearGreedPanel from "./components/FearGreedPanel";
 import MarketSentimentPanel from "./components/MarketSentimentPanel";
 import CongressPanel from "./components/CongressPanel";
+import InvestorsPanel from "./components/InvestorsPanel";
 import BoomScorePanel from "./components/BoomScorePanel";
 import ShortPanel from "./components/ShortPanel";
 import SocialPanel from "./components/SocialPanel";
@@ -107,6 +108,7 @@ const VIEWS = {
   signals: (p) => <TechnicalPanel data={p.signals} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   "fear-greed": (p) => <FearGreedPanel data={p.fearGreed} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   congress: (p) => <CongressPanel data={p.congressTrades} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  investors: (p) => <InvestorsPanel data={p.investors} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   "boom-score": (p) => <BoomScorePanel data={p.boomScores} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   short: (p) => <ShortPanel data={p.shortInterest} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   social: (p) => <SocialPanel data={p.social} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
@@ -134,6 +136,7 @@ const VIEWS = {
         <SocialPanel data={p.social} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("social")} collapsible collapsed={p.isCollapsed("social")} onToggleCollapse={() => p.toggleCollapsed("social")} />
       </div>
       <CongressPanel data={p.congressTrades} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("congress")} collapsible collapsed={p.isCollapsed("congress")} onToggleCollapse={() => p.toggleCollapsed("congress")} />
+      <InvestorsPanel data={p.investors} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("investors")} collapsible collapsed={p.isCollapsed("investors")} onToggleCollapse={() => p.toggleCollapsed("investors")} />
       <ShortPanel data={p.shortInterest} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("short")} collapsible collapsed={p.isCollapsed("short")} onToggleCollapse={() => p.toggleCollapsed("short")} />
       <AnalystPanel data={p.analyst} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("analyst")} collapsible collapsed={p.isCollapsed("analyst")} onToggleCollapse={() => p.toggleCollapsed("analyst")} />
       <FundamentalsPanel data={p.fundamentals} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("fundamentals")} collapsible collapsed={p.isCollapsed("fundamentals")} onToggleCollapse={() => p.toggleCollapsed("fundamentals")} />

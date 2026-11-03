@@ -12,10 +12,13 @@ says so in its docstring.
 Used in:
 - `backend/app/sources/congress.py`: the House Clerk index and PTR parsing (`trader-pelosi/ptr.py`).
 - `backend/app/guardrails.py`: the per-trade limits (`trader-risk`).
+- `backend/app/sources/holdings13f.py` and `backend/app/data/filers13f.py`: 13F reading, the quarter
+  diff, issuer-name ticker matching, the filer list and the share-class table (`trader-copycat`).
 - Later ports name their source in the same way.
 
-The PTR test fixtures under `backend/tests/fixtures/congress/` are excerpts of
-public House Clerk filings, taken from trader-skill's test suite.
+The test fixtures under `backend/tests/fixtures/congress/` and
+`backend/tests/fixtures/13f/` are excerpts of public House Clerk and SEC
+EDGAR filings, taken from trader-skill's test suite.
 
 ```
 MIT License

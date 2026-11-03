@@ -375,3 +375,7 @@ export const getTelegram = () => getJSON("/api/telegram");
 export const linkTelegram = () => request("/api/telegram/link", { method: "POST" });
 export const setTelegramEnabled = (enabled) => request("/api/telegram", { method: "PUT", body: { enabled } });
 export const unlinkTelegram = () => request("/api/telegram", { method: "DELETE" });
+
+// Famous investors' 13F holdings.
+export const get13F = () => getJSON("/api/13f");
+export const get13FHolders = (ticker) => getJSON(`/api/13f/${encodeURIComponent(ticker)}`);
