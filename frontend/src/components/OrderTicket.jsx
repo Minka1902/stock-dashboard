@@ -3,6 +3,7 @@ import Button from "./Button";
 import Dialog from "./Dialog";
 import Field from "./Field";
 import Segmented from "./Segmented";
+import TimeMachineOdds from "./TimeMachineOdds";
 import { getTicketDefaults, placePaperOrder } from "../api";
 import { formatMoney } from "../lib/format";
 import styles from "./OrderTicket.module.css";
@@ -201,6 +202,10 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
           <div><dt>At risk to the stop</dt><dd>{r.atRisk == null ? "— (no stop below the price)" : m(r.atRisk)}</dd></div>
           <div><dt>Reward : risk</dt><dd>{r.r == null ? "—" : `${r.r.toFixed(1)}R`}</dd></div>
         </dl>
+      )}
+      {step === "review" && buying && num(planStop) > 0 && (
+        <TimeMachineOdds ticker={ticker} entry={price ?? null} stop={num(planStop)} target={num(planTarget)}
+                         currency={ccy} compact />
       )}
 
       {step === "done" && placed && (

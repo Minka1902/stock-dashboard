@@ -2,6 +2,7 @@ import { useState } from "react";
 import Button from "./Button";
 import Field from "./Field";
 import Segmented from "./Segmented";
+import TimeMachineOdds from "./TimeMachineOdds";
 import { formatMoney } from "../lib/format";
 import styles from "./ExitRulesEditor.module.css";
 
@@ -163,6 +164,9 @@ export default function ExitRulesEditor({
         <p className={styles.note}>
           Already alerted: {fired.map((k) => KIND_LABEL[k] || k).join(", ")}. Saving re-arms every level.
         </p>
+      )}
+      {!compact && price != null && stopLevel != null && stopLevel < price && (
+        <TimeMachineOdds ticker={ticker} entry={price} stop={stopLevel} target={num(takeProfit)} currency={currency} />
       )}
       {!compact && <p className={styles.note}>Rules alert you; they never sell anything.</p>}
       {formError && <p className={styles.error} role="alert">{formError}</p>}

@@ -379,3 +379,6 @@ export const unlinkTelegram = () => request("/api/telegram", { method: "DELETE" 
 // Famous investors' 13F holdings.
 export const get13F = () => getJSON("/api/13f");
 export const get13FHolders = (ticker) => getJSON(`/api/13f/${encodeURIComponent(ticker)}`);
+
+// The Time Machine: replay a trade plan from the stock's own days.
+export const runTimeMachine = (plan) => request("/api/timemachine", { method: "POST", body: plan });

@@ -14,6 +14,8 @@ Used in:
 - `backend/app/guardrails.py`: the per-trade limits (`trader-risk`).
 - `backend/app/sources/holdings13f.py` and `backend/app/data/filers13f.py`: 13F reading, the quarter
   diff, issuer-name ticker matching, the filer list and the share-class table (`trader-copycat`).
+- `backend/app/timemachine.py`: the Time Machine's replay, stop-first rule and verdict
+  (`trader-timemachine`), adapted from 5-minute bars to a horizon of daily bars.
 - Later ports name their source in the same way.
 
 The test fixtures under `backend/tests/fixtures/congress/` and

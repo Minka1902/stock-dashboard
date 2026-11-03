@@ -40,6 +40,20 @@ def _spec(raw: dict) -> rules.RuleSpec:
         raise HTTPException(status_code=422, detail={"message": "The rule needs attention", "errors": errors}) from None
 
 
+def history_bars(conn, ticker: str) -> tuple[list, str]:
+    """(daily bars, which) for a backtest or a replay: the full adjusted
+    history, fetched on demand when it isn't stored, else the stored 2 years."""
+    bars = db.get_ohlc(conn, ticker, "daily_max")
+    if not bars:
+        fetched = ohlc_source.fetch([ticker], ohlc_source.MAX_SERIES)
+        if fetched:
+            db.upsert_ohlc(conn, fetched)
+            bars = db.get_ohlc(conn, ticker, "daily_max")
+    if bars:
+        return bars, "full adjusted history"
+    return db.get_ohlc(conn, ticker, "daily"), "the stored 2 years of daily bars (full history unavailable)"
+
+
 def _out(r: SavedRule) -> dict:
     return {**r.model_dump(exclude={"spec"}), "spec": rules.RuleSpec.model_validate_json(r.spec).model_dump()}
 
@@ -106,14 +120,7 @@ def build_router(conn) -> APIRouter:
     def backtest(body: BacktestBody, user=Depends(auth.get_current_user)):
         spec = _spec(body.spec)
         t = clean_ticker(body.ticker)
-        bars, source = db.get_ohlc(conn, t, "daily_max"), "full adjusted history"
-        if not bars:
-            fetched = ohlc_source.fetch([t], ohlc_source.MAX_SERIES)
-            if fetched:
-                db.upsert_ohlc(conn, fetched)
-                bars = db.get_ohlc(conn, t, "daily_max")
-        if not bars:
-            bars, source = db.get_ohlc(conn, t, "daily"), "the stored 2 years of daily bars (full history unavailable)"
+        bars, source = history_bars(conn, t)
         if len(bars) < 60:
             raise HTTPException(status_code=422, detail={
                 "message": f"Not enough history for {t} to backtest", "errors": {"ticker": "needs 60+ daily bars"}})
