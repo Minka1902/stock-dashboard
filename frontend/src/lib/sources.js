@@ -4,7 +4,7 @@
 //
 // Keys match the `source` field returned by GET /api/sources (see build_sources in
 // backend/app/main.py). Only the external feeds are listed; internal computations
-// (boom_score, alerts, analysis, ohlc) are intentionally omitted from the guide.
+// (boom_score, alerts, regime, automute, rules, analysis, ohlc) are intentionally omitted from the guide.
 
 export const SOURCE_META = {
   usaspending: {
@@ -64,8 +64,8 @@ export const SOURCE_META = {
   },
   congress: {
     label: "Congressional Trades",
-    provider: "House/Senate Stock Watcher",
-    blurb: "Stock transactions disclosed by members of Congress.",
+    provider: "House Clerk (PTR filings) + Senate Stock Watcher",
+    blurb: "Stock transactions disclosed by members of Congress, each House trade linked to its filing.",
   },
   short_interest: {
     label: "Short Interest",
@@ -96,6 +96,26 @@ export const SOURCE_META = {
     label: "Seasonality",
     provider: "Yahoo Finance",
     blurb: "A ticker's historical tendency for this time of year.",
+  },
+  holdings13f: {
+    label: "Famous Investors (13F)",
+    provider: "SEC EDGAR",
+    blurb: "Quarter-end holdings of well-known funds and what changed since the last quarter.",
+  },
+  universe: {
+    label: "Scanner Universes",
+    provider: "Wikipedia",
+    blurb: "S&P 500, Nasdaq-100 and TA-125 constituents for the market scanner, monthly.",
+  },
+  scan_history: {
+    label: "Scanner History",
+    provider: "Yahoo Finance",
+    blurb: "Daily bars the market scanner needs for tickers you don't hold or watch.",
+  },
+  scanner: {
+    label: "Market Scanner",
+    provider: "Yahoo Finance",
+    blurb: "Today's session for the whole universe, run through the built-in scans while markets are open.",
   },
 };
 

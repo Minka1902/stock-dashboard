@@ -38,10 +38,16 @@ def _trusted_proxies() -> str:
     return os.environ.get("STOCKS_TRUSTED_PROXY_IPS", "").strip()
 
 
+# Open /api/stream connections never finish on their own; without a bound,
+# uvicorn would wait for them on stop and the lifespan's WAL checkpoint with it.
+GRACEFUL_SHUTDOWN_SECONDS = 5
+
+
 def _uvicorn_command(args) -> list[str]:
     cmd = [
         sys.executable, "-m", "uvicorn", "app.main:app",
         "--host", args.host, "--port", str(args.port),
+        "--timeout-graceful-shutdown", str(GRACEFUL_SHUTDOWN_SECONDS),
     ]
     # Empty would parse as a single trusted "" host, so only pass it when set.
     if _trusted_proxies():
@@ -96,7 +102,7 @@ def main() -> int:
         if args.reload:
             return subprocess.call(_uvicorn_command(args))
         import uvicorn
-        kwargs = {}
+        kwargs = {"timeout_graceful_shutdown": GRACEFUL_SHUTDOWN_SECONDS}
         if _trusted_proxies():
             kwargs["forwarded_allow_ips"] = _trusted_proxies()
         logger.info("starting uvicorn in-process on %s:%s", args.host, args.port)

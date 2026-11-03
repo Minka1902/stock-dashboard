@@ -51,8 +51,8 @@ async function request(path, { method = "GET", body } = {}) {
       window.dispatchEvent(new Event("auth:expired"));
     }
     const detail = (await res.json().catch(() => ({}))).detail;
-    throw new ApiError(
-      detailMessage(detail) || `request failed: ${path}`, res.status, detail?.errors || null);
+    const fields = detail?.errors && Object.keys(detail.errors).length ? detail.errors : null;
+    throw new ApiError(detailMessage(detail) || `request failed: ${path}`, res.status, fields);
   }
   return res.json();
 }
@@ -104,7 +104,7 @@ export const getSeasonality = () => getJSON("/api/seasonality");
 export const getAnalyses = () => getJSON("/api/analysis");
 export const getAnalysis = (ticker) => getJSON(`/api/analysis/${encodeURIComponent(ticker)}`);
 export const getBoomScoreHistory = (ticker) => getJSON(`/api/boom-scores/history/${encodeURIComponent(ticker)}`);
-const accountQuery = (account) => (account && account !== "manual" ? `?account=${account}` : "");
+const accountQuery = (account) => (account && account !== "manual" ? `?account=${encodeURIComponent(account)}` : "");
 export const getPortfolio = (account = "manual") => getJSON(`/api/portfolio${accountQuery(account)}`);
 export const getCash = (account = "manual") => getJSON(`/api/portfolio/cash${accountQuery(account)}`);
 export const getProfile = () => getJSON("/api/profile");
@@ -124,10 +124,12 @@ export const getSuggestionHistory = ({ ticker, months } = {}) => {
   const qs = q.toString();
   return getJSON(`/api/suggestions/history${qs ? `?${qs}` : ""}`);
 };
-export const getTrackRecord = (months = 12) =>
-  getJSON(`/api/backtest/track-record?months=${months}`);
-export const getSignalReplay = ({ horizon = 7, months = 12 } = {}) =>
-  getJSON(`/api/backtest/signal-replay?horizon=${horizon}&months=${months}`);
+// `version` picks a model version (the running one when omitted); the reply
+// lists every version with data under `versions`.
+export const getTrackRecord = (months = 12, version = null) =>
+  getJSON(`/api/backtest/track-record?months=${months}${version ? `&version=${encodeURIComponent(version)}` : ""}`);
+export const getSignalReplay = ({ horizon = 7, months = 12, version = null } = {}) =>
+  getJSON(`/api/backtest/signal-replay?horizon=${horizon}&months=${months}${version ? `&version=${encodeURIComponent(version)}` : ""}`);
 export const getOAuthProviders = () => getJSON("/api/auth/oauth/providers");
 // "open" | "invite" | "closed" — decides whether to offer a sign-up tab at all.
 export const getRegistrationMode = () => getJSON("/api/auth/registration");
@@ -193,6 +195,62 @@ export const resumeBot = (id) => request(`/api/bots/${id}/resume`, { method: "PO
 export const stopBot = (id) => request(`/api/bots/${id}/stop`, { method: "POST" });
 export const stopAllBots = () => request("/api/bots/stop-all", { method: "POST" });
 export const getBotEvents = (id, limit = 100) => getJSON(`/api/bots/${id}/events?limit=${limit}`);
+
+// ---------- exit rules & risk switches ----------
+const rulePath = (ticker, account) =>
+  `/api/portfolio/${encodeURIComponent(ticker)}/rules${accountQuery(account)}`;
+// { account, items: [{ ticker, held, avg_cost, currency, price, price_source, rule, levels, suggested }] }
+export const getExitRules = (account = "manual") => getJSON(`/api/portfolio/rules${accountQuery(account)}`);
+export const getExitRule = (ticker, account = "manual") => getJSON(rulePath(ticker, account));
+// body: { stop_price | stop_pct, take_profit, trailing_pct, active }. A 422
+// carries field errors on ApiError.fields; returns the same shape as getExitRule.
+export const saveExitRule = (ticker, body, account = "manual") =>
+  request(rulePath(ticker, account), { method: "PUT", body });
+export const deleteExitRule = (ticker, account = "manual") =>
+  request(rulePath(ticker, account), { method: "DELETE" });
+export const getRiskStatus = () => getJSON("/api/risk/status");
+// body: { max_drawdown_pct } (null turns the kill switch off). Returns the status.
+export const saveRiskSettings = (body) => request("/api/risk/settings", { method: "PUT", body });
+export const acknowledgeDrawdown = () => request("/api/risk/drawdown/acknowledge", { method: "POST" });
+// The global kill switch: halt cancels open paper orders and pauses every bot;
+// release needs a fresh authenticator code. Both return the risk status.
+export const haltTrading = (reason = "") => request("/api/risk/kill-switch", { method: "POST", body: { reason } });
+export const releaseTrading = (code) => request("/api/risk/kill-switch/release", { method: "POST", body: { code } });
+// { entries: [{ id, at, kind, detail (JSON), prev_hash, hash }], verify: { ok, n, broken_at, reason } }
+export const getAudit = (limit = 200) => getJSON(`/api/audit?limit=${limit}`);
+export const AUDIT_CSV_URL = `${BASE}/api/audit.csv`;
+// Admin: { chains: [{ user_id, ok, n, broken_at, reason }] }
+export const verifyAllAudit = () => getJSON("/api/server/audit/verify");
+// ---------- rule builder ----------
+// { indicators: [{ name, label, period, bounds }], ops, max_conditions, min_trades, in_sample }
+export const getRuleSchema = () => getJSON("/api/rules/schema");
+export const getSavedRules = () => getJSON("/api/rules");
+// A 422 carries field errors keyed by the spec path ("entry.conditions.0...").
+export const saveRule = (spec, active = true, id = null) =>
+  request(id ? `/api/rules/${id}` : "/api/rules", { method: id ? "PUT" : "POST", body: { spec, active } });
+export const deleteRule = (id) => request(`/api/rules/${id}`, { method: "DELETE" });
+export const backtestRule = (spec, ticker) => request("/api/rules/backtest", { method: "POST", body: { spec, ticker } });
+
+// ---------- paper account ----------
+// { mode, modes, funded, cash, positions, open_orders, recent_orders, slippage, defaults }
+export const getPaper = () => getJSON("/api/paper");
+// body: { amount, currency } — funds a new paper account or starts it over.
+export const resetPaper = (body = {}) => request("/api/paper/reset", { method: "POST", body });
+// { price, price_source, currency, qty, stop, target, held, sizing_note, risk_pct }
+export const getTicketDefaults = (ticker, side = "BUY") =>
+  getJSON(`/api/paper/ticket-defaults?ticker=${encodeURIComponent(ticker)}&side=${side}`);
+// body: { ticker, side, qty, type, limit_price, stop_price, tif, suggestion_for_date }.
+// A 422 carries field errors on ApiError.fields.
+export const placePaperOrder = (body) => request("/api/paper/orders", { method: "POST", body });
+export const cancelPaperOrder = (id) => request(`/api/paper/orders/${id}/cancel`, { method: "POST" });
+// { performance, exposure, correlation, risk_read } for "manual" | "paper" | "bot:<id>"
+export const getPortfolioAnalytics = (account = "manual") =>
+  getJSON(`/api/portfolio/analytics${accountQuery(account)}`);
+// { items: [{ component, label, weight, auto_muted, hit_rate, n, reason, override, counts }], performance, rules }
+export const getAutomute = () => getJSON("/api/automute");
+// mode: "auto" (follow the auto-mute) | "on" (always count) | "off" (never count)
+export const setMuteOverride = (component, mode) =>
+  request(`/api/automute/${encodeURIComponent(component)}`, { method: "PUT", body: { mode } });
 
 export const getTransactions = ({ account, ticker, limit } = {}) => {
   const q = new URLSearchParams();
@@ -306,3 +364,37 @@ export const updateDrawingDraft = (id, patch) =>
   request(`/api/drawings/drafts/${encodeURIComponent(id)}`, { method: "PUT", body: patch });
 export const deleteDrawingDraft = (id) =>
   request(`/api/drawings/drafts/${encodeURIComponent(id)}`, { method: "DELETE" });
+
+// Market-wide scanner (STC-69) and the server-sent events stream (STC-73).
+export const getScanner = () => getJSON("/api/scanner");
+export const saveScannerPrefs = (prefs) => request("/api/scanner/prefs", { method: "PUT", body: prefs });
+export const streamUrl = () => `${BASE}/api/stream`;
+
+// Telegram (STC-79): link a chat for alerts and read-only commands.
+export const getTelegram = () => getJSON("/api/telegram");
+export const linkTelegram = () => request("/api/telegram/link", { method: "POST" });
+export const setTelegramEnabled = (enabled) => request("/api/telegram", { method: "PUT", body: { enabled } });
+export const unlinkTelegram = () => request("/api/telegram", { method: "DELETE" });
+
+// Famous investors' 13F holdings.
+export const get13F = () => getJSON("/api/13f");
+export const get13FHolders = (ticker) => getJSON(`/api/13f/${encodeURIComponent(ticker)}`);
+
+// The Time Machine: replay a trade plan from the stock's own days.
+export const runTimeMachine = (plan) => request("/api/timemachine", { method: "POST", body: plan });
+
+// Tax lots, a sale check, target weights and the rebalance plan.
+export const getLots = (account, minLoss) =>
+  getJSON(`/api/portfolio/lots?account=${encodeURIComponent(account)}&min_loss=${minLoss}`);
+export const checkSale = (body) => request("/api/portfolio/lots/sale", { method: "POST", body });
+export const getTargets = (account) => getJSON(`/api/portfolio/targets?account=${encodeURIComponent(account)}`);
+export const saveTargets = (account, targets) =>
+  request("/api/portfolio/targets", { method: "PUT", body: { account, targets } });
+export const getRebalance = (account, band, minTrade) =>
+  getJSON(`/api/portfolio/rebalance?account=${encodeURIComponent(account)}&band=${band}&min_trade=${minTrade}`);
+
+// The Alpaca broker account (paper first).
+export const getBroker = () => getJSON("/api/broker");
+export const placeBrokerOrder = (body) => request("/api/broker/orders", { method: "POST", body });
+export const cancelBrokerOrder = (id) => request(`/api/broker/orders/${id}/cancel`, { method: "POST" });
+export const syncBroker = () => request("/api/broker/sync", { method: "POST" });

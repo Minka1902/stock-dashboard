@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Button from "./Button";
 import Dialog from "./Dialog";
 import Field from "./Field";
 import Segmented from "./Segmented";
 import SelectMenu from "./SelectMenu";
+import { getSavedRules } from "../api";
 import { formatMoney } from "../lib/format";
 import styles from "./NewBotDialog.module.css";
 
@@ -39,6 +40,11 @@ export default function NewBotDialog({ open, strategies, cash, watchlists, onCre
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const [pending, setPending] = useState(false);
+  const [savedRules, setSavedRules] = useState([]);
+
+  useEffect(() => {
+    getSavedRules().then((d) => setSavedRules(d.rules)).catch(() => {});
+  }, []);
 
   const available = cash.find((c) => c.currency === ccy)?.balance || 0;
   const modes = spec?.needs_tickers ? UNIVERSE_MODES : [SUGGESTED, ...UNIVERSE_MODES];
@@ -107,13 +113,23 @@ export default function NewBotDialog({ open, strategies, cash, watchlists, onCre
         {errors.strategy && <p className={styles.error}>{errors.strategy}</p>}
 
         <div className={styles.grid}>
-          {spec.params.map((p) => (
+          {spec.params.map((p) => (p.choices === "saved_rules" ? (
+            <Field key={p.key} label={p.label} error={errors[`params.${p.key}`]}
+                   hint={savedRules.length ? null : "Save a rule on the Rules tab first"}>
+              {() => (
+                <SelectMenu label={p.label} value={params[p.key]}
+                            options={[{ value: "0", label: "Pick a saved rule" },
+                              ...savedRules.map((r) => ({ value: String(r.id), label: r.name }))]}
+                            onChange={(v) => setParams({ ...params, [p.key]: v })} />
+              )}
+            </Field>
+          ) : (
             <Field key={p.key} label={p.label} suffix={p.unit} error={errors[`params.${p.key}`]}>
               {(a) => <input {...a} type="number" min={p.min} max={p.max} step={p.step}
                              value={params[p.key] ?? ""}
                              onChange={(e) => setParams({ ...params, [p.key]: e.target.value })} />}
             </Field>
-          ))}
+          )))}
         </div>
 
         <div className={styles.universe}>

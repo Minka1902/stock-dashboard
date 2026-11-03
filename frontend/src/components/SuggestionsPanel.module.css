@@ -281,3 +281,22 @@
   cursor: pointer;
 }
 .emptyBtn:disabled { opacity: 0.6; cursor: default; }
+
+.paused {
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--negative);
+  border-radius: var(--r-sm);
+  background: var(--negative-weak);
+  font-size: 13px;
+}
+.paused strong { font-family: var(--mono); color: var(--negative); }
+.paused a { color: var(--accent-text); }
+.downgraded {
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--caution);
+  border-radius: var(--r-sm);
+  background: var(--caution-weak);
+  font-size: 13px;
+}
+.downgraded strong { font-family: var(--mono); color: var(--caution); }
+.downgraded a { color: var(--accent-text); }

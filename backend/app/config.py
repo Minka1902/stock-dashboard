@@ -159,6 +159,13 @@ ALPHA_VANTAGE_KEY: str | None = os.environ.get("STOCKS_ALPHA_VANTAGE_KEY") or No
 # --- Congressional trades ---
 CONGRESS_LOOKBACK_DAYS = int(os.environ.get("STOCKS_CONGRESS_LOOKBACK_DAYS", "90"))
 CONGRESS_MIN_INTERVAL_SECONDS = int(os.environ.get("STOCKS_CONGRESS_MIN_INTERVAL_SECONDS", "21600"))
+# House PTR PDFs read per run (each once), and where pdftotext (poppler) is
+# when it isn't on PATH, e.g. for the Windows service.
+CONGRESS_PTR_PER_RUN = int(os.environ.get("STOCKS_CONGRESS_PTR_PER_RUN", "25"))
+PDFTOTEXT = os.environ.get("STOCKS_PDFTOTEXT", "")
+# Famous investors' 13F holdings (sources/holdings13f.py): narrow the built-in
+# filer list to these CIKs (comma-separated); empty keeps all of them.
+FILERS_13F = [c.strip() for c in os.environ.get("STOCKS_13F_FILERS", "").split(",") if c.strip()]
 
 # --- Yield curve ---
 YIELD_CURVE_MONTHS = int(os.environ.get("STOCKS_YIELD_CURVE_MONTHS", "3"))
@@ -337,12 +344,59 @@ OHLC_MAX_TICKERS = int(os.environ.get("STOCKS_OHLC_MAX_TICKERS", "60"))
 # Raised from 20: suggestions now rank tracked names and brand-new ideas in
 # separate pools, so the candidate list has to be deep enough to fill both.
 OPPORTUNITY_CANDIDATES = int(os.environ.get("STOCKS_OPPORTUNITY_CANDIDATES", "40"))
+# Trading costs (app/costs.py): every simulated fill and every track-record
+# outcome pays this many basis points per side, plus half the spread when a
+# bid/ask is known. One model, so a backtest and a paper fill cost the same.
+COST_BPS_PER_SIDE = float(os.environ.get("STOCKS_COST_BPS_PER_SIDE", "10"))
+# Below this many scored outcomes a hit rate is flagged "not enough data".
+MIN_TRACK_SAMPLE = int(os.environ.get("STOCKS_MIN_TRACK_SAMPLE", "30"))
+# Market regime (app/regime.py). Each input votes risk-on (+1), risk-off (−1)
+# or neutral (0); fewer than REGIME_MIN_INPUTS available → "unknown", never a
+# guess. A total of ±REGIME_SCORE_THRESHOLD or beyond sets the label. An input
+# older than REGIME_MAX_INPUT_AGE_DAYS is treated as unavailable.
+REGIME_VIX_RISK_ON = float(os.environ.get("STOCKS_REGIME_VIX_RISK_ON", "16"))
+REGIME_VIX_RISK_OFF = float(os.environ.get("STOCKS_REGIME_VIX_RISK_OFF", "25"))
+REGIME_VIX_TREND_PCT = float(os.environ.get("STOCKS_REGIME_VIX_TREND_PCT", "20"))  # 5-session move
+REGIME_FG_RISK_OFF = float(os.environ.get("STOCKS_REGIME_FG_RISK_OFF", "25"))
+REGIME_FG_RISK_ON = float(os.environ.get("STOCKS_REGIME_FG_RISK_ON", "55"))
+REGIME_PC_RISK_OFF = float(os.environ.get("STOCKS_REGIME_PC_RISK_OFF", "1.0"))
+REGIME_PC_RISK_ON = float(os.environ.get("STOCKS_REGIME_PC_RISK_ON", "0.8"))
+REGIME_CURVE_RISK_ON = float(os.environ.get("STOCKS_REGIME_CURVE_RISK_ON", "0.25"))  # 10y−2y, pts
+REGIME_SPY_MA_DAYS = int(os.environ.get("STOCKS_REGIME_SPY_MA_DAYS", "200"))
+REGIME_MIN_INPUTS = int(os.environ.get("STOCKS_REGIME_MIN_INPUTS", "3"))
+REGIME_SCORE_THRESHOLD = int(os.environ.get("STOCKS_REGIME_SCORE_THRESHOLD", "2"))
+REGIME_MAX_INPUT_AGE_DAYS = int(os.environ.get("STOCKS_REGIME_MAX_INPUT_AGE_DAYS", "10"))
+# Signal auto-mute (app/signals.py): a Boom component whose hit rate over the
+# last SIGNAL_WINDOW_DAYS of firings (7-day forward, net of costs) falls below
+# SIGNAL_MUTE_BELOW % on at least SIGNAL_MUTE_MIN_N outcomes stops counting;
+# it counts again only above SIGNAL_MUTE_BELOW + SIGNAL_UNMUTE_MARGIN.
+SIGNAL_WINDOW_DAYS = int(os.environ.get("STOCKS_SIGNAL_WINDOW_DAYS", "30"))
+SIGNAL_MUTE_BELOW = float(os.environ.get("STOCKS_SIGNAL_MUTE_BELOW", "40"))
+SIGNAL_MUTE_MIN_N = int(os.environ.get("STOCKS_SIGNAL_MUTE_MIN_N", "12"))
+SIGNAL_UNMUTE_MARGIN = float(os.environ.get("STOCKS_SIGNAL_UNMUTE_MARGIN", "5"))
 # Demo trading bots (app/bots.py): simulated fills move the live price this
-# many basis points against the bot (each side); at most this many bots per
+# many basis points against the bot (each side; defaults to the shared cost
+# model); at most this many bots per
 # user that aren't stopped; the engine's cadence.
-BOT_COST_BPS = float(os.environ.get("STOCKS_BOT_COST_BPS", "10"))
+BOT_COST_BPS = float(os.environ.get("STOCKS_BOT_COST_BPS", str(COST_BPS_PER_SIDE)))
 BOT_MAX_BOTS = int(os.environ.get("STOCKS_BOT_MAX_BOTS", "10"))
 BOT_INTERVAL_SECONDS = int(os.environ.get("STOCKS_BOT_INTERVAL_SECONDS", "60"))
+# Full adjusted daily history for the bar backtester (sources/ohlc.py
+# MAX_SERIES): refreshed this often per ticker, at most this many per run.
+DAILY_MAX_REFRESH_DAYS = int(os.environ.get("STOCKS_DAILY_MAX_REFRESH_DAYS", "7"))
+DAILY_MAX_PER_RUN = int(os.environ.get("STOCKS_DAILY_MAX_PER_RUN", "10"))
+# Paper account (app/execution.py): what "Fund / Reset" deposits by default.
+PAPER_START_CASH = float(os.environ.get("STOCKS_PAPER_START_CASH", "100000"))
+PAPER_START_CURRENCY = os.environ.get("STOCKS_PAPER_START_CURRENCY", "USD").upper()
+# Exit-rule evaluator (app/exits.py) cadence; resting paper orders are
+# evaluated on the same minute pass.
+EXITS_INTERVAL_SECONDS = int(os.environ.get("STOCKS_EXITS_INTERVAL_SECONDS", "60"))
+# The oldest quote the 1-minute engines (bots, exits) act on. The quote cache
+# serves stale-while-revalidate, so a ticker only an engine asks for is about
+# one interval old on every pass — the default allows that and refuses anything
+# older (a refresh that has been failing).
+ENGINE_QUOTE_MAX_AGE_SECONDS = int(os.environ.get(
+    "STOCKS_ENGINE_QUOTE_MAX_AGE_SECONDS", str(2 * BOT_INTERVAL_SECONDS)))
 # Benchmark series fetched by the ohlc source whether or not anyone holds them
 # (analytics beta / relative return, the regime gate's SPY vs 200-day MA).
 BENCHMARK_TICKERS = [
@@ -375,6 +429,40 @@ EARNINGS_RETRY_INTERVAL_SECONDS = int(
 # --- Alerts ---
 # Boom Score level whose upward crossing fires a high-severity alert.
 ALERT_BOOM_THRESHOLD = int(os.environ.get("STOCKS_ALERT_BOOM_THRESHOLD", "60"))
+
+# Market-wide scanner (app/scanner.py). Universes: "majors" (data/majors.py),
+# "mine" (every holding and watchlist), "sp500" / "ndx100" / "ta125" (index
+# constituents from Wikipedia, refreshed monthly by the `universe` source).
+SCANNER_UNIVERSES = [u.strip().lower() for u in
+                     os.environ.get("STOCKS_SCANNER_UNIVERSES", "majors,mine").split(",") if u.strip()]
+SCANNER_MAX_TICKERS = int(os.environ.get("STOCKS_SCANNER_MAX_TICKERS", "600"))
+SCANNER_INTERVAL_SECONDS = int(os.environ.get("STOCKS_SCANNER_INTERVAL_SECONDS", "300"))
+SCANNER_QUOTE_BATCH = int(os.environ.get("STOCKS_SCANNER_QUOTE_BATCH", "150"))
+# Daily bars the scans need, for tickers the OHLC job doesn't already keep:
+# this many per run, refetched once older than this.
+SCANNER_HISTORY_PER_RUN = int(os.environ.get("STOCKS_SCANNER_HISTORY_PER_RUN", "40"))
+SCANNER_HISTORY_MAX_AGE_HOURS = int(os.environ.get("STOCKS_SCANNER_HISTORY_MAX_AGE_HOURS", "18"))
+SCANNER_RVOL_MIN = float(os.environ.get("STOCKS_SCANNER_RVOL_MIN", "2.0"))
+SCANNER_GAP_PCT = float(os.environ.get("STOCKS_SCANNER_GAP_PCT", "3.0"))
+# Scanner alerts are opt-in per user; at most this many an hour by default,
+# the rest batched into one digest an hour.
+SCANNER_ALERTS_PER_HOUR = int(os.environ.get("STOCKS_SCANNER_ALERTS_PER_HOUR", "3"))
+# Server-sent events (/api/stream): a stream ends after this long and the
+# client reconnects, so no connection outlives a restart by more than this.
+STREAM_MAX_SECONDS = int(os.environ.get("STOCKS_STREAM_MAX_SECONDS", "300"))
+
+# Telegram bot (app/telegram.py): alerts out, read-only commands in. A secret,
+# so env only; everything Telegram no-ops (and says so) while it's unset.
+TELEGRAM_BOT_TOKEN = os.environ.get("STOCKS_TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_POLL_SECONDS = int(os.environ.get("STOCKS_TELEGRAM_POLL_SECONDS", "5"))
+# Alpaca (app/alpaca.py), the first real broker: secrets, env only. Paper
+# unless STOCKS_ALPACA_PAPER=0 (live is refused until STC-51's step-up).
+# One account per instance, owned by STOCKS_ALPACA_OWNER (default: the admin).
+ALPACA_KEY_ID = os.environ.get("STOCKS_ALPACA_KEY_ID", "")
+ALPACA_SECRET_KEY = os.environ.get("STOCKS_ALPACA_SECRET_KEY", "")
+ALPACA_PAPER = os.environ.get("STOCKS_ALPACA_PAPER", "1") != "0"
+ALPACA_OWNER = os.environ.get("STOCKS_ALPACA_OWNER", "")
+ALPACA_RECONCILE_SECONDS = int(os.environ.get("STOCKS_ALPACA_RECONCILE_SECONDS", "900"))
 
 # --- OAuth social login (optional; each provider no-ops when unset) ---
 # Base URL the provider redirects back to (the backend origin). The callback is

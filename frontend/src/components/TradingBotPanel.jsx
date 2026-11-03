@@ -1,72 +1,50 @@
-import { useEffect, useState } from "react";
-import BotCard from "./BotCard";
-import Button from "./Button";
-import ConfirmDialog from "./ConfirmDialog";
-import Icon from "./Icon";
-import NewBotDialog from "./NewBotDialog";
-import { useBots } from "../hooks/useBots";
-import { getWatchlists } from "../api";
-import { formatMoney, formatMoneySigned, formatPercentSigned } from "../lib/format";
+import AuditTab from "./AuditTab";
+import BotsTab from "./BotsTab";
+import BrokerTab from "./BrokerTab";
+import LotsTab from "./LotsTab";
+import KillSwitchButton from "./KillSwitchButton";
+import PaperTab from "./PaperTab";
+import PerformanceTab from "./PerformanceTab";
+import RiskTab from "./RiskTab";
+import RulesTab from "./RulesTab";
+import ScannerTab from "./ScannerTab";
+import Segmented from "./Segmented";
+import { useRoute } from "../hooks/useRoute";
+import { navigateTo } from "../lib/nav";
 import styles from "./TradingBotPanel.module.css";
 
-// Running (and paused) bots, totalled per currency — bots hold one currency
-// each, and nothing here converts between them.
-function totalsByCurrency(bots) {
-  const map = new Map();
-  for (const b of bots) {
-    const t = map.get(b.currency) || { currency: b.currency, allocated: 0, equity: 0, count: 0 };
-    t.allocated += b.allocated;
-    t.equity += b.equity;
-    t.count += 1;
-    map.set(b.currency, t);
-  }
-  return [...map.values()];
-}
+const VIEW = "trading-bot";
+
+// Tab key -> { label, title, render(props) }. The key is the `?tab=` value, so
+// other pages can deep-link straight to one (e.g. /trading-bot?tab=risk).
+const TABS = {
+  bots: { label: "Bots", title: "Demo bots and their activity", render: (p) => <BotsTab cash={p.cash} onCashChanged={p.onCashChanged} /> },
+  risk: { label: "Risk", title: "Kill switch, regime, exit rules and signal mutes", render: () => <RiskTab /> },
+  paper: { label: "Paper", title: "Paper account and order ticket", render: () => <PaperTab /> },
+  broker: { label: "Broker", title: "Your Alpaca paper account: orders, fills and reconciliation", render: () => <BrokerTab /> },
+  performance: { label: "Performance", title: "Returns, drawdown, exposure and correlation per account", render: () => <PerformanceTab /> },
+  rules: { label: "Rules", title: "Build, backtest and save your own trading rules", render: () => <RulesTab /> },
+  lots: { label: "Lots & rebalance", title: "Tax lots, wash sales and the plan back to your target weights", render: () => <LotsTab /> },
+  scanner: { label: "Scanner", title: "Today's matches across the market, live", render: () => <ScannerTab /> },
+  audit: { label: "Audit", title: "Append-only log of orders, refusals and setting changes", render: () => <AuditTab /> },
+};
+
+const TAB_OPTIONS = Object.entries(TABS).map(([value, t]) => ({ value, label: t.label, title: t.title }));
+
+const DEFAULT_TAB = TAB_OPTIONS[0].value;
 
 /**
- * The Trading Bot page: demo bots, each running one preset strategy with
- * cash set aside from the Portfolio. Props: cash (Portfolio cash balances),
- * onCashChanged (reload them after a bot takes or returns cash).
+ * The Trading Bot page: a tab host for everything that trades or guards
+ * trading (demo bots, risk rules, paper account, performance, rules, scanner,
+ * audit). The selected tab lives in the URL so it survives reloads and can be
+ * linked to. Props are passed through to the tabs that need them.
  */
-export default function TradingBotPanel({ cash = [], onCashChanged }) {
-  const { bots, strategies, costBps, loading, error, create, pause, resume, stop, stopAll } =
-    useBots(onCashChanged);
-  const [watchlists, setWatchlists] = useState([]);
-  const [newOpen, setNewOpen] = useState(false);
-  const [stopping, setStopping] = useState(null); // a bot, or "all"
-  const [busyId, setBusyId] = useState(null);
-  const [notice, setNotice] = useState(null);
+export default function TradingBotPanel(props) {
+  const route = useRoute();
 
-  useEffect(() => {
-    getWatchlists().then(setWatchlists).catch(() => {});
-  }, []);
+  const tab = route.kind === "view" && TABS[route.tab] ? route.tab : DEFAULT_TAB;
 
-  const running = bots.filter((b) => b.status !== "stopped");
-  const stopped = bots.filter((b) => b.status === "stopped");
-  const totals = totalsByCurrency(running);
-  const specOf = (key) => strategies.find((s) => s.key === key);
-
-  async function withBusy(bot, fn) {
-    setBusyId(bot.id);
-    try {
-      await fn(bot.id);
-      setNotice(null);
-    } catch (e) {
-      setNotice(e.message);
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function confirmStop() {
-    if (stopping === "all") {
-      const out = await stopAll();
-      const failed = Object.entries(out.failed || {});
-      setNotice(failed.length ? `Not stopped: ${failed.map(([n, why]) => `${n} (${why})`).join("; ")}` : null);
-    } else {
-      await stop(stopping.id);
-    }
-  }
+  const selectTab = (next) => navigateTo({ kind: "view", view: VIEW, tab: next === DEFAULT_TAB ? null : next }, { replace: true });
 
   return (
     <section className={styles.panel} id="trading-bot">
@@ -74,104 +52,18 @@ export default function TradingBotPanel({ cash = [], onCashChanged }) {
         <div>
           <h2 className={styles.title}>Trading Bot</h2>
           <p className={styles.subtitle}>
-            Demo bots, each running one preset strategy with cash you set aside from your
-            Portfolio. Signals read completed daily closes; stops and fills use live prices.
+            Demo bots, risk rules, paper trading and an Alpaca paper account. Signals read completed daily
+            closes; stops and fills use live prices. No real money: live trading is off.
           </p>
         </div>
-        <div className={styles.headActions}>
-          {running.length > 0 && (
-            <Button variant="danger" onClick={() => setStopping("all")}>Stop all</Button>
-          )}
-          <Button variant="primary" onClick={() => setNewOpen(true)} disabled={!strategies.length}>
-            + New bot
-          </Button>
-        </div>
+        <KillSwitchButton />
       </header>
-
-      <p className={styles.demo} role="note">
-        <Icon name="info" size={14} />
-        <span>
-          <strong>DEMO</strong> — simulated fills at the live price
-          {costBps != null ? ` ± ${costBps} bps` : ""}, only while the stock's market is open.
-          No real orders are ever placed.
-        </span>
-      </p>
-
-      {totals.length > 0 && (
-        <dl className={styles.totals}>
-          {totals.map((t) => {
-            const pnl = t.equity - t.allocated;
-            return (
-              <div key={t.currency} className={styles.total}>
-                <dt>{t.count} bot{t.count === 1 ? "" : "s"} · {t.currency}</dt>
-                <dd>
-                  {formatMoney(t.equity, t.currency)}
-                  <span className={styles.totalSub}> of {formatMoney(t.allocated, t.currency)} allocated</span>
-                </dd>
-                <dd data-tone={pnl > 0 ? "pos" : pnl < 0 ? "neg" : "flat"}>
-                  {formatMoneySigned(pnl, t.currency)} {formatPercentSigned(t.allocated ? pnl / t.allocated : 0, 2)}
-                </dd>
-              </div>
-            );
-          })}
-        </dl>
-      )}
-
-      {(error || notice) && <p className={styles.error} role="alert">{notice || error}</p>}
-
-      {loading ? (
-        <p className={styles.placeholder}>Loading bots…</p>
-      ) : running.length === 0 ? (
-        <div className={styles.empty}>
-          <span className={styles.emptyIcon}><Icon name="bot" size={24} /></span>
-          <p className={styles.emptyTitle}>No bots running</p>
-          <p className={styles.emptyText}>
-            Start one with part of your Portfolio cash: follow the app's suggestions, ride a
-            trend, buy dips, or catch breakouts. Stop it any time to get the cash back.
-          </p>
-          {cash.some((c) => c.balance > 0)
-            ? <Button variant="primary" onClick={() => setNewOpen(true)} disabled={!strategies.length}>+ New bot</Button>
-            : <p className={styles.emptyText}>First add cash on the Portfolio page.</p>}
-        </div>
-      ) : (
-        <div className={styles.grid}>
-          {running.map((b) => (
-            <BotCard key={b.id} bot={b} spec={specOf(b.strategy)} busy={busyId === b.id}
-                     onPause={(bot) => withBusy(bot, pause)}
-                     onResume={(bot) => withBusy(bot, resume)}
-                     onStop={setStopping} />
-          ))}
-        </div>
-      )}
-
-      {stopped.length > 0 && (
-        <details className={styles.history}>
-          <summary>Stopped bots ({stopped.length})</summary>
-          <div className={styles.grid}>
-            {stopped.map((b) => <BotCard key={b.id} bot={b} spec={specOf(b.strategy)} />)}
-          </div>
-        </details>
-      )}
-
-      {newOpen && (
-        <NewBotDialog open strategies={strategies} cash={cash} watchlists={watchlists}
-                      onCreate={create} onClose={() => setNewOpen(false)} />
-      )}
-      <ConfirmDialog
-        open={stopping != null}
-        tone="negative"
-        caption="Demo bot"
-        title={stopping === "all" ? "Stop every bot?" : `Stop ${stopping?.name}?`}
-        confirmLabel={stopping === "all" ? "Stop all bots" : "Stop bot"}
-        onConfirm={confirmStop}
-        onClose={() => setStopping(null)}
-      >
-        <p>
-          {stopping === "all" ? "Each bot's" : "Its"} open positions are closed at the live price
-          (or the last close if there's no quote), and all of {stopping === "all" ? "their" : "its"} cash
-          goes back to your Portfolio. This can't be undone; you can start a new bot afterwards.
-        </p>
-      </ConfirmDialog>
+      <div className={styles.tabs}>
+        <Segmented options={TAB_OPTIONS} value={tab} onChange={selectTab} ariaLabel="Trading Bot sections" />
+      </div>
+      <div role="tabpanel" aria-label={TABS[tab].label}>
+        {TABS[tab].render(props)}
+      </div>
     </section>
   );
 }

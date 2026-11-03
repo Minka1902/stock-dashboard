@@ -25,10 +25,12 @@ Server page. A new source gets its row automatically on the next startup.
 
 ## Ordering
 
-Each source runs on its own schedule; registry order is only the startup order. `boom_score`
-and `alerts` are the **derived** step (`schedules.DERIVED_MEMBERS`): they run together, in
-that order, after upstream sources succeed — so a source Boom Score reads needs no
-ordering work, and must never be added to `DERIVED_MEMBERS`.
+Each source runs on its own schedule; registry order is only the startup order. `boom_score`,
+`alerts`, `regime`, `automute` and `rules` are the **derived** step
+(`schedules.DERIVED_MEMBERS`): they run together, in that order, after upstream sources
+succeed — so a source Boom Score reads needs no ordering work, and must never be added to
+`DERIVED_MEMBERS`. A source nothing derived reads (the scanner's, equity snapshots) passes
+`requests_derived=False` so its successes don't pull the derived step forward.
 
 ## Non-negotiables
 

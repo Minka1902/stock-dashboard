@@ -15,6 +15,7 @@ from app.models import (
     AaiiSentiment,
     Alert,
     AnalystSignal,
+    AuditEntry,
     AppSettings,
     AuthSession,
     BoomScore,
@@ -22,7 +23,10 @@ from app.models import (
     BotEvent,
     CashBalance,
     CompanyHolder,
+    CongressFiling,
     CongressTrade,
+    Filing13F,
+    Holding13F,
     ContractRecord,
     EarningsEvent,
     EconEvent,
@@ -31,6 +35,16 @@ from app.models import (
     Fundamentals,
     Holding,
     OAuthIdentity,
+    Order,
+    PositionRule,
+    RegimeSnapshot,
+    RiskSettings,
+    RuleSignal,
+    SavedRule,
+    ScanHit,
+    ScannerPrefs,
+    SignalMute,
+    SignalPerformance,
     InsiderTrade,
     MarginDebtPoint,
     NewsArticle,
@@ -56,6 +70,7 @@ from app.models import (
     WatchlistMeta,
     XPost,
     YieldPoint,
+    UniverseMember,
 )
 
 
@@ -223,7 +238,17 @@ def _migrate_per_user_tables(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _rebuild_per_run_component_history(conn: sqlite3.Connection) -> None:
+    """boom_component_history briefly stored one row per scoring run (no
+    `day`). Per-signal outcomes are measured on daily closes, so it is now one
+    row per (ticker, day, component); the old shape is dropped and rebuilt."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(boom_component_history)")}
+    if cols and "day" not in cols:
+        conn.execute("DROP TABLE boom_component_history")
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
+    _rebuild_per_run_component_history(conn)
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS contracts (
@@ -348,6 +373,47 @@ def init_schema(conn: sqlite3.Connection) -> None:
             filed_at          TEXT NOT NULL,
             chamber           TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS congress_filings (
+            doc_id     TEXT PRIMARY KEY,
+            chamber    TEXT NOT NULL,
+            member     TEXT NOT NULL,
+            district   TEXT NOT NULL,
+            filed_at   TEXT NOT NULL,
+            url        TEXT NOT NULL,
+            status     TEXT NOT NULL,
+            rows       INTEGER NOT NULL DEFAULT 0,
+            checked_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS filings_13f (
+            cik          TEXT PRIMARY KEY,
+            filer        TEXT NOT NULL,
+            person       TEXT NOT NULL,
+            period       TEXT NOT NULL,
+            filed        TEXT NOT NULL,
+            accession    TEXT NOT NULL,
+            prior_period TEXT,
+            positions    INTEGER NOT NULL,
+            total_value  REAL NOT NULL,
+            checked_at   TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS holdings_13f (
+            cik           TEXT NOT NULL,
+            cusip         TEXT NOT NULL,
+            put_call      TEXT NOT NULL DEFAULT '',
+            issuer        TEXT NOT NULL,
+            title         TEXT NOT NULL,
+            ticker        TEXT,
+            ticker_source TEXT NOT NULL,
+            value         REAL NOT NULL,
+            shares        REAL NOT NULL,
+            prev_shares   REAL NOT NULL,
+            prev_value    REAL NOT NULL,
+            pct           REAL NOT NULL,
+            change_pct    REAL,
+            status        TEXT NOT NULL,
+            PRIMARY KEY (cik, cusip, put_call)
+        );
+        CREATE INDEX IF NOT EXISTS idx_holdings_13f_ticker ON holdings_13f(ticker);
         CREATE TABLE IF NOT EXISTS short_interest (
             ticker             TEXT PRIMARY KEY,
             fetched_at         TEXT NOT NULL,
@@ -461,6 +527,52 @@ def init_schema(conn: sqlite3.Connection) -> None:
             score       INTEGER NOT NULL,
             computed_at TEXT NOT NULL
         );
+        -- Which components fired in each scoring run, at what weight (STC-20):
+        -- what per-signal performance and auto-mute are measured from.
+        -- One row per (ticker, day, component): the score is recomputed every
+        -- few minutes, and per-signal outcomes are measured on daily closes.
+        CREATE TABLE IF NOT EXISTS boom_component_history (
+            ticker      TEXT NOT NULL,
+            day         TEXT NOT NULL,
+            component   TEXT NOT NULL,
+            weight      REAL NOT NULL,
+            computed_at TEXT NOT NULL,
+            PRIMARY KEY (ticker, day, component)
+        );
+        CREATE INDEX IF NOT EXISTS idx_boom_components_day ON boom_component_history(day);
+        CREATE TABLE IF NOT EXISTS regime_history (
+            date        TEXT PRIMARY KEY,
+            label       TEXT NOT NULL,
+            score       INTEGER NOT NULL,
+            inputs      TEXT NOT NULL,
+            computed_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS signal_performance (
+            component    TEXT NOT NULL,
+            horizon_days INTEGER NOT NULL,
+            window_days  INTEGER NOT NULL,
+            n            INTEGER NOT NULL,
+            hits         INTEGER NOT NULL,
+            hit_rate     REAL,
+            mean_net     REAL,
+            computed_at  TEXT NOT NULL,
+            PRIMARY KEY (component, horizon_days)
+        );
+        CREATE TABLE IF NOT EXISTS signal_mutes (
+            component  TEXT PRIMARY KEY,
+            muted      INTEGER NOT NULL,
+            since      TEXT,
+            hit_rate   REAL,
+            n          INTEGER NOT NULL,
+            reason     TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS signal_mute_overrides (
+            user_id   INTEGER NOT NULL,
+            component TEXT NOT NULL,
+            mode      TEXT NOT NULL CHECK (mode IN ('on', 'off')),
+            PRIMARY KEY (user_id, component)
+        );
         CREATE TABLE IF NOT EXISTS seasonality (
             ticker        TEXT PRIMARY KEY,
             computed_at   TEXT NOT NULL,
@@ -558,6 +670,167 @@ def init_schema(conn: sqlite3.Connection) -> None:
             flow_base     REAL NOT NULL DEFAULT 0,
             computed_at   TEXT NOT NULL,
             PRIMARY KEY (user_id, account, date)
+        );
+        -- Exit rules per holding (STC-9). trail_high only ratchets up;
+        -- fired_json lists the kinds already alerted since updated_at.
+        CREATE TABLE IF NOT EXISTS position_rules (
+            user_id      INTEGER NOT NULL,
+            account      TEXT NOT NULL DEFAULT 'manual',
+            ticker       TEXT NOT NULL,
+            stop_price   REAL,
+            stop_pct     REAL,
+            take_profit  REAL,
+            trailing_pct REAL,
+            trail_high   REAL,
+            fired_json   TEXT NOT NULL DEFAULT '[]',
+            active       INTEGER NOT NULL DEFAULT 1,
+            created_at   TEXT NOT NULL,
+            updated_at   TEXT NOT NULL,
+            PRIMARY KEY (user_id, account, ticker),
+            CHECK (stop_price IS NULL OR stop_pct IS NULL)
+        );
+        -- Orders (STC-41): paper tickets rest here until a quote crosses them;
+        -- bot fills are written already filled, in the same transaction.
+        CREATE TABLE IF NOT EXISTS orders (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id         INTEGER NOT NULL,
+            account         TEXT NOT NULL,
+            ticker          TEXT NOT NULL,
+            side            TEXT NOT NULL CHECK (side IN ('BUY', 'SELL')),
+            qty             REAL NOT NULL,
+            type            TEXT NOT NULL CHECK (type IN ('market', 'limit', 'stop')),
+            limit_price     REAL,
+            stop_price      REAL,
+            tif             TEXT NOT NULL DEFAULT 'day',
+            status          TEXT NOT NULL,
+            broker_order_id TEXT,
+            currency        TEXT NOT NULL,
+            created_at      TEXT NOT NULL,
+            submitted_at    TEXT,
+            filled_at       TEXT,
+            fill_price      REAL,
+            fees            REAL NOT NULL DEFAULT 0,
+            suggestion_id   INTEGER,
+            reference_price REAL,
+            slippage_bps    REAL,
+            source          TEXT NOT NULL DEFAULT 'ticket',
+            reason          TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_orders_open ON orders(status) WHERE status = 'submitted';
+        -- Saved trading rules (STC-67) and the distinct variants tested per
+        -- rule (STC-65), plus what each active rule fired on.
+        CREATE TABLE IF NOT EXISTS saved_rules (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id         INTEGER NOT NULL,
+            name            TEXT NOT NULL,
+            spec            TEXT NOT NULL,
+            model_version   TEXT NOT NULL,
+            active          INTEGER NOT NULL DEFAULT 1,
+            created_at      TEXT NOT NULL,
+            updated_at      TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_rules_name ON saved_rules(user_id, name);
+        CREATE TABLE IF NOT EXISTS rule_variants (
+            user_id   INTEGER NOT NULL,
+            rule_key  TEXT NOT NULL,
+            spec_hash TEXT NOT NULL,
+            tested_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, rule_key, spec_hash)
+        );
+        CREATE TABLE IF NOT EXISTS rule_signals (
+            user_id       INTEGER NOT NULL,
+            rule_id       INTEGER NOT NULL,
+            ticker        TEXT NOT NULL,
+            day           TEXT NOT NULL,
+            kind          TEXT NOT NULL,
+            model_version TEXT NOT NULL,
+            computed_at   TEXT NOT NULL,
+            PRIMARY KEY (user_id, rule_id, ticker, day, kind)
+        );
+        -- Market-wide scanner (STC-69): fetched index constituents, today's
+        -- scan matches (shared market data), and per-user alert preferences
+        -- and the throttle's log (STC-75).
+        CREATE TABLE IF NOT EXISTS universe_members (
+            universe     TEXT NOT NULL,
+            ticker       TEXT NOT NULL,
+            name         TEXT NOT NULL DEFAULT '',
+            refreshed_at TEXT NOT NULL,
+            PRIMARY KEY (universe, ticker)
+        );
+        CREATE TABLE IF NOT EXISTS scan_hits (
+            scan          TEXT NOT NULL,
+            ticker        TEXT NOT NULL,
+            day           TEXT NOT NULL,
+            price         REAL NOT NULL,
+            change_pct    REAL,
+            metric        REAL,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at  TEXT NOT NULL,
+            PRIMARY KEY (scan, ticker, day)
+        );
+        CREATE INDEX IF NOT EXISTS idx_scan_hits_day ON scan_hits(day, last_seen_at);
+        CREATE TABLE IF NOT EXISTS scanner_prefs (
+            user_id        INTEGER PRIMARY KEY,
+            alerts_enabled INTEGER NOT NULL DEFAULT 0,
+            per_hour       INTEGER NOT NULL DEFAULT 3,
+            updated_at     TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS scanner_alert_log (
+            user_id     INTEGER NOT NULL,
+            ticker      TEXT NOT NULL,
+            day         TEXT NOT NULL,
+            scan        TEXT NOT NULL,
+            state       TEXT NOT NULL,      -- sent | pending | digested
+            logged_at   TEXT NOT NULL,
+            digested_at TEXT,
+            PRIMARY KEY (user_id, ticker, day)
+        );
+        -- Rebalance targets (STC-85): a % of the account per ticker.
+        CREATE TABLE IF NOT EXISTS target_weights (
+            user_id INTEGER NOT NULL,
+            account TEXT NOT NULL,
+            ticker  TEXT NOT NULL,
+            weight  REAL NOT NULL,
+            PRIMARY KEY (user_id, account, ticker)
+        );
+        -- Telegram (STC-79): one linked private chat per user, the pending
+        -- one-time link code (hashed), and the getUpdates offset.
+        CREATE TABLE IF NOT EXISTS telegram_links (
+            user_id   INTEGER PRIMARY KEY,
+            chat_id   INTEGER NOT NULL UNIQUE,
+            username  TEXT NOT NULL DEFAULT '',
+            enabled   INTEGER NOT NULL DEFAULT 1,
+            linked_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS telegram_codes (
+            user_id    INTEGER PRIMARY KEY,
+            code_hash  TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS telegram_state (
+            id            INTEGER PRIMARY KEY CHECK (id = 1),
+            update_offset INTEGER NOT NULL DEFAULT 0
+        );
+        -- Append-only audit trail (STC-52), one hash chain per user so deleting
+        -- an account drops its whole chain without breaking anyone else's.
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id   INTEGER NOT NULL,
+            at        TEXT NOT NULL,
+            kind      TEXT NOT NULL,
+            detail    TEXT NOT NULL,
+            prev_hash TEXT NOT NULL,
+            hash      TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id, id);
+        CREATE TABLE IF NOT EXISTS risk_settings (
+            user_id                  INTEGER PRIMARY KEY,
+            max_drawdown_pct         REAL,
+            drawdown_tripped_at      TEXT,
+            drawdown_pct             REAL,
+            drawdown_acknowledged_at TEXT,
+            updated_at               TEXT NOT NULL DEFAULT ''
         );
         -- Per-user FX pairs shown in the ticker carousel ("USDILS=X", ...).
         -- Seeded lazily from config.FX_PAIRS on first read (get_fx_watch).
@@ -825,6 +1098,37 @@ def init_schema(conn: sqlite3.Connection) -> None:
         ("ta_conviction",      "INTEGER"),
     ]:
         _try_add_column(conn, "alert_state", col, col_def)
+    _try_add_column(conn, "alerts", "user_id", "INTEGER")
+    # Model version of each call and score (STC-19); rows from before are 'legacy'.
+    _try_add_column(conn, "suggestion_history", "model_version", "TEXT NOT NULL DEFAULT 'legacy'")
+    _try_add_column(conn, "boom_score_history", "model_version", "TEXT NOT NULL DEFAULT 'legacy'")
+    # Auto-mute (STC-29): what each score left out, and the set in force per call.
+    _try_add_column(conn, "boom_scores", "muted", "TEXT NOT NULL DEFAULT '[]'")
+    _try_add_column(conn, "suggestion_history", "muted", "TEXT NOT NULL DEFAULT '[]'")
+    _try_add_column(conn, "risk_settings", "regime_gate", "TEXT NOT NULL DEFAULT 'downgrade'")
+    _try_add_column(conn, "yield_curve", "yr3m", "REAL")
+    # Order guardrails and the global kill switch (STC-50, STC-53).
+    for col, col_def in [
+        ("max_order_notional", "REAL NOT NULL DEFAULT 25000"),
+        ("max_orders_per_day", "INTEGER NOT NULL DEFAULT 50"),
+        ("max_notional_per_day", "REAL NOT NULL DEFAULT 100000"),
+        ("max_position_pct", "REAL NOT NULL DEFAULT 50"),
+        ("allow_outside_hours", "INTEGER NOT NULL DEFAULT 0"),
+        ("trading_halted_at", "TEXT"),
+        ("trading_halt_reason", "TEXT"),
+        ("max_loss_per_trade", "REAL"),
+        ("max_daily_loss", "REAL"),
+        ("min_reward_risk", "REAL"),
+        ("require_stop", "INTEGER NOT NULL DEFAULT 0"),
+        ("no_entry_after_open_min", "INTEGER"),
+        ("no_entry_before_close_min", "INTEGER"),
+    ]:
+        _try_add_column(conn, "risk_settings", col, col_def)
+    _try_add_column(conn, "congress_trades", "doc_id", "TEXT")
+    _try_add_column(conn, "congress_trades", "source_url", "TEXT")
+    _try_add_column(conn, "orders", "plan_stop", "REAL")
+    _try_add_column(conn, "orders", "plan_target", "REAL")
+    _try_add_column(conn, "orders", "filled_qty", "REAL NOT NULL DEFAULT 0")
     _migrate_ila_price_rows(conn)
     _migrate_econ_entities(conn)
     _seed_ledger(conn)
@@ -1565,6 +1869,7 @@ def prune_history(
         ("source_runs", "started_at", source_run_days),
         ("job_runs", "at", job_run_days),
         ("boom_score_history", "computed_at", boom_history_days),
+        ("boom_component_history", "day", boom_history_days),
     ):
         cur = conn.execute(
             f"DELETE FROM {table} WHERE {column} < datetime('now', ?)",  # noqa: S608 - table/col are literals above
@@ -1579,15 +1884,22 @@ def prune_history(
 def upsert_yield_curve(conn: sqlite3.Connection, records: list[YieldPoint]) -> None:
     conn.executemany(
         """
-        INSERT INTO yield_curve (date, yr2, yr10, yr30, spread)
-        VALUES (:date, :yr2, :yr10, :yr30, :spread)
+        INSERT INTO yield_curve (date, yr3m, yr2, yr10, yr30, spread)
+        VALUES (:date, :yr3m, :yr2, :yr10, :yr30, :spread)
         ON CONFLICT(date) DO UPDATE SET
-            yr2=excluded.yr2, yr10=excluded.yr10,
+            yr3m=excluded.yr3m, yr2=excluded.yr2, yr10=excluded.yr10,
             yr30=excluded.yr30, spread=excluded.spread
         """,
         [r.model_dump() for r in records],
     )
     conn.commit()
+
+
+def get_latest_bill_rate(conn: sqlite3.Connection) -> tuple[float, str] | None:
+    """(3-month Treasury yield in %, its date) — the risk-free rate."""
+    row = conn.execute(
+        "SELECT yr3m, date FROM yield_curve WHERE yr3m IS NOT NULL ORDER BY date DESC LIMIT 1").fetchone()
+    return (row[0], row[1]) if row else None
 
 
 def get_yield_curve(conn: sqlite3.Connection, days: int = 90) -> list[YieldPoint]:
@@ -1819,17 +2131,72 @@ def upsert_congress_trades(conn: sqlite3.Connection, records: list[CongressTrade
         INSERT INTO congress_trades
             (trade_hash, representative, party, state, ticker,
              asset_description, transaction_date, transaction_type,
-             amount_range, filed_at, chamber)
+             amount_range, filed_at, chamber, doc_id, source_url)
         VALUES
             (:trade_hash, :representative, :party, :state, :ticker,
              :asset_description, :transaction_date, :transaction_type,
-             :amount_range, :filed_at, :chamber)
+             :amount_range, :filed_at, :chamber, :doc_id, :source_url)
         ON CONFLICT(trade_hash) DO UPDATE SET
-            filed_at=excluded.filed_at, amount_range=excluded.amount_range
+            filed_at=excluded.filed_at, amount_range=excluded.amount_range,
+            source_url=excluded.source_url
         """,
         [r.model_dump() for r in records],
     )
     conn.commit()
+
+
+def upsert_congress_filings(conn: sqlite3.Connection, filings: list[CongressFiling]) -> None:
+    conn.executemany(
+        "INSERT INTO congress_filings (doc_id, chamber, member, district, filed_at, url, status, rows, checked_at) "
+        "VALUES (:doc_id, :chamber, :member, :district, :filed_at, :url, :status, :rows, :checked_at) "
+        "ON CONFLICT(doc_id) DO UPDATE SET status = excluded.status, rows = excluded.rows, "
+        "checked_at = excluded.checked_at", [f.model_dump() for f in filings])
+    conn.commit()
+
+
+def get_congress_filing_status(conn: sqlite3.Connection, doc_ids: list[str]) -> dict[str, str]:
+    out = {}
+    for i in range(0, len(doc_ids), 500):
+        chunk = doc_ids[i:i + 500]
+        cur = conn.execute(f"SELECT doc_id, status FROM congress_filings WHERE doc_id IN "
+                           f"({','.join('?' * len(chunk))})", chunk)
+        out.update({r[0]: r[1] for r in cur.fetchall()})
+    return out
+
+
+def replace_holdings_13f(conn: sqlite3.Connection, filings: list[Filing13F], holdings: list[Holding13F]) -> None:
+    """Each filing replaces its filer's holdings, all in one transaction."""
+    if not filings:
+        return
+    cols = Filing13F.model_fields
+    insert = f"INSERT OR REPLACE INTO filings_13f ({', '.join(cols)}) VALUES ({', '.join(':' + k for k in cols)})"
+    with _immediate(conn):
+        for f in filings:
+            conn.execute("DELETE FROM holdings_13f WHERE cik = ?", (f.cik,))
+            conn.execute(insert, f.model_dump())
+        conn.executemany(f"INSERT INTO holdings_13f ({', '.join(Holding13F.model_fields)}) "
+                         f"VALUES ({', '.join(':' + k for k in Holding13F.model_fields)})",
+                         [h.model_dump() for h in holdings])
+
+
+def get_filings_13f(conn: sqlite3.Connection) -> list[Filing13F]:
+    return [Filing13F(**dict(r)) for r in conn.execute("SELECT * FROM filings_13f ORDER BY filed DESC, filer")]
+
+
+def get_holdings_13f(conn: sqlite3.Connection, ticker: str | None = None) -> list[Holding13F]:
+    if ticker is None:
+        cur = conn.execute("SELECT * FROM holdings_13f")
+    else:
+        cur = conn.execute("SELECT * FROM holdings_13f WHERE ticker = ? AND status != 'SOLD OUT' "
+                           "ORDER BY pct DESC", (ticker.upper(),))
+    return [Holding13F(**dict(r)) for r in cur.fetchall()]
+
+
+def delete_legacy_house_trades(conn: sqlite3.Connection) -> int:
+    """House rows from the old aggregator (no Clerk doc_id)."""
+    cur = conn.execute("DELETE FROM congress_trades WHERE chamber = 'house' AND doc_id IS NULL")
+    conn.commit()
+    return cur.rowcount
 
 
 def get_congress_trades(conn: sqlite3.Connection, limit: int = 100) -> list[CongressTrade]:
@@ -2058,7 +2425,7 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              analyst_downgrade_cluster, extreme_greed, earnings_soon, mixed_signals,
              vix_spike_contrarian, aaii_bearish_extreme, put_call_fear, aaii_bullish_euphoria,
              margin_debt_deleveraging, margin_debt_euphoria,
-             not_applicable, score_note)
+             not_applicable, score_note, muted)
         VALUES
             (:ticker, :computed_at, :score, :components,
              :golden_cross, :rsi_recovery, :insider_cluster_buy, :congress_buy,
@@ -2069,7 +2436,7 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
              :analyst_downgrade_cluster, :extreme_greed, :earnings_soon, :mixed_signals,
              :vix_spike_contrarian, :aaii_bearish_extreme, :put_call_fear, :aaii_bullish_euphoria,
              :margin_debt_deleveraging, :margin_debt_euphoria,
-             :not_applicable, :score_note)
+             :not_applicable, :score_note, :muted)
         ON CONFLICT(ticker) DO UPDATE SET
             computed_at=excluded.computed_at, score=excluded.score,
             components=excluded.components,
@@ -2096,7 +2463,8 @@ def upsert_boom_scores(conn: sqlite3.Connection, records: list[BoomScore]) -> No
             margin_debt_deleveraging=excluded.margin_debt_deleveraging,
             margin_debt_euphoria=excluded.margin_debt_euphoria,
             not_applicable=excluded.not_applicable,
-            score_note=excluded.score_note
+            score_note=excluded.score_note,
+            muted=excluded.muted
         """,
         [r.model_dump() for r in records],
     )
@@ -2295,8 +2663,9 @@ def record_suggestion_history(
     cur = conn.executemany(
         """
         INSERT INTO suggestion_history
-            (user_id, ticker, for_date, kind, action, price, created_at)
-        VALUES (:user_id, :ticker, :for_date, :kind, :action, :price, :created_at)
+            (user_id, ticker, for_date, kind, action, price, created_at, model_version, muted)
+        VALUES (:user_id, :ticker, :for_date, :kind, :action, :price, :created_at, :model_version,
+                :muted)
         ON CONFLICT(user_id, ticker, for_date) DO NOTHING
         """,
         [r.model_dump() for r in records],
@@ -2312,7 +2681,7 @@ def get_suggestion_history(
     months: int = 6,
 ) -> list[SuggestionHistoryEntry]:
     sql = (
-        "SELECT user_id, ticker, for_date, kind, action, price, created_at "
+        "SELECT user_id, ticker, for_date, kind, action, price, created_at, model_version, muted "
         "FROM suggestion_history WHERE user_id = ? "
         f"AND for_date >= date('now', '-{int(months)} months')"
     )
@@ -2471,11 +2840,99 @@ def get_fundamentals_for(conn: sqlite3.Connection, ticker: str) -> "Fundamentals
 
 # ---------- boom score history ----------
 
-def insert_boom_score_history(conn: sqlite3.Connection, scores: list[BoomScore]) -> None:
+def insert_boom_score_history(conn: sqlite3.Connection, scores: list[BoomScore],
+                              model_version: str = "legacy") -> None:
+    """Append each score, and every component that fired with its weight."""
     conn.executemany(
-        "INSERT INTO boom_score_history (ticker, score, computed_at) VALUES (?, ?, ?)",
-        [(s.ticker, s.score, s.computed_at) for s in scores],
+        "INSERT INTO boom_score_history (ticker, score, computed_at, model_version) VALUES (?, ?, ?, ?)",
+        [(s.ticker, s.score, s.computed_at, model_version) for s in scores],
     )
+    conn.executemany(
+        "INSERT OR IGNORE INTO boom_component_history (ticker, day, component, weight, computed_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        [(s.ticker, s.computed_at[:10], k, w, s.computed_at) for s in scores
+         for k, w in json.loads(s.components or "{}").items()],
+    )
+    conn.commit()
+
+
+def get_boom_component_history(conn: sqlite3.Connection, since: str) -> list[dict]:
+    """Every (ticker, day) a component fired since `since` (a date), oldest first."""
+    cur = conn.execute(
+        "SELECT ticker, day, component, weight, computed_at FROM boom_component_history "
+        "WHERE day >= ? ORDER BY day", (since,))
+    return [dict(r) for r in cur.fetchall()]
+
+
+# ---------- market regime & signal mutes ----------
+
+def upsert_regime(conn: sqlite3.Connection, snaps: list[RegimeSnapshot]) -> None:
+    conn.executemany(
+        "INSERT INTO regime_history (date, label, score, inputs, computed_at) "
+        "VALUES (:date, :label, :score, :inputs, :computed_at) "
+        "ON CONFLICT(date) DO UPDATE SET label = excluded.label, score = excluded.score, "
+        "inputs = excluded.inputs, computed_at = excluded.computed_at",
+        [s.model_dump() for s in snaps])
+    conn.commit()
+
+
+def get_latest_regime(conn: sqlite3.Connection) -> RegimeSnapshot | None:
+    row = conn.execute("SELECT * FROM regime_history ORDER BY date DESC LIMIT 1").fetchone()
+    return RegimeSnapshot(**dict(row)) if row else None
+
+
+def get_regime_history(conn: sqlite3.Connection, days: int = 90) -> list[RegimeSnapshot]:
+    cur = conn.execute("SELECT * FROM regime_history WHERE date >= date('now', ?) ORDER BY date",
+                       (f"-{int(days)} days",))
+    return [RegimeSnapshot(**dict(r)) for r in cur.fetchall()]
+
+
+def replace_signal_performance(conn: sqlite3.Connection, rows: list[SignalPerformance]) -> None:
+    """The whole table is one rolling computation, so it is replaced, not merged."""
+    with _immediate(conn):
+        conn.execute("DELETE FROM signal_performance")
+        conn.executemany(
+            "INSERT INTO signal_performance (component, horizon_days, window_days, n, hits, hit_rate, "
+            "mean_net, computed_at) VALUES (:component, :horizon_days, :window_days, :n, :hits, "
+            ":hit_rate, :mean_net, :computed_at)", [r.model_dump() for r in rows])
+
+
+def get_signal_performance(conn: sqlite3.Connection) -> list[SignalPerformance]:
+    cur = conn.execute("SELECT * FROM signal_performance ORDER BY component, horizon_days")
+    return [SignalPerformance(**dict(r)) for r in cur.fetchall()]
+
+
+def get_signal_mutes(conn: sqlite3.Connection) -> list[SignalMute]:
+    cur = conn.execute("SELECT * FROM signal_mutes ORDER BY component")
+    return [SignalMute(**{**dict(r), "muted": bool(r["muted"])}) for r in cur.fetchall()]
+
+
+def upsert_signal_mutes(conn: sqlite3.Connection, rows: list[SignalMute]) -> None:
+    conn.executemany(
+        "INSERT INTO signal_mutes (component, muted, since, hit_rate, n, reason, updated_at) "
+        "VALUES (:component, :muted, :since, :hit_rate, :n, :reason, :updated_at) "
+        "ON CONFLICT(component) DO UPDATE SET muted = excluded.muted, since = excluded.since, "
+        "hit_rate = excluded.hit_rate, n = excluded.n, reason = excluded.reason, "
+        "updated_at = excluded.updated_at",
+        [{**r.model_dump(), "muted": int(r.muted)} for r in rows])
+    conn.commit()
+
+
+def get_mute_overrides(conn: sqlite3.Connection, user_id: int) -> dict[str, str]:
+    cur = conn.execute("SELECT component, mode FROM signal_mute_overrides WHERE user_id = ?", (user_id,))
+    return {r[0]: r[1] for r in cur.fetchall()}
+
+
+def set_mute_override(conn: sqlite3.Connection, user_id: int, component: str, mode: str | None) -> None:
+    """mode 'on' (always count), 'off' (never count) or None (follow the auto-mute)."""
+    if mode is None:
+        conn.execute("DELETE FROM signal_mute_overrides WHERE user_id = ? AND component = ?",
+                     (user_id, component))
+    else:
+        conn.execute(
+            "INSERT INTO signal_mute_overrides (user_id, component, mode) VALUES (?, ?, ?) "
+            "ON CONFLICT(user_id, component) DO UPDATE SET mode = excluded.mode",
+            (user_id, component, mode))
     conn.commit()
 
 
@@ -2500,13 +2957,14 @@ def get_boom_score_history_all(conn: sqlite3.Connection, since: str) -> list[dic
     """
     cur = conn.execute(
         """
-        SELECT ticker, computed_at, score FROM boom_score_history
+        SELECT ticker, computed_at, score, model_version FROM boom_score_history
         WHERE computed_at >= ?
         ORDER BY ticker ASC, computed_at ASC
         """,
         (since,),
     )
-    return [{"ticker": r[0], "computed_at": r[1], "score": r[2]} for r in cur.fetchall()]
+    return [{"ticker": r[0], "computed_at": r[1], "score": r[2], "model_version": r[3]}
+            for r in cur.fetchall()]
 
 
 # ---------- seasonality ----------
@@ -2703,6 +3161,27 @@ def get_cash(conn: sqlite3.Connection, user_id: int, account: str = "manual") ->
     return [CashBalance(**dict(row)) for row in cur.fetchall()]
 
 
+def get_target_weights(conn: sqlite3.Connection, user_id: int, account: str) -> dict[str, float]:
+    cur = conn.execute("SELECT ticker, weight FROM target_weights WHERE user_id = ? AND account = ? "
+                       "ORDER BY weight DESC", (user_id, account))
+    return {r[0]: r[1] for r in cur.fetchall()}
+
+
+def replace_target_weights(conn: sqlite3.Connection, user_id: int, account: str, weights: dict[str, float]) -> None:
+    with _immediate(conn):
+        conn.execute("DELETE FROM target_weights WHERE user_id = ? AND account = ?", (user_id, account))
+        conn.executemany("INSERT INTO target_weights (user_id, account, ticker, weight) VALUES (?, ?, ?, ?)",
+                         [(user_id, account, t, w) for t, w in weights.items()])
+
+
+def get_ledger(conn: sqlite3.Connection, user_id: int, accounts: tuple[str, ...]) -> list[Transaction]:
+    """Every ledger row of these accounts, oldest first (the whole history)."""
+    marks = ",".join("?" * len(accounts))
+    cur = conn.execute(f"SELECT * FROM transactions WHERE user_id = ? AND account IN ({marks}) "
+                       f"ORDER BY executed_at, id", (user_id, *accounts))
+    return [Transaction(**dict(r)) for r in cur.fetchall()]
+
+
 def get_transactions(
     conn: sqlite3.Connection, user_id: int, account: str | None = None,
     ticker: str | None = None, limit: int = 500,
@@ -2776,6 +3255,552 @@ def get_flows_since(
     return {r[0]: r[1] for r in cur.fetchall()}
 
 
+# ---------- orders ----------
+
+OPEN_STATUSES = ("new", "submitted", "partially_filled")
+
+
+def _order_cols(o: Order) -> dict:
+    return o.model_dump(exclude={"id"})
+
+
+def _insert_order(conn: sqlite3.Connection, o: Order) -> Order:
+    d = _order_cols(o)
+    cur = conn.execute(f"INSERT INTO orders ({', '.join(d)}) VALUES ({', '.join(':' + k for k in d)})", d)
+    return o.model_copy(update={"id": cur.lastrowid})
+
+
+def insert_order(conn: sqlite3.Connection, o: Order) -> Order:
+    out = _insert_order(conn, o)
+    conn.commit()
+    return out
+
+
+def get_order(conn: sqlite3.Connection, order_id: int) -> Order | None:
+    row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    return Order(**dict(row)) if row else None
+
+
+def get_orders(conn: sqlite3.Connection, user_id: int | None = None, account: str | None = None,
+               statuses: tuple[str, ...] | None = None, limit: int = 200) -> list[Order]:
+    """Newest first."""
+    sql, args = "SELECT * FROM orders WHERE 1 = 1", []
+    if user_id is not None:
+        sql += " AND user_id = ?"
+        args.append(user_id)
+    if account is not None:
+        sql += " AND account = ?"
+        args.append(account)
+    if statuses:
+        sql += f" AND status IN ({', '.join('?' * len(statuses))})"
+        args.extend(statuses)
+    sql += " ORDER BY id DESC LIMIT ?"
+    args.append(limit)
+    return [Order(**dict(r)) for r in conn.execute(sql, args)]
+
+
+def set_order_status(conn: sqlite3.Connection, order_id: int, status: str, reason: str,
+                     from_statuses: tuple[str, ...] = OPEN_STATUSES) -> bool:
+    """Move an open order to `status` (cancelled / rejected). False when it was
+    no longer in `from_statuses` — e.g. it filled first."""
+    cur = conn.execute(
+        f"UPDATE orders SET status = ?, reason = ? WHERE id = ? AND status IN "
+        f"({', '.join('?' * len(from_statuses))})", (status, reason, order_id, *from_statuses))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def fill_order(conn: sqlite3.Connection, order: Order, tx: Transaction,
+               slippage_bps: float | None) -> Order | None:
+    """Fill a resting order: the ledger row (position + cash) and the order's
+    new status in one transaction, only if it is still open — a cancel that
+    got there first wins. Raises ledger.LedgerError (nothing written) when the
+    ledger refuses the fill, e.g. not enough cash."""
+    from app import ledger
+
+    with _immediate(conn):
+        row = conn.execute("SELECT status FROM orders WHERE id = ?", (order.id,)).fetchone()
+        if row is None or row[0] not in OPEN_STATUSES:
+            return None
+        _record_transaction(conn, tx.model_copy(update={"order_id": order.id}), True, ledger)
+        conn.execute(
+            "UPDATE orders SET status = 'filled', filled_at = ?, fill_price = ?, fees = ?, "
+            "slippage_bps = ? WHERE id = ?",
+            (tx.executed_at, tx.price, tx.fees, slippage_bps, order.id))
+    return get_order(conn, order.id)
+
+
+def apply_broker_update(conn: sqlite3.Connection, order: Order, tx: Transaction | None, funded: bool,
+                        **fields) -> Order:
+    """A broker's news about an order: the ledger row for any new fill and
+    the order's new fields, in one transaction. Raises ledger.LedgerError
+    (nothing written) when the ledger refuses the fill."""
+    from app import ledger
+
+    with _immediate(conn):
+        if tx is not None:
+            _record_transaction(conn, tx.model_copy(update={"order_id": order.id}), funded, ledger)
+        if fields:
+            conn.execute(f"UPDATE orders SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
+                         (*fields.values(), order.id))
+    return get_order(conn, order.id)
+
+
+def get_order_by_broker_id(conn: sqlite3.Connection, broker_id: str) -> Order | None:
+    row = conn.execute("SELECT * FROM orders WHERE broker_order_id = ?", (broker_id,)).fetchone()
+    return Order(**dict(row)) if row else None
+
+
+def set_broker_order_id(conn: sqlite3.Connection, order_id: int, broker_id: str, status: str, reason: str = "") -> None:
+    conn.execute("UPDATE orders SET broker_order_id = ?, status = ?, reason = ? WHERE id = ?",
+                 (broker_id, status, reason, order_id))
+    conn.commit()
+
+
+def get_slippage(conn: sqlite3.Connection, user_id: int | None, account: str) -> list[float]:
+    """Measured slippage (bps, + = cost) of every filled order in an account."""
+    sql = "SELECT slippage_bps FROM orders WHERE account = ? AND status = 'filled' AND slippage_bps IS NOT NULL"
+    args: list = [account]
+    if user_id is not None:
+        sql += " AND user_id = ?"
+        args.append(user_id)
+    return [r[0] for r in conn.execute(sql, args)]
+
+
+def get_suggestion_ref(conn: sqlite3.Connection, user_id: int, ticker: str,
+                       for_date: str) -> tuple[int, float | None] | None:
+    """(rowid, recorded price) of a recorded suggestion — what an order placed
+    from it links to and measures its slippage against."""
+    row = conn.execute(
+        "SELECT rowid, price FROM suggestion_history WHERE user_id = ? AND ticker = ? AND for_date = ?",
+        (user_id, ticker, for_date)).fetchone()
+    return (row[0], row[1]) if row else None
+
+
+# ---------- exit rules & risk settings ----------
+
+def _rule_from_row(row) -> PositionRule:
+    d = dict(row)
+    d["fired"] = json.loads(d.pop("fired_json") or "[]")
+    d["active"] = bool(d["active"])
+    return PositionRule(**d)
+
+
+def get_position_rules(conn: sqlite3.Connection, user_id: int | None = None,
+                       account: str | None = None, active_only: bool = False) -> list[PositionRule]:
+    sql, args = "SELECT * FROM position_rules WHERE 1 = 1", []
+    if user_id is not None:
+        sql += " AND user_id = ?"
+        args.append(user_id)
+    if account is not None:
+        sql += " AND account = ?"
+        args.append(account)
+    if active_only:
+        sql += " AND active = 1"
+    return [_rule_from_row(r) for r in conn.execute(sql + " ORDER BY user_id, account, ticker", args)]
+
+
+def get_position_rule(conn: sqlite3.Connection, user_id: int, account: str,
+                      ticker: str) -> PositionRule | None:
+    row = conn.execute(
+        "SELECT * FROM position_rules WHERE user_id = ? AND account = ? AND ticker = ?",
+        (user_id, account, ticker)).fetchone()
+    return _rule_from_row(row) if row else None
+
+
+def upsert_position_rule(conn: sqlite3.Connection, rule: PositionRule) -> PositionRule:
+    """Insert or replace a rule's levels. A save re-arms every kind (fired is
+    cleared) and keeps created_at. trail_high is whatever the caller passes:
+    kept across edits while a trail stays on, None when it's turned off."""
+    conn.execute(
+        """
+        INSERT INTO position_rules (user_id, account, ticker, stop_price, stop_pct, take_profit,
+                                    trailing_pct, trail_high, fired_json, active, created_at,
+                                    updated_at)
+        VALUES (:user_id, :account, :ticker, :stop_price, :stop_pct, :take_profit, :trailing_pct,
+                :trail_high, '[]', :active, :created_at, :updated_at)
+        ON CONFLICT(user_id, account, ticker) DO UPDATE SET
+            stop_price = excluded.stop_price, stop_pct = excluded.stop_pct,
+            take_profit = excluded.take_profit, trailing_pct = excluded.trailing_pct,
+            trail_high = excluded.trail_high, fired_json = '[]', active = excluded.active,
+            updated_at = excluded.updated_at
+        """,
+        {**rule.model_dump(exclude={"fired"}), "active": int(rule.active)},
+    )
+    conn.commit()
+    return get_position_rule(conn, rule.user_id, rule.account, rule.ticker)
+
+
+def delete_position_rule(conn: sqlite3.Connection, user_id: int, account: str, ticker: str) -> bool:
+    cur = conn.execute(
+        "DELETE FROM position_rules WHERE user_id = ? AND account = ? AND ticker = ?",
+        (user_id, account, ticker))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def ratchet_trail_high(conn: sqlite3.Connection, rule: PositionRule, price: float) -> float | None:
+    """Raise trail_high to `price` if higher; never lowers it. Only touches the
+    version of the rule that was read (an edit in between wins). Returns the
+    stored high, or None when the rule changed or went away."""
+    cur = conn.execute(
+        "UPDATE position_rules SET trail_high = MAX(COALESCE(trail_high, ?), ?) "
+        "WHERE user_id = ? AND account = ? AND ticker = ? AND updated_at = ?",
+        (price, price, rule.user_id, rule.account, rule.ticker, rule.updated_at))
+    conn.commit()
+    if cur.rowcount == 0:
+        return None
+    return conn.execute(
+        "SELECT trail_high FROM position_rules WHERE user_id = ? AND account = ? AND ticker = ?",
+        (rule.user_id, rule.account, rule.ticker)).fetchone()[0]
+
+
+def fire_rule(conn: sqlite3.Connection, rule: PositionRule, kind: str, alert: Alert) -> bool:
+    """Record that `kind` fired and store its alert, atomically, only if the
+    rule is still the version that was evaluated, still active, and hasn't
+    already fired that kind. Returns whether the alert was written."""
+    with _immediate(conn):
+        row = conn.execute(
+            "SELECT fired_json FROM position_rules WHERE user_id = ? AND account = ? "
+            "AND ticker = ? AND updated_at = ? AND active = 1",
+            (rule.user_id, rule.account, rule.ticker, rule.updated_at)).fetchone()
+        if row is None:
+            return False
+        fired = json.loads(row[0] or "[]")
+        if kind in fired:
+            return False
+        conn.execute(
+            "UPDATE position_rules SET fired_json = ? WHERE user_id = ? AND account = ? AND ticker = ?",
+            (json.dumps([*fired, kind]), rule.user_id, rule.account, rule.ticker))
+        cur = conn.execute(
+            """
+            INSERT INTO alerts (dedup_key, created_at, ticker, type, severity, title, message,
+                                read, pushed, user_id)
+            VALUES (:dedup_key, :created_at, :ticker, :type, :severity, :title, :message, :read,
+                    :pushed, :user_id)
+            ON CONFLICT(dedup_key) DO NOTHING
+            """,
+            alert.model_dump())
+    return cur.rowcount > 0
+
+
+def mark_alert_pushed(conn: sqlite3.Connection, dedup_key: str) -> None:
+    conn.execute("UPDATE alerts SET pushed = 1 WHERE dedup_key = ?", (dedup_key,))
+    conn.commit()
+
+
+def _risk_from_row(row) -> RiskSettings:
+    d = dict(row)
+    d["allow_outside_hours"] = bool(d.get("allow_outside_hours", 0))
+    d["require_stop"] = bool(d.get("require_stop", 0))
+    return RiskSettings(**d)
+
+
+def get_risk_settings(conn: sqlite3.Connection, user_id: int) -> RiskSettings:
+    row = conn.execute("SELECT * FROM risk_settings WHERE user_id = ?", (user_id,)).fetchone()
+    return _risk_from_row(row) if row else RiskSettings(user_id=user_id)
+
+
+def get_all_risk_settings(conn: sqlite3.Connection) -> list[RiskSettings]:
+    return [_risk_from_row(r) for r in conn.execute("SELECT * FROM risk_settings")]
+
+
+def upsert_risk_settings(conn: sqlite3.Connection, s: RiskSettings) -> RiskSettings:
+    cols = list(RiskSettings.model_fields)
+    conn.execute(
+        f"INSERT INTO risk_settings ({', '.join(cols)}) VALUES ({', '.join(':' + c for c in cols)}) "
+        f"ON CONFLICT(user_id) DO UPDATE SET "
+        + ", ".join(f"{c} = excluded.{c}" for c in cols if c != "user_id"),
+        {**s.model_dump(), "allow_outside_hours": int(s.allow_outside_hours), "require_stop": int(s.require_stop)})
+    conn.commit()
+    return get_risk_settings(conn, s.user_id)
+
+
+def orders_today(conn: sqlite3.Connection, user_id: int, since: str) -> list[Order]:
+    """Every order placed since `since` (an ISO timestamp) that wasn't refused."""
+    cur = conn.execute("SELECT * FROM orders WHERE user_id = ? AND created_at >= ? AND status != 'rejected'",
+                       (user_id, since))
+    return [Order(**dict(r)) for r in cur.fetchall()]
+
+
+# ---------- saved rules ----------
+
+_SAVED_RULE_SELECT = ("SELECT s.*, (SELECT COUNT(*) FROM rule_variants v WHERE v.user_id = s.user_id "
+                      "AND v.rule_key = s.name) AS variants_tested FROM saved_rules s")
+
+
+def _saved_rule(row) -> SavedRule:
+    return SavedRule(**{**dict(row), "active": bool(row["active"])})
+
+
+def get_saved_rules(conn: sqlite3.Connection, user_id: int | None = None,
+                    active_only: bool = False) -> list[SavedRule]:
+    sql, args = _SAVED_RULE_SELECT + " WHERE 1 = 1", []
+    if user_id is not None:
+        sql += " AND s.user_id = ?"
+        args.append(user_id)
+    if active_only:
+        sql += " AND s.active = 1"
+    return [_saved_rule(r) for r in conn.execute(sql + " ORDER BY s.id", args)]
+
+
+def get_saved_rule(conn: sqlite3.Connection, rule_id: int) -> SavedRule | None:
+    row = conn.execute(_SAVED_RULE_SELECT + " WHERE s.id = ?", (rule_id,)).fetchone()
+    return _saved_rule(row) if row else None
+
+
+def save_rule(conn: sqlite3.Connection, r: SavedRule) -> SavedRule:
+    d = {**r.model_dump(exclude={"id", "variants_tested"}), "active": int(r.active)}
+    if r.id is None:
+        cur = conn.execute(f"INSERT INTO saved_rules ({', '.join(d)}) VALUES ({', '.join(':' + k for k in d)})", d)
+        rid = cur.lastrowid
+    else:
+        conn.execute("UPDATE saved_rules SET name = :name, spec = :spec, model_version = :model_version, "
+                     "active = :active, updated_at = :updated_at WHERE id = :id AND user_id = :user_id",
+                     {**d, "id": r.id})
+        rid = r.id
+    conn.commit()
+    return get_saved_rule(conn, rid)
+
+
+def delete_saved_rule(conn: sqlite3.Connection, user_id: int, rule_id: int) -> bool:
+    cur = conn.execute("DELETE FROM saved_rules WHERE id = ? AND user_id = ?", (rule_id, user_id))
+    conn.execute("DELETE FROM rule_signals WHERE rule_id = ? AND user_id = ?", (rule_id, user_id))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def note_variant(conn: sqlite3.Connection, user_id: int, rule_key: str, spec_hash: str, at: str) -> int:
+    """Record that this variant was tested; returns how many distinct
+    variants of the rule this user has tested."""
+    conn.execute("INSERT OR IGNORE INTO rule_variants (user_id, rule_key, spec_hash, tested_at) "
+                 "VALUES (?, ?, ?, ?)", (user_id, rule_key, spec_hash, at))
+    conn.commit()
+    return conn.execute("SELECT COUNT(*) FROM rule_variants WHERE user_id = ? AND rule_key = ?",
+                        (user_id, rule_key)).fetchone()[0]
+
+
+# ---------- market-wide scanner ----------
+
+def replace_universe(conn: sqlite3.Connection, members: list[UniverseMember]) -> None:
+    """Swap each fetched universe's constituents for the new list in one go."""
+    names = {m.universe for m in members}
+    with _immediate(conn):
+        conn.executemany("DELETE FROM universe_members WHERE universe = ?", [(n,) for n in names])
+        conn.executemany("INSERT OR IGNORE INTO universe_members (universe, ticker, name, refreshed_at) "
+                         "VALUES (:universe, :ticker, :name, :refreshed_at)", [m.model_dump() for m in members])
+
+
+def get_universe(conn: sqlite3.Connection, universe: str) -> list[UniverseMember]:
+    cur = conn.execute("SELECT * FROM universe_members WHERE universe = ? ORDER BY ticker", (universe,))
+    return [UniverseMember(**dict(r)) for r in cur.fetchall()]
+
+
+def get_universe_refreshed(conn: sqlite3.Connection) -> dict[str, tuple[int, str]]:
+    """{universe: (member count, refreshed_at)} for the fetched universes."""
+    cur = conn.execute("SELECT universe, COUNT(*), MAX(refreshed_at) FROM universe_members GROUP BY universe")
+    return {r[0]: (r[1], r[2]) for r in cur.fetchall()}
+
+
+def get_all_held_tickers(conn: sqlite3.Connection) -> list[str]:
+    return [r[0] for r in conn.execute("SELECT DISTINCT ticker FROM portfolio ORDER BY ticker")]
+
+
+def get_latest_ohlc_fetched(conn: sqlite3.Connection, tickers: list[str],
+                            intervals: tuple[str, ...]) -> dict[str, str]:
+    """{ticker: newest fetched_at across `intervals`} for the given tickers."""
+    if not tickers:
+        return {}
+    marks, imarks = ",".join("?" * len(tickers)), ",".join("?" * len(intervals))
+    cur = conn.execute(f"SELECT ticker, MAX(fetched_at) FROM ohlc_series WHERE ticker IN ({marks}) "
+                       f"AND interval IN ({imarks}) GROUP BY ticker", [*tickers, *intervals])
+    return {r[0]: r[1] for r in cur.fetchall()}
+
+
+def prune_ohlc(conn: sqlite3.Connection, interval: str, keep: list[str]) -> int:
+    """Drop `interval` series for tickers no longer in `keep`."""
+    marks = ",".join("?" * len(keep)) or "''"
+    cur = conn.execute(f"DELETE FROM ohlc_series WHERE interval = ? AND ticker NOT IN ({marks})", [interval, *keep])
+    conn.commit()
+    return cur.rowcount
+
+
+def upsert_scan_hits(conn: sqlite3.Connection, hits: list[ScanHit]) -> None:
+    conn.executemany(
+        "INSERT INTO scan_hits (scan, ticker, day, price, change_pct, metric, first_seen_at, last_seen_at) "
+        "VALUES (:scan, :ticker, :day, :price, :change_pct, :metric, :first_seen_at, :last_seen_at) "
+        "ON CONFLICT(scan, ticker, day) DO UPDATE SET price = excluded.price, change_pct = excluded.change_pct, "
+        "metric = excluded.metric, last_seen_at = excluded.last_seen_at",
+        [h.model_dump() for h in hits])
+    conn.commit()
+
+
+def get_scan_hits(conn: sqlite3.Connection, day: str | None = None) -> list[ScanHit]:
+    """Every match of `day` (default: the latest day with any)."""
+    if day is None:
+        day = conn.execute("SELECT MAX(day) FROM scan_hits").fetchone()[0]
+        if day is None:
+            return []
+    cur = conn.execute("SELECT * FROM scan_hits WHERE day = ? ORDER BY first_seen_at DESC", (day,))
+    return [ScanHit(**dict(r)) for r in cur.fetchall()]
+
+
+def prune_scan_hits(conn: sqlite3.Connection, before_day: str) -> int:
+    cur = conn.execute("DELETE FROM scan_hits WHERE day < ?", (before_day,))
+    conn.execute("DELETE FROM scanner_alert_log WHERE day < ?", (before_day,))
+    conn.commit()
+    return cur.rowcount
+
+
+def get_scanner_prefs(conn: sqlite3.Connection, user_id: int, default_per_hour: int = 3) -> ScannerPrefs:
+    row = conn.execute("SELECT * FROM scanner_prefs WHERE user_id = ?", (user_id,)).fetchone()
+    if row is None:
+        return ScannerPrefs(user_id=user_id, per_hour=default_per_hour)
+    return ScannerPrefs(**{**dict(row), "alerts_enabled": bool(row["alerts_enabled"])})
+
+
+def upsert_scanner_prefs(conn: sqlite3.Connection, p: ScannerPrefs) -> ScannerPrefs:
+    conn.execute("INSERT INTO scanner_prefs (user_id, alerts_enabled, per_hour, updated_at) "
+                 "VALUES (:user_id, :alerts_enabled, :per_hour, :updated_at) ON CONFLICT(user_id) DO UPDATE SET "
+                 "alerts_enabled = excluded.alerts_enabled, per_hour = excluded.per_hour, "
+                 "updated_at = excluded.updated_at", {**p.model_dump(), "alerts_enabled": int(p.alerts_enabled)})
+    conn.commit()
+    return get_scanner_prefs(conn, p.user_id)
+
+
+def get_scanner_alert_users(conn: sqlite3.Connection) -> list[ScannerPrefs]:
+    cur = conn.execute("SELECT * FROM scanner_prefs WHERE alerts_enabled = 1")
+    return [ScannerPrefs(**{**dict(r), "alerts_enabled": True}) for r in cur.fetchall()]
+
+
+def get_scanner_log(conn: sqlite3.Connection, user_id: int, day: str) -> list[dict]:
+    cur = conn.execute("SELECT * FROM scanner_alert_log WHERE user_id = ? AND day = ?", (user_id, day))
+    return [dict(r) for r in cur.fetchall()]
+
+
+def get_scanner_sends_since(conn: sqlite3.Connection, user_id: int, since: str) -> tuple[int, str | None]:
+    """(individual alerts sent since `since`, the newest digest time ever)."""
+    sent = conn.execute("SELECT COUNT(*) FROM scanner_alert_log WHERE user_id = ? AND state = 'sent' "
+                        "AND logged_at >= ?", (user_id, since)).fetchone()[0]
+    digest = conn.execute("SELECT MAX(digested_at) FROM scanner_alert_log WHERE user_id = ?",
+                          (user_id,)).fetchone()[0]
+    return sent, digest
+
+
+def log_scanner_alerts(conn: sqlite3.Connection, rows: list[dict]) -> None:
+    conn.executemany("INSERT OR IGNORE INTO scanner_alert_log (user_id, ticker, day, scan, state, logged_at) "
+                     "VALUES (:user_id, :ticker, :day, :scan, :state, :logged_at)", rows)
+
+
+def mark_scanner_digested(conn: sqlite3.Connection, user_id: int, tickers: list[str], day: str, at: str) -> None:
+    conn.executemany("UPDATE scanner_alert_log SET state = 'digested', digested_at = ? "
+                     "WHERE user_id = ? AND ticker = ? AND day = ?", [(at, user_id, t, day) for t in tickers])
+
+
+# ---------- Telegram ----------
+
+def get_telegram_link(conn: sqlite3.Connection, user_id: int | None = None,
+                      chat_id: int | None = None) -> dict | None:
+    col, val = ("user_id", user_id) if user_id is not None else ("chat_id", chat_id)
+    row = conn.execute(f"SELECT * FROM telegram_links WHERE {col} = ?", (val,)).fetchone()
+    return {**dict(row), "enabled": bool(row["enabled"])} if row else None
+
+
+def set_telegram_code(conn: sqlite3.Connection, user_id: int, code_hash: str, expires_at: str) -> None:
+    conn.execute("INSERT INTO telegram_codes (user_id, code_hash, expires_at) VALUES (?, ?, ?) "
+                 "ON CONFLICT(user_id) DO UPDATE SET code_hash = excluded.code_hash, expires_at = excluded.expires_at",
+                 (user_id, code_hash, expires_at))
+    conn.commit()
+
+
+def redeem_telegram_code(conn: sqlite3.Connection, code_hash: str, now: str, chat_id: int,
+                         username: str) -> int | None:
+    """Link `chat_id` to the code's owner and spend the code, atomically.
+    Returns the user id, or None for an unknown or expired code. A chat
+    linked to another account moves to this one."""
+    with _immediate(conn):
+        row = conn.execute("SELECT user_id FROM telegram_codes WHERE code_hash = ? AND expires_at > ?",
+                           (code_hash, now)).fetchone()
+        if row is None:
+            return None
+        uid = row[0]
+        conn.execute("DELETE FROM telegram_codes WHERE user_id = ?", (uid,))
+        conn.execute("DELETE FROM telegram_links WHERE chat_id = ? OR user_id = ?", (chat_id, uid))
+        conn.execute("INSERT INTO telegram_links (user_id, chat_id, username, enabled, linked_at) "
+                     "VALUES (?, ?, ?, 1, ?)", (uid, chat_id, username, now))
+    return uid
+
+
+def set_telegram_enabled(conn: sqlite3.Connection, user_id: int, enabled: bool) -> bool:
+    cur = conn.execute("UPDATE telegram_links SET enabled = ? WHERE user_id = ?", (int(enabled), user_id))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def delete_telegram_link(conn: sqlite3.Connection, user_id: int | None = None, chat_id: int | None = None) -> bool:
+    col, val = ("user_id", user_id) if user_id is not None else ("chat_id", chat_id)
+    cur = conn.execute(f"DELETE FROM telegram_links WHERE {col} = ?", (val,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def get_telegram_offset(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT update_offset FROM telegram_state WHERE id = 1").fetchone()
+    return row[0] if row else 0
+
+
+def set_telegram_offset(conn: sqlite3.Connection, offset: int) -> None:
+    conn.execute("INSERT INTO telegram_state (id, update_offset) VALUES (1, ?) "
+                 "ON CONFLICT(id) DO UPDATE SET update_offset = excluded.update_offset", (offset,))
+    conn.commit()
+
+
+def upsert_rule_signals(conn: sqlite3.Connection, rows: list[RuleSignal]) -> None:
+    conn.executemany(
+        "INSERT OR IGNORE INTO rule_signals (user_id, rule_id, ticker, day, kind, model_version, computed_at) "
+        "VALUES (:user_id, :rule_id, :ticker, :day, :kind, :model_version, :computed_at)",
+        [r.model_dump() for r in rows])
+    conn.commit()
+
+
+def get_rule_signals(conn: sqlite3.Connection, user_id: int, since: str) -> list[RuleSignal]:
+    cur = conn.execute("SELECT * FROM rule_signals WHERE user_id = ? AND day >= ? ORDER BY day DESC, ticker",
+                       (user_id, since))
+    return [RuleSignal(**dict(r)) for r in cur.fetchall()]
+
+
+# ---------- audit log ----------
+
+def append_audit(conn: sqlite3.Connection, user_id: int, at: str, kind: str, detail: str,
+                 hasher) -> AuditEntry:
+    """Append one row to the user's chain. The previous hash is read and the
+    row written in one transaction, so two writers can't fork the chain."""
+    with _immediate(conn):
+        row = conn.execute("SELECT hash FROM audit_log WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+                           (user_id,)).fetchone()
+        prev = row[0] if row else ""
+        digest = hasher(prev, user_id, at, kind, detail)
+        cur = conn.execute(
+            "INSERT INTO audit_log (user_id, at, kind, detail, prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, at, kind, detail, prev, digest))
+    return AuditEntry(id=cur.lastrowid, user_id=user_id, at=at, kind=kind, detail=detail,
+                      prev_hash=prev, hash=digest)
+
+
+def get_audit(conn: sqlite3.Connection, user_id: int, limit: int | None = None,
+              newest_first: bool = True) -> list[AuditEntry]:
+    sql = f"SELECT * FROM audit_log WHERE user_id = ? ORDER BY id {'DESC' if newest_first else 'ASC'}"
+    args: list = [user_id]
+    if limit:
+        sql += " LIMIT ?"
+        args.append(limit)
+    return [AuditEntry(**dict(r)) for r in conn.execute(sql, args)]
+
+
+def get_audit_user_ids(conn: sqlite3.Connection) -> list[int]:
+    return [r[0] for r in conn.execute("SELECT DISTINCT user_id FROM audit_log ORDER BY user_id")]
+
+
 # ---------- demo trading bots ----------
 
 def _bot_from_row(row) -> Bot:
@@ -2841,16 +3866,19 @@ def set_bot_status(conn: sqlite3.Connection, bot_id: int, status: str, from_stat
 
 
 def bot_trade(conn: sqlite3.Connection, bot: Bot, tx: Transaction, state: dict,
-              event: BotEvent) -> Transaction | None:
-    """One engine fill: the ledger row (positions + cash), the bot's new state
-    and its event, in one transaction — and only while the bot is still active,
-    so a stop that lands mid-run wins. Returns None when the bot had stopped."""
+              event: BotEvent, order: Order | None = None) -> Transaction | None:
+    """One engine fill: the order (written filled), the ledger row (positions +
+    cash), the bot's new state and its event, in one transaction — and only
+    while the bot is still active, so a stop that lands mid-run wins. Returns
+    None when the bot had stopped."""
     from app import ledger
 
     with _immediate(conn):
         live = conn.execute("SELECT status FROM bots WHERE id = ?", (bot.id,)).fetchone()
         if live is None or live[0] != "active":
             return None
+        if order is not None:
+            tx = tx.model_copy(update={"order_id": _insert_order(conn, order).id})
         tx = _record_transaction(conn, tx, True, ledger)
         conn.execute("UPDATE bots SET state_json = ? WHERE id = ?", (json.dumps(state), bot.id))
         _insert_bot_event(conn, event)
@@ -2966,7 +3994,15 @@ def get_analysis_universe(conn: sqlite3.Connection, candidate_limit: int = 20) -
     background technical-analysis engine covers."""
     universe = set(get_all_portfolio_tickers(conn)) | set(get_all_watched_tickers(conn))
     universe |= set(get_signal_candidate_tickers(conn, candidate_limit))
+    universe |= set(get_active_bot_tickers(conn))
     return sorted(universe)
+
+
+def get_active_bot_tickers(conn: sqlite3.Connection) -> list[str]:
+    """Tickers typed into bots that aren't stopped. They need price history
+    even when nobody holds or watches them, or the bot can never trade them."""
+    rows = conn.execute("SELECT tickers_json FROM bots WHERE status != 'stopped'").fetchall()
+    return sorted({t for (raw,) in rows for t in json.loads(raw or "[]")})
 
 
 def get_ohlc_fetched_at(conn: sqlite3.Connection, interval: str = "daily") -> dict[str, str]:
@@ -3243,8 +4279,10 @@ def get_recent_suggestions(conn: sqlite3.Connection, limit: int = 20) -> list[Su
 def upsert_alerts(conn: sqlite3.Connection, records: list[Alert]) -> None:
     conn.executemany(
         """
-        INSERT INTO alerts (dedup_key, created_at, ticker, type, severity, title, message, read, pushed)
-        VALUES (:dedup_key, :created_at, :ticker, :type, :severity, :title, :message, :read, :pushed)
+        INSERT INTO alerts (dedup_key, created_at, ticker, type, severity, title, message, read,
+                            pushed, user_id)
+        VALUES (:dedup_key, :created_at, :ticker, :type, :severity, :title, :message, :read,
+                :pushed, :user_id)
         ON CONFLICT(dedup_key) DO NOTHING
         """,
         [r.model_dump() for r in records],
@@ -3259,17 +4297,19 @@ def _row_to_alert(d: dict) -> Alert:
 
 
 def get_alerts(conn: sqlite3.Connection, user_id: int, limit: int = 100) -> list[Alert]:
-    """Alerts are global (market events); read-state is per user via alert_reads."""
+    """Market alerts (user_id NULL) plus this user's own; read-state is per
+    user via alert_reads."""
     cur = conn.execute(
         """
         SELECT a.dedup_key, a.created_at, a.ticker, a.type, a.severity, a.title,
-               a.message, (ar.dedup_key IS NOT NULL) AS read, a.pushed
+               a.message, (ar.dedup_key IS NOT NULL) AS read, a.pushed, a.user_id
         FROM alerts a
         LEFT JOIN alert_reads ar
             ON ar.dedup_key = a.dedup_key AND ar.user_id = ?
+        WHERE a.user_id IS NULL OR a.user_id = ?
         ORDER BY a.id DESC LIMIT ?
         """,
-        (user_id, limit),
+        (user_id, user_id, limit),
     )
     return [_row_to_alert(dict(row)) for row in cur.fetchall()]
 
@@ -3281,17 +4321,17 @@ def get_alerts_for(
     cur = conn.execute(
         """
         SELECT a.dedup_key, a.created_at, a.ticker, a.type, a.severity, a.title,
-               a.message, (ar.dedup_key IS NOT NULL) AS read, a.pushed
+               a.message, (ar.dedup_key IS NOT NULL) AS read, a.pushed, a.user_id
         FROM alerts a
         LEFT JOIN alert_reads ar
             ON ar.dedup_key = a.dedup_key AND ar.user_id = ?
-        WHERE a.ticker = ?
+        WHERE a.ticker = ? AND (a.user_id IS NULL OR a.user_id = ?)
         -- created_at, not id. Insertion order tracks time for alerts the
         -- detector fires live, but it is not the same thing, and this list is
         -- labelled "newest first" in the UI. id breaks ties deterministically.
         ORDER BY a.created_at DESC, a.id DESC LIMIT ?
         """,
-        (user_id, ticker, limit),
+        (user_id, ticker, user_id, limit),
     )
     return [_row_to_alert(dict(row)) for row in cur.fetchall()]
 
@@ -3360,12 +4400,13 @@ def count_unread_alerts(conn: sqlite3.Connection, user_id: int) -> int:
     return conn.execute(
         """
         SELECT COUNT(*) FROM alerts a
-        WHERE NOT EXISTS (
+        WHERE (a.user_id IS NULL OR a.user_id = ?)
+        AND NOT EXISTS (
             SELECT 1 FROM alert_reads ar
             WHERE ar.user_id = ? AND ar.dedup_key = a.dedup_key
         )
         """,
-        (user_id,),
+        (user_id, user_id),
     ).fetchone()[0]
 
 
@@ -3379,8 +4420,8 @@ def mark_alerts_read(conn: sqlite3.Connection, user_id: int,
     else:
         conn.execute(
             "INSERT OR IGNORE INTO alert_reads (user_id, dedup_key, read_at) "
-            "SELECT ?, dedup_key, ? FROM alerts",
-            (user_id, read_at),
+            "SELECT ?, dedup_key, ? FROM alerts WHERE user_id IS NULL OR user_id = ?",
+            (user_id, read_at, user_id),
         )
     conn.commit()
 
@@ -3460,6 +4501,20 @@ _PER_USER_TABLES = (
     "equity_snapshots",
     "bots",
     "bot_events",
+    "orders",
+    "audit_log",
+    "saved_rules",
+    "rule_variants",
+    "rule_signals",
+    "scanner_prefs",
+    "scanner_alert_log",
+    "telegram_links",
+    "telegram_codes",
+    "target_weights",
+    "position_rules",
+    "risk_settings",
+    "signal_mute_overrides",
+    "alerts",
     "notify_profile",
     "alert_reads",
     "suggestion_history",
@@ -3475,8 +4530,9 @@ _PER_USER_TABLES = (
 def delete_user(conn: sqlite3.Connection, user_id: int) -> bool:
     """Delete an account and every row it owns. Returns False if unknown.
 
-    Shared market data (ticker-keyed tables, `stock_analysis`, `alerts`) is
-    deliberately untouched — it belongs to the instance, not to the account.
+    Shared market data (ticker-keyed tables, `stock_analysis`, market alerts
+    with no user_id) is deliberately untouched — it belongs to the instance,
+    not to the account.
     """
     if get_user(conn, user_id) is None:
         return False

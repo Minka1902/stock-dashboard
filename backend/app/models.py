@@ -113,6 +113,7 @@ class JobRun(BaseModel):
 
 class YieldPoint(BaseModel):
     date: str           # YYYY-MM-DD — PRIMARY KEY
+    yr3m: float | None = None   # 3-month bill: the risk-free rate for Sharpe/Sortino
     yr2: float | None
     yr10: float | None
     yr30: float | None
@@ -214,6 +215,22 @@ class CongressTrade(BaseModel):
     amount_range: str      # e.g. "$1,001 - $15,000"
     filed_at: str
     chamber: str           # "house" | "senate"
+    doc_id: str | None = None      # the House Clerk PTR it came from
+    source_url: str | None = None  # that PTR (or the aggregator's link)
+
+
+class CongressFiling(BaseModel):
+    """One House Periodic Transaction Report from the Clerk's index, and
+    whether it has been read (each is downloaded once)."""
+    doc_id: str
+    chamber: str
+    member: str
+    district: str
+    filed_at: str
+    url: str
+    status: str = "unread"     # unread | read | no rows (a scanned filing)
+    rows: int = 0
+    checked_at: str = ""
 
 
 class ShortInterest(BaseModel):
@@ -276,7 +293,8 @@ class BoomScore(BaseModel):
     ticker: str         # PRIMARY KEY
     computed_at: str
     score: int          # can be negative (−90 … +100)
-    components: str     # JSON dict of fired signals and their points
+    components: str     # JSON dict of fired signals and their points (muted ones included)
+    muted: str = "[]"   # JSON list of fired components not counted (auto-muted)
     # bullish signals
     golden_cross: bool
     rsi_recovery: bool
@@ -359,6 +377,8 @@ class SuggestionHistoryEntry(BaseModel):
     action: str
     price: float | None
     created_at: str
+    model_version: str = "legacy"   # app/model_version.py; rows before versioning are legacy
+    muted: str = "[]"               # JSON list of the signals muted for this user at the time
 
 
 class CompanyHolder(BaseModel):
@@ -471,6 +491,152 @@ class EquitySnapshot(BaseModel):
     invested_base: float     # market value of positions
     flow_base: float         # net external flows since the previous day's snapshot
     computed_at: str
+
+
+class Order(BaseModel):
+    """One order (STC-41). Status: new → submitted → filled | partially_filled |
+    cancelled | rejected. Paper orders rest as `submitted` until a quote
+    crosses them; a bot's fill is priced by its engine and written filled."""
+    id: int | None = None
+    user_id: int
+    account: str                  # paper | bot:<id> (live once a broker exists)
+    ticker: str
+    side: str                     # BUY | SELL
+    qty: float
+    type: str = "market"          # market | limit | stop
+    limit_price: float | None = None
+    stop_price: float | None = None
+    tif: str = "day"              # day (expires after its session) | gtc
+    status: str = "new"
+    broker_order_id: str | None = None
+    currency: str = "USD"
+    created_at: str
+    submitted_at: str | None = None
+    filled_at: str | None = None
+    fill_price: float | None = None
+    fees: float = 0.0
+    suggestion_id: int | None = None    # suggestion_history rowid it came from
+    reference_price: float | None = None  # the price the decision was made at
+    slippage_bps: float | None = None   # fill vs reference, + = cost to you
+    source: str = "ticket"        # ticket | bot
+    reason: str = ""              # why it was placed (bots), rejected or cancelled
+    plan_stop: float | None = None    # the protective stop the entry is planned with
+    plan_target: float | None = None  # and its target; both feed the per-trade limits
+    filled_qty: float = 0.0           # a broker order's cumulative fill so far
+
+
+class PositionRule(BaseModel):
+    """A holding's exit rule: alerts first; orders once execution exists.
+    Prices are in the holding's own currency (ILS, never agorot, for .TA)."""
+    user_id: int
+    account: str = "manual"
+    ticker: str
+    stop_price: float | None = None   # exclusive with stop_pct
+    stop_pct: float | None = None     # % below the position's average cost
+    take_profit: float | None = None
+    trailing_pct: float | None = None
+    trail_high: float | None = None   # highest live price since the trail began; only rises
+    fired: list[str] = []             # kinds already alerted for this version of the rule
+    active: bool = True
+    created_at: str
+    updated_at: str                   # a new value re-arms every kind
+
+
+class SavedRule(BaseModel):
+    """A user's saved trading rule (STC-67): its spec as JSON and the model
+    version its signals and suggestions are tracked under."""
+    id: int | None = None
+    user_id: int
+    name: str
+    spec: str            # RuleSpec JSON
+    model_version: str   # rules.version(spec)
+    active: bool = True  # evaluated in the derived step
+    variants_tested: int = 0   # read from rule_variants, never stored
+    created_at: str
+    updated_at: str
+
+
+class RuleSignal(BaseModel):
+    """A saved rule's entry or exit firing on a ticker's completed bar."""
+    user_id: int
+    rule_id: int
+    ticker: str
+    day: str             # the bar's date
+    kind: str            # entry | exit
+    model_version: str
+    computed_at: str
+
+
+class AuditEntry(BaseModel):
+    """One append-only audit row (STC-52). Each user's rows form a hash chain:
+    hash = sha256(prev_hash + the row's canonical content)."""
+    id: int | None = None
+    user_id: int
+    at: str
+    kind: str
+    detail: str          # JSON
+    prev_hash: str
+    hash: str
+
+
+class RegimeSnapshot(BaseModel):
+    date: str            # YYYY-MM-DD — PRIMARY KEY; the day's latest computation
+    label: str           # risk_on | neutral | risk_off | unknown
+    score: int           # sum of the input votes
+    inputs: str          # JSON list of {key, label, value, vote, detail, as_of}
+    computed_at: str
+
+
+class SignalPerformance(BaseModel):
+    component: str
+    horizon_days: int
+    window_days: int
+    n: int
+    hits: int
+    hit_rate: float | None
+    mean_net: float | None   # mean net-of-cost return in the component's direction, %
+    computed_at: str
+
+
+class SignalMute(BaseModel):
+    component: str
+    muted: bool
+    since: str | None
+    hit_rate: float | None
+    n: int
+    reason: str
+    updated_at: str
+
+
+class RiskSettings(BaseModel):
+    """Per-user risk switches. The drawdown kill switch is off while
+    max_drawdown_pct is None; once tripped it holds until acknowledged.
+    regime_gate: what a risk-off regime does to new buys (off | downgrade | pause)."""
+    user_id: int
+    max_drawdown_pct: float | None = None
+    drawdown_tripped_at: str | None = None
+    drawdown_pct: float | None = None          # the drawdown when it tripped
+    drawdown_acknowledged_at: str | None = None
+    regime_gate: str = "downgrade"
+    # Order guardrails (STC-50), enforced in execution.submit for paper and bots.
+    # Notional limits are in the user's base currency.
+    max_order_notional: float = 25_000.0
+    max_orders_per_day: int = 50
+    max_notional_per_day: float = 100_000.0
+    max_position_pct: float = 50.0
+    allow_outside_hours: bool = False
+    # Per-trade limits (STC-82), each off while None / False. They apply to
+    # entries only: an order that just reduces a holding is never blocked.
+    max_loss_per_trade: float | None = None      # loss at the plan stop, base currency
+    max_daily_loss: float | None = None          # today's entries' losses at their stops
+    min_reward_risk: float | None = None         # (target − entry) / (entry − stop)
+    require_stop: bool = False
+    no_entry_after_open_min: int | None = None   # minutes after the session opens
+    no_entry_before_close_min: int | None = None # minutes before the session closes
+    # Global kill switch (STC-53): set = every new order refused, bots paused.
+    trading_halted_at: str | None = None
+    trading_halt_reason: str | None = None
+    updated_at: str = ""
 
 
 class NotifyProfile(BaseModel):
@@ -733,3 +899,87 @@ class Alert(BaseModel):
     message: str
     read: bool = False
     pushed: bool = False
+    # None = a market event every account sees; set = one account's own alert
+    # (an exit-rule hit, a risk trip), visible to and pushed to that user only.
+    user_id: int | None = None
+
+
+# ---------- Market-wide scanner (STC-69) ----------
+
+class UniverseMember(BaseModel):
+    """One constituent of a fetched index universe (sp500, ndx100, ta125)."""
+    universe: str
+    ticker: str
+    name: str = ""
+    refreshed_at: str
+
+
+class IntradayQuote(BaseModel):
+    """Today's session so far for one ticker, from Yahoo's batched quote API,
+    in the listing's major currency."""
+    ticker: str
+    day: str                 # the session date (YYYY-MM-DD)
+    price: float
+    open: float
+    high: float
+    low: float
+    volume: float
+    previous_close: float | None = None
+    market_state: str        # PRE | LIVE | POST | CLOSED
+    currency: str | None = None
+    fetched_at: str
+
+
+class ScanHit(BaseModel):
+    """A ticker matching a built-in scan in today's session. first_seen_at
+    stays put; last_seen_at moves with every scan that still matches."""
+    scan: str
+    ticker: str
+    day: str
+    price: float
+    change_pct: float | None = None
+    metric: float | None = None
+    first_seen_at: str
+    last_seen_at: str
+
+
+class ScannerPrefs(BaseModel):
+    user_id: int
+    alerts_enabled: bool = False
+    per_hour: int = 3
+    updated_at: str = ""
+
+
+# ---------- Famous investors' 13F holdings ----------
+
+class Filing13F(BaseModel):
+    """A tracked filer's latest original 13F-HR."""
+    cik: str
+    filer: str
+    person: str
+    period: str            # the quarter's last day the holdings are as of
+    filed: str
+    accession: str
+    prior_period: str | None = None
+    positions: int
+    total_value: float     # dollars
+    checked_at: str
+
+
+class Holding13F(BaseModel):
+    """One position in a filer's latest 13F, and its change since the prior
+    quarter. SOLD OUT rows are what the prior quarter held and this one doesn't."""
+    cik: str
+    cusip: str
+    put_call: str = ""     # "" for shares, PUT / CALL for options
+    issuer: str
+    title: str
+    ticker: str | None = None
+    ticker_source: str = "unmatched"
+    value: float           # dollars
+    shares: float
+    prev_shares: float = 0.0
+    prev_value: float = 0.0
+    pct: float             # of the filer's whole 13F
+    change_pct: float | None = None
+    status: str            # NEW | ADDED | TRIMMED | UNCHANGED | SOLD OUT

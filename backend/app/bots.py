@@ -8,7 +8,12 @@ Signals (entries and strategy exits) are read on *completed* daily closes, so
 a bot changes its mind at most once a session and never sees a bar that
 hasn't closed. Stops, targets and the fill price use the live quote. Fills
 are the live price moved against the bot by config.BOT_COST_BPS. A bot only
-acts on a ticker while that ticker's own exchange is in its regular session.
+acts on a ticker while that ticker's own exchange is in its regular session,
+and only on a quote that is itself LIVE and no older than
+config.ENGINE_QUOTE_MAX_AGE_SECONDS (quotes.tradable_price).
+
+New entries wait while the owner's risk switches are tripped or a risk-off
+regime is gated (risk.entry_blockers); exits and stops never do.
 
 Nothing is guessed: a missing price or history is a logged skip, never an
 estimated fill.
@@ -20,9 +25,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from app import config, currency, db, quotes
+from app import config, costs, currency, db, execution, quotes, regime, risk, rules
 from app.market_calendar import exchange_for_ticker, market_status
-from app.models import Bot, BotEvent, OHLCBar, Transaction
+from app.models import Bot, BotEvent, OHLCBar, Order, Transaction
 from app.sources.technical import compute_ma, compute_rsi
 from app.validation import TICKER_RE
 
@@ -88,6 +93,18 @@ STRATEGIES = {
             *_COMMON,
         ],
     },
+    "rule": {
+        "label": "Custom rule",
+        "summary": "Trades one of your saved rules (Rules tab): buys when its entry conditions hold on "
+                   "a completed close, sells on its exit conditions, or at its stop, target or "
+                   "trailing stop.",
+        "needs_tickers": True,
+        "params": [
+            {"key": "rule_id", "label": "Saved rule", "unit": "", "default": 0, "min": 1,
+             "max": 1_000_000_000, "step": 1, "choices": "saved_rules"},
+            *_COMMON,
+        ],
+    },
 }
 
 _EXCHANGE_TZ = {"NYSE": ZoneInfo("America/New_York"), "TASE": ZoneInfo("Asia/Jerusalem")}
@@ -120,11 +137,14 @@ def _money(v: float) -> str:
 
 
 def decide(strategy: str, p: dict, bars: list[OHLCBar], price: float,
-           held: dict | None, analysis=None) -> Decision:
+           held: dict | None, analysis=None, rule: rules.RuleSpec | None = None) -> Decision:
     """What `strategy` does now, from completed daily `bars` (oldest first),
     the live `price` and the position's state (`held`: entry, stop, target,
-    high; None when not held). Pure: no clock, no I/O."""
+    high; None when not held). `rule` is the saved rule a "rule" bot trades.
+    Pure: no clock, no I/O."""
     closes = [b.close for b in bars]
+    if strategy == "rule":
+        return _decide_rule(rule, bars, price, held)
     if held is not None:
         stop, target = held.get("stop"), held.get("target")
         if stop is not None and price <= stop:
@@ -183,10 +203,37 @@ def decide(strategy: str, p: dict, bars: list[OHLCBar], price: float,
     return Decision(None, "not a buy")
 
 
+def _decide_rule(rule: rules.RuleSpec | None, bars: list[OHLCBar], price: float,
+                 held: dict | None) -> Decision:
+    if rule is None:
+        return Decision(None, "its saved rule no longer exists")
+    if len(bars) < 2:
+        return Decision(None, "needs more history")
+    arr = rules.arrays(bars)
+    if held is not None:
+        stop, target = held.get("stop"), held.get("target")
+        if stop is not None and price <= stop:
+            return Decision("sell", f"Stop hit: {_money(price)} ≤ stop {_money(stop)}")
+        if target is not None and price >= target:
+            return Decision("sell", f"Target reached: {_money(price)} ≥ {_money(target)}")
+        if rule.trail_pct:
+            high = max(held.get("high") or price, price)
+            if price <= high * (1 - rule.trail_pct / 100):
+                return Decision("sell", f"Trailing stop: {_money(price)} is {rule.trail_pct:g}% or more "
+                                        f"below the high of {_money(high)}")
+        if rule.exit is not None and rules.evaluate(rule.exit, arr)[-1]:
+            return Decision("sell", f"Rule \"{rule.name}\" exit conditions held on the {bars[-1].date} close")
+        return Decision(None, "hold")
+    if rules.evaluate(rule.entry, arr)[-1]:
+        return Decision("buy", f"Rule \"{rule.name}\" entry conditions held on the {bars[-1].date} close",
+                        stop=price * (1 - rule.stop_pct / 100) if rule.stop_pct else None,
+                        target=price * (1 + rule.target_pct / 100) if rule.target_pct else None)
+    return Decision(None, "no entry")
+
+
 def fill_price(price: float, side: str) -> float:
-    """The simulated fill: the quote moved against the bot by the cost bps."""
-    bps = config.BOT_COST_BPS / 10_000
-    return round(price * (1 + bps if side == "BUY" else 1 - bps), 4)
+    """The simulated fill: the quote moved against the bot by the cost model."""
+    return costs.apply(price, side, config.BOT_COST_BPS)
 
 
 def _local_today(ticker: str, now: datetime):
@@ -198,6 +245,13 @@ def _is_live(ticker: str, now: datetime) -> bool:
     return exchange is not None and market_status(now, exchange) == "LIVE"
 
 
+def _rank(analysis) -> tuple:
+    """Follow's entry order: highest conviction, then R/R, like Suggestions."""
+    if analysis is None:
+        return (1, 0, 0)
+    return (0, -analysis.conviction, -(analysis.rr or 0))
+
+
 def universe(conn, bot: Bot) -> list[str]:
     """The tickers a bot may buy: its own list, else a watchlist, else (Follow
     Suggestions) the same pool Suggestions draws from. Only listings in the
@@ -207,12 +261,16 @@ def universe(conn, bot: Bot) -> list[str]:
     elif bot.watchlist_id is not None:
         names = [w.ticker for w in db.get_watchlist(conn, bot.user_id, bot.watchlist_id)]
     else:
-        names = sorted(set(db.get_watched_tickers_for_user(conn, bot.user_id))
-                       | set(db.get_signal_candidate_tickers(conn, config.OPPORTUNITY_CANDIDATES)))
+        # Like Suggestions, nothing you already hold by hand: a bot buying it
+        # too would only double the exposure.
+        held = {h.ticker for h in db.get_portfolio(conn, bot.user_id)}
+        names = sorted((set(db.get_watched_tickers_for_user(conn, bot.user_id))
+                        | set(db.get_signal_candidate_tickers(conn, config.OPPORTUNITY_CANDIDATES)))
+                       - held)
     return [t for t in names if currency.currency_for_symbol(t) == bot.currency]
 
 
-def _skip(conn, bot: Bot, ticker: str, reason: str, at: str) -> None:
+def _skip(conn, bot: Bot, ticker: str | None, reason: str, at: str) -> None:
     key = (bot.id, ticker)
     if _LAST_SKIP.get(key) == reason:
         return
@@ -221,73 +279,106 @@ def _skip(conn, bot: Bot, ticker: str, reason: str, at: str) -> None:
                                     ticker=ticker, reason=reason))
 
 
-def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: datetime) -> int:
+def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: datetime,
+             halted: list[str] = ()) -> int:
     at = now.isoformat(timespec="seconds")
     p = params_for(bot.strategy, bot.params)
-    state = {"pos": dict(bot.state.get("pos", {})), "cooldown": dict(bot.state.get("cooldown", {}))}
+    old_cooldown = bot.state.get("cooldown", {})
+    # A cooldown only ever blocks a same-day rebuy, so earlier days are dropped.
+    cooldown = {t: d for t, d in old_cooldown.items() if d >= _local_today(t, now).isoformat()}
+    state = {"pos": dict(bot.state.get("pos", {})), "cooldown": cooldown}
     positions = {h.ticker: h for h in db.get_portfolio(conn, bot.user_id, bot.account)}
     cash = next((c.balance for c in db.get_cash(conn, bot.user_id, bot.account)
                  if c.currency == bot.currency), 0.0)
+    analyses = ({t: db.get_analysis(conn, t) for t in {*names, *positions}}
+                if bot.strategy == "follow" else {})
+    saved = db.get_saved_rule(conn, int(p["rule_id"])) if bot.strategy == "rule" else None
+    spec = rules.RuleSpec.model_validate_json(saved.spec) if saved and saved.user_id == bot.user_id else None
+    trails = bot.strategy == "breakout" or (spec is not None and spec.trail_pct)
+    if analyses:
+        names = sorted(names, key=lambda t: _rank(analyses.get(t)))
 
-    def price_of(t):
+    def valuation_of(t):
         q = by_ticker.get(t)
         return q.price if q and q.price else None
 
-    equity = cash + sum(h.shares * (price_of(t) or h.avg_cost) for t, h in positions.items())
+    equity = cash + sum(h.shares * (valuation_of(t) or h.avg_cost) for t, h in positions.items())
     fills = 0
-    dirty = False
+    dirty = len(cooldown) != len(old_cooldown)
 
-    def trade(side, ticker, qty, px, new_state, reason):
-        tx = Transaction(user_id=bot.user_id, account=bot.account, ticker=ticker, side=side,
-                         qty=qty, price=px, currency=bot.currency, executed_at=at, source="bot")
-        done = db.bot_trade(conn, bot, tx, new_state, BotEvent(
-            bot_id=bot.id, user_id=bot.user_id, at=at, kind=side.lower(), ticker=ticker,
-            qty=qty, price=px, reason=reason))
+    def trade(side, ticker, qty, px, quoted, new_state, reason, stop=None, target=None):
+        """Send the fill through execution.submit (its checks apply to bots
+        too) and write it with the bot's state. "rejected" when a check
+        refused it, None when the bot stopped meanwhile."""
+        def write(order):
+            tx = Transaction(user_id=bot.user_id, account=bot.account, ticker=ticker, side=side,
+                             qty=qty, price=px, currency=bot.currency, executed_at=at, source="bot")
+            return db.bot_trade(conn, bot, tx, new_state, BotEvent(
+                bot_id=bot.id, user_id=bot.user_id, at=at, kind=side.lower(), ticker=ticker,
+                qty=qty, price=px, reason=reason), order)
+
+        order = Order(user_id=bot.user_id, account=bot.account, ticker=ticker, side=side, qty=qty,
+                      currency=bot.currency, created_at=at, fill_price=px, reference_price=quoted,
+                      source="bot", reason=reason, plan_stop=stop, plan_target=target)
+        try:
+            done = execution.submit(conn, order, now, fill=write)
+        except execution.OrderRejected as exc:
+            _skip(conn, bot, ticker, f"{ticker}: {side.lower()} refused — {exc.reason}", at)
+            return "rejected"
         _LAST_SKIP.pop((bot.id, ticker), None)
         return done
 
     for t, h in list(positions.items()):
         if t not in live:
             continue
-        price = price_of(t)
+        price, why = quotes.tradable_price(by_ticker.get(t), now)
         if price is None:
-            _skip(conn, bot, t, f"{t}: no live price — holding until one arrives", at)
+            _skip(conn, bot, t, f"{t}: {why} — holding until a fresh one arrives", at)
             continue
         if t not in state["pos"]:
             state["pos"][t] = {"entry": h.avg_cost}
             dirty = True
         held = state["pos"][t]
-        if bot.strategy == "breakout" and price > (held.get("high") or 0):
+        if trails and price > (held.get("high") or 0):
             held["high"] = price
             dirty = True
         bars = [b for b in db.get_ohlc(conn, t, "daily") if b.date < _local_today(t, now).isoformat()]
-        d = decide(bot.strategy, p, bars, price, held, db.get_analysis(conn, t))
+        d = decide(bot.strategy, p, bars, price, held, analyses.get(t), spec)
         if d.action != "sell":
             continue
         px = fill_price(price, "SELL")
-        state["pos"].pop(t, None)
-        state["cooldown"][t] = _local_today(t, now).isoformat()
-        if trade("SELL", t, h.shares, px, state, f"Sold {h.shares:g} {t} at {_money(px)} — {d.reason}") is None:
+        new_state = {"pos": {k: v for k, v in state["pos"].items() if k != t},
+                     "cooldown": {**state["cooldown"], t: _local_today(t, now).isoformat()}}
+        done = trade("SELL", t, h.shares, px, price, new_state,
+                     f"Sold {h.shares:g} {t} at {_money(px)} — {d.reason}")
+        if done is None:
             return fills
+        if done == "rejected":
+            continue
+        state = new_state
         fills += 1
         dirty = False
         cash += h.shares * px
         del positions[t]
 
     holding = set(positions)
+    if halted:
+        # Exits above still ran; only new entries wait.
+        _skip(conn, bot, None, f"New entries paused — {halted[0]}", at)
+        names = []
     for t in names:
         if len(holding) >= int(p["max_positions"]):
             break
         if t in holding or t not in live or state["cooldown"].get(t) == _local_today(t, now).isoformat():
             continue
-        price = price_of(t)
+        price, why = quotes.tradable_price(by_ticker.get(t), now)
         if price is None:
-            _skip(conn, bot, t, f"{t}: no live price", at)
+            _skip(conn, bot, t, f"{t}: {why}", at)
             continue
         bars = [b for b in db.get_ohlc(conn, t, "daily") if b.date < _local_today(t, now).isoformat()]
-        d = decide(bot.strategy, p, bars, price, None, db.get_analysis(conn, t))
+        d = decide(bot.strategy, p, bars, price, None, analyses.get(t), spec)
         if d.action != "buy":
-            if d.reason.startswith("needs") or d.reason == "no stored analysis":
+            if d.reason.startswith("needs") or d.reason in ("no stored analysis", "its saved rule no longer exists"):
                 _skip(conn, bot, t, f"{t}: {d.reason}", at)
             continue
         px = fill_price(price, "BUY")
@@ -299,12 +390,18 @@ def _run_bot(conn, bot: Bot, names: list[str], live: set, by_ticker: dict, now: 
             continue
         stop = d.stop if d.stop is not None else (
             px * (1 - p["stop_pct"] / 100) if "stop_pct" in p else None)
-        state["pos"][t] = {"entry": px, "stop": stop, "target": d.target, "high": price}
+        new_state = {"pos": {**state["pos"], t: {"entry": px, "stop": stop, "target": d.target, "high": price}},
+                     "cooldown": state["cooldown"]}
         stop_note = f" Stop {_money(stop)}." if stop else ""
         target_note = f" Target {_money(d.target)}." if d.target else ""
-        if trade("BUY", t, qty, px, state,
-                 f"Bought {qty} {t} at {_money(px)} — {d.reason}.{stop_note}{target_note}") is None:
+        done = trade("BUY", t, qty, px, price, new_state,
+                     f"Bought {qty} {t} at {_money(px)} — {d.reason}.{stop_note}{target_note}",
+                     stop=stop, target=d.target)
+        if done is None:
             return fills
+        if done == "rejected":
+            continue
+        state = new_state
         fills += 1
         dirty = False
         cash -= qty * px
@@ -328,10 +425,12 @@ def run(conn, now: datetime | None = None, quote_getter=None) -> int:
     if not live:
         return 0
     by_ticker = {q.ticker: q for q in (quote_getter or quotes.get_quotes)(sorted(live))}
+    reg = regime.latest(conn)
+    halts = {uid: risk.entry_blockers(conn, uid, reg) for uid in {b.user_id for b in bots}}
     fills = 0
     for bot in bots:
         try:
-            fills += _run_bot(conn, bot, names[bot.id], live, by_ticker, now)
+            fills += _run_bot(conn, bot, names[bot.id], live, by_ticker, now, halts[bot.user_id])
         except Exception as exc:  # noqa: BLE001 - one bot's failure must not stop the others
             logger.exception("bot %s failed", bot.id)
             db.add_bot_event(conn, BotEvent(
@@ -391,6 +490,10 @@ def validate_new(conn, user_id: int, body: dict) -> tuple[Bot | None, dict]:
     if strategy == "dip" and "rsi_buy" in params and "rsi_exit" in params \
             and params["rsi_buy"] >= params["rsi_exit"]:
         errors["params.rsi_exit"] = "Sell level must be above the buy level"
+    if strategy == "rule":
+        saved = db.get_saved_rule(conn, int(params.get("rule_id") or 0))
+        if saved is None or saved.user_id != user_id:
+            errors["params.rule_id"] = "Pick one of your saved rules (Rules tab)"
 
     ccy = str(body.get("currency") or "").strip().upper()
     cash = {c.currency: c.balance for c in db.get_cash(conn, user_id)}

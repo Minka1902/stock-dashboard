@@ -13,10 +13,16 @@ Explicitly NOT done: re-running analysis.build() over historical bars to
 synthesize what we "would have" said. Today's weights, and today's
 fundamentals/analyst/congress snapshots, applied to last year's prices is
 look-ahead bias wearing a track record's clothes.
-"""
-from datetime import date, datetime, timedelta, timezone
 
-from app import db, suggestion_history
+Every number is per model version (model_version.py) — a reweighted model
+starts a new record — and comes gross and net of costs (costs.py). A hit rate
+carries its Wilson 95% interval and is flagged `insufficient` below
+config.MIN_TRACK_SAMPLE outcomes.
+"""
+import math
+from datetime import date, timedelta
+
+from app import config, costs, db, model_version, suggestion_history
 
 # Forward windows for the signal replay, in calendar days.
 REPLAY_HORIZONS = (7, 30)
@@ -33,20 +39,62 @@ def _median(values: list[float]) -> float | None:
     return s[mid] if len(s) % 2 else (s[mid - 1] + s[mid]) / 2
 
 
+def wilson(wins: int, n: int, z: float = 1.96) -> tuple[float, float] | None:
+    """Wilson score interval for a hit rate, in %. Honest at small n, where
+    the plain ± interval would run past 0 or 100."""
+    if n <= 0:
+        return None
+    p = wins / n
+    denom = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return round(max(0.0, centre - half) * 100, 1), round(min(1.0, centre + half) * 100, 1)
+
+
 def _stats(returns: list[float]) -> dict:
     """Summary of a bucket of realised returns. All None when empty — never 0."""
     if not returns:
-        return {"n": 0, "hit_rate": None, "median": None, "mean": None,
-                "best": None, "worst": None}
-    wins = [r for r in returns if r > 0]
+        return {"n": 0, "hit_rate": None, "hit_rate_ci": None, "insufficient": True,
+                "median": None, "mean": None, "best": None, "worst": None}
+    wins = sum(1 for r in returns if r > 0)
     return {
         "n": len(returns),
-        "hit_rate": round(len(wins) / len(returns) * 100, 1),
+        "hit_rate": round(wins / len(returns) * 100, 1),
+        "hit_rate_ci": wilson(wins, len(returns)),
+        "insufficient": len(returns) < config.MIN_TRACK_SAMPLE,
         "median": round(_median(returns), 2),
         "mean": round(sum(returns) / len(returns), 2),
         "best": round(max(returns), 2),
         "worst": round(min(returns), 2),
     }
+
+
+def _versions(rows: list[dict], date_key: str) -> list[dict]:
+    """The model versions present, newest last-seen first."""
+    seen: dict[str, dict] = {}
+    for r in rows:
+        v = r.get("model_version") or model_version.LEGACY
+        d = r[date_key][:10]
+        e = seen.setdefault(v, {"version": v, "n": 0, "first_date": d, "last_date": d})
+        e["n"] += 1
+        e["first_date"], e["last_date"] = min(e["first_date"], d), max(e["last_date"], d)
+    current = model_version.current()
+    out = sorted(seen.values(), key=lambda e: e["last_date"], reverse=True)
+    for e in out:
+        e["current"] = e["version"] == current
+    return out
+
+
+def _pick_version(versions: list[dict], requested: str | None) -> str:
+    """The requested version if it has data, else the running model's, else
+    the most recently seen one."""
+    names = [v["version"] for v in versions]
+    if requested in names:
+        return requested
+    current = model_version.current()
+    if current in names or not names:
+        return current
+    return names[0]
 
 
 def _coverage(dates: list[str]) -> dict:
@@ -64,22 +112,27 @@ def _coverage(dates: list[str]) -> dict:
     }
 
 
-def track_record(conn, user_id: int, months: int = 12) -> dict:
-    """What was suggested, and what happened next — grouped by action and kind.
+def track_record(conn, user_id: int, months: int = 12, version: str | None = None) -> dict:
+    """What was suggested, and what happened next — grouped by action and kind,
+    for one model version, gross (`d7`) and net of costs (`d7_net`).
 
     Buckets report `n_pending` alongside `n`: an entry whose 7-day window hasn't
     elapsed is not a miss, and folding it into the hit rate either way would be
     wrong.
     """
     entries = db.get_suggestion_history(conn, user_id, months=max(1, months))
-    rows = suggestion_history.with_outcomes(conn, entries)
+    versions = _versions([e.model_dump() for e in entries], "for_date")
+    picked = _pick_version(versions, version)
+    rows = suggestion_history.with_outcomes(
+        conn, [e for e in entries if e.model_version == picked])
 
     def bucket(label: str, subset: list[dict]) -> dict:
         out = {"label": label, "n": len(subset)}
         for days in suggestion_history.HORIZONS:
             key = f"d{days}"
-            realised = [r["outcomes"][key] for r in subset if r["outcomes"].get(key) is not None]
-            out[key] = _stats(realised)
+            realised = [r for r in subset if r["outcomes"].get(key) is not None]
+            out[key] = _stats([r["outcomes"][key] for r in realised])
+            out[f"{key}_net"] = _stats([r["outcomes_net"][key] for r in realised])
             out[f"{key}_pending"] = len(subset) - len(realised)
         return out
 
@@ -93,6 +146,10 @@ def track_record(conn, user_id: int, months: int = 12) -> dict:
             by_ticker.setdefault(r["ticker"], []).append(r)
 
     return {
+        "model_version": picked,
+        "versions": versions,
+        "cost_bps_per_side": config.COST_BPS_PER_SIDE,
+        "min_sample": config.MIN_TRACK_SAMPLE,
         "coverage": _coverage([r["for_date"] for r in rows]),
         "overall": bucket("All suggestions", rows),
         "by_action": [bucket(k, v) for k, v in sorted(by_action.items())],
@@ -109,7 +166,9 @@ def track_record(conn, user_id: int, months: int = 12) -> dict:
         # the numbers wherever they end up.
         "caveat": (
             "History starts when the app began recording; there is no backfill. "
-            "Small samples are small — read the coverage block first."
+            "One model version at a time; net figures pay "
+            f"{config.COST_BPS_PER_SIDE:g} bps a side. Small samples are small — "
+            "read the coverage block first."
         ),
     }
 
@@ -144,7 +203,7 @@ def _benchmark(conn, rows: list[dict]) -> dict:
 
 def signal_replay(
     conn, horizon_days: int = 7, months: int = 12,
-    thresholds: tuple[int, ...] = REPLAY_THRESHOLDS,
+    thresholds: tuple[int, ...] = REPLAY_THRESHOLDS, version: str | None = None,
 ) -> dict:
     """Every upward boom-score threshold crossing, against what price did next.
 
@@ -156,12 +215,15 @@ def signal_replay(
     since = (date.today() - timedelta(days=30 * max(1, months))).isoformat()
     today = date.today().isoformat()
     history = db.get_boom_score_history_all(conn, since)
+    versions = _versions(history, "computed_at")
+    picked = _pick_version(versions, version)
 
     # Group by ticker, ordered in time, so a "crossing" is a real transition
-    # rather than two unrelated rows.
+    # rather than two unrelated rows — and within one model version only.
     by_ticker: dict[str, list[tuple[str, int]]] = {}
     for row in history:
-        by_ticker.setdefault(row["ticker"], []).append((row["computed_at"], row["score"]))
+        if (row["model_version"] or model_version.LEGACY) == picked:
+            by_ticker.setdefault(row["ticker"], []).append((row["computed_at"], row["score"]))
 
     closes_cache: dict[str, dict[str, float]] = {}
 
@@ -174,6 +236,7 @@ def signal_replay(
     all_dates: list[str] = []
     for threshold in thresholds:
         returns: list[float] = []
+        net: list[float] = []
         pending = 0
         crossings = 0
         seen_days: set[tuple[str, str]] = set()
@@ -202,15 +265,21 @@ def signal_replay(
                         exit_close = _close_on_or_after(closes_for(ticker), target_day)
                         if entry_close and exit_close:
                             returns.append((exit_close / entry_close - 1) * 100)
+                            net.append(costs.round_trip(entry_close, exit_close))
                         else:
                             pending += 1  # no bar to measure against
                 prev = score
 
         stats = _stats(returns)
-        stats.update({"threshold": threshold, "crossings": crossings, "pending": pending})
+        stats.update({"threshold": threshold, "crossings": crossings, "pending": pending,
+                      "net": _stats(net)})
         results.append(stats)
 
     return {
+        "model_version": picked,
+        "versions": versions,
+        "cost_bps_per_side": config.COST_BPS_PER_SIDE,
+        "min_sample": config.MIN_TRACK_SAMPLE,
         "horizon_days": horizon_days,
         "coverage": _coverage(all_dates),
         "thresholds": results,

@@ -7,12 +7,17 @@ in-app Suggestions panel (`GET /api/suggestions`) and the email/SMS delivery.
 Nothing here is financial advice; every rendering carries that disclaimer.
 """
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
-from app import config, db
+from app import automute, config, db, risk
 from app.market_calendar import next_trading_day
 
 DISCLAIMER = "Signals, not financial advice. Do your own research."
+
+# Part of the scoring model's version (app/model_version.py).
+EARNINGS_RISK_DAYS = 7     # a holding reporting within this many days is an earnings risk
+HOT_BOOM_SCORE = 50        # a watched name at or above this Boom Score counts as "hot"
+RULE_SIGNAL_DAYS = 5       # how far back the digest lists your saved rules' signals
 
 # BoomScore boolean flags → short human labels.
 _BEARISH_LABELS = {
@@ -161,7 +166,9 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
         for_date = next_trading_day().isoformat()
     ref = date.fromisoformat(for_date)
 
-    boom = {b.ticker: b for b in db.get_boom_scores(conn)}
+    # Scores as this user counts them: the shared auto-mutes plus their overrides.
+    muted = automute.muted_for(conn, user_id)
+    boom = {b.ticker: automute.apply_mutes(b, muted) for b in db.get_boom_scores(conn)}
     tech = {t.ticker: t for t in db.get_technical_signals(conn)}
     analyst = {a.ticker: a for a in db.get_analyst_signals(conn)}
     portfolio = db.get_portfolio(conn, user_id)
@@ -172,7 +179,7 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
 
     fg_score = db.get_latest_fear_greed_score(conn)
     uninversion = db.has_yield_uninversion(conn)
-    hot_count = sum(1 for t in watchlist if t in boom and boom[t].score >= 50)
+    hot_count = sum(1 for t in watchlist if t in boom and boom[t].score >= HOT_BOOM_SCORE)
 
     rating = _fg_rating(fg_score)
     ctx_bits = []
@@ -180,7 +187,7 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
         ctx_bits.append(f"{rating} ({fg_score:.0f})")
     if uninversion:
         ctx_bits.append("yield curve normalizing")
-    ctx_bits.append(f"{hot_count} watchlist name{'s' if hot_count != 1 else ''} hot (Boom ≥ 50)")
+    ctx_bits.append(f"{hot_count} watchlist name{'s' if hot_count != 1 else ''} hot (Boom ≥ {HOT_BOOM_SCORE})")
     market_context = {
         "fear_greed_score": fg_score,
         "fear_greed_rating": rating,
@@ -206,7 +213,7 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
             reasons += bearish
         a = analyst.get(h.ticker)
         edays = _days_until(a.next_earnings, ref) if a else None
-        earnings_soon = edays is not None and 0 <= edays <= 7
+        earnings_soon = edays is not None and 0 <= edays <= EARNINGS_RISK_DAYS
         if earnings_soon:
             reasons.append(f"earnings in {edays}d")
         mixed = bool(b and b.mixed_signals)
@@ -299,6 +306,24 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
     seasonality.sort(key=lambda x: x["avg_pct"], reverse=True)
     seasonality = seasonality[: config.SUGGESTIONS_COUNT]
 
+    # Risk switches touch new buys only; holdings alerts (the sells) always go
+    # out. Paused: no new buys. Downgraded (risk-off regime): shown as watch.
+    gate = risk.gate(conn, user_id)
+    paused = gate["halted"]
+    if paused:
+        opportunities, new_ideas = [], []
+    elif gate["downgrade"]:
+        opportunities = [_downgrade(o, gate["downgrade"]) for o in opportunities]
+        new_ideas = [_downgrade(o, gate["downgrade"]) for o in new_ideas]
+
+    # What your saved rules fired on lately, each under its rule's own version.
+    rule_names = {r.id: r.name for r in db.get_saved_rules(conn, user_id)}
+    rule_signals = [
+        {**s.model_dump(), "rule": rule_names[s.rule_id]}
+        for s in db.get_rule_signals(conn, user_id, (ref - timedelta(days=RULE_SIGNAL_DAYS)).isoformat())
+        if s.rule_id in rule_names
+    ]
+
     return {
         "for_date": for_date,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -308,7 +333,19 @@ def build_digest(conn, for_date: str | None = None, user_id: int = 0) -> dict:
         "opportunities": opportunities,
         "new_ideas": new_ideas,
         "seasonality": seasonality,
+        "paused": paused,
+        "downgraded": gate["downgrade"],
+        "muted": sorted(muted),
+        "rule_signals": rule_signals,
     }
+
+
+def _downgrade(o: dict, why: str) -> dict:
+    """A new buy re-labelled watch, with the reason attached."""
+    out = {**o, "regime_note": why}
+    if not o.get("ta_pending"):
+        out["recommendation"] = "watch"
+    return out
 
 
 # ---------- renderers ----------
@@ -340,6 +377,10 @@ def render_email(digest: dict) -> tuple[str, str, str]:
     subject = f"Trading suggestions for {d['for_date']}"
 
     lines = [d["market_context"]["summary"], ""]
+    for reason in d.get("paused", []):
+        lines += [f"NEW BUYS PAUSED — {reason}. Review it on the Trading Bot page.", ""]
+    if d.get("downgraded"):
+        lines += [f"NEW BUYS SHOWN AS WATCH — {d['downgraded']}.", ""]
     if d["holdings_alerts"]:
         lines.append("YOUR HOLDINGS")
         lines += [f"  • {_alert_line(a)}" for a in d["holdings_alerts"]]
@@ -373,6 +414,11 @@ def render_email(digest: dict) -> tuple[str, str, str]:
         f"<h2 style='margin:0 0 4px'>Suggestions for {esc(d['for_date'])}</h2>",
         f"<p style='color:#555'>{esc(d['market_context']['summary'])}</p>",
     ]
+    for reason in d.get("paused", []):
+        html_parts.append(f"<p><b>New buys paused</b> — {esc(reason)}. "
+                          f"Review it on the Trading Bot page.</p>")
+    if d.get("downgraded"):
+        html_parts.append(f"<p><b>New buys shown as watch</b> — {esc(d['downgraded'])}.</p>")
     if d["holdings_alerts"]:
         html_parts.append("<h3>Your holdings</h3><ul>")
         html_parts += [f"<li>{esc(_alert_line(a))}</li>" for a in d["holdings_alerts"]]
@@ -416,7 +462,8 @@ def render_email(digest: dict) -> tuple[str, str, str]:
 
 def render_sms(digest: dict, max_len: int = 320) -> str:
     d = digest
-    bits = []
+    bits = ["New buys paused."] if d.get("paused") else (
+        ["Risk-off: buys shown as watch."] if d.get("downgraded") else [])
     if d["market_context"]["fear_greed_rating"]:
         bits.append(f"Mkt {d['market_context']['fear_greed_rating']} "
                     f"{d['market_context']['fear_greed_score']:.0f}.")

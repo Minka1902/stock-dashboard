@@ -13,7 +13,7 @@ from email.message import EmailMessage
 
 import httpx
 
-from app import config, db
+from app import config, db, telegram
 from app.models import Alert, NotifyProfile, SuggestionLogEntry
 from app.suggestions import build_digest, render_email, render_sms
 
@@ -98,7 +98,9 @@ def send_digest(conn, for_date: str | None = None) -> list[dict]:
 
 
 def push_alert(conn, alert: Alert) -> None:
-    """Push a single alert to every user with an enabled+configured channel.
+    """Push a single alert to every user with an enabled+configured channel
+    (email, SMS, a linked Telegram chat) —
+    or, for a user's own alert (alert.user_id set), to that user only.
     Resilient; sets alert.pushed when at least one delivery succeeded.
     Logged to suggestion_log."""
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -107,12 +109,15 @@ def push_alert(conn, alert: Alert) -> None:
     html = f"<b>{alert.ticker}</b> · {alert.title}<br>{alert.message}"
 
     statuses = []
-    for user in db.get_users(conn):
+    users = db.get_users(conn) if alert.user_id is None else [db.get_user(conn, alert.user_id)]
+    for user in filter(None, users):
         profile = db.get_notify_profile(conn, user.id)
-        if not (profile.email_enabled or profile.sms_enabled):
-            continue
-        statuses.append(("email", send_email(profile, subject, body, html)))
-        statuses.append(("sms", send_sms(profile, f"{alert.ticker}: {body}")))
+        if profile.email_enabled or profile.sms_enabled:
+            statuses.append(("email", send_email(profile, subject, body, html)))
+            statuses.append(("sms", send_sms(profile, f"{alert.ticker}: {body}")))
+        tg = telegram.send_to_user(conn, user.id, f"{subject}\n{alert.message}")
+        if tg != "skipped":
+            statuses.append(("telegram", tg))
     if any(s == "sent" for _, s in statuses):
         alert.pushed = True
 
@@ -121,3 +126,11 @@ def push_alert(conn, alert: Alert) -> None:
                            channel="alert", status=f"{ch}: {st}")
         for ch, st in statuses
     ])
+
+
+def push_stored(conn, alerts: list[Alert]) -> None:
+    """Push alerts that are already stored, and record which got through."""
+    for alert in alerts:
+        push_alert(conn, alert)
+        if alert.pushed:
+            db.mark_alert_pushed(conn, alert.dedup_key)

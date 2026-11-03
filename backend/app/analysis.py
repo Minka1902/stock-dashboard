@@ -41,6 +41,12 @@ from app.sources.technical import compute_ma, compute_macd, compute_rsi
 
 # --- tunables ---
 _ATR_PERIOD = 14
+# Decision thresholds. They are part of the scoring model's version
+# (app/model_version.py): change one and new calls are tracked as a new model.
+CONVICTION_ACCUMULATE = 45
+CONVICTION_AVOID = -45
+CONVICTION_REDUCE = -15
+RR_THRESHOLD = 3.0
 _ATR_STOP_MULT = 2.0
 _STRUCT_STOP_ATR_BUFFER = 1.0   # stop ~1 ATR below structure so stop-hunts can't tag it (B4)
 _PIVOT_K = 5            # bars on each side to qualify a swing pivot
@@ -1151,11 +1157,11 @@ def build(ticker: str, daily: list[OHLCBar], price: float | None,
            f"{len(unfilled_up)} unfilled up-gap(s) below act as support ({_GAP_NOTE.lower()})")
 
     conviction = max(-100, min(100, sum(e.weight for e in evidence)))
-    if conviction >= 45:
+    if conviction >= CONVICTION_ACCUMULATE:
         directive = "Accumulate"
-    elif conviction <= -45:
+    elif conviction <= CONVICTION_AVOID:
         directive = "Avoid"
-    elif conviction <= -15:
+    elif conviction <= CONVICTION_REDUCE:
         directive = "Reduce"
     else:
         directive = "Hold"
@@ -1187,7 +1193,7 @@ def build(ticker: str, daily: list[OHLCBar], price: float | None,
                "No stop below price yet (need a nearby support or ATR floor) — plan pending.")
 
     # R/R gate (B6): a sub-3:1 setup is a known skip in advance — demote Buy to Hold.
-    rr_threshold = 3.0
+    rr_threshold = RR_THRESHOLD
     rr_pass = rr is not None and rr >= rr_threshold
     if recommendation == "buy" and not rr_pass:
         ev("rr_gate", "neutral", 0,

@@ -24,6 +24,7 @@ import TechnicalPanel from "./components/TechnicalPanel";
 import FearGreedPanel from "./components/FearGreedPanel";
 import MarketSentimentPanel from "./components/MarketSentimentPanel";
 import CongressPanel from "./components/CongressPanel";
+import InvestorsPanel from "./components/InvestorsPanel";
 import BoomScorePanel from "./components/BoomScorePanel";
 import ShortPanel from "./components/ShortPanel";
 import SocialPanel from "./components/SocialPanel";
@@ -35,6 +36,9 @@ import SuggestionsPanel from "./components/SuggestionsPanel";
 import SuggestionHistoryPanel from "./components/SuggestionHistoryPanel";
 import EarningsPanel from "./components/EarningsPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
+import RiskBanner from "./components/RiskBanner";
+import OrderTicket from "./components/OrderTicket";
+import KillSwitchDialog from "./components/KillSwitchDialog";
 import TradingBotPanel from "./components/TradingBotPanel";
 import XPostsPanel from "./components/XPostsPanel";
 import InfoPanel from "./components/InfoPanel";
@@ -43,6 +47,7 @@ import StockDetailPanel from "./components/StockDetailPanel";
 import BackToTop from "./components/BackToTop";
 import Tour from "./components/Tour";
 import { TOURS } from "./lib/tours";
+import { alertRoute } from "./lib/alertMeta";
 import { AnimatePresence, motion } from "motion/react";
 import { leaveStock, navigateTo, openTickerTab } from "./lib/nav";
 import { DEFAULT_VIEW, TITLES } from "./lib/routes";
@@ -103,6 +108,7 @@ const VIEWS = {
   signals: (p) => <TechnicalPanel data={p.signals} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   "fear-greed": (p) => <FearGreedPanel data={p.fearGreed} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   congress: (p) => <CongressPanel data={p.congressTrades} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
+  investors: (p) => <InvestorsPanel data={p.investors} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   "boom-score": (p) => <BoomScorePanel data={p.boomScores} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   short: (p) => <ShortPanel data={p.shortInterest} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   social: (p) => <SocialPanel data={p.social} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
@@ -130,6 +136,7 @@ const VIEWS = {
         <SocialPanel data={p.social} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("social")} collapsible collapsed={p.isCollapsed("social")} onToggleCollapse={() => p.toggleCollapsed("social")} />
       </div>
       <CongressPanel data={p.congressTrades} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("congress")} collapsible collapsed={p.isCollapsed("congress")} onToggleCollapse={() => p.toggleCollapsed("congress")} />
+      <InvestorsPanel data={p.investors} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("investors")} collapsible collapsed={p.isCollapsed("investors")} onToggleCollapse={() => p.toggleCollapsed("investors")} />
       <ShortPanel data={p.shortInterest} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("short")} collapsible collapsed={p.isCollapsed("short")} onToggleCollapse={() => p.toggleCollapsed("short")} />
       <AnalystPanel data={p.analyst} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("analyst")} collapsible collapsed={p.isCollapsed("analyst")} onToggleCollapse={() => p.toggleCollapsed("analyst")} />
       <FundamentalsPanel data={p.fundamentals} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("fundamentals")} collapsible collapsed={p.isCollapsed("fundamentals")} onToggleCollapse={() => p.toggleCollapsed("fundamentals")} />
@@ -146,6 +153,8 @@ export default function App({ auth }) {
   const { theme, setTheme, toggle, themes } = useTheme();
   const { settings, setSetting, labelFor } = useSettingsContext();
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [ticketOpen, setTicketOpen] = useState(false);
+  const [killOpen, setKillOpen] = useState(false);
   const scrollRef = useRef(null);
 
   // The address bar is the single source of truth for both the current view and
@@ -221,7 +230,7 @@ export default function App({ auth }) {
   // Only what App itself renders (chrome, banners, the detail overlay). Panel
   // data reaches the views through `viewProps`, which spreads `data` wholesale.
   const {
-    sources, watchlist, sentiment, alerts, unreadAlerts,
+    sources, watchlist, portfolio, sentiment, alerts, unreadAlerts,
     loading, busy, error, refresh, addWatch, markAlertsRead,
   } = data;
 
@@ -237,9 +246,7 @@ export default function App({ auth }) {
   const openAlert = useCallback((alert) => {
     markAlertsRead([alert.dedup_key]).catch(() => {});
     // `from` is what sends Back to this view rather than closing the tab.
-    navigateTo({
-      kind: "stock", ticker: alert.ticker, alertKey: alert.dedup_key, from: view,
-    });
+    navigateTo({ ...alertRoute(alert), from: view });
   }, [markAlertsRead, view]);
 
   // Only auto-run tours for a genuinely first-time account. Captured once at
@@ -305,6 +312,8 @@ export default function App({ auth }) {
     ...(auth?.user?.is_admin
       ? [{ id: "server", label: "Server", hint: "health & errors", icon: "layers", run: () => navigate("server") }]
       : []),
+    { id: "kill-switch", label: "Kill switch: halt all trading", hint: "cancel orders, pause bots", icon: "shield", run: () => setKillOpen(true) },
+    { id: "paper-trade", label: "Paper trade…", hint: "simulated order ticket", icon: "bot", run: () => setTicketOpen(true) },
     { id: "refresh",     label: "Refresh all sources", hint: "sync now", icon: "refresh", run: () => refresh() },
     { id: "theme",       label: "Toggle theme", hint: theme === "dark" ? "to light" : "to dark", icon: theme === "dark" ? "sun" : "moon", run: () => toggle() },
     { id: "dyslexia",    label: "Dyslexia-friendly mode", hint: settings.dyslexia ? "on" : "off", icon: "book", run: () => setSetting("dyslexia", !settings.dyslexia) },
@@ -359,6 +368,7 @@ export default function App({ auth }) {
               </div>
             )}
 
+            {!detailTicker && <RiskBanner />}
             {!detailTicker && <SourceStatus sources={sources} onOpenDetails={openSourceDetails} />}
 
             <AnimatePresence mode="wait" initial={false}>
@@ -375,6 +385,7 @@ export default function App({ auth }) {
                   onBack={closeDetail}
                   watchlist={watchlist}
                   onAddWatch={addWatch}
+                  held={Boolean(portfolio?.some((h) => h.ticker === detailTicker))}
                   // From /stock/X?alert=<dedup_key>: which alert brought you here.
                   focusAlertKey={route.kind === "stock" ? route.alertKey : null}
                 />
@@ -404,6 +415,9 @@ export default function App({ auth }) {
           onOpenTicker={openTickerTab}
         />
       )}
+
+      {ticketOpen && <OrderTicket onClose={() => setTicketOpen(false)} />}
+      <KillSwitchDialog open={killOpen} onClose={() => setKillOpen(false)} />
 
       {tourView && TOURS[tourView] && (
         <Tour steps={TOURS[tourView]} onClose={closeTour} />

@@ -323,7 +323,7 @@ def test_run_now_runs_the_source_on_the_refresh_executor(client, app_module):
         app_module.SOURCES["vix"] = spec
 
 
-def test_run_now_on_derived_runs_boom_score_then_alerts(client, app_module):
+def test_run_now_on_derived_runs_its_members_in_order(client, app_module):
     order = []
     saved = {n: app_module.SOURCES[n] for n in schedules.DERIVED_MEMBERS}
     for n in schedules.DERIVED_MEMBERS:
@@ -331,7 +331,7 @@ def test_run_now_on_derived_runs_boom_score_then_alerts(client, app_module):
     try:
         assert client.post(f"/api/server/schedules/{schedules.DERIVED}/run-now").status_code == 202
         drain_refresh()
-        assert order == ["boom_score", "alerts"]
+        assert order == ["boom_score", "alerts", "regime", "automute", "rules"]
     finally:
         app_module.SOURCES.update(saved)
 

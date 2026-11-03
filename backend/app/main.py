@@ -32,11 +32,11 @@ from pydantic import BaseModel
 
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from app import analysis, analyze, auth, backtest, bots, chart_data, config, currency, db, equity, ingest, ledger, notify, quotes, report, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
+from app import analysis, analyze, audit, auth, backtest, bots, chart_data, config, currency, db, equity, execution, exits, ingest, ledger, notify, quotes, report, risk, routes_auth, routes_oauth, schedules, search, sentiment, suggestion_history, suggestions, themes
 from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
-from app import routes_chart, routes_update, updater
+from app import automute, model_version, routes_broker, regime, routes_analytics, routes_chart, routes_investors, routes_lots, routes_paper, routes_risk, routes_rules, routes_scanner, routes_telegram, routes_timemachine, routes_update, rule_source, scanner, telegram, updater
 
 # Optional: the Server page degrades to "unavailable" rather than reporting
 # zeros, which would look identical to a genuinely idle machine.
@@ -60,6 +60,7 @@ import app.sources.aaii as aaii_source
 import app.sources.put_call as put_call_source
 import app.sources.margin_debt as margin_debt_source
 import app.sources.congress as congress_source
+import app.sources.holdings13f as holdings13f_source
 import app.sources.short_interest as short_interest_source
 import app.sources.social as social_source
 import app.sources.analyst as analyst_source
@@ -178,7 +179,8 @@ def score_fetch(conn):
     tickers = db.get_all_watched_tickers(conn)
     if not tickers:
         return []
-    return boom_score_source.compute_all(tickers, conn)
+    return boom_score_source.compute_all(tickers, conn, model_version.current(),
+                                         automute.global_mutes(conn))
 
 
 def econ_calendar_fetch(conn):
@@ -203,7 +205,15 @@ def ohlc_fetch(conn):
     universe.sort(key=lambda t: fetched.get(t, ""))  # "" (never fetched) sorts first
     # Benchmarks always ride along, outside the cap: analytics (beta, relative
     # return) and the regime gate need them whether or not anyone holds them.
-    return ohlc_source.fetch(config.BENCHMARK_TICKERS + universe[: config.OHLC_MAX_TICKERS])
+    out = ohlc_source.fetch(config.BENCHMARK_TICKERS + universe[: config.OHLC_MAX_TICKERS])
+    # The backtester's full adjusted history: watchlist + benchmarks, weekly,
+    # stalest first, a few per run.
+    stale_before = (datetime.now(timezone.utc) - timedelta(days=config.DAILY_MAX_REFRESH_DAYS)).isoformat()
+    have = db.get_ohlc_fetched_at(conn, "daily_max")
+    due = sorted((t for t in [*config.BENCHMARK_TICKERS, *db.get_all_watched_tickers(conn)]
+                  if have.get(t, "") < stale_before), key=lambda t: have.get(t, ""))
+    return out + ohlc_source.fetch(list(dict.fromkeys(due))[: config.DAILY_MAX_PER_RUN],
+                                   ohlc_source.MAX_SERIES)
 
 
 def analysis_fetch(conn):
@@ -272,6 +282,12 @@ def _us_only(tickers: list[str]) -> list[str]:
     return [t for t in tickers if currency.market_for_symbol(t) == "US"]
 
 
+def _store_equity(conn, snaps) -> None:
+    """Store the closing values, then trip any drawdown kill switch they breach."""
+    db.upsert_equity_snapshots(conn, snaps)
+    notify.push_stored(conn, risk.check_drawdowns(conn))
+
+
 def build_sources(conn):
     """Registry bound to a connection: name -> SourceSpec.
 
@@ -303,7 +319,7 @@ def build_sources(conn):
                                   config.MARGIN_DEBT_MIN_INTERVAL_SECONDS,
                                   retry_interval=config.MARGIN_DEBT_RETRY_INTERVAL_SECONDS,
                                   force_on_daily=False),
-        "congress":       (lambda: congress_source.fetch(config.CONGRESS_LOOKBACK_DAYS), db.upsert_congress_trades, config.CONGRESS_MIN_INTERVAL_SECONDS),
+        "congress":       (lambda: congress_source.fetch(conn, config.CONGRESS_LOOKBACK_DAYS), congress_source.store, config.CONGRESS_MIN_INTERVAL_SECONDS),
         # Short interest is a US-listing dataset: TASE (and other non-US)
         # symbols are left out rather than recorded as failures.
         "short_interest": (lambda: short_interest_source.fetch(_us_only(db.get_all_watched_tickers(conn))), db.upsert_short_interest, None),
@@ -319,8 +335,28 @@ def build_sources(conn):
         "ohlc":           (lambda: ohlc_fetch(conn), db.upsert_ohlc, config.OHLC_MIN_INTERVAL_SECONDS),  # 2y history barely moves intraday
         "analysis":       (lambda: analysis_fetch(conn), db.upsert_analyses, config.ANALYSIS_MIN_INTERVAL_SECONDS),  # after ohlc; cheap DB+quote read
         "alerts":         (lambda: alerts_source.detect(conn), db.upsert_alerts, None),  # derived: after boom_score
+        # derived: today's market regime, then per-signal performance + auto-mute
+        "regime":         (lambda: regime.compute(conn), db.upsert_regime, None),
+        "automute":       (lambda: automute.performance(conn), automute.store, None),
+        # derived: saved rules evaluated on completed bars (STC-67)
+        "rules":          (lambda: rule_source.fetch(conn), rule_source.store, None),
+        # Famous investors' 13F holdings: one SEC request per filer a day; a
+        # new quarter's tables are read only when one is filed.
+        "holdings13f":    SourceSpec(lambda: holdings13f_source.fetch(conn), holdings13f_source.store,
+                                     86400, retry_interval=6 * 3600, force_on_daily=False, requests_derived=False),
+        # Market-wide scanner (STC-69): index constituents monthly, the daily
+        # bars the scans need, and the intraday scan itself (defers while
+        # every exchange in the universe is outside its regular session).
+        "universe":       SourceSpec(lambda: scanner.universe_fetch(), db.replace_universe,
+                                     30 * 86400, retry_interval=6 * 3600, force_on_daily=False,
+                                     requests_derived=False),
+        "scan_history":   SourceSpec(lambda: scanner.history_fetch(conn), scanner.history_store,
+                                     900, retry_interval=1800, force_on_daily=False, requests_derived=False),
+        "scanner":        SourceSpec(lambda: scanner.fetch(conn), scanner.store,
+                                     config.SCANNER_INTERVAL_SECONDS, retry_interval=config.SCANNER_INTERVAL_SECONDS,
+                                     force_on_daily=False, requests_derived=False),
         # Closing value of every account (seeded at-times, after the US close).
-        "equity_snapshot": SourceSpec(lambda: equity.snapshot_all(conn), db.upsert_equity_snapshots,
+        "equity_snapshot": SourceSpec(lambda: equity.snapshot_all(conn), _store_equity,
                                       retry_interval=3600, force_on_daily=False,
                                       requests_derived=False),
     }
@@ -440,7 +476,7 @@ def _timed_job(job_id: str, fn, *args):
 
 
 def _run_derived() -> None:
-    """boom_score reads every other source; alerts diffs boom_score. In order."""
+    """boom_score, alerts, regime, automute, rules — in order (schedules.DERIVED_MEMBERS)."""
     for name in schedules.DERIVED_MEMBERS:
         spec = SOURCES[name]
         ingest.run_source(refresh_conn, name, spec.fetch, spec.store)
@@ -681,7 +717,7 @@ def _run_daily_analysis():
 
 # Minute-cadence jobs: a row per run would be ~1,400 a day of noise, so only
 # their errors (and late starts) are recorded.
-_QUIET_JOBS = {"bots"}
+_QUIET_JOBS = {"bots", "exits", "telegram"}
 
 _JOB_EVENT_NAMES = {
     EVENT_JOB_EXECUTED: "executed",
@@ -797,6 +833,24 @@ async def lifespan(app: FastAPI):
             start_date=datetime.now(timezone.utc)
             + timedelta(seconds=config.SCHEDULER_STARTUP_DELAY_SECONDS)),
         "bots")
+    # Exit rules on holdings and resting paper orders: same minute cadence and
+    # the same hold-back.
+    _add_timed_job(
+        lambda: (execution.poll(refresh_conn), exits.run(refresh_conn), execution.sync_broker(refresh_conn)),
+        IntervalTrigger(
+            seconds=config.EXITS_INTERVAL_SECONDS,
+            start_date=datetime.now(timezone.utc)
+            + timedelta(seconds=config.SCHEDULER_STARTUP_DELAY_SECONDS)),
+        "exits")
+    # Telegram: answer commands and send queued bot fills (only with a token).
+    if telegram.configured():
+        _add_timed_job(
+            lambda: telegram.poll(refresh_conn),
+            IntervalTrigger(
+                seconds=config.TELEGRAM_POLL_SECONDS,
+                start_date=datetime.now(timezone.utc)
+                + timedelta(seconds=config.SCHEDULER_STARTUP_DELAY_SECONDS)),
+            "telegram")
     # 6-hourly GitHub update check. Runs on the default executor, not the
     # serial "refresh" one: it only shells out to git and never touches SQLite.
     updater.schedule(scheduler)
@@ -865,6 +919,26 @@ app.include_router(routes_oauth.build_router(conn))
 app.include_router(routes_update.build_router())
 # Chart workspace extras (drawing drafts, extended-hours print).
 app.include_router(routes_chart.build_router(conn))
+# Exit rules on holdings and the risk switches (kill switch).
+app.include_router(routes_risk.build_router(conn))
+# Portfolio performance & risk analytics.
+app.include_router(routes_analytics.build_router(conn))
+# Market-wide scanner and the server-sent events stream.
+app.include_router(routes_scanner.build_router(conn))
+# Famous investors' 13F holdings.
+app.include_router(routes_investors.build_router(conn))
+# The Time Machine: replay a trade plan from the stock's own days.
+app.include_router(routes_timemachine.build_router(conn))
+# Tax lots, wash sales, target weights and the rebalance plan.
+app.include_router(routes_lots.build_router(conn))
+# The Alpaca broker account (paper first).
+app.include_router(routes_broker.build_router(conn))
+# Linking a Telegram chat for alerts and read-only commands.
+app.include_router(routes_telegram.build_router(conn))
+# The paper account and its order ticket.
+app.include_router(routes_paper.build_router(conn))
+# The rule builder: schema, saved rules, backtests.
+app.include_router(routes_rules.build_router(conn))
 
 
 @app.exception_handler(Exception)
@@ -1632,10 +1706,12 @@ def create_bot(item: BotCreate, user=Depends(auth.get_current_user)):
         raise HTTPException(status_code=422, detail={
             "message": "Some fields need attention", "errors": errors})
     try:
-        db.create_bot(conn, bot)
+        created = db.create_bot(conn, bot)
     except ledger.LedgerError as exc:
         raise HTTPException(status_code=422, detail={
             "message": str(exc), "errors": {"amount": str(exc)}}) from None
+    audit.record(conn, user.id, "bot_created", bot_id=created.id, strategy=bot.strategy,
+                 amount=bot.allocated, currency=bot.currency)
     return {"bots": _bots_out(user.id)}
 
 
@@ -1644,14 +1720,18 @@ def pause_bot(bot_id: int, user=Depends(auth.get_current_user)):
     _own_bot(user.id, bot_id)
     if not db.set_bot_status(conn, bot_id, "paused", ("active",)):
         raise HTTPException(status_code=409, detail="only a running bot can be paused")
+    audit.record(conn, user.id, "bot_paused", bot_id=bot_id)
     return {"bots": _bots_out(user.id)}
 
 
 @app.post("/api/bots/{bot_id}/resume")
 def resume_bot(bot_id: int, user=Depends(auth.get_current_user)):
     _own_bot(user.id, bot_id)
+    if db.get_risk_settings(conn, user.id).trading_halted_at:
+        raise HTTPException(status_code=409, detail="trading is halted by your kill switch — re-enable it first")
     if not db.set_bot_status(conn, bot_id, "active", ("paused",)):
         raise HTTPException(status_code=409, detail="only a paused bot can be resumed")
+    audit.record(conn, user.id, "bot_resumed", bot_id=bot_id)
     return {"bots": _bots_out(user.id)}
 
 
@@ -1659,9 +1739,10 @@ def resume_bot(bot_id: int, user=Depends(auth.get_current_user)):
 def stop_bot(bot_id: int, user=Depends(auth.get_current_user)):
     """Close the bot's positions and return its cash to the Portfolio."""
     try:
-        bots.stop(conn, _own_bot(user.id, bot_id))
+        returned = bots.stop(conn, _own_bot(user.id, bot_id))
     except bots.BotError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+    audit.record(conn, user.id, "bot_stopped", bot_id=bot_id, returned=returned)
     return {"bots": _bots_out(user.id)}
 
 
@@ -1672,7 +1753,8 @@ def stop_all_bots(user=Depends(auth.get_current_user)):
         if bot.status == "stopped":
             continue
         try:
-            bots.stop(conn, bot)
+            returned = bots.stop(conn, bot)
+            audit.record(conn, user.id, "bot_stopped", bot_id=bot.id, returned=returned)
         except bots.BotError as exc:
             failed[bot.name] = str(exc)
     return {"bots": _bots_out(user.id), "failed": failed}
@@ -2035,18 +2117,22 @@ def earnings_for(ticker: str, user=Depends(auth.get_current_user)):
 
 
 @app.get("/api/backtest/track-record")
-def backtest_track_record(months: int = 12, user=Depends(auth.get_current_user)):
-    """How the app's own suggestions have actually turned out, for this user."""
-    return backtest.track_record(conn, user.id, months=max(1, min(months, 60)))
+def backtest_track_record(months: int = 12, version: str | None = None,
+                          user=Depends(auth.get_current_user)):
+    """How the app's own suggestions have actually turned out, for this user —
+    one model version at a time (the running one unless `version` is given)."""
+    return backtest.track_record(conn, user.id, months=max(1, min(months, 60)), version=version)
 
 
 @app.get("/api/backtest/signal-replay")
 def backtest_signal_replay(
-    horizon: int = 7, months: int = 12, user=Depends(auth.get_current_user)
+    horizon: int = 7, months: int = 12, version: str | None = None,
+    user=Depends(auth.get_current_user),
 ):
     """Boom-score threshold crossings vs the forward move that followed."""
     return backtest.signal_replay(
-        conn, horizon_days=max(1, min(horizon, 90)), months=max(1, min(months, 60)))
+        conn, horizon_days=max(1, min(horizon, 90)), months=max(1, min(months, 60)),
+        version=version)
 
 
 @app.get("/api/sources")

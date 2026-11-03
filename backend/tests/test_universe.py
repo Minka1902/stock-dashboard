@@ -102,8 +102,8 @@ def test_ohlc_fetch_is_stalest_first_and_capped(monkeypatch):
                                   fetched_at="2026-07-12T00:00:00")])
     captured = {}
 
-    def fake_fetch(tickers):
-        captured["t"] = list(tickers)
+    def fake_fetch(tickers, series=None):
+        captured["max" if series else "t"] = list(tickers)
         return []
 
     monkeypatch.setattr(main.ohlc_source, "fetch", fake_fetch)
@@ -115,3 +115,5 @@ def test_ohlc_fetch_is_stalest_first_and_capped(monkeypatch):
     captured["t"] = captured["t"][1:]
     assert len(captured["t"]) == 2
     assert "AAA" not in captured["t"]      # already fetched → not stalest
+    # The full adjusted history: benchmarks + watchlist, none stored yet, capped per run.
+    assert captured["max"] == ["SPY", "AAA", "BBB", "CCC", "DDD"][: config.DAILY_MAX_PER_RUN]

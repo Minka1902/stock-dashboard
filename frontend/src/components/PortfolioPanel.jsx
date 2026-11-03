@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
 import AnimatedNumber from "./AnimatedNumber";
 import CashBalances from "./CashBalances";
+import ExitRuleDialog from "./ExitRuleDialog";
 import ExtHoursBadge from "./ExtHoursBadge";
 import InfoTip from "./InfoTip";
 import MenuButton, { MenuDivider, MenuItem, MenuLabel } from "./MenuButton";
@@ -17,7 +18,7 @@ import Tooltip from "./Tooltip";
 import { useFxRates } from "../hooks/useFxRates";
 import { useProfile } from "../hooks/useProfile";
 import { useSparklines } from "../hooks/useSparklines";
-import { openTickerTab } from "../lib/nav";
+import { navigateTo, openTickerTab, routeToPath } from "../lib/nav";
 import { fadeRise, prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import {
   currencyForSymbol, currencySymbol, formatMoney, formatMoneySigned, marketForSymbol,
@@ -26,6 +27,8 @@ import { convertAmount, convertCash, summarizeByCurrency } from "../lib/portfoli
 import styles from "./PortfolioPanel.module.css";
 
 const DIRECTIVE_TONE = { Accumulate: "buy", Hold: "hold", Reduce: "warn", Avoid: "sell" };
+const ANALYTICS_ROUTE = { kind: "view", view: "trading-bot", tab: "performance" };
+const LOTS_ROUTE = { kind: "view", view: "trading-bot", tab: "lots" };
 
 // Mirrors backend/app/themes.py THEMES (validated server-side too).
 const THEMES = [
@@ -70,6 +73,7 @@ export default function PortfolioPanel({
   // null = follow the default (on when that currency already has cash).
   const [payCash, setPayCash] = useState(null);
   const [selling, setSelling] = useState(null);
+  const [ruling, setRuling] = useState(null);
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
   const [mergeNote, setMergeNote] = useState(null);
@@ -282,6 +286,18 @@ export default function PortfolioPanel({
             />
           </span>
           {!showEmpty && <SparkRange value={range} onChange={setRange} />}
+          {!showEmpty && (
+            <a className={styles.analyticsLink} href={routeToPath(ANALYTICS_ROUTE)}
+               onClick={(e) => { e.preventDefault(); navigateTo(ANALYTICS_ROUTE); }}>
+              Analytics →
+            </a>
+          )}
+          {!showEmpty && (
+            <a className={styles.analyticsLink} href={routeToPath(LOTS_ROUTE)}
+               onClick={(e) => { e.preventDefault(); navigateTo(LOTS_ROUTE); }}>
+              Lots &amp; rebalance →
+            </a>
+          )}
         </div>
       </header>
 
@@ -608,6 +624,10 @@ export default function PortfolioPanel({
                                 <button className={styles.textAction} onClick={() => setSelling(h)}
                                         aria-label={`Sell ${h.ticker}`}>Sell</button>
                               </Tooltip>
+                              <Tooltip content={`Exit rule for ${h.ticker}: stop, take-profit, trailing stop (alerts only)`}>
+                                <button className={styles.iconAction} onClick={() => setRuling(h.ticker)}
+                                        aria-label={`Exit rule for ${h.ticker}`}><Icon name="shield" size={14} /></button>
+                              </Tooltip>
                               <Tooltip content={`Correct ${h.ticker} (recorded as an adjustment)`}>
                                 <button className={styles.iconAction} onClick={() => startEdit(h)}
                                         aria-label={`Edit ${h.ticker}`}>✎</button>
@@ -665,6 +685,7 @@ export default function PortfolioPanel({
           onClose={() => setSelling(null)}
         />
       )}
+      {ruling && <ExitRuleDialog ticker={ruling} onClose={() => setRuling(null)} />}
     </section>
   );
 }

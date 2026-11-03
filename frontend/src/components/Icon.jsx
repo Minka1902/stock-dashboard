@@ -151,6 +151,12 @@ const PATHS = {
     </>
   ),
   // A robot head — the Trading Bot page.
+  shield: (
+    <>
+      <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z" />
+      <path d="M9 12l2 2 4-4" />
+    </>
+  ),
   bot: (
     <>
       <rect x="4" y="8" width="16" height="11" rx="2.5" />

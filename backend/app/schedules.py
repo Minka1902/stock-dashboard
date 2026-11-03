@@ -23,10 +23,12 @@ from app.models import SourceSchedule, SourceStatus
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 MODES = ("interval", "times")
 
-# boom_score reads every other source and alerts diffs boom_score, so the two
+# boom_score reads every other source, alerts diffs boom_score, regime reads
+# the sentiment sources, automute measures the stored components and rules
+# evaluates the saved rules on stored bars, so they
 # run as one ordered step with a single schedule row of its own.
 DERIVED = "derived"
-DERIVED_MEMBERS = ("boom_score", "alerts")
+DERIVED_MEMBERS = ("boom_score", "alerts", "regime", "automute", "rules")
 
 MIN_INTERVAL_SECONDS = 60
 MAX_INTERVAL_SECONDS = 60 * 86400

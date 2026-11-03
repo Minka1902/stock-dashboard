@@ -18,7 +18,7 @@ from app.models import Holding, Transaction
 
 SIDES = ("BUY", "SELL", "ADJUST", "DEPOSIT", "WITHDRAW")
 CASH_SIDES = ("DEPOSIT", "WITHDRAW")
-ACCOUNTS = ("manual", "paper", "live")
+ACCOUNTS = ("manual", "paper", "live", "alpaca")
 # Each demo bot trades in an account of its own (app/bots.py).
 BOT_ACCOUNT = re.compile(r"bot:\d+")
 EPS = 1e-9
@@ -105,8 +105,7 @@ def _finite(name: str, value: float, minimum: float = 0.0, strict: bool = False)
     return float(value)
 
 
-def record(
-    conn,
+def build(
     user_id: int,
     *,
     ticker: str,
@@ -119,10 +118,10 @@ def record(
     executed_at: str | None = None,
     source: str = "manual",
     order_id: int | None = None,
-    funded: bool = False,
 ) -> Transaction:
-    """Validate, normalize and write one ledger row (plus the position and cash
-    it moves) atomically. Raises LedgerError for anything the rules refuse."""
+    """Validate and normalize one ledger row without writing it (for callers
+    that write it inside their own transaction, like an order fill). Raises
+    LedgerError for anything the rules refuse."""
     if side not in SIDES:
         raise LedgerError(f"side must be one of {', '.join(SIDES)}")
     if account not in ACCOUNTS and not BOT_ACCOUNT.fullmatch(account):
@@ -139,4 +138,10 @@ def record(
         executed_at=executed_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
         source=source, order_id=order_id,
     )
-    return db.record_transaction(conn, tx, funded)
+    return tx
+
+
+def record(conn, user_id: int, *, funded: bool = False, **fields) -> Transaction:
+    """Validate, normalize and write one ledger row (plus the position and cash
+    it moves) atomically. Raises LedgerError for anything the rules refuse."""
+    return db.record_transaction(conn, build(user_id, **fields), funded)

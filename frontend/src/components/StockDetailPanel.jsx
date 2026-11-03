@@ -3,6 +3,9 @@ import Icon from "./Icon";
 import ChartPro from "./ChartPro";
 import CollapsibleSection from "./CollapsibleSection";
 import CompanyInfo from "./CompanyInfo";
+import ExitRuleDialog from "./ExitRuleDialog";
+import HeldBy13F from "./HeldBy13F";
+import PaperTradeButton from "./PaperTradeButton";
 import InsiderTrades from "./InsiderTrades";
 import Skeleton from "./Skeleton";
 import StockAlerts from "./StockAlerts";
@@ -62,12 +65,13 @@ function Stat({ label, value, tone }) {
   );
 }
 
-export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch, focusAlertKey = null }) {
+export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch, held = false, focusAlertKey = null }) {
   // Track which ticker the loaded payload belongs to: switching tickers
   // shows the skeleton again without any synchronous setState in the effect.
   const [result, setResult] = useState(null);
   const [attempt, setAttempt] = useState(0);
   const [watchBusy, setWatchBusy] = useState(false);
+  const [ruling, setRuling] = useState(false);
   const { settings, setSetting } = useSettingsContext();
 
   useEffect(() => {
@@ -277,6 +281,14 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
           </span>
           </Tooltip>
         )}
+        <PaperTradeButton ticker={ticker} className={styles.reportBtn} />
+        {held && (
+          <Tooltip content="Stop, take-profit and trailing stop on your holding — alerts only">
+            <button type="button" className={styles.reportBtn} onClick={() => setRuling(true)}>
+              <Icon name="shield" size={13} /> Exit rule
+            </button>
+          </Tooltip>
+        )}
         {a && (
           <span className={styles.reportBtns}>
             <Tooltip content="Download the full analysis as a standalone HTML report">
@@ -346,6 +358,13 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
                 ) : (
                   <InsiderTrades trades={insiderTrades} ticker={ticker} />
                 )}
+              </Pane>
+            )}
+
+            {!isTase && (
+              <Pane {...sec("investors")} caption="Famous investors"
+                    right={<span className={styles.muted}>SEC 13F · latest quarter-end</span>}>
+                <HeldBy13F ticker={ticker} />
               </Pane>
             )}
 
@@ -660,6 +679,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
           </div>
         </>
       )}
+      {ruling && <ExitRuleDialog ticker={ticker} onClose={() => setRuling(false)} />}
     </div>
   );
 }

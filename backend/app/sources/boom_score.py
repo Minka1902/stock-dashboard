@@ -172,6 +172,7 @@ def _score_ticker(
     aaii: "tuple[float, float] | None",
     pc_ratio: float | None,
     md_yoy: float | None,
+    muted: frozenset[str] = frozenset(),
 ) -> BoomScore:
     components: dict[str, int] = {}
 
@@ -287,12 +288,19 @@ def _score_ticker(
     for key in excluded:
         components.pop(key, None)
 
+    # --- Auto-muted components (app/signals.py) fired but don't count ---
+    fired_muted = sorted(k for k in components if k in muted)
+    counted = {k: v for k, v in components.items() if k not in muted}
+
     # --- Mixed signal detection ---
-    bullish_keys = {k for k, v in components.items() if v > 0}
-    bearish_keys = {k for k, v in components.items() if v < 0}
+    bullish_keys = {k for k, v in counted.items() if v > 0}
+    bearish_keys = {k for k, v in counted.items() if v < 0}
     mixed_signals = bool(bullish_keys and bearish_keys)
 
-    score, score_note = renormalize(components, excluded)
+    score, score_note = renormalize(counted, excluded)
+    if fired_muted:
+        mute_note = (f"Muted for a poor recent hit rate, so not counted: {', '.join(fired_muted)}.")
+        score_note = f"{score_note} {mute_note}".strip()
 
     return BoomScore(
         ticker=ticker,
@@ -300,42 +308,44 @@ def _score_ticker(
         score=score,
         components=json.dumps(components),
         # bullish
-        golden_cross="golden_cross" in components,
-        rsi_recovery="rsi_recovery" in components,
-        insider_cluster_buy="insider_cluster_buy" in components,
-        congress_buy="congress_buy" in components,
-        short_squeeze="short_squeeze" in components,
-        wsb_rising="wsb_rising" in components,
-        analyst_upgrade="analyst_upgrade" in components,
-        near_52w_high="near_52w_high" in components,
-        macd_crossover="macd_crossover" in components,
-        volume_confirmed="volume_confirmed" in components,
-        fear_greed_contrarian="fear_greed_contrarian" in components,
-        yield_uninversion="yield_uninversion" in components,
-        contracts_catalyst="contracts_catalyst" in components,
-        seasonal_tailwind="seasonal_tailwind" in components,
-        vix_spike_contrarian="vix_spike_contrarian" in components,
-        aaii_bearish_extreme="aaii_bearish_extreme" in components,
-        put_call_fear="put_call_fear" in components,
-        margin_debt_deleveraging="margin_debt_deleveraging" in components,
+        golden_cross="golden_cross" in counted,
+        rsi_recovery="rsi_recovery" in counted,
+        insider_cluster_buy="insider_cluster_buy" in counted,
+        congress_buy="congress_buy" in counted,
+        short_squeeze="short_squeeze" in counted,
+        wsb_rising="wsb_rising" in counted,
+        analyst_upgrade="analyst_upgrade" in counted,
+        near_52w_high="near_52w_high" in counted,
+        macd_crossover="macd_crossover" in counted,
+        volume_confirmed="volume_confirmed" in counted,
+        fear_greed_contrarian="fear_greed_contrarian" in counted,
+        yield_uninversion="yield_uninversion" in counted,
+        contracts_catalyst="contracts_catalyst" in counted,
+        seasonal_tailwind="seasonal_tailwind" in counted,
+        vix_spike_contrarian="vix_spike_contrarian" in counted,
+        aaii_bearish_extreme="aaii_bearish_extreme" in counted,
+        put_call_fear="put_call_fear" in counted,
+        margin_debt_deleveraging="margin_debt_deleveraging" in counted,
         # bearish
-        death_cross="death_cross" in components,
-        insider_cluster_sell="insider_cluster_sell" in components,
-        overbought_rsi="overbought_rsi" in components,
-        congress_sale="congress_sale" in components,
-        analyst_downgrade_cluster="analyst_downgrade_cluster" in components,
-        extreme_greed="extreme_greed" in components,
-        aaii_bullish_euphoria="aaii_bullish_euphoria" in components,
-        margin_debt_euphoria="margin_debt_euphoria" in components,
+        death_cross="death_cross" in counted,
+        insider_cluster_sell="insider_cluster_sell" in counted,
+        overbought_rsi="overbought_rsi" in counted,
+        congress_sale="congress_sale" in counted,
+        analyst_downgrade_cluster="analyst_downgrade_cluster" in counted,
+        extreme_greed="extreme_greed" in counted,
+        aaii_bullish_euphoria="aaii_bullish_euphoria" in counted,
+        margin_debt_euphoria="margin_debt_euphoria" in counted,
         # flags
         earnings_soon=earnings_soon,
         mixed_signals=mixed_signals,
         not_applicable=json.dumps(list(excluded)),
         score_note=score_note,
+        muted=json.dumps(fired_muted),
     )
 
 
-def compute_all(tickers: list[str], conn) -> list[BoomScore]:
+def compute_all(tickers: list[str], conn, model_version: str = "legacy",
+                muted: frozenset[str] = frozenset()) -> list[BoomScore]:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     fg_score = db.get_latest_fear_greed_score(conn)
     has_uninversion = db.has_yield_uninversion(conn)
@@ -348,8 +358,8 @@ def compute_all(tickers: list[str], conn) -> list[BoomScore]:
     md_series = margin_debt.compute_yoy(db.get_margin_debt(conn))
     md_yoy = next((r["yoy_pct"] for r in reversed(md_series) if r["yoy_pct"] is not None), None)
     scores = [
-        _score_ticker(t, conn, now, fg_score, has_uninversion, vix_close, aaii, pc_ratio, md_yoy)
+        _score_ticker(t, conn, now, fg_score, has_uninversion, vix_close, aaii, pc_ratio, md_yoy, muted)
         for t in tickers
     ]
-    db.insert_boom_score_history(conn, scores)
+    db.insert_boom_score_history(conn, scores, model_version)
     return scores
