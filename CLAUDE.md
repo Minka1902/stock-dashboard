@@ -69,7 +69,7 @@ that must be kept in sync (notably `convictionTier`/`CHIP_META` from `BoomScoreP
 .\windows\install-service.ps1      # elevated; registers + starts SignalDashboard
 .\windows\service-control.ps1 -Status    # -Start -Stop -Restart -Logs
 .\windows\uninstall-service.ps1          # -PurgeData to drop the database too
-.\windows\install-desktop.ps1            # npm install + Start Menu shortcut (no elevation)
+.\windows\install-desktop.ps1            # npm install + Desktop and Start Menu shortcuts (no elevation)
 ```
 The production run mode. Hosts the backend as a boot-start LocalSystem service so the
 scheduler keeps ingesting before anyone logs in. **NSSM is the only supervisor** —
