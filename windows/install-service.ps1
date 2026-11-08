@@ -228,11 +228,34 @@ if ((Test-Path $devDb) -and -not (Test-Path $DbFile)) {
 }
 
 # --------------------------------------------------------------- reinstall ---
-if (Get-DashboardService) {
+$svc = Get-DashboardService
+if ($svc) {
     Write-Step 'service' 'already exists, replacing' 'DarkGray'
-    & $nssm stop $ServiceName 2>&1 | Out-Null      # may already be stopped
+    if ($svc.Status -ne 'Stopped') {
+        # nssm stop writes to stderr when the service is already stopped or still
+        # stopping (e.g. paused in NSSM's crash-restart throttle). Either is fine:
+        # what matters is that it reaches Stopped, which is waited for below.
+        # The local 'Continue' is required -- see Invoke-Nssm.
+        & { $ErrorActionPreference = 'Continue'; & $nssm stop $ServiceName 2>&1 | Out-Null }
+        try {
+            $svc.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(60))
+        } catch {
+            Fail "The existing $ServiceName service did not stop within 60s." @(
+                'Restart the PC, then run this again.'
+            )
+        }
+    }
     Invoke-Nssm $nssm remove $ServiceName confirm | Out-Null
-    Start-Sleep -Milliseconds 500
+    # Deletion completes only once every open handle is closed; registering the
+    # same name before that fails with "marked for deletion".
+    $deadline = (Get-Date).AddSeconds(30)
+    while ((Get-DashboardService) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+    if (Get-DashboardService) {
+        Fail "Windows has not finished deleting the old $ServiceName service." @(
+            'Close the Services window (services.msc) or Task Manager if open,',
+            'or restart the PC, then run this again.'
+        )
+    }
 }
 
 # ---------------------------------------------------------------- register ---
@@ -320,11 +343,16 @@ Invoke-Nssm $nssm set $ServiceName AppEnvironmentExtra @envArgs | Out-Null
 Write-Step 'service' "registered as $ServiceName"
 
 # -------------------------------------------------------------------- start --
-Invoke-Nssm $nssm start $ServiceName | Out-Null
-$elapsed = Wait-Health -Port $Port -TimeoutSeconds 60
+# Not Invoke-Nssm: when the app dies on startup, nssm answers START with
+# SERVICE_PAUSED (its crash-restart throttle) and a non-zero exit, and the
+# useful part -- why Python died -- is in service-stderr.log, printed below.
+$startOut = & { $ErrorActionPreference = 'Continue'; & $nssm start $ServiceName 2>&1 } |
+    ForEach-Object { "$_" }
+$elapsed = if ($LASTEXITCODE -eq 0) { Wait-Health -Port $Port -TimeoutSeconds 60 } else { -1 }
 if ($elapsed -lt 0) {
     Write-Host ''
     Write-Host '  The service was registered but never answered /api/health.' -ForegroundColor Red
+    foreach ($line in $startOut) { if ($line.Trim()) { Write-Host "  nssm: $line" -ForegroundColor DarkGray } }
     Write-Host ''
     foreach ($log in @('service-stderr.log', 'backend.log')) {
         $p = Join-Path $DataLogs $log
