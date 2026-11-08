@@ -170,7 +170,12 @@ function Invoke-Nssm {
     #>
     # NOT named $Args -- that collides with PowerShell's automatic variable.
     param([string]$Exe, [Parameter(ValueFromRemainingArguments = $true)][string[]]$NssmArgs)
-    $output = & $Exe @NssmArgs 2>&1
+    # Callers run with $ErrorActionPreference = 'Stop', under which Windows
+    # PowerShell 5.1 turns every redirected stderr line of a native exe into a
+    # terminating NativeCommandError -- even at exit 0, and before the exit
+    # code check below could print a readable message. The exit code decides.
+    $output = & { $ErrorActionPreference = 'Continue'; & $Exe @NssmArgs 2>&1 } |
+        ForEach-Object { "$_" }
     if ($LASTEXITCODE -ne 0) {
         Fail "nssm $($NssmArgs -join ' ') failed (exit $LASTEXITCODE)" @($output)
     }
