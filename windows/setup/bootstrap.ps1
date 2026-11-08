@@ -12,7 +12,7 @@
       2. clone (or fast-forward) main into <InstallDir>\repo
       3. backend venv + pip, frontend npm install
       4. windows\install-service.ps1   (build, Playwright, service, health wait)
-      5. windows\install-desktop.ps1   (Electron + Start Menu shortcut)
+      5. windows\install-desktop.ps1   (Electron + Desktop and Start Menu shortcuts)
 
     Machine-wide matters for all three prerequisites. The service and the
     in-app updater run as LocalSystem, which sees neither a user PATH (git,
@@ -287,7 +287,7 @@ Invoke-RepoScript 'windows\install-desktop.ps1'
 
 Write-Host ''
 Write-Host '  Signal is installed.' -ForegroundColor Green
-Write-Host '  Start it from the Start Menu ("Signal"). Each launch checks for updates.' -ForegroundColor DarkGray
+Write-Host '  Start it from the "Signal" icon on the Desktop or in the Start Menu. Each launch checks for updates.' -ForegroundColor DarkGray
 Write-Host ''
 Stop-Transcript | Out-Null
 exit 0

@@ -237,11 +237,16 @@ if (Get-DashboardService) {
 
 # ---------------------------------------------------------------- register ---
 $origin = "http://127.0.0.1:$Port"
-$entry  = Join-Path $Backend 'run_server.py'
+if (-not (Test-Path (Join-Path $Backend 'run_server.py'))) { Fail "No run_server.py in $Backend" }
 
+# The script goes in by bare name, resolved against AppDirectory (= $Backend).
+# An absolute path would need embedded quotes whenever the checkout has a space
+# in it -- and SignalSetup always installs under "C:\Program Files". Windows
+# PowerShell 5.1 drops embedded quotes when calling a native exe, so nssm
+# stored `C:\Program Files\...` unquoted and Python tried to open "C:\Program".
 Invoke-Nssm $nssm install $ServiceName $Python | Out-Null
 Invoke-Nssm $nssm set $ServiceName AppParameters `
-    "`"$entry`" --host 127.0.0.1 --port $Port --no-supervise" | Out-Null
+    "run_server.py --host 127.0.0.1 --port $Port --no-supervise" | Out-Null
 Invoke-Nssm $nssm set $ServiceName AppDirectory $Backend | Out-Null
 Invoke-Nssm $nssm set $ServiceName DisplayName $ServiceDisplay | Out-Null
 Invoke-Nssm $nssm set $ServiceName Description ($ServiceDesc -f $Port) | Out-Null

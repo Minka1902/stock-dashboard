@@ -38,7 +38,8 @@ SolidCompression=yes
 WizardStyle=modern
 SetupLogging=yes
 UninstallDisplayName={#AppName}
-; install-desktop.ps1 puts the shortcut in the installing user's Start Menu.
+; install-desktop.ps1 puts the shortcuts in the installing user's Start Menu
+; and on their Desktop.
 UsedUserAreasWarning=no
 
 [Files]
@@ -66,6 +67,7 @@ Filename: "{#PowerShell}"; \
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\repo"
 Type: files; Name: "{userprograms}\Signal.lnk"
+Type: files; Name: "{userdesktop}\Signal.lnk"
 
 [Code]
 var

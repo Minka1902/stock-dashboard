@@ -20,7 +20,8 @@ does everything in this document for you. It is a bootstrapper, not a bundle: it
 2. **Code.** `git clone` of `main` into `C:\Program Files\SignalDashboard\repo`. Program Files is
    deliberate: this code runs as LocalSystem, and only administrators can write there.
 3. **Dependencies.** The backend venv plus `pip install`, then `npm install --no-save` in `frontend\`.
-4. **Service.** `install-service.ps1`, then `install-desktop.ps1`.
+4. **Service.** `install-service.ps1`, then `install-desktop.ps1` (the app, plus a **Signal** shortcut on the
+   Desktop and in the Start Menu).
 
 The console window shows the progress, and a transcript goes to
 `C:\ProgramData\SignalDashboard\logs\setup.log`. The finish page offers to launch the app.
@@ -29,7 +30,7 @@ The console window shows the progress, and a transcript goes to
   re-registered.
 - **Update on launch.** Each start of the desktop app checks for updates through the in-app updater
   below. See `desktop/README.md`.
-- **Uninstall** (Settings → Apps) removes the service, the checkout and the shortcut. It **keeps**
+- **Uninstall** (Settings → Apps) removes the service, the checkout and the shortcuts. It **keeps**
   `C:\ProgramData\SignalDashboard` (database, logs). `windows\service.env` lives in the checkout, so
   copy it out first if it holds secrets you want to keep.
 - **Building it.** `.github/workflows/installer.yml` builds it on `windows-latest` with Inno Setup

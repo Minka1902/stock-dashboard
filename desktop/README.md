@@ -11,7 +11,7 @@ is running or not. What the app adds is the window and the notifications.
 ## Run
 
 ```powershell
-.\windows\install-desktop.ps1     # npm install + Start Menu shortcut
+.\windows\install-desktop.ps1     # npm install + Desktop and Start Menu shortcuts
 cd desktop; npm start
 ```
 

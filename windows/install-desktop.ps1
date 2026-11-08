@@ -1,10 +1,11 @@
 <#
 .SYNOPSIS
-    Set up the Electron desktop app and create a Start Menu shortcut.
+    Set up the Electron desktop app and create Start Menu + Desktop shortcuts.
 
 .DESCRIPTION
-    Runs `npm install` in desktop\ and creates a Start Menu shortcut with the
-    AppUserModelID set to match app.setAppUserModelId() in desktop/src/main.js.
+    Runs `npm install` in desktop\ and creates a "Signal" shortcut in the Start
+    Menu and on the Desktop, each with the AppUserModelID set to match
+    app.setAppUserModelId() in desktop/src/main.js.
 
     That AUMID match is what makes Windows toast notifications work for an
     unpackaged Electron app: Windows resolves toast identity through the
@@ -12,11 +13,15 @@
 
     No elevation needed -- this is all per-user.
 
+.PARAMETER NoDesktopShortcut
+    Only create the Start Menu shortcut, and remove a Desktop one left by an
+    earlier run.
+
 .EXAMPLE
     .\windows\install-desktop.ps1
 #>
 [CmdletBinding()]
-param([switch]$SkipNpmInstall)
+param([switch]$SkipNpmInstall, [switch]$NoDesktopShortcut)
 
 #Requires -Version 5.1
 Set-StrictMode -Version Latest
@@ -51,22 +56,14 @@ if (-not (Test-Path $electron)) {
     )
 }
 
-$startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
-$lnk = Join-Path $startMenu 'Signal.lnk'
+# A .lnk icon has to be an .ico (or an .exe/.dll). A .png is ignored and the
+# shortcut shows Electron's own logo. icon.ico packs the three assets PNGs.
+$icon = Join-Path $Desktop 'assets\icon.ico'
 
-$shell = New-Object -ComObject WScript.Shell
-$sc = $shell.CreateShortcut($lnk)
-$sc.TargetPath       = $electron
-$sc.Arguments        = "`"$Desktop`""
-$sc.WorkingDirectory = $Desktop
-$sc.IconLocation     = Join-Path $Desktop 'assets\icon-128.png'
-$sc.Description      = 'Signal stock dashboard'
-$sc.Save()
-
-# WScript.Shell cannot set System.AppUserModel.ID, so stamp it through the
+# WScript.Shell cannot set System.AppUserModel.ID, so it is stamped through the
 # shortcut's property store. Without this the toasts fall back to Electron's
 # own identity and may not surface at all.
-$stamped = $false
+$aumidReady = $false
 try {
     $code = @'
 using System;
@@ -112,20 +109,54 @@ public static class Aumid {
 }
 '@
     Add-Type -TypeDefinition $code -Language CSharp -ErrorAction Stop | Out-Null
-    [Aumid]::Set($lnk, $AppId)
-    $stamped = $true
+    $aumidReady = $true
 } catch {
-    Write-Host "  (could not stamp AppUserModelID: $($_.Exception.Message))" -ForegroundColor DarkGray
+    Write-Host "  (could not load the AppUserModelID helper: $($_.Exception.Message))" -ForegroundColor DarkGray
 }
 
+$shell = New-Object -ComObject WScript.Shell
+
+# Creates (or overwrites) one shortcut. Returns whether its AUMID was stamped.
+function New-SignalShortcut {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $sc = $shell.CreateShortcut($Path)
+    $sc.TargetPath       = $electron
+    $sc.Arguments        = "`"$Desktop`""
+    $sc.WorkingDirectory = $Desktop
+    $sc.IconLocation     = "$icon,0"
+    $sc.Description      = 'Signal stock dashboard'
+    $sc.Save()
+    if (-not $aumidReady) { return $false }
+    try {
+        [Aumid]::Set($Path, $AppId)
+        return $true
+    } catch {
+        Write-Host "  (could not stamp AppUserModelID on ${Path}: $($_.Exception.Message))" -ForegroundColor DarkGray
+        return $false
+    }
+}
+
+$startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+$lnk = Join-Path $startMenu 'Signal.lnk'
+$stamped = New-SignalShortcut $lnk
 Write-Step 'shortcut' $lnk
+
+# GetFolderPath rather than $HOME\Desktop: OneDrive often redirects the Desktop.
+$desktopLnk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Signal.lnk'
+if ($NoDesktopShortcut) {
+    if (Test-Path $desktopLnk) { Remove-Item $desktopLnk -Force }
+} else {
+    $null = New-SignalShortcut $desktopLnk
+    Write-Step 'desktop' $desktopLnk
+}
+
 Write-Step 'toast id' $(if ($stamped) { "$AppId (stamped)" } else { 'not stamped -- see below' }) `
                       $(if ($stamped) { 'Green' } else { 'Yellow' })
 
 Write-Host ''
 Write-Host '  Done.' -ForegroundColor Green
 Write-Host ''
-Write-Host '  Launch from the Start Menu ("Signal"), or:' -ForegroundColor DarkGray
+Write-Host '  Launch "Signal" from the Desktop or the Start Menu, or:' -ForegroundColor DarkGray
 Write-Host '    cd desktop; npm start'
 if (-not $stamped) {
     Write-Host ''
