@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { motion, useMotionValue, useAnimationFrame } from "motion/react";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import { useSettingsContext } from "../hooks/useSettingsContext";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { formatPrice as formatMoneyPrice } from "../lib/format";
 import Tooltip from "./Tooltip";
 import styles from "./LiveTicker.module.css";
@@ -87,8 +88,12 @@ function marketBadge(quotes) {
 }
 
 // Marquee speed: px/sec derived so a full loop (one copy width) takes ~48s,
-// matching the old CSS keyframe cadence regardless of content width.
+// matching the old CSS keyframe cadence regardless of content width. A
+// phone shows two quotes at a time, so it scrolls at a fixed, slower rate
+// that stays readable however long the tape is.
 const LOOP_SECONDS = 48;
+const PHONE_PX_PER_SECOND = 28;
+const PHONE = "(max-width: 640px)";
 
 /**
  * JS-driven infinite marquee: one motion value drives translateX, advancing
@@ -96,7 +101,7 @@ const LOOP_SECONDS = 48;
  * pauses the auto-advance and hands control to drag; releasing the pointer and
  * leaving resumes the scroll from the current offset with no jump.
  */
-function Marquee({ quotes }) {
+function Marquee({ quotes, pxPerSecond }) {
   const x = useMotionValue(0);
   const trackRef = useRef(null);
   const halfRef = useRef(0);
@@ -119,7 +124,7 @@ function Marquee({ quotes }) {
     const half = halfRef.current;
     if (!half) return;
     if (!pausedRef.current && !draggingRef.current) {
-      const speed = half / LOOP_SECONDS;
+      const speed = pxPerSecond || half / LOOP_SECONDS;
       x.set(x.get() - (speed * dt) / 1000);
     }
     // Wrap into (-half, 0]; positions v and v±half are visually identical
@@ -158,6 +163,7 @@ function Marquee({ quotes }) {
 
 /** Scrolling tape of live quotes (incl. pre/post-market). Pauses + drags on hover; static under reduce-motion. */
 export default function LiveTicker({ quotes, asOf, marketStatus, marketStatuses }) {
+  const phone = useMediaQuery(PHONE);
   const reduced = prefersReducedMotion();
   if (!quotes || quotes.length === 0) return null;
   // Prefer the backend's clock-based session; fall back to per-quote state.
@@ -168,9 +174,34 @@ export default function LiveTicker({ quotes, asOf, marketStatus, marketStatuses 
   const stamp = asOf
     ? new Date(asOf).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
     : null;
+  const sessions = [
+    { market: "US", label: "US market", state: state || "CLOSED" },
+    ...(hasTase && taseState ? [{ market: "TASE", label: "Tel Aviv market", state: taseState }] : []),
+  ];
   return (
     <div className={styles.tape} role="list" aria-label="Live quotes">
-      {stamp && (
+      {/* On a phone the session stamps are one button of dots (filled while a
+          session trades, a ring when closed); the words are its name, and a
+          tap shows them. */}
+      {stamp && phone && (
+        <Tooltip side="bottom" openOnClick content={(
+          <>
+            {sessions.map((x) => <strong key={x.market}>{x.market} {x.state} </strong>)}
+            <p>Quotes as of {stamp}, by each exchange&apos;s clock.</p>
+          </>
+        )}>
+          <button
+            type="button"
+            className={styles.sessions}
+            aria-label={`${sessions.map((x) => `${x.label} ${(SESSION_WORD[x.state] || x.state).toLowerCase()}`).join(", ")}; quotes as of ${stamp}`}
+          >
+            {sessions.map((x) => (
+              <span key={x.market} className={styles.dot} data-state={x.state} aria-hidden="true" />
+            ))}
+          </button>
+        </Tooltip>
+      )}
+      {stamp && !phone && (
         <Tooltip content={`US market (NYSE/Nasdaq) session by the exchange clock · quotes as of ${stamp}`} side="bottom">
           <span className={styles.asOf} data-state={state || "CLOSED"} tabIndex={0}>
             <span className={styles.dot} aria-hidden="true" />
@@ -178,7 +209,7 @@ export default function LiveTicker({ quotes, asOf, marketStatus, marketStatuses 
           </span>
         </Tooltip>
       )}
-      {stamp && hasTase && taseState && (
+      {stamp && !phone && hasTase && taseState && (
         <Tooltip content="Tel Aviv Stock Exchange session: Mon–Thu 10:00–17:35, Fri 10:00–13:50 Israel time. No pre-market or after-hours trading." side="bottom">
           <span className={styles.asOf} data-state={taseState} tabIndex={0}>
             <span className={styles.dot} aria-hidden="true" />
@@ -194,7 +225,7 @@ export default function LiveTicker({ quotes, asOf, marketStatus, marketStatuses 
           </div>
         </div>
       ) : (
-        <Marquee quotes={quotes} />
+        <Marquee quotes={quotes} pxPerSecond={phone ? PHONE_PX_PER_SECOND : null} />
       )}
     </div>
   );

@@ -8,9 +8,11 @@
     bottom: 0;
     z-index: var(--z-raised);
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    /* One column per pinned view plus More (2–6). */
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
     height: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px));
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
     background: var(--surface);
     border-top: 1px solid var(--border);
   }
@@ -49,11 +51,24 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* Sans, not mono: mono is too wide for "Suggestions" in a sixth of a phone. */
+  /* Sans, not mono: mono is too wide for a sixth of a phone. */
   font-family: var(--sans);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   font-weight: 600;
 }
+
+.pinNote {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  min-height: 34px;
+  font-size: var(--fs-12);
+  color: var(--text-muted);
+}
+
+.group { display: flex; flex-direction: column; }
+.groupHead { margin: 0 0 var(--s-1); }
 
 .list {
   list-style: none;
@@ -62,18 +77,24 @@
   display: flex;
   flex-direction: column;
 }
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  border-bottom: 1px solid var(--grid);
+}
 .row {
   appearance: none;
+  flex: 1;
+  min-width: 0;
   display: grid;
   grid-template-columns: auto 1fr;
   grid-template-rows: auto auto;
   column-gap: var(--s-3);
   align-items: center;
-  width: 100%;
-  min-height: 52px;
-  padding: var(--s-2) var(--s-2);
+  min-height: 48px;
+  padding: var(--s-2);
   border: none;
-  border-bottom: 1px solid var(--grid);
   background: transparent;
   color: var(--text-muted);
   text-align: left;
@@ -83,13 +104,31 @@
 .row[data-active="yes"] { color: var(--accent-text); }
 .rowLabel {
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: var(--fs-14);
   font-weight: 600;
 }
 .rowHint {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--caption-spacing);
   color: var(--text-faint);
 }
+
+.pin {
+  appearance: none;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.pin[data-on="yes"] { color: var(--accent-text); }
+.pin[data-on="yes"] svg { fill: currentColor; }
+.pin:disabled { opacity: 0.35; cursor: default; }
+.pin:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { PRIMARY_KEYS } from "../lib/navItems";
 
 const STORAGE_KEY = "settings";
 // Phone text size, applied as html[data-text-scale]: a multiplier on the
@@ -22,6 +23,8 @@ const DEFAULTS = {
   reducedMotion: false,
   // Text size on a phone (TEXT_SCALES).
   textScale: "default",
+  // The views pinned to the phone tab bar, in order (lib/navItems phoneTabKeys).
+  phoneTabs: PRIMARY_KEYS,
   // Focus mode: Overview shows one section at a time (accordion).
   focusMode: false,
   // Map of Overview section key -> true when the user has collapsed it.

@@ -16,7 +16,7 @@
 
 .title {
   font-family: var(--mono);
-  font-size: 18px;
+  font-size: var(--fs-h3);
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--text);
@@ -28,7 +28,7 @@
   align-items: center;
   gap: 6px;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   font-weight: 600;
   letter-spacing: 0.08em;
   color: var(--text-faint);
@@ -75,12 +75,12 @@
   border: 1px solid var(--border);
   background: var(--surface-2);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-weight: 600;
   color: var(--text);
 }
 .leanCap {
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   text-transform: uppercase;
   letter-spacing: 0.09em;
   color: var(--text-faint);
@@ -107,7 +107,7 @@
 .cmd:hover { color: var(--text); border-color: var(--border-strong); }
 .cmd kbd {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
 }
 
@@ -163,10 +163,10 @@
   border: 1px solid var(--border-strong);
 }
 .themeItemText { display: flex; flex-direction: column; line-height: 1.25; }
-.themeItemLabel { font-size: 13px; font-weight: 600; }
+.themeItemLabel { font-size: var(--fs-13); font-weight: 600; }
 .themeItemHint {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -183,7 +183,7 @@
   background: var(--accent-weak);
   color: var(--accent-text);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-weight: 600;
   letter-spacing: 0.04em;
   cursor: pointer;
@@ -204,21 +204,24 @@
 
 @media (max-width: 760px) {
   .status .since, .lean .leanCap { display: none; }
-  .title { font-size: 16px; }
+  .title { font-size: var(--fs-16); }
 }
 
 .phoneOnly { display: none; }
 
-/* On a phone the bar is one row: title, search, alerts, account. Refresh,
-   theme, dyslexia and the tour move into the account menu (UserMenu
-   phoneItems); the lean is the first thing on the Sentiment page, and the
-   ⌘K button becomes a search icon (there is no keyboard to press). */
+/* On a phone the bar is one row: title, status dot, failing sources, search,
+   alerts, account. Refresh, theme, dyslexia and the tour move into the
+   account menu (UserMenu phoneItems); the lean is the first thing on the
+   Sentiment page, and the ⌘K button becomes a search icon (there is no
+   keyboard to press). The status word is sized to nothing rather than
+   removed, so it still names the dot for a screen reader. */
 @media (max-width: 640px) {
   .lean, .cmd, .desktopOnly { display: none; }
   .phoneOnly { display: grid; }
   .bar { padding: var(--s-2) var(--s-3); gap: var(--s-2); min-height: 52px; }
-  .left { flex: 1 1 auto; min-width: 0; }
-  .title { overflow: hidden; text-overflow: ellipsis; font-size: 15px; }
+  .left { flex: 1 1 auto; min-width: 0; align-items: center; gap: var(--s-2); }
+  .title { overflow: hidden; text-overflow: ellipsis; }
+  .status { font-size: 0; gap: 0; }
   .actions { flex: none; flex-wrap: nowrap; gap: var(--s-1); }
 }
 
