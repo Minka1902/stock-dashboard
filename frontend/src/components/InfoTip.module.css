@@ -10,7 +10,7 @@
   background: var(--surface-2);
   color: var(--accent-text);
   font-family: var(--sans);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 700;
   font-style: italic;
   line-height: 1;
@@ -34,14 +34,8 @@
   transition: none;
 }
 
-/* The "i" stays small; on touch its hit area grows to the --tap minimum. */
+/* The "i" stays small on touch; the shared ::after in index.css grows its
+   hit area to --tap. */
 @media (pointer: coarse) {
-  /* Keep the glyph small (exempt from the global --tap minimum in index.css);
-     the invisible ::after is what grows. */
-  .btn { position: relative; min-height: 0; min-width: 0; }
-  .btn::after {
-    content: "";
-    position: absolute;
-    inset: -12px;
-  }
+  .btn { min-height: 0; min-width: 0; }
 }

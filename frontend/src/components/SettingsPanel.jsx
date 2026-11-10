@@ -5,6 +5,7 @@ import TelegramCard from "./TelegramCard";
 import FxWatchEditor from "./FxWatchEditor";
 import Tooltip from "./Tooltip";
 import { useProfile } from "../hooks/useProfile";
+import { TEXT_SCALES } from "../hooks/useSettings";
 import { initialsFor, gradientFor } from "../lib/avatar";
 import { sendTestSuggestions } from "../api";
 import { currencySymbol, formatMoney } from "../lib/format";
@@ -79,6 +80,27 @@ function formatNextRun(iso, tz) {
   } catch {
     return iso;
   }
+}
+
+/** Settings' pill radios for a one-of-N preference. */
+function radioPills({ label, options, value, onChange }) {
+  return (
+    <div className={styles.segmented} role="radiogroup" aria-label={label}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          className={styles.segBtn}
+          data-active={value === o.value ? "yes" : "no"}
+          onClick={() => onChange(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export default function SettingsPanel({ settings, setSetting, onNavigate, appSettingsApi, user, theme, onSetTheme, themes = [] }) {
@@ -591,6 +613,20 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
           </fieldset>
         )}
 
+        <fieldset className={`${styles.group} ${styles.phoneOnly}`}>
+          <legend className={styles.legend}>Text size</legend>
+          <p className={styles.groupHint}>
+            How large text reads on this phone. Applies instantly and is saved on this device;
+            the desktop layout keeps its own sizes.
+          </p>
+          {radioPills({
+            label: "Text size",
+            options: TEXT_SCALES,
+            value: settings.textScale,
+            onChange: (v) => setSetting("textScale", v),
+          })}
+        </fieldset>
+
         {/* Reading & focus */}
         <fieldset className={styles.group}>
           <legend className={styles.legend}>Ticker labels</legend>
@@ -599,21 +635,12 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
             fundamentals and SEC filing data already stored — a ticker with no
             recorded name keeps showing its symbol.
           </p>
-          <div className={styles.segmented} role="radiogroup" aria-label="Ticker labels">
-            {NAME_DISPLAY_OPTIONS.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                role="radio"
-                aria-checked={settings.nameDisplay === o.value}
-                className={styles.segBtn}
-                data-active={settings.nameDisplay === o.value ? "yes" : "no"}
-                onClick={() => setSetting("nameDisplay", o.value)}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
+          {radioPills({
+            label: "Ticker labels",
+            options: NAME_DISPLAY_OPTIONS,
+            value: settings.nameDisplay,
+            onChange: (v) => setSetting("nameDisplay", v),
+          })}
         </fieldset>
 
         <fieldset className={styles.group}>

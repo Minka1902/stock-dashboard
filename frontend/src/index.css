@@ -80,20 +80,45 @@ body {
   /* uppercase terminal caption */
   --caption-spacing: 0.09em;
 
-  /* type scale (DESIGN.md): caption, small, body, lead, h2, h1, display */
-  --fs-caption: 11px;
-  --fs-small: 12.5px;
-  --fs-body: 14px;
+  /* Type scale. One token per size in use, named by its desktop size; the
+     phone block at the end of this file remaps every one of them (smaller,
+     times the text-size setting), so a component that uses a token gets the
+     phone scale for free. */
+  --type-scale: 1;
+  --fs-9: 9px;
+  --fs-9-5: 9.5px;
+  --fs-10: 10px;
+  --fs-10-5: 10.5px;
+  --fs-11: 11px;
+  --fs-11-5: 11.5px;
+  --fs-12: 12px;
+  --fs-12-5: 12.5px;
+  --fs-13: 13px;
+  --fs-13-5: 13.5px;
+  --fs-14: 14px;
+  --fs-15: 15px;
+  --fs-16: 16px;
   --fs-lead: 17px;
+  --fs-h3: 18px;
   --fs-h2: 22px;
   --fs-h1: 30px;
+  --fs-hero: 34px;
   --fs-display: 44px;
+  /* Roles (DESIGN.md): caption, small (UI), body. */
+  --fs-caption: var(--fs-11);
+  --fs-small: var(--fs-12-5);
+  --fs-body: var(--fs-14);
 
   /* Minimum hit area for a coarse pointer (touch). Breakpoints can't be custom
      properties inside @media, so they are fixed values, documented in
      DESIGN.md: 1000 (two columns stack), 900 (rail -> icons), 640 (phone:
      bottom tab bar, stacked tables), 560 (small phone). */
   --tap: 40px;
+  /* Touch control heights: chips, segmented items and secondary buttons are
+     compact (their hit area still reaches --tap); fields and primary buttons
+     are full height. */
+  --control-h: 34px;
+  --field-h: 44px;
   --mobile-nav-h: 60px;
 
   --sidebar-w: 212px;
@@ -123,6 +148,9 @@ body {
   /* ADHD-friendly base: comfortable size + relaxed leading for scanning. */
   font-size: 14.5px;
   line-height: 1.5;
+  /* Sizes are set here, not inflated by a phone browser's text autosizing. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -384,7 +412,7 @@ button {
   font-family: var(--mono);
   text-transform: uppercase;
   letter-spacing: var(--caption-spacing);
-  font-size: 11px;
+  font-size: var(--fs-caption);
   font-weight: 600;
   color: var(--text-faint);
 }
@@ -461,19 +489,76 @@ button {
   }
 }
 
-/* Touch (coarse pointer): every control in the page gets at least the --tap
-   hit height. One rule instead of a min-height in every module; components
-   that also need the width (icon-only buttons) set it in their own module. */
-@media (pointer: coarse) {
-  main button,
-  main select,
-  main [role="tab"],
-  main input:not([type="checkbox"]):not([type="radio"]) {
-    min-height: var(--tap);
+/* ============================================================
+   Phone type scale. A phone at its default system text size read every
+   desktop size as oversized, so each token steps down here: captions stay
+   10–10.5px, UI 12.5→12, body 14→13, lead 17→15, h2 22→18, h1 30→22, and
+   the hero numbers follow the screen width. `--type-scale` is the Settings
+   text size (html[data-text-scale], see useSettings).
+   ============================================================ */
+@media (max-width: 640px) {
+  :root {
+    --fs-9: calc(9px * var(--type-scale));
+    --fs-9-5: calc(9.5px * var(--type-scale));
+    --fs-10: calc(10px * var(--type-scale));
+    --fs-10-5: calc(10.5px * var(--type-scale));
+    --fs-11: calc(10.5px * var(--type-scale));
+    --fs-11-5: calc(11px * var(--type-scale));
+    --fs-12: calc(11.5px * var(--type-scale));
+    --fs-12-5: calc(12px * var(--type-scale));
+    --fs-13: calc(12.5px * var(--type-scale));
+    --fs-13-5: calc(13px * var(--type-scale));
+    --fs-14: calc(13px * var(--type-scale));
+    --fs-15: calc(14px * var(--type-scale));
+    --fs-16: calc(14.5px * var(--type-scale));
+    --fs-lead: calc(15px * var(--type-scale));
+    --fs-h3: calc(16px * var(--type-scale));
+    --fs-h2: calc(18px * var(--type-scale));
+    --fs-h1: calc(22px * var(--type-scale));
+    --fs-hero: calc(clamp(26px, 8vw, 34px) * var(--type-scale));
+    --fs-display: var(--fs-hero);
+    --caption-spacing: 0.06em;
+    font-size: calc(13.5px * var(--type-scale));
   }
-  main button { min-width: 32px; }
-  main input[type="checkbox"],
-  main input[type="radio"] {
+  :root[data-text-scale="compact"] { --type-scale: 0.93; }
+  :root[data-text-scale="large"] { --type-scale: 1.08; }
+
+  /* iOS zooms the page into any field under 16px when it takes focus; no
+     module size may win over this, hence !important. */
+  input:not([type="checkbox"], [type="radio"], [type="range"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* ============================================================
+   Touch (coarse pointer): one rule sizes every control, in the page, the
+   sheets and the menus. Chips, tabs and secondary buttons are compact
+   (--control-h) and an invisible ::after grows their hit area to --tap
+   (the extra half pixel absorbs sub-pixel heights); fields and primary
+   actions (a form's submit, Button variant="primary") are --field-h.
+   Zero specificity, so a module's own size still wins; a module that keeps
+   a glyph small sets min-height/min-width to 0 and lets the ::after do the
+   rest. Text inputs are the exception: their height is a floor, so it
+   outranks a module's single-class desktop minimum.
+   ============================================================ */
+@media (pointer: coarse) {
+  :where(button, [role="tab"], summary) {
+    position: relative;
+    min-height: var(--control-h);
+    min-width: 32px;
+  }
+  :where(button, [role="tab"], summary)::after {
+    content: "";
+    position: absolute;
+    inset: min(0px, 50% - var(--tap) / 2 - 0.5px);
+  }
+  :where(select, textarea, [data-variant="primary"], form button:not([type="button"], [type="reset"])),
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"]) {
+    min-height: var(--field-h);
+  }
+  :where(input[type="checkbox"], input[type="radio"]) {
     width: 20px;
     height: 20px;
   }

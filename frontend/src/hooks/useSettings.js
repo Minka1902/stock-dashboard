@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 
 const STORAGE_KEY = "settings";
+// Phone text size, applied as html[data-text-scale]: a multiplier on the
+// phone type scale (index.css). Desktop sizes never change.
+export const TEXT_SCALES = [
+  { value: "compact", label: "Compact" },
+  { value: "default", label: "Default" },
+  { value: "large", label: "Large" },
+];
 
 // Forward-safe defaults. New keys merge over whatever is persisted so older
 // saved blobs keep working after an upgrade.
@@ -13,6 +20,8 @@ const DEFAULTS = {
   dyslexia: false,
   // Opt-in: disable non-essential animation/transitions for calmer motion.
   reducedMotion: false,
+  // Text size on a phone (TEXT_SCALES).
+  textScale: "default",
   // Focus mode: Overview shows one section at a time (accordion).
   focusMode: false,
   // Map of Overview section key -> true when the user has collapsed it.
@@ -58,6 +67,8 @@ export function useSettings() {
   useEffect(() => {
     document.documentElement.dataset.dyslexia = settings.dyslexia ? "on" : "off";
     document.documentElement.dataset.reducedMotion = settings.reducedMotion ? "on" : "off";
+    document.documentElement.dataset.textScale = TEXT_SCALES.some((t) => t.value === settings.textScale)
+      ? settings.textScale : "default";
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
     } catch {
