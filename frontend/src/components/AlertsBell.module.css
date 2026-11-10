@@ -37,7 +37,7 @@
   background: var(--accent);
   color: var(--on-accent);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 700;
   line-height: 1;
   box-shadow: 0 0 8px var(--accent-glow);
@@ -59,23 +59,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--s-3) var(--s-4);
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3) var(--s-2) var(--s-4);
   border-bottom: 1px solid var(--border);
 }
-.markRead {
-  border: none;
-  background: transparent;
-  color: var(--accent-text);
-  font-family: var(--mono);
-  font-size: 11px;
-  cursor: pointer;
-}
-.markRead:hover { text-decoration: underline; }
 
 .empty {
   padding: var(--s-5) var(--s-4);
   color: var(--text-faint);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   text-align: center;
 }
 
@@ -83,9 +75,13 @@
   list-style: none;
   margin: 0;
   padding: var(--s-2);
+}
+/* The popover scrolls its list; the sheet scrolls its whole body. */
+.pop .list {
   max-height: 60vh;
   overflow-y: auto;
 }
+.sheet .list { padding: 0; }
 
 .item {
   display: flex;
@@ -100,26 +96,23 @@
 .item:hover { background: var(--surface-hover); }
 .item[data-unread="yes"]:hover { background: var(--accent-weak); }
 
-/* Per-alert "mark read", so clearing one no longer means clearing all. */
+/* Per-alert "mark read": always shown on an unread alert, a real button. */
 .markOne {
   flex: none;
   appearance: none;
-  border: 1px solid transparent;
-  background: transparent;
-  border-radius: var(--r-xs);
-  padding: 3px;
-  color: var(--text-faint);
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 120ms ease, color 120ms ease;
+  transition: color var(--dur-1) var(--ease-out-quart), border-color var(--dur-1) var(--ease-out-quart);
 }
-.item:hover .markOne,
-.markOne:focus-visible { opacity: 1; }
-.markOne:hover { color: var(--positive); border-color: var(--positive-weak); }
+.markOne:hover { color: var(--positive); border-color: var(--positive); }
 .markOne:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-@media (hover: none) {
-  .markOne { opacity: 1; }
-}
 
 .dot {
   flex: none;
@@ -152,11 +145,11 @@
 .symbol {
   font-family: var(--mono);
   font-weight: 700;
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--text);
 }
 .title {
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -166,19 +159,22 @@
   margin-left: auto;
   flex: none;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-10);
   color: var(--text-faint);
 }
 .message {
   margin-top: 2px;
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   color: var(--text-faint);
   line-height: 1.45;
 }
 
-@keyframes rise {
-  from { opacity: 0; transform: translateY(-6px); }
+.unlisted {
+  padding: 0 var(--s-4) var(--s-3);
+  font-size: var(--fs-11-5);
+  color: var(--text-faint);
 }
+.sheet .unlisted { padding: 0; }
 
 @media (pointer: coarse) {
   .bell { width: var(--tap); height: var(--tap); }
