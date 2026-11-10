@@ -13,7 +13,6 @@ import LiveTicker from "./components/LiveTicker";
 import CommandPalette from "./components/CommandPalette";
 import Icon from "./components/Icon";
 import StatGrid from "./components/StatGrid";
-import SourceStatus from "./components/SourceStatus";
 import ContractsPanel from "./components/ContractsPanel";
 import TradesPanel from "./components/TradesPanel";
 import NewsPanel from "./components/NewsPanel";
@@ -178,8 +177,8 @@ export default function App({ auth }) {
 
   const navigate = useCallback((v) => navigateTo({ kind: "view", view: v }), []);
 
-  // Open the Info page scrolled to its data-sources section (from the failed-
-  // source strip). The panel mounts on navigate, so scroll on the next frame.
+  // Open the Info page scrolled to its data-sources section (from the top
+  // bar's SourceHealth). The panel mounts on navigate, so scroll on the next frame.
   const openSourceDetails = () => {
     if (auth?.user?.is_admin) {
       navigate("server");
@@ -356,6 +355,7 @@ export default function App({ auth }) {
             onNavigate={navigate}
             hasTour={Boolean(TOURS[view]) && !detailTicker}
             onStartTour={() => setTourView(view)}
+            onOpenSourceDetails={openSourceDetails}
           />
           <LiveTicker quotes={quotes} asOf={asOf} marketStatus={marketStatus} marketStatuses={marketStatuses} />
         </div>
@@ -370,7 +370,6 @@ export default function App({ auth }) {
             )}
 
             {!detailTicker && <RiskBanner />}
-            {!detailTicker && <SourceStatus sources={sources} onOpenDetails={openSourceDetails} />}
 
             <AnimatePresence mode="wait" initial={false}>
             {detailTicker ? (

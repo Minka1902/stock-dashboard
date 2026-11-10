@@ -3,11 +3,18 @@ import Icon from "./Icon";
 import AlertsBell from "./AlertsBell";
 import Popover from "./Popover";
 import UserMenu from "./UserMenu";
+import SourceHealth from "./SourceHealth";
 import Tooltip from "./Tooltip";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { formatRelativeTime } from "../lib/format";
 import { LEAN_READ, leanLabel, leanTone } from "../lib/lean";
 import RegimeChip from "./RegimeChip";
 import styles from "./TopBar.module.css";
+
+// On a phone the failing sources are one glyph and a count; wider, each gets
+// its own glyph, up to SOURCE_HEALTH_MAX and as many as the bar has room for.
+const PHONE = "(max-width: 640px)";
+const SOURCE_HEALTH_MAX = 6;
 
 // Theme switcher: a trigger button + motion popover of the available themes,
 // each with a two-tone preview swatch.
@@ -71,7 +78,9 @@ export default function TopBar({
   title, sources, busy, onRefresh, theme, onSetTheme, themes = [],
   dyslexia, onToggleDyslexia, lean, alerts = [], unreadAlerts = 0,
   onMarkAlertsRead, onOpenAlert, onOpenCommand, user, onLogout, onNavigate, hasTour, onStartTour,
+  onOpenSourceDetails,
 }) {
+  const phone = useMediaQuery(PHONE);
   const refreshed = sources
     .filter((s) => s.last_refreshed_at)
     .sort((a, b) => (a.last_refreshed_at < b.last_refreshed_at ? 1 : -1));
@@ -107,6 +116,13 @@ export default function TopBar({
           </span>
         </Tooltip>
       </div>
+
+      <SourceHealth
+        sources={sources}
+        variant={phone ? "compact" : "inline"}
+        max={SOURCE_HEALTH_MAX}
+        onOpenDetails={onOpenSourceDetails}
+      />
 
       <div className={styles.actions}>
         {lean && (

@@ -266,7 +266,7 @@ Tick an item in the same commit that completes it.
 - [x] Phase 1 — STC-96 harness
 - [x] Phase 1 — STC-107 ErrorBoundary
 - [x] Phase 2 — STC-97 type tokens, text-scale setting, phone control sizing
-- [ ] Phase 2 — STC-87 + STC-88 SourceHealth
+- [x] Phase 2 — STC-87 + STC-88 SourceHealth
 - [ ] Phase 2 — STC-99 shell (ticker tape, top bar, nav pins)
 - [ ] Phase 2 — STC-108 back-to-top
 - [ ] Phase 2 — STC-91 alerts
