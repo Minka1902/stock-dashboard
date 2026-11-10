@@ -23,4 +23,11 @@ export default defineConfig([
     files: ['vite.config.js'],
     languageOptions: { globals: globals.node },
   },
+  {
+    // The screenshot harness runs under Node, and probe.mjs is serialized
+    // into the page, so both sets of globals apply.
+    files: ['scripts/**/*.mjs'],
+    extends: [js.configs.recommended],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
 ])

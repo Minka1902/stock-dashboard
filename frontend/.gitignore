@@ -28,3 +28,6 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Phone/desktop harness output (scripts/mobile-shots.mjs): images, reports, API fixture
+.mobile-shots
