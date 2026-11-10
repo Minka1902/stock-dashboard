@@ -45,6 +45,7 @@ import InfoPanel from "./components/InfoPanel";
 import ServerPanel from "./components/ServerPanel";
 import StockDetailPanel from "./components/StockDetailPanel";
 import BackToTop from "./components/BackToTop";
+import ErrorBoundary from "./components/ErrorBoundary";
 import Tour from "./components/Tour";
 import { TOURS } from "./lib/tours";
 import { alertRoute } from "./lib/alertMeta";
@@ -380,15 +381,17 @@ export default function App({ auth }) {
                 exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, y: 10 }}
                 transition={prefersReducedMotion() ? { duration: 0 } : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
               >
-                <StockDetailPanel
-                  ticker={detailTicker}
-                  onBack={closeDetail}
-                  watchlist={watchlist}
-                  onAddWatch={addWatch}
-                  held={Boolean(portfolio?.some((h) => h.ticker === detailTicker))}
-                  // From /stock/X?alert=<dedup_key>: which alert brought you here.
-                  focusAlertKey={route.kind === "stock" ? route.alertKey : null}
-                />
+                <ErrorBoundary label={`${detailTicker} analysis`} resetKeys={[detailTicker]}>
+                  <StockDetailPanel
+                    ticker={detailTicker}
+                    onBack={closeDetail}
+                    watchlist={watchlist}
+                    onAddWatch={addWatch}
+                    held={Boolean(portfolio?.some((h) => h.ticker === detailTicker))}
+                    // From /stock/X?alert=<dedup_key>: which alert brought you here.
+                    focusAlertKey={route.kind === "stock" ? route.alertKey : null}
+                  />
+                </ErrorBoundary>
               </motion.div>
             ) : (
               <motion.div
@@ -398,7 +401,9 @@ export default function App({ auth }) {
                 exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, y: 10 }}
                 transition={prefersReducedMotion() ? { duration: 0 } : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
               >
-            {(VIEWS[view] || VIEWS[DEFAULT_VIEW])(viewProps)}
+            <ErrorBoundary label={TITLES[view]} resetKeys={[view]}>
+              {(VIEWS[view] || VIEWS[DEFAULT_VIEW])(viewProps)}
+            </ErrorBoundary>
               </motion.div>
             )}
             </AnimatePresence>

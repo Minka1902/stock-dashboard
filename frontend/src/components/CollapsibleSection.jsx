@@ -1,6 +1,7 @@
 import { useId, useLayoutEffect, useRef } from "react";
 import { motion } from "motion/react";
 import CollapseToggle from "./CollapseToggle";
+import ErrorBoundary from "./ErrorBoundary";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./CollapsibleSection.module.css";
 
@@ -84,7 +85,11 @@ export default function CollapsibleSection({
           : { height: "auto", visibility: "visible" }}
         transition={transition}
       >
-        <div className={`${styles.body} ${bodyClassName}`}>{children}</div>
+        <div className={`${styles.body} ${bodyClassName}`}>
+          <ErrorBoundary compact label={typeof caption === "string" ? caption : undefined}>
+            {children}
+          </ErrorBoundary>
+        </div>
       </motion.div>
     </section>
   );

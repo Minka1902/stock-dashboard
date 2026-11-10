@@ -264,7 +264,7 @@ Tick an item in the same commit that completes it.
 
 - [x] Phase B — STC-94 margin debt fetch + manual import
 - [x] Phase 1 — STC-96 harness
-- [ ] Phase 1 — STC-107 ErrorBoundary
+- [x] Phase 1 — STC-107 ErrorBoundary
 - [ ] Phase 2 — STC-97 type tokens, text-scale setting, phone control sizing
 - [ ] Phase 2 — STC-87 + STC-88 SourceHealth
 - [ ] Phase 2 — STC-99 shell (ticker tape, top bar, nav pins)

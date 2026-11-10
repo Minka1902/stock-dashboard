@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
+import ErrorBoundary from "./ErrorBoundary";
 import Tooltip from "./Tooltip";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./Dialog.module.css";
@@ -92,7 +93,11 @@ export default function Dialog({
                 </button>
               </Tooltip>
             </header>
-            <div className={styles.body}>{children}</div>
+            <div className={styles.body}>
+              <ErrorBoundary compact label={typeof title === "string" ? title : undefined}>
+                {children}
+              </ErrorBoundary>
+            </div>
             {footer && <footer className={styles.foot}>{footer}</footer>}
           </motion.div>
         </div>
