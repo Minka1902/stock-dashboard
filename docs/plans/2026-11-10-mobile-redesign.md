@@ -268,7 +268,7 @@ Tick an item in the same commit that completes it.
 - [x] Phase 2 — STC-97 type tokens, text-scale setting, phone control sizing
 - [x] Phase 2 — STC-87 + STC-88 SourceHealth
 - [x] Phase 2 — STC-99 shell (ticker tape, top bar, nav pins)
-- [ ] Phase 2 — STC-108 back-to-top
+- [x] Phase 2 — STC-108 back-to-top
 - [ ] Phase 2 — STC-91 alerts
 - [ ] Phase 2 — STC-107 watchlist touch
 - [ ] Phase 3 — STC-98 font-size migration

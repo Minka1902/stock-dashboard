@@ -76,8 +76,11 @@
     padding: var(--s-3) var(--s-2) var(--s-6);
     gap: var(--s-3);
   }
-  /* Clear the fixed bottom tab bar (MobileNav). */
-  .app[data-detail="no"] .scroll {
-    padding-bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px));
-  }
+  /* What is fixed along the bottom of the screen: the tab bar (MobileNav)
+     and the home-indicator safe area on the views, only the safe area on
+     the stock page, which has no tab bar. The page scroller clears it, and
+     so does anything floating above it (BackToTop). */
+  .app[data-detail="no"] { --bottom-chrome: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px)); }
+  .app[data-detail="yes"] { --bottom-chrome: env(safe-area-inset-bottom, 0px); }
+  .scroll { padding-bottom: var(--bottom-chrome); }
 }
