@@ -1,0 +1,15 @@
+/* Lives in a Sources-table name cell: that cell is bold, nowrap and tinted by
+   the row's state, none of which suits a form control. */
+.wrap {
+  margin-top: var(--s-1);
+  max-width: 360px;
+  white-space: normal;
+  font-weight: 400;
+}
+/* The result or error drops under the button instead of widening the table. */
+.field { flex-wrap: wrap; row-gap: 2px; }
+.link {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent-text);
+}

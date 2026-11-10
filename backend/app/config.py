@@ -254,10 +254,10 @@ SENT_AAII_SPREAD = float(os.environ.get("STOCKS_SENT_AAII_SPREAD", "20"))
 SENT_PC_BUY = float(os.environ.get("STOCKS_SENT_PC_BUY", "1.0"))          # heavy puts = fear → buy
 SENT_PC_SELL = float(os.environ.get("STOCKS_SENT_PC_SELL", "0.8"))        # complacency → sell
 
-# FINRA publishes margin debt monthly, roughly three to four weeks after the
-# month closes, so asking daily only burned requests. Weekly (the intended
-# schedule is Mon 06:00 Asia/Jerusalem) picks up each release within days, and
-# keeps the headless-browser tier to one Chromium launch a week.
+# FINRA publishes margin debt monthly, in the third week of the following
+# month, so asking daily only burned requests. Weekly (the intended schedule is
+# Mon 06:00 Asia/Jerusalem) picks up each release within days; between
+# releases the fetch defers to the next window without calling out at all.
 MARGIN_DEBT_MIN_INTERVAL_SECONDS = int(
     os.environ.get("STOCKS_MARGIN_DEBT_MIN_INTERVAL_SECONDS", str(7 * 86400))
 )
@@ -272,10 +272,13 @@ MARGIN_DEBT_BROWSER_TIMEOUT_SECONDS = float(
 MARGIN_DEBT_RETRY_INTERVAL_SECONDS = int(
     os.environ.get("STOCKS_MARGIN_DEBT_RETRY_INTERVAL_SECONDS", "21600")  # 6h
 )
-# Direct link to FINRA's margin-statistics workbook. Normally discovered from
-# the statistics page, but that page is currently Cloudflare-blocked (403), so
-# this is the escape hatch that keeps the workbook tier usable.
-MARGIN_DEBT_WORKBOOK_URL = os.environ.get("STOCKS_MARGIN_DEBT_WORKBOOK_URL", "")
+# FINRA's margin-statistics workbook, used when the statistics page (which
+# links it) is unavailable. The default is the link that page carried when it
+# was verified live (2026-11: HTTP 200 through a real browser, 1997-01 onward).
+MARGIN_DEBT_WORKBOOK_URL = os.environ.get(
+    "STOCKS_MARGIN_DEBT_WORKBOOK_URL",
+    "https://www.finra.org/sites/default/files/2021-03/margin-statistics.xlsx",
+)
 SENT_MARGIN_SELL = float(os.environ.get("STOCKS_SENT_MARGIN_SELL", "45"))     # %YoY: overbought
 SENT_MARGIN_EXTREME = float(os.environ.get("STOCKS_SENT_MARGIN_EXTREME", "60"))  # pre-crash leverage
 SENT_MARGIN_BUY = float(os.environ.get("STOCKS_SENT_MARGIN_BUY", "-20"))      # deleveraging washout

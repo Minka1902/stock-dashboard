@@ -1,4 +1,6 @@
 """FastAPI surface + scheduler wiring."""
+import asyncio
+import contextvars
 import itertools
 import json
 import logging
@@ -26,6 +28,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -133,6 +136,18 @@ def _store_fundamentals(conn, records) -> None:
     holders = getattr(records, "holders", None)
     if holders:
         db.upsert_company_holders(conn, holders)
+
+
+# True while an admin's explicit run (run-now, refresh?force=1) is fetching on
+# the refresh thread: a fetch that would defer because nothing new can be
+# published yet goes to the network anyway.
+_FORCED = contextvars.ContextVar("forced_run", default=False)
+
+
+def margin_debt_fetch(conn):
+    stored = db.get_margin_debt(conn)
+    latest = stored[-1].month if stored and not _FORCED.get() else None
+    return margin_debt_source.fetch(latest)
 
 
 def x_posts_fetch(conn):
@@ -267,6 +282,9 @@ class SourceSpec(NamedTuple):
     whose upstream publishes slowly or rate-limits us hard — hitting those an
     extra time daily just burns the quota and re-records the same error.
     requests_derived: whether a success pulls the derived step forward.
+    importer: bytes -> records, for a file an admin downloaded from the
+    provider by hand (Server page import). Raises ValueError saying why a file
+    is unusable; a FetchResult note becomes the status line.
     """
 
     fetch: object
@@ -276,6 +294,7 @@ class SourceSpec(NamedTuple):
     force_on_daily: bool = True
     # False for sources nothing in the derived step reads (equity snapshots).
     requests_derived: bool = True
+    importer: object = None
 
 
 def _us_only(tickers: list[str]) -> list[str]:
@@ -313,12 +332,14 @@ def build_sources(conn):
         "vix":         (lambda: vix_source.fetch(config.VIX_RANGE), db.upsert_vix, None),
         "aaii":        (lambda: aaii_source.fetch(), db.upsert_aaii, config.AAII_MIN_INTERVAL_SECONDS),
         "put_call":    (lambda: put_call_source.fetch(), db.upsert_put_call, config.PUT_CALL_MIN_INTERVAL_SECONDS),
-        # FINRA publishes monthly; a fortnightly success cadence with a 6h retry
-        # keeps a 401/403 from freezing the source for the whole fortnight.
-        "margin_debt": SourceSpec(lambda: margin_debt_source.fetch(), db.upsert_margin_debt,
+        # FINRA publishes monthly; a weekly success cadence with a 6h retry
+        # keeps a 403 from freezing the source for the whole week. Between
+        # releases the fetch defers without calling out.
+        "margin_debt": SourceSpec(lambda: margin_debt_fetch(conn), db.upsert_margin_debt,
                                   config.MARGIN_DEBT_MIN_INTERVAL_SECONDS,
                                   retry_interval=config.MARGIN_DEBT_RETRY_INTERVAL_SECONDS,
-                                  force_on_daily=False),
+                                  force_on_daily=False,
+                                  importer=margin_debt_source.import_workbook),
         "congress":       (lambda: congress_source.fetch(conn, config.CONGRESS_LOOKBACK_DAYS), congress_source.store, config.CONGRESS_MIN_INTERVAL_SECONDS),
         # Short interest is a US-listing dataset: TASE (and other non-US)
         # symbols are left out rather than recorded as failures.
@@ -482,17 +503,23 @@ def _run_derived() -> None:
         ingest.run_source(refresh_conn, name, spec.fetch, spec.store)
 
 
-def _run_source_now(name: str) -> None:
-    """Run one source (or the derived step) and let its outcome set its clock."""
+def _run_source_now(name: str, force: bool = False, fetch=None) -> "ingest.RunResult | None":
+    """Run one source (or the derived step) and let its outcome set its clock.
+    `fetch` stands in for the source's own (a manual import's parsed file)."""
     if name == schedules.DERIVED:
         _run_derived()
-        return
+        return None
     spec = SOURCES[name]
-    result = ingest.run_source(refresh_conn, name, spec.fetch, spec.store)
+    token = _FORCED.set(force)
+    try:
+        result = ingest.run_source(refresh_conn, name, fetch or spec.fetch, spec.store)
+    finally:
+        _FORCED.reset(token)
     try:
         _after_run(name, result)
     except Exception:  # noqa: BLE001 - bookkeeping must never fail the run
         logger.exception("post-run scheduling for %s failed", name)
+    return result
 
 
 def _set_next_run(job_id: str, when: datetime) -> None:
@@ -545,7 +572,7 @@ def _request_derived() -> None:
         scheduler.modify_job(job_id, next_run_time=target)
 
 
-def _enqueue(name: str, trigger: str = "manual"):
+def _enqueue(name: str, trigger: str = "manual", force: bool = False, fetch=None):
     """Queue a one-off run of `name` on the refresh thread (not via the
     scheduler, so a disabled schedule stays disabled)."""
     key = f"{trigger}:{name}:{next(_MANUAL_SEQ)}"
@@ -558,7 +585,7 @@ def _enqueue(name: str, trigger: str = "manual"):
     def body():
         with _JOB_LOCK:
             _QUEUED.pop(key, None)
-        _run_source_now(name)
+        return _run_source_now(name, force, fetch)
 
     return _refresh_executor.submit(body)
 
@@ -2259,6 +2286,7 @@ def server_sources(user=Depends(_require_admin)):
             {**sched.model_dump(), "description": schedules.describe(sched)} if sched else None)
         row["next_run_at"] = _job_next_run(_job_id(sched_name))
         row["force_on_daily"] = spec.force_on_daily
+        row["importable"] = spec.importer is not None
         row["running_for_seconds"] = running.get(name)
         row["queued"] = sched_name in queued or name in queued
         out.append(row)
@@ -2272,6 +2300,53 @@ def server_source_runs(source_name: str, limit: int = 10, user=Depends(_require_
         raise HTTPException(status_code=404, detail="unknown source")
     limit = max(1, min(limit, 100))
     return [r.model_dump() for r in db.get_source_runs(conn, source_name, limit=limit)]
+
+
+_IMPORT_MAX_BYTES = 5 * 1024 * 1024
+# The write waits its turn on the refresh thread, which may be mid-fetch; past
+# this the import answers 202 rather than outlasting the browser's 20s timeout.
+_IMPORT_WAIT_SECONDS = 10
+
+
+def _import_error(status_code: int, message: str) -> HTTPException:
+    return HTTPException(status_code=status_code, detail={"message": message, "errors": {"file": message}})
+
+
+@app.post("/api/server/sources/{source_name}/import")
+async def import_source(source_name: str, request: Request, response: Response,
+                        user=Depends(_require_admin)):
+    """Store a file the admin downloaded from the provider by hand, for when
+    every automated tier is blocked. The body is the raw file (no multipart).
+
+    Parsed here so a bad file is a 422 with the reason; stored like any run, on
+    the refresh thread through refresh_conn, so it is stamped `ok (<note>)`,
+    gets a source_runs row, re-arms the source's clock and pulls derived
+    forward.
+    """
+    spec = SOURCES.get(source_name)
+    if spec is None or spec.importer is None:
+        raise HTTPException(status_code=404, detail="unknown or non-importable source")
+    too_big = f"file is larger than {_IMPORT_MAX_BYTES // (1024 * 1024)} MB"
+    if int(request.headers.get("content-length") or 0) > _IMPORT_MAX_BYTES:
+        raise _import_error(413, too_big)
+    body = bytearray()
+    async for chunk in request.stream():  # chunked uploads carry no length to check
+        body += chunk
+        if len(body) > _IMPORT_MAX_BYTES:
+            raise _import_error(413, too_big)
+    try:
+        records = await run_in_threadpool(spec.importer, bytes(body))
+    except ValueError as exc:
+        raise _import_error(422, str(exc))
+    future = _enqueue(source_name, "import", fetch=lambda: records)
+    done, _ = await asyncio.wait({asyncio.wrap_future(future)}, timeout=_IMPORT_WAIT_SECONDS)
+    if not done:
+        response.status_code = 202
+        return {"source": source_name, "queued": True, "status": None}
+    status = next((s.status for s in db.get_source_statuses(conn) if s.source == source_name), None)
+    if future.result().outcome != "ok":
+        raise HTTPException(status_code=500, detail=f"read the file, but storing it failed: {status}")
+    return {"source": source_name, "queued": False, "status": status}
 
 
 @app.get("/api/server/events")
@@ -2354,10 +2429,11 @@ def put_schedule(source_name: str, item: ScheduleUpdate, user=Depends(_require_a
 
 @app.post("/api/server/schedules/{source_name}/run-now", status_code=202)
 def run_schedule_now(source_name: str, user=Depends(_require_admin)):
-    """Run once now, on the refresh thread, without touching the schedule."""
+    """Run once now, on the refresh thread, without touching the schedule.
+    Forced: a source that would defer as already current still fetches."""
     if source_name not in _schedule_names():
         raise HTTPException(status_code=404, detail="unknown schedule")
-    _enqueue(source_name, "run-now")
+    _enqueue(source_name, "run-now", force=True)
     return {"source": source_name, "queued": True}
 
 
@@ -2419,7 +2495,7 @@ def refresh(source_name: str, force: bool = False, user=Depends(auth.get_current
     if gate:
         reason, due = gate
         return {**payload, "queued": False, "reason": reason, "next_run_at": due}
-    _enqueue(source_name, "manual")
+    _enqueue(source_name, "manual", force=force)
     return {**payload, "queued": True}
 
 

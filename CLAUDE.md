@@ -197,7 +197,7 @@ The app can be served on the internet through a tunnel (Tailscale Funnel — see
 ## Backend architecture
 
 The whole pipeline hangs off the **`SOURCES` registry** in `app/main.py`:
-`name -> SourceSpec(fetch, store, min_interval, retry_interval, force_on_daily)`. The cadence
+`name -> SourceSpec(fetch, store, min_interval, retry_interval, force_on_daily, …, importer)`. The cadence
 fields only **seed** each source's row in `source_schedules`; after that the row (editable on
 the Server page) is what runs.
 
@@ -236,6 +236,16 @@ the Server page) is what runs.
   re-arm itself — draining inside it deadlocks.
 - A non-forced manual refresh of a source with a registry `min_interval` that is still fresh
   answers `queued: false` with the reason and next run (no run row); `force=1` is admin-only.
+- **Forced runs** (Server run-now, `force=1`) set `main._FORCED` while they fetch, so a source's own
+  "nothing new yet" deferral does not stop them. `margin_debt` is that source: its fetch gets the
+  newest stored month and defers `up to date through YYYY-MM` until `margin_debt.next_release`
+  (FINRA publishes month M in the third week of M+1, so the 15th of the month after next).
+- **Manual import** (`POST /api/server/sources/{name}/import`, admin): for a source with a
+  `SourceSpec.importer` (`bytes -> records`, `ValueError` = unusable file; today only
+  `margin_debt`, FINRA's workbook, for when Cloudflare blocks every tier). Raw request body, no
+  multipart; over 5 MB → 413, bad file → 422 with `errors.file`. The write is an ordinary run on
+  the refresh thread (`_enqueue(..., fetch=…)`): status `ok (<importer note>)`, a `source_runs`
+  row, its clock re-armed, derived pulled forward. The deferral above is what makes it stick.
 
 **Derived step:** `boom_score` (a pure DB computation that reads every other source), `alerts`
 (diffs the fresh boom scores against the prior `alert_state` snapshot to fire transition events

@@ -6,6 +6,7 @@ import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import SchedulerSection from "./SchedulerSection";
 import SourceDrawer from "./SourceDrawer";
+import SourceImport from "./SourceImport";
 import { useServerStatus } from "../hooks/useServerStatus";
 import { formatRelativeTime, formatUntil } from "../lib/format";
 import { prefersReducedMotion } from "../lib/motionConfig";
@@ -285,6 +286,7 @@ export default function ServerPanel() {
                     <td className={styles.srcName}>
                       {s.running_for_seconds != null && <span className={styles.pulse} />}
                       {s.source}
+                      {s.importable && <SourceImport source={s.source} onImported={refresh} />}
                     </td>
                     <td className={styles.status}>
                       <Tooltip content={(

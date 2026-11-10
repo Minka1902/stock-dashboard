@@ -61,6 +61,8 @@ export const SOURCE_META = {
     label: "Margin Debt",
     provider: "FINRA",
     blurb: "Aggregate margin debt and its year-over-year change.",
+    // Where to download the workbook by hand for the Server page's import.
+    url: "https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics",
   },
   congress: {
     label: "Congressional Trades",

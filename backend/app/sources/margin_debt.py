@@ -1,14 +1,23 @@
 """FINRA margin statistics — monthly margin-account debit balances, layered.
 
-Tier 1: the FINRA Query API (public dataset, no auth). Tier 2: the public
-statistics page, with the monthly "Debit Balances in Customers' Securities
-Margin Accounts" figures ($ millions) parsed defensively out of the HTML.
-Tier 3: the Excel workbook linked from that page. Tier 4: a real headless
-Chromium (Playwright) loading the same page and workbook — FINRA's Cloudflare
-front rejects plain HTTP clients (API 401, page 403) but serves a real browser.
-Whichever tier succeeds is recorded in the source status; if all fail, the
-combined errors surface via the source-status UI. %YoY (the signal input) is
-computed at read time vs the same month a year earlier.
+Tier 1: the public statistics page, with the monthly "Debit Balances in
+Customers' Securities Margin Accounts" figures ($ millions) parsed defensively
+out of the HTML. Tier 2: the Excel workbook (the page's link, else
+config.MARGIN_DEBT_WORKBOOK_URL). Tier 3: a real headless Chromium
+(Playwright) loading the page and fetching the workbook from inside it —
+FINRA's Cloudflare front answers plain HTTP clients with a 403 challenge but
+serves a real browser. Whichever tier succeeds is recorded in the source
+status; if all fail, the combined errors surface via the source-status UI.
+
+There is no Query API tier: verified live (2026-11) that api.finra.org
+answers 401 without an OAuth token and its metadata endpoint has no
+marginStatistics dataset at all.
+
+FINRA publishes once a month, so a run whose stored data is already current
+defers to the next release window instead of asking (next_release). When
+every tier is blocked, an admin imports the workbook on the Server page
+(import_workbook). %YoY (the signal input) is computed at read time vs the
+same month a year earlier.
 """
 import asyncio
 import io
@@ -16,22 +25,15 @@ import os
 import re
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 
 from app import config
-from app.ingest import FetchResult
+from app.ingest import FetchResult, SourceDeferred
 from app.models import MarginDebtPoint
 
 _URL = "https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics"
-# FINRA Query API (https://developer.finra.org): public datasets allow
-# unauthenticated reads. Group/name candidates are tried in order — dataset
-# naming has shifted over time.
-_API_URLS = [
-    "https://api.finra.org/data/group/finra/name/marginStatistics",
-    "https://api.finra.org/data/group/FINRA/name/marginStatistics",
-]
 _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -94,31 +96,6 @@ def _normalize_debit(value) -> float | None:
 
 
 _ISO_MONTH = re.compile(r"^(\d{4})-(\d{2})")
-
-
-def parse_api_rows(rows: list) -> list[MarginDebtPoint]:
-    """Rows from the FINRA Query API -> points. Field names are matched
-    defensively (a month-ish key + a debit/margin key) so schema drift
-    degrades to 'no rows' instead of wrong numbers."""
-    by_month: dict[str, float] = {}
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        month = None
-        debit = None
-        for key, value in row.items():
-            lk = key.lower()
-            if month is None and isinstance(value, str) and ("month" in lk or "date" in lk or lk.endswith("dt")):
-                m = _ISO_MONTH.match(value.strip())
-                if m:
-                    month = f"{m.group(1)}-{m.group(2)}"
-            if debit is None and "debit" in lk and ("margin" in lk or "securities" in lk):
-                debit = _normalize_debit(value)
-        if month and debit is not None:
-            by_month.setdefault(month, debit)
-    return [MarginDebtPoint(month=m, debit_balances=v) for m, v in sorted(by_month.items())]
-
-
 _XLSX_HREF = re.compile(r'href="([^"]*margin[^"]*\.xlsx?)"', re.IGNORECASE)
 
 
@@ -168,7 +145,41 @@ def parse_workbook(content: bytes) -> list[MarginDebtPoint]:
     return rows_to_points(rows)
 
 
-# ---- Tier 4: headless browser --------------------------------------------------
+def import_workbook(content: bytes) -> FetchResult:
+    """The Server page's manual import: margin-statistics.xlsx as downloaded
+    from the statistics page. ValueError says why a file is unusable."""
+    try:
+        points = parse_workbook(content)
+    except Exception as exc:
+        raise ValueError(f"not a readable .xlsx workbook ({exc})") from None
+    if not points:
+        raise ValueError("no monthly debit balances found in this workbook")
+    return FetchResult(
+        points, note=f"manual import: {len(points)} months through {points[-1].month}")
+
+
+def next_release(latest_month: str) -> datetime:
+    """When the month after `latest_month` ("YYYY-MM") can be out.
+
+    FINRA publishes month M in the third week of month M+1, so the figure after
+    the latest stored one is due from the 15th (the third week's first day) of
+    the month after that one.
+    """
+    index = int(latest_month[:4]) * 12 + int(latest_month[5:7]) + 1  # 0-based month of M+2
+    return datetime(index // 12, index % 12 + 1, 15, tzinfo=timezone.utc)
+
+
+def _why(exc: Exception) -> str:
+    """'HTTP 403 (Cloudflare challenge)' instead of httpx's two-line banner,
+    so every tier's reason fits in the brief status line."""
+    resp = getattr(exc, "response", None)
+    if resp is None:
+        return str(exc)
+    challenge = " (Cloudflare challenge)" if resp.headers.get("cf-mitigated") == "challenge" else ""
+    return f"HTTP {resp.status_code}{challenge}"
+
+
+# ---- Tier 3: headless browser --------------------------------------------------
 #
 # Verified live (2026-09): FINRA's Cloudflare hard-blocks ("Sorry, you have been
 # blocked") a headless Chromium that announces itself as "HeadlessChrome" in its
@@ -189,6 +200,14 @@ _READY_JS = """() => {
   if (document.querySelector('a[href*=".xls"]')) return true;
   const body = document.body ? document.body.innerText : '';
   return /Debit Balances/i.test(body);
+}"""
+# The workbook is fetched by the page itself, not by context.request: that
+# client lives in Playwright's Node driver, with its own DNS, proxy and TLS
+# fingerprint, which Cloudflare may challenge even with the page's clearance
+# cookie. Verified live (2026-11): this returns the workbook (HTTP 200).
+_FETCH_JS = """async ([url, ms]) => {
+  const r = await fetch(url, {signal: AbortSignal.timeout(ms)});
+  return r.ok ? {bytes: Array.from(new Uint8Array(await r.arrayBuffer()))} : {status: r.status};
 }"""
 
 
@@ -237,9 +256,9 @@ def describe_browser_error(exc: BaseException) -> str:
 
 
 async def _browser_session(api, timeout_s: float) -> tuple[str, bytes | None, str | None]:
-    """Load the statistics page in headless Chromium and, if possible, pull the
-    workbook through the same browser context (so Cloudflare's clearance
-    cookies carry). Returns (page_html, workbook_bytes | None, workbook_error)."""
+    """Load the statistics page in headless Chromium and, if possible, fetch
+    the workbook from inside it (so Cloudflare's clearance carries). Returns
+    (page_html, workbook_bytes | None, workbook_error)."""
     deadline = time.monotonic() + timeout_s
 
     def left_ms() -> float:
@@ -269,17 +288,16 @@ async def _browser_session(api, timeout_s: float) -> tuple[str, bytes | None, st
 
             workbook: bytes | None = None
             wb_error: str | None = None
-            wb_url = config.MARGIN_DEBT_WORKBOOK_URL or find_workbook_url(html)
+            wb_url = find_workbook_url(html) or config.MARGIN_DEBT_WORKBOOK_URL
             if not wb_url:
                 wb_error = "no link found on page"
             else:
                 try:
-                    wb_resp = await context.request.get(
-                        wb_url, timeout=left_ms(), headers={"Referer": _URL})
-                    if wb_resp.ok:
-                        workbook = await wb_resp.body()
+                    got = await page.evaluate(_FETCH_JS, [wb_url, left_ms()])
+                    if "bytes" in got:
+                        workbook = bytes(got["bytes"])
                     else:
-                        wb_error = f"HTTP {wb_resp.status}"
+                        wb_error = f"HTTP {got['status']}"
                 except Exception as exc:  # the page html is still usable
                     wb_error = describe_browser_error(exc)
             return html, workbook, wb_error
@@ -303,7 +321,7 @@ def _run_browser_session(api, timeout_s: float) -> tuple[str, bytes | None, str 
 
 
 def fetch_via_browser() -> FetchResult:
-    """Tier 4. Prefers the workbook (full history back to 1997) and falls back
+    """Tier 3. Prefers the workbook (full history back to 1997) and falls back
     to the page's table (last ~13 months). Raises with a readable reason."""
     api = _import_playwright()
     try:
@@ -334,23 +352,21 @@ def fetch_via_browser() -> FetchResult:
     raise RuntimeError(f"page loaded but no rows parsed (workbook: {wb_error})")
 
 
-def fetch() -> list[MarginDebtPoint]:
+def fetch(latest_month: str | None = None, now: datetime | None = None) -> list[MarginDebtPoint]:
+    """`latest_month` is the newest stored month (None on a forced run): while
+    FINRA cannot have published the next one yet, the run defers instead of
+    asking — which is also what keeps a manual import from being followed by
+    a futile, failing fetch."""
+    if latest_month:
+        due = next_release(latest_month)
+        wait = (due - (now or datetime.now(timezone.utc))).total_seconds()
+        if wait > 0:
+            raise SourceDeferred(
+                f"up to date through {latest_month}; the next month is due from "
+                f"{due:%Y-%m-%d}", wait)
     errors: list[str] = []
     with httpx.Client(timeout=30.0, follow_redirects=True) as client:
-        # Tier 1: the Query API (structured, complete history).
-        for api_url in _API_URLS:
-            try:
-                resp = client.get(api_url, params={"limit": 1000},
-                                  headers={**_HEADERS, "Accept": "application/json"})
-                resp.raise_for_status()
-                points = parse_api_rows(resp.json())
-                if points:
-                    return FetchResult(points, note="source: finra query api")
-                errors.append(f"api {api_url.rsplit('/', 1)[-1]}: no usable rows")
-            except Exception as exc:
-                errors.append(f"api: {exc}")
-                break  # same host; don't hammer it with the second candidate
-        # Tier 2: the public statistics page.
+        # Tier 1: the public statistics page.
         page_html = None
         try:
             resp = client.get(_URL, headers=_HEADERS)
@@ -361,34 +377,23 @@ def fetch() -> list[MarginDebtPoint]:
                 return points
             errors.append("page: no rows parsed")
         except httpx.HTTPError as exc:
-            errors.append(f"page: {exc}")
-        # Tier 3: the Excel workbook. Normally discovered from the page, but a
-        # configured URL wins so the tier still works when the page is blocked.
-        #
-        # This tier used to be unreachable in exactly the situation it exists
-        # for: when the page request failed, page_html stayed None, so the
-        # `if wb_url` and `elif page_html is not None` arms were both skipped —
-        # the workbook was never tried AND no error was appended, so the status
-        # string silently omitted the whole tier.
-        try:
-            wb_url = config.MARGIN_DEBT_WORKBOOK_URL or (
-                find_workbook_url(page_html) if page_html else None)
-            if wb_url:
+            errors.append(f"page: {_why(exc)}")
+        # Tier 2: the workbook — the page's own link, else the configured URL,
+        # so the tier is still tried while the page itself is blocked.
+        wb_url = (find_workbook_url(page_html) if page_html else None) or config.MARGIN_DEBT_WORKBOOK_URL
+        if not wb_url:
+            errors.append("workbook: no URL (none on the page, STOCKS_MARGIN_DEBT_WORKBOOK_URL empty)")
+        else:
+            try:
                 resp = client.get(wb_url, headers=_HEADERS)
                 resp.raise_for_status()
                 points = parse_workbook(resp.content)
                 if points:
                     return FetchResult(points, note="fallback: workbook")
                 errors.append("workbook: no valid rows")
-            elif page_html is not None:
-                errors.append("workbook: no link found on page")
-            else:
-                errors.append(
-                    "workbook: page unavailable, so no link to discover "
-                    "(set STOCKS_MARGIN_DEBT_WORKBOOK_URL to try it directly)")
-        except Exception as exc:
-            errors.append(f"workbook: {exc}")
-    # Tier 4: a real browser, outside the httpx client so it isn't held open.
+            except Exception as exc:
+                errors.append(f"workbook: {_why(exc)}")
+    # Tier 3: a real browser, outside the httpx client so it isn't held open.
     try:
         return fetch_via_browser()
     except Exception as exc:

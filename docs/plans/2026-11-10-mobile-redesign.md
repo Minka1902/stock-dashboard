@@ -262,7 +262,7 @@ One commit per group; each view gets a "first screen" harness assertion.
 
 Tick an item in the same commit that completes it.
 
-- [ ] Phase B — STC-94 margin debt fetch + manual import
+- [x] Phase B — STC-94 margin debt fetch + manual import
 - [ ] Phase 1 — STC-96 harness
 - [ ] Phase 1 — STC-107 ErrorBoundary
 - [ ] Phase 2 — STC-97 type tokens, text-scale setting, phone control sizing

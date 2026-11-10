@@ -1,8 +1,15 @@
+import importlib
+from datetime import datetime as dt, timezone
+
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
+from app import db
+from app.ingest import SourceDeferred
 from app.models import MarginDebtPoint
 from app.sources import margin_debt
+from tests.conftest import authenticate, drain_refresh
 
 
 @pytest.fixture(autouse=True)
@@ -83,27 +90,6 @@ def test_compute_yoy_preserves_month_and_balance():
     assert rows == [{"month": "2026-05", "debit_balances": 1_000_000.0, "yoy_pct": None}]
 
 
-# ---------- FINRA Query API tier ----------
-
-def test_parse_api_rows_millions_and_dollars():
-    rows = [
-        # $ millions (matches the published table scale)
-        {"monthDt": "2026-05-01", "debitBalancesCustomersSecuritiesMarginAccounts": 1_050_123.0},
-        # full dollars — must be normalized down to millions
-        {"monthDt": "2026-04-01", "debitBalancesCustomersSecuritiesMarginAccounts": 995_000_000_000.0},
-        # unrelated fields ignored
-        {"monthDt": "2026-03-01", "freeCreditBalancesCashAccounts": 500_000.0},
-    ]
-    points = margin_debt.parse_api_rows(rows)
-    assert [(p.month, p.debit_balances) for p in points] == [
-        ("2026-04", 995_000.0), ("2026-05", 1_050_123.0),
-    ]
-
-
-def test_parse_api_rows_ignores_non_dicts_and_garbage():
-    assert margin_debt.parse_api_rows(["x", 42, {"foo": "bar"}]) == []
-
-
 # ---------- workbook tier ----------
 
 def test_find_workbook_url_relative_and_absolute():
@@ -116,7 +102,6 @@ def test_find_workbook_url_relative_and_absolute():
 
 
 def test_rows_to_points_handles_datetime_and_text_months():
-    from datetime import datetime as dt
     rows = [
         ["Month", "Debit Balances"],                    # header skipped
         [dt(2026, 5, 1), 1_050_123.0],
@@ -136,7 +121,6 @@ def test_rows_to_points_handles_datetime_and_text_months():
 def test_parse_workbook_roundtrip():
     # Build a real xlsx in memory and run it through the workbook tier.
     import io
-    from datetime import datetime as dt
     import openpyxl
 
     wb = openpyxl.Workbook()
@@ -154,31 +138,30 @@ def test_parse_workbook_roundtrip():
 
 
 # ---- tier fallback wiring ----------------------------------------------------
-# FINRA currently answers 401 on the API and 403 on the statistics page. These
-# lock down that the workbook tier is still *reached* and still *reported* in
-# that state — it used to be skipped silently, so the status string claimed only
-# two tiers had been tried.
+# FINRA answers plain HTTP with a 403 Cloudflare challenge on the statistics
+# page and on the workbook alike. These lock down that the workbook tier is
+# still *reached* and still *reported* in that state — it used to be skipped
+# silently, so the status string claimed fewer tiers had been tried.
 
 class _Resp:
     def __init__(self, text="", content=b"", status=200):
         self.text = text
         self.content = content
-        self._status = status
+        self.status_code = status
+        self.headers = {"cf-mitigated": "challenge"} if status == 403 else {}
 
     def raise_for_status(self):
-        if self._status >= 400:
+        if self.status_code >= 400:
             raise httpx.HTTPStatusError(
-                f"Client error '{self._status}'", request=None, response=None)
-
-    def json(self):
-        return {}
+                f"Client error '{self.status_code}'", request=None, response=self)
 
 
 class _BlockedClient:
-    """API 401 + page 403, i.e. exactly what FINRA returns today."""
+    """Page 403; the workbook 403 too unless a file is handed in."""
 
-    def __init__(self, workbook: bytes | None = None):
+    def __init__(self, workbook: bytes | None = None, page: str | None = None):
         self.workbook = workbook
+        self.page = page
         self.requested = []
 
     def __enter__(self):
@@ -189,13 +172,9 @@ class _BlockedClient:
 
     def get(self, url, **kwargs):
         self.requested.append(url)
-        if "api.finra.org" in url:
-            return _Resp(status=401)
         if url.endswith((".xlsx", ".xls")):
-            if self.workbook is None:
-                return _Resp(status=404)
-            return _Resp(content=self.workbook)
-        return _Resp(status=403)  # the statistics page
+            return _Resp(content=self.workbook) if self.workbook else _Resp(status=403)
+        return _Resp(text=self.page) if self.page is not None else _Resp(status=403)
 
 
 def _client_factory(client):
@@ -214,34 +193,30 @@ def test_blocked_page_still_reports_the_workbook_tier(monkeypatch):
         margin_debt.fetch()
 
     message = str(excinfo.value)
-    assert "api" in message
-    assert "page" in message
-    assert "workbook" in message, "the workbook tier must not be silently omitted"
+    assert "page: HTTP 403 (Cloudflare challenge)" in message
+    assert "workbook: no URL" in message, "the workbook tier must not be silently omitted"
 
 
-def test_configured_workbook_url_is_used_when_the_page_is_blocked(monkeypatch):
-    """The escape hatch: a known workbook URL keeps tier 3 usable at all."""
-    import io
-    from datetime import datetime as dt
-    import openpyxl
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.append(["Month", "Debit Balances"])
-    ws.append([dt(2026, 6, 1), 1_060_000])
-    buf = io.BytesIO()
-    wb.save(buf)
-
-    client = _BlockedClient(workbook=buf.getvalue())
+def test_default_workbook_url_is_tried_when_the_page_is_blocked(monkeypatch):
+    """Tier 2 needs no page: out of the box it asks FINRA's workbook URL."""
+    client = _BlockedClient(workbook=_xlsx([["Month", "Debit Balances"], [dt(2026, 6, 1), 1_060_000]]))
     monkeypatch.setattr(margin_debt.httpx, "Client", _client_factory(client))
-    monkeypatch.setattr(
-        margin_debt.config, "MARGIN_DEBT_WORKBOOK_URL",
-        "https://www.finra.org/sites/default/files/margin-statistics.xlsx")
 
     points = margin_debt.fetch()
     assert [(p.month, p.debit_balances) for p in points] == [("2026-06", 1_060_000.0)]
     assert points.note == "fallback: workbook"
-    assert any(u.endswith(".xlsx") for u in client.requested)
+    assert client.requested[-1] == margin_debt.config.MARGIN_DEBT_WORKBOOK_URL
+    assert client.requested[-1].startswith("https://www.finra.org/")
+
+
+def test_the_pages_own_workbook_link_wins_over_the_configured_url(monkeypatch):
+    link = "/sites/default/files/2027-01/margin-statistics.xlsx"
+    client = _BlockedClient(workbook=_xlsx([["Month", "Debit Balances"], [dt(2026, 6, 1), 1_060_000]]),
+                            page=f'<a href="{link}">Margin statistics</a>')
+    monkeypatch.setattr(margin_debt.httpx, "Client", _client_factory(client))
+
+    margin_debt.fetch()
+    assert client.requested == [margin_debt._URL, f"https://www.finra.org{link}"]
 
 
 def test_margin_debt_cadence_is_weekly_with_a_short_retry():
@@ -293,7 +268,6 @@ def _fake_browser(monkeypatch, html="", workbook=None, wb_error=None):
 
 
 def test_browser_tier_prefers_the_workbook(monkeypatch):
-    from datetime import datetime as dt
     book = _xlsx([["Month", "Debit Balances"],
                   [dt(2026, 7, 1), 1_417_225], [dt(2026, 8, 1), 1_453_832]])
     _fake_browser(monkeypatch, html=SAMPLE_HTML, workbook=book)
@@ -329,7 +303,6 @@ def test_browser_tier_with_nothing_parseable_raises(monkeypatch):
 def test_fetch_uses_the_browser_when_every_http_tier_is_blocked(monkeypatch):
     client = _BlockedClient()
     monkeypatch.setattr(margin_debt.httpx, "Client", _client_factory(client))
-    monkeypatch.setattr(margin_debt.config, "MARGIN_DEBT_WORKBOOK_URL", "")
     _fake_browser(monkeypatch, html=SAMPLE_HTML, wb_error="HTTP 403")
 
     points = margin_debt.fetch()
@@ -380,10 +353,9 @@ def test_describe_browser_error_keeps_the_first_line():
     assert margin_debt.describe_browser_error(exc) == "Page.goto: net::ERR_NAME_NOT_RESOLVED"
 
 
-def test_all_four_tiers_failing_aggregates_every_reason(monkeypatch):
+def test_every_tier_failing_aggregates_every_reason(monkeypatch):
     client = _BlockedClient()
     monkeypatch.setattr(margin_debt.httpx, "Client", _client_factory(client))
-    monkeypatch.setattr(margin_debt.config, "MARGIN_DEBT_WORKBOOK_URL", "")
 
     def _session(api, timeout_s):
         raise RuntimeError(
@@ -394,11 +366,165 @@ def test_all_four_tiers_failing_aggregates_every_reason(monkeypatch):
     with pytest.raises(RuntimeError) as excinfo:
         margin_debt.fetch()
     message = str(excinfo.value)
-    for tier in ("api", "page:", "workbook:", "browser: page never cleared Cloudflare"):
-        assert tier in message, tier
+    assert message.startswith(
+        "page: HTTP 403 (Cloudflare challenge); workbook: HTTP 403 (Cloudflare challenge); "
+        "browser: page never cleared Cloudflare")
 
 
 def test_browser_user_agent_drops_the_headless_token():
     ua = margin_debt._browser_user_agent("153.0.8010.12")
     assert "Headless" not in ua
     assert "Chrome/153.0.0.0" in ua
+
+
+# ---- release cadence: no request while the stored data is current -------------
+
+def test_next_release_is_the_third_week_of_the_month_after_next():
+    # September's figure came out in October; October's is due mid-November.
+    assert margin_debt.next_release("2026-09") == dt(2026, 11, 15, tzinfo=timezone.utc)
+    assert margin_debt.next_release("2026-11") == dt(2027, 1, 15, tzinfo=timezone.utc)
+    assert margin_debt.next_release("2026-12") == dt(2027, 2, 15, tzinfo=timezone.utc)
+
+
+def test_current_data_defers_until_the_next_release_without_calling_out(monkeypatch):
+    def _no_network(*a, **kw):
+        raise AssertionError("a current source must not reach FINRA")
+    monkeypatch.setattr(margin_debt.httpx, "Client", _no_network)
+
+    now = dt(2026, 11, 10, 6, 0, tzinfo=timezone.utc)
+    with pytest.raises(SourceDeferred) as excinfo:
+        margin_debt.fetch("2026-09", now=now)
+    assert excinfo.value.reason == "up to date through 2026-09; the next month is due from 2026-11-15"
+    assert excinfo.value.retry_after_seconds == (dt(2026, 11, 15, tzinfo=timezone.utc) - now).total_seconds()
+
+
+@pytest.mark.parametrize("latest, now", [
+    ("2026-09", dt(2026, 11, 15, tzinfo=timezone.utc)),    # the window opened
+    ("2026-07", dt(2026, 11, 10, tzinfo=timezone.utc)),    # releases missed
+    (None, dt(2026, 11, 10, tzinfo=timezone.utc)),         # nothing stored / forced
+])
+def test_due_or_forced_runs_go_to_finra(monkeypatch, latest, now):
+    client = _BlockedClient(workbook=_xlsx([["Month", "Debit Balances"], [dt(2026, 10, 1), 1_500_000]]))
+    monkeypatch.setattr(margin_debt.httpx, "Client", _client_factory(client))
+
+    points = margin_debt.fetch(latest, now=now)
+    assert [p.month for p in points] == ["2026-10"]
+    assert client.requested
+
+
+# ---- manual import ------------------------------------------------------------
+
+_BOOK = [["Year-Month", "Debit Balances in Customers' Securities Margin Accounts"],
+         ["2026-09", 1_480_054], ["2026-08", 1_453_832]]
+
+
+def test_import_workbook_notes_what_it_read():
+    points = margin_debt.import_workbook(_xlsx(_BOOK))
+    assert [p.month for p in points] == ["2026-08", "2026-09"]
+    assert points.note == "manual import: 2 months through 2026-09"
+
+
+@pytest.mark.parametrize("content, reason", [
+    (b"not a workbook", "not a readable .xlsx workbook"),
+    (_xlsx([["Ticker", "Price"], ["AAPL", 190]]), "no monthly debit balances found"),
+])
+def test_import_workbook_rejects_with_a_reason(content, reason):
+    with pytest.raises(ValueError, match=reason):
+        margin_debt.import_workbook(content)
+
+
+@pytest.fixture
+def app_module(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCKS_DB_PATH", str(tmp_path / "margin.db"))
+    from app import config, main as main_module
+    importlib.reload(config)
+    importlib.reload(main_module)
+    return main_module
+
+
+@pytest.fixture
+def client(app_module):
+    with TestClient(app_module.app) as c:
+        authenticate(c)  # the first account is the admin
+        yield c
+
+
+def _import(client, content, source="margin_debt"):
+    return client.post(f"/api/server/sources/{source}/import", content=content)
+
+
+def test_import_is_admin_only(client, app_module):
+    other = TestClient(app_module.app)
+    authenticate(other, email="notadmin@example.com")
+    assert _import(other, _xlsx(_BOOK)).status_code == 403
+    assert db.get_margin_debt(app_module.conn) == []
+
+
+def test_import_of_an_unknown_or_non_importable_source_is_404(client):
+    assert _import(client, b"x", "bogus").status_code == 404
+    assert _import(client, b"x", "vix").status_code == 404
+
+
+def test_import_over_the_size_cap_is_413_with_or_without_a_length(client, app_module):
+    big = b"x" * (app_module._IMPORT_MAX_BYTES + 1)
+    assert _import(client, big).status_code == 413
+
+    def chunked():  # no Content-Length: the stream itself is capped
+        for _ in range(6):
+            yield b"x" * (1024 * 1024)
+    resp = _import(client, chunked())
+    assert resp.status_code == 413
+    assert resp.json()["detail"]["errors"]["file"] == "file is larger than 5 MB"
+
+
+def test_an_unparsable_import_is_422_with_the_reason(client, app_module):
+    resp = _import(client, b"<html>Just a moment...</html>")
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["errors"]["file"].startswith("not a readable .xlsx workbook")
+    assert db.get_margin_debt(app_module.conn) == []
+
+
+def test_a_good_import_stores_rows_status_and_run_and_pulls_derived(client, app_module, monkeypatch):
+    pulled = []
+    monkeypatch.setattr(app_module, "_request_derived", lambda: pulled.append(True))
+
+    resp = _import(client, _xlsx(_BOOK))
+    assert resp.status_code == 200, resp.text
+    status = "ok (manual import: 2 months through 2026-09)"
+    assert resp.json() == {"source": "margin_debt", "queued": False, "status": status}
+
+    assert [r["month"] for r in client.get("/api/margin-debt").json()] == ["2026-08", "2026-09"]
+    row = next(r for r in client.get("/api/server/sources").json() if r["source"] == "margin_debt")
+    assert row["importable"] is True and row["status"] == status and row["record_count"] == 2
+    run = client.get("/api/server/sources/margin_debt/runs").json()[0]
+    assert (run["outcome"], run["record_count"], run["detail"]) == (
+        "ok", 2, "manual import: 2 months through 2026-09")
+    assert pulled == [True]
+    assert not any(r["importable"] for r in client.get("/api/server/sources").json()
+                   if r["source"] != "margin_debt")
+
+
+def test_scheduled_runs_defer_on_current_data_but_run_now_still_fetches(client, app_module, monkeypatch):
+    """The import must stick: the next ordinary run defers instead of failing
+    against Cloudflare, while an admin's run-now still asks FINRA."""
+    asked = []
+
+    def fake_fetch(latest_month=None):
+        asked.append(latest_month)
+        if latest_month:
+            raise SourceDeferred(f"up to date through {latest_month}", 3600)
+        return []
+    monkeypatch.setattr(app_module.margin_debt_source, "fetch", fake_fetch)
+    assert _import(client, _xlsx(_BOOK)).status_code == 200
+
+    app_module._enqueue("margin_debt", "scheduled-stand-in")
+    drain_refresh()
+    row = next(r for r in client.get("/api/server/sources").json() if r["source"] == "margin_debt")
+    assert row["status"] == "deferred: up to date through 2026-09"
+    assert row["record_count"] == 2  # the imported data is untouched
+
+    assert client.post("/api/server/schedules/margin_debt/run-now").status_code == 202
+    drain_refresh()
+    assert client.post("/api/refresh/margin_debt?force=1").status_code == 202
+    drain_refresh()
+    assert asked == ["2026-09", None, None]
