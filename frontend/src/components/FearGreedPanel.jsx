@@ -9,21 +9,10 @@ import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
+import { CHART_CURSOR, CHART_TOOLTIP } from "../lib/chartStyle";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./FearGreedPanel.module.css";
 import InfoTip from "./InfoTip";
-
-// Recharts draws its hover cursor in #ccc unless told otherwise.
-const CURSOR = { stroke: "var(--border-strong)" };
-
-const TOOLTIP_STYLE = {
-  background: "var(--surface-2)",
-  border: "1px solid var(--border)",
-  borderRadius: "var(--r-sm)",
-  fontSize: "12px",
-  color: "var(--text)",
-  padding: "6px 10px",
-};
 
 function scoreTone(score) {
   if (score < 30) return "fear";
@@ -122,8 +111,8 @@ export default function FearGreedPanel({ data, loading, busy, onRefresh, compact
                   isAnimationActive={false}
                 />
                 <Tooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  cursor={CURSOR}
+                  contentStyle={CHART_TOOLTIP}
+                  cursor={CHART_CURSOR}
                   formatter={(v, _n, props) => [
                     `${Math.round(v)} — ${props.payload?.rating ?? ""}`,
                     "Score",

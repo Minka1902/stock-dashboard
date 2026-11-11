@@ -22,7 +22,7 @@ const TOOLTIP_STYLE = {
   border: "1px solid var(--border-strong)",
   borderRadius: "var(--r-sm)",
   fontFamily: "var(--mono)",
-  fontSize: "11px",
+  fontSize: "var(--fs-11)",
   color: "var(--text)",
   padding: "5px 9px",
 };

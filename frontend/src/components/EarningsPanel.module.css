@@ -13,8 +13,8 @@
   padding: var(--s-5);
   border-bottom: 1px solid var(--border);
 }
-.title { font-size: 16px; font-weight: 600; }
-.subtitle { margin-top: 4px; color: var(--text-muted); font-size: 12.5px; max-width: 60ch; }
+.title { font-size: var(--fs-16); font-weight: 600; }
+.subtitle { margin-top: 4px; color: var(--text-muted); font-size: var(--fs-12-5); max-width: 60ch; }
 
 .scope { display: inline-flex; gap: 6px; }
 .scopeBtn {
@@ -24,7 +24,7 @@
   background: transparent;
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   letter-spacing: 0.04em;
   padding: 4px 10px;
   cursor: pointer;
@@ -59,7 +59,7 @@
   flex-wrap: wrap;
   gap: 6px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-10);
   color: var(--text-faint);
 }
 .chip { width: 8px; height: 8px; border-radius: 2px; background: var(--text-faint); }
@@ -76,7 +76,7 @@
   padding: var(--s-4) var(--s-5) var(--s-5);
 }
 .dayName {
-  font-family: var(--mono); font-size: 9.5px; text-transform: uppercase;
+  font-family: var(--mono); font-size: var(--fs-9-5); text-transform: uppercase;
   letter-spacing: 0.07em; color: var(--text-faint); text-align: center;
   padding-bottom: 4px;
 }
@@ -101,14 +101,14 @@
 .cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .cellDay {
-  font-family: var(--mono); font-size: 10px; color: var(--text-faint);
+  font-family: var(--mono); font-size: var(--fs-10); color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
 .cellTickers { display: flex; flex-wrap: wrap; gap: 3px; }
 
 .chipTicker {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 700;
   letter-spacing: 0.03em;
   padding: 1px 4px;
@@ -121,11 +121,11 @@
 .chipTicker[data-kind="watched"] { color: var(--accent-text); background: var(--accent-weak); }
 /* Dashed = the provider guessed this date; the company hasn't confirmed it. */
 .chipTicker[data-estimate="yes"] { border-style: dashed; border-color: currentColor; }
-.more { font-family: var(--mono); font-size: 9px; color: var(--text-faint); }
+.more { font-family: var(--mono); font-size: var(--fs-9); color: var(--text-faint); }
 
 .detail { border-top: 1px solid var(--grid); padding: var(--s-4) var(--s-5); }
 .detailHead {
-  font-family: var(--mono); font-size: 10.5px; text-transform: uppercase;
+  font-family: var(--mono); font-size: var(--fs-10-5); text-transform: uppercase;
   letter-spacing: 0.07em; color: var(--text-faint); margin-bottom: var(--s-3);
 }
 .detailList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
@@ -143,15 +143,15 @@
 .symbolBtn { appearance: none; border: none; background: none; padding: 0; cursor: pointer; text-align: left; }
 .symbol { font-family: var(--mono); font-weight: 700; color: var(--accent-text); }
 .kind {
-  font-family: var(--mono); font-size: 9.5px; text-transform: uppercase;
+  font-family: var(--mono); font-size: var(--fs-9-5); text-transform: uppercase;
   letter-spacing: 0.05em; color: var(--text-faint);
 }
 .kind[data-kind="held"]    { color: var(--positive); }
 .kind[data-kind="watched"] { color: var(--accent-text); }
-.timing, .eps { font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
-.est { font-family: var(--mono); font-size: 10.5px; }
+.timing, .eps { font-family: var(--mono); font-size: var(--fs-11); color: var(--text-muted); }
+.est { font-family: var(--mono); font-size: var(--fs-10-5); }
 .est[data-estimate="yes"] { color: var(--text-faint); }
 .est[data-estimate="no"]  { color: var(--positive); }
 
-.empty { padding: var(--s-5); color: var(--text-faint); font-size: 12.5px; line-height: 1.55; }
-.error { padding: var(--s-5); display: flex; align-items: center; gap: 8px; color: var(--negative); font-size: 13px; }
+.empty { padding: var(--s-5); color: var(--text-faint); font-size: var(--fs-12-5); line-height: 1.55; }
+.error { padding: var(--s-5); display: flex; align-items: center; gap: 8px; color: var(--negative); font-size: var(--fs-13); }

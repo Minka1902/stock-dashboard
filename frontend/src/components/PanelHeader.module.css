@@ -10,14 +10,14 @@
 .text { min-width: 0; }
 
 .title {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 600;
 }
 
 .subtitle {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   max-width: 72ch;
 }
 
@@ -30,7 +30,7 @@
 
 .age {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--text-faint);
   white-space: nowrap;
 }

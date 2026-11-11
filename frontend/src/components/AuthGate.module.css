@@ -123,7 +123,7 @@
   gap: var(--s-3);
   margin: var(--s-4) 0 var(--s-3);
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--fs-11);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }

@@ -20,7 +20,7 @@
 }
 .paneMeta {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -38,57 +38,6 @@
 }
 
 .gaugePane { display: flex; flex-direction: column; }
-.gauge {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: var(--s-2) var(--s-4) var(--s-3);
-  flex: 1;
-  justify-content: center;
-}
-.gaugeSvg {
-  width: min(100%, 176px);
-  height: auto;
-  overflow: visible;
-}
-.needle {
-  transform-box: view-box;
-  transform-origin: 150px 150px;
-  filter: drop-shadow(0 0 6px var(--accent-glow));
-}
-.gaugeScore {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-top: -10px;
-}
-.gaugeNum {
-  font-family: var(--mono);
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--text);
-  letter-spacing: -0.02em;
-}
-.gaugeRating {
-  font-family: var(--mono);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--accent-text);
-  margin-top: 4px;
-}
-.gaugeEnds {
-  display: flex;
-  justify-content: space-between;
-  width: min(100%, 176px);
-  margin-top: var(--s-2);
-  font-family: var(--mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--text-faint);
-}
 
 /* ---- composite read ---- */
 /* ---- 1. the headline read ---- */
@@ -111,7 +60,7 @@
 .headlineCap {
   display: block;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--text-faint);
@@ -120,7 +69,7 @@
   display: inline-block;
   margin: 2px 0 4px;
   font-family: var(--mono);
-  font-size: 34px;
+  font-size: var(--fs-hero);
   font-weight: 700;
   line-height: 1.05;
   letter-spacing: -0.02em;
@@ -131,7 +80,7 @@
 .leanRead {
   margin: 0;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-13);
   max-width: 62ch;
 }
 
@@ -141,7 +90,7 @@
 .tallyItem[data-tone="neg"] .tallyNum { color: var(--negative); }
 .tallyNum {
   font-family: var(--mono);
-  font-size: 26px;
+  font-size: 26px; /* one use, no exact token; --fs-h2/--fs-h1 would change desktop */
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -149,7 +98,7 @@
 }
 .tallyLabel {
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-faint);
@@ -171,12 +120,12 @@
 .ledgerRow:last-child { border-bottom: none; }
 .ledgerLabel {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--text-muted);
 }
 .ledgerVal {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 600;
   color: var(--text);
   font-variant-numeric: tabular-nums;
@@ -210,13 +159,13 @@
   cursor: pointer;
   min-width: 0;
 }
-.posSymbol { font-family: var(--mono); font-weight: 700; color: var(--accent-text); font-size: 12.5px; }
+.posSymbol { font-family: var(--mono); font-weight: 700; color: var(--accent-text); font-size: var(--fs-12-5); }
 .posSymbolBtn:hover .posSymbol { text-decoration: underline; }
 .posSymbolBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs); }
 
 .posVal {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
   min-width: 56px;
@@ -242,7 +191,7 @@
 }
 .val {
   font-family: var(--mono);
-  font-size: 22px;
+  font-size: var(--fs-h2);
   font-weight: 700;
   color: var(--text);
   font-variant-numeric: tabular-nums;
@@ -250,21 +199,21 @@
 }
 .sub {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   color: var(--text-faint);
 }
 .threshold {
   display: block;
   padding: 6px var(--s-4) 0;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-10);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-faint);
 }
 .note {
   padding: 8px var(--s-4) 0;
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   color: var(--accent-text);
 }
 /* Data-age badge for weekly/monthly sources; amber when past expected cadence. */
@@ -273,7 +222,7 @@
   margin: 6px var(--s-4) 0;
   padding: 2px 7px;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-faint);
@@ -292,7 +241,7 @@
 .noData {
   padding: var(--s-4);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--text-faint);
   text-align: center;
 }
@@ -300,7 +249,7 @@
 /* ---- signal chip ---- */
 .chip {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -328,8 +277,8 @@
   border-radius: var(--r-md);
   background: var(--surface);
 }
-.emptyTitle { font-family: var(--mono); font-size: 15px; font-weight: 600; }
-.emptyText { color: var(--text-muted); font-size: 12.5px; }
+.emptyTitle { font-family: var(--mono); font-size: var(--fs-15); font-weight: 600; }
+.emptyText { color: var(--text-muted); font-size: var(--fs-12-5); }
 .emptyBtn {
   margin-top: var(--s-3);
   padding: 9px 18px;

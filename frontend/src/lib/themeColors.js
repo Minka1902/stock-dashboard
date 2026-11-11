@@ -19,8 +19,15 @@ import { useMemo, useSyncExternalStore } from "react";
  * alpha). Hence the explicit oklch -> sRGB conversion below, with the pixel
  * read-back kept only as a last resort for a colour syntax we don't parse.
  *
- * Everything re-resolves when <html data-theme> changes: `useThemeColors`
- * subscribes to that attribute with a MutationObserver.
+ * The type tokens (--fs-*) go through the same probe, as `font-size`, for a
+ * canvas font or a library option that takes a number of px: the phone block
+ * in index.css and the text-size setting remap them, so they are never a
+ * constant. A style the browser renders (an inline `style`) needs none of this
+ * and uses `var(--fs-*)` directly.
+ *
+ * Colours re-resolve when <html data-theme> changes, sizes when
+ * <html data-text-scale> changes or the phone breakpoint is crossed: both hooks
+ * share one subscription (a MutationObserver plus a media query listener).
  */
 
 // ---------------------------------------------------------------------------
@@ -202,18 +209,49 @@ export function resolveTokens(tokens, theme) {
   return out;
 }
 
+/**
+ * One type token (e.g. "--fs-11") in px as it applies right now. An undefined
+ * token resolves to the inherited (body) size.
+ */
+function resolveFontSize(name) {
+  const el = getProbe();
+  el.style.fontSize = `var(${name})`;
+  return parseFloat(getComputedStyle(el).fontSize);
+}
+
+// Resolved per (text size and breakpoint, token), as the colours are per theme.
+const sizeCache = new Map();
+
+function resolveFontSizes(tokens, type) {
+  const out = {};
+  for (const [key, name] of Object.entries(tokens)) {
+    const ck = `${type}|${name}`;
+    if (!sizeCache.has(ck)) sizeCache.set(ck, resolveFontSize(name));
+    out[key] = sizeCache.get(ck);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // React binding
 // ---------------------------------------------------------------------------
 
+const PHONE = "(max-width: 640px)";
+
 function subscribe(onChange) {
   if (typeof MutationObserver === "undefined") return () => {};
   const mo = new MutationObserver(onChange);
-  mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-  return () => mo.disconnect();
+  mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-text-scale"] });
+  const phone = window.matchMedia(PHONE);
+  phone.addEventListener("change", onChange);
+  return () => {
+    mo.disconnect();
+    phone.removeEventListener("change", onChange);
+  };
 }
 
 const themeSnapshot = () => document.documentElement.dataset.theme || "";
+const typeSnapshot = () => `${document.documentElement.dataset.textScale || ""}|${window.matchMedia(PHONE).matches}`;
 const serverSnapshot = () => "";
 
 /** The current <html data-theme> value, re-rendering when it changes. */
@@ -231,4 +269,17 @@ export function useThemeColors(tokens) {
   const theme = useThemeName();
   const key = JSON.stringify(tokens);
   return useMemo(() => resolveTokens(JSON.parse(key), theme), [key, theme]);
+}
+
+/**
+ * `tokens` is a { key: "--fs-*" } map (keep it a module constant). The result
+ * maps each key to px for the current breakpoint and text size, and is a new
+ * object exactly when either changes, so it is safe as an effect dependency.
+ * The fixed-size tokens only: hero and display follow the viewport width on a
+ * phone, which this does not track.
+ */
+export function useTypeSizes(tokens) {
+  const type = useSyncExternalStore(subscribe, typeSnapshot, serverSnapshot);
+  const key = JSON.stringify(tokens);
+  return useMemo(() => resolveFontSizes(JSON.parse(key), type), [key, type]);
 }

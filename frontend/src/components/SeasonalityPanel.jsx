@@ -61,7 +61,7 @@ function YearBars({ series }) {
               background: "var(--surface-2)",
               border: "1px solid var(--border)",
               borderRadius: "var(--r-sm)",
-              fontSize: "12px",
+              fontSize: "var(--fs-12)",
               color: "var(--text)",
               padding: "4px 8px",
             }}

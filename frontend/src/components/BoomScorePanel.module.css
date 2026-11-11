@@ -15,14 +15,14 @@
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 600;
 }
 
 .subtitle {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 
 .list {
@@ -45,7 +45,7 @@
 }
 
 .rank {
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-weight: 600;
   color: var(--text-faint);
   min-width: 20px;
@@ -55,7 +55,7 @@
 .ticker {
   font-family: var(--mono);
   font-weight: 700;
-  font-size: 14px;
+  font-size: var(--fs-14);
   color: var(--accent-text);
   /* Fits a TASE symbol ("TEVA.TA") so the bars and chips stay in line. */
   min-width: 84px;
@@ -65,7 +65,7 @@
 }
 
 .earningsWarn {
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--caution);
   cursor: help;
 }
@@ -94,7 +94,7 @@
 
 .scoreBadge {
   font-weight: 700;
-  font-size: 14px;
+  font-size: var(--fs-14);
   min-width: 36px;
   text-align: right;
   color: var(--text-muted);
@@ -105,7 +105,7 @@
 .scoreBadge[data-tone="neg"]   { color: var(--negative); }
 
 .tier {
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
   padding: 2px 8px;
   border-radius: var(--r-pill);
@@ -124,7 +124,7 @@
 }
 
 .mixedWarn {
-  font-size: 13px;
+  font-size: var(--fs-13);
   cursor: help;
   color: var(--caution);
 }
@@ -141,7 +141,7 @@
   gap: 3px;
   padding: 2px 8px;
   border-radius: var(--r-pill);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
   background: var(--accent-weak);
   color: var(--accent-text);
@@ -153,7 +153,7 @@
 }
 
 .horizon {
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 700;
   opacity: 0.7;
   letter-spacing: 0.02em;
@@ -185,7 +185,7 @@
 
 .emptyHint {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 
 .emptyBtn {

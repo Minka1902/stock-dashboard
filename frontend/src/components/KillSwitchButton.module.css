@@ -1,7 +1,7 @@
 .root { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
 .halted {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;

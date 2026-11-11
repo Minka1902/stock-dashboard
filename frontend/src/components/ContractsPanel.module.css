@@ -16,14 +16,14 @@
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 600;
 }
 
 .subtitle {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 
 .tableWrap {
@@ -33,7 +33,7 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: var(--fs-13-5);
 }
 
 .table thead th.amountCell {
@@ -44,7 +44,7 @@
   z-index: var(--z-sticky);
   top: 0;
   text-align: left;
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--text-faint);
@@ -87,7 +87,7 @@
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-12);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -111,7 +111,7 @@
 
 .award {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-faint);
   max-width: 200px;
   overflow: hidden;
@@ -143,12 +143,12 @@
 .emptyTitle {
   font-weight: 600;
   color: var(--text);
-  font-size: 15px;
+  font-size: var(--fs-15);
 }
 
 .emptyText {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 
 .emptyBtn {

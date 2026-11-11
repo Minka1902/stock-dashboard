@@ -11,6 +11,6 @@
   background: var(--surface-2);
   color: var(--text);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
-.error { flex-basis: 100%; color: var(--negative); font-size: 12px; }
+.error { flex-basis: 100%; color: var(--negative); font-size: var(--fs-12); }

@@ -12,7 +12,7 @@
   background: transparent;
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   letter-spacing: 0.04em;
   padding: 4px 10px;
   cursor: pointer;
@@ -36,7 +36,7 @@
 
 .badge {
   margin-left: 6px;
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }

@@ -15,7 +15,7 @@
   box-shadow: var(--shadow);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   font-weight: 450;
   line-height: 1.45;
   letter-spacing: 0;
@@ -62,10 +62,10 @@
 }
 .or {
   margin: 0 3px;
-  font-size: 11px;
+  font-size: var(--fs-11);
 }
 .plus {
-  font-size: 10px;
+  font-size: var(--fs-10);
 }
 
 .kbd {
@@ -73,7 +73,7 @@
   min-width: 18px;
   padding: 0 5px;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   font-weight: 600;
   line-height: 17px;
   text-align: center;

@@ -2,19 +2,19 @@
 .wrap { overflow-x: auto; }
 .empty {
   padding: var(--s-3) var(--s-4);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--text-faint);
 }
 .table {
   width: 100%;
   border-collapse: collapse;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-variant-numeric: tabular-nums;
 }
 .table th {
   text-align: left;
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -35,7 +35,7 @@
   white-space: normal;
   min-width: 260px;
   font-family: var(--sans);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--text-muted);
 }
 .kind {
@@ -43,7 +43,7 @@
   padding: 1px 7px;
   border-radius: var(--r-xs);
   border: 1px solid var(--border);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -70,7 +70,7 @@
     border-top: 1px solid var(--grid);
   }
   .table td { padding: 0; border: none; }
-  .table td[data-col="at"] { grid-area: at; font-size: 10.5px; color: var(--text-faint); }
+  .table td[data-col="at"] { grid-area: at; font-size: var(--fs-10-5); color: var(--text-faint); }
   .table td[data-col="kind"] { grid-area: kind; }
   .table td[data-col="ticker"] { grid-area: ticker; font-weight: 700; }
   .table td[data-col="qty"] { grid-area: qty; }

@@ -10,21 +10,21 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 700;
   color: var(--text);
   padding: 0 var(--s-2);
 }
 .hint {
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   margin-bottom: var(--s-4);
   max-width: 64ch;
 }
 .muted {
   color: var(--text-faint);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
   margin: var(--s-2) 0;
 }
 
@@ -63,7 +63,7 @@
 }
 .symbol {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--text-faint);
 }
 .actions {
@@ -79,13 +79,13 @@
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-13);
   line-height: 1;
   cursor: pointer;
 }
 .iconBtn:hover:not(:disabled) { color: var(--accent-text); border-color: var(--accent); background: var(--accent-weak); }
 .iconBtn:disabled { opacity: 0.35; cursor: default; }
-.removeBtn { font-size: 16px; }
+.removeBtn { font-size: var(--fs-16); }
 .removeBtn:hover { color: var(--negative); border-color: var(--negative); background: var(--negative-weak); }
 
 .addRow {
@@ -108,7 +108,7 @@
   cursor: pointer;
 }
 .addBtn:disabled { opacity: 0.55; cursor: default; }
-.status { font-size: 13px; color: var(--text-muted); }
+.status { font-size: var(--fs-13); color: var(--text-muted); }
 .ok { color: var(--positive); font-weight: 600; }
 .err { color: var(--negative); }
 

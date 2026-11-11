@@ -53,10 +53,10 @@
   gap: 7px;
   flex-wrap: wrap;
 }
-.title { font-weight: 600; font-size: 13px; }
+.title { font-weight: 600; font-size: var(--fs-13); }
 .type {
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-faint);
@@ -64,10 +64,10 @@
   border-radius: var(--r-xs);
   padding: 1px 5px;
 }
-.time { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); }
+.time { margin-left: auto; font-family: var(--mono); font-size: var(--fs-10-5); color: var(--text-faint); }
 .unread {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -77,7 +77,7 @@
   padding: 1px 5px;
 }
 
-.message { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
+.message { font-size: var(--fs-12-5); color: var(--text-muted); line-height: 1.5; }
 
 .explainBtn {
   appearance: none;
@@ -90,7 +90,7 @@
   padding: 2px 0;
   color: var(--accent-text);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   cursor: pointer;
 }
 .explainBtn:hover { text-decoration: underline; }
@@ -98,7 +98,7 @@
 
 .explain { overflow: hidden; }
 .explain p {
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-muted);
   line-height: 1.55;
   margin-top: 4px;
@@ -107,14 +107,14 @@
   display: inline-block;
   min-width: 46px;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-faint);
 }
 
 .empty {
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--text-faint);
   line-height: 1.55;
 }

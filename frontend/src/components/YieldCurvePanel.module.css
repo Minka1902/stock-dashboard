@@ -16,14 +16,14 @@
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 600;
 }
 
 .subtitle {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 
 .spreadBadge {
@@ -31,7 +31,7 @@
   display: inline-block;
   padding: 4px 12px;
   border-radius: var(--r-pill);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   border: 1px solid var(--border);
@@ -73,7 +73,7 @@
 }
 
 .chipLabel {
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -81,7 +81,7 @@
 }
 
 .chipValue {
-  font-size: 14px;
+  font-size: var(--fs-14);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text);

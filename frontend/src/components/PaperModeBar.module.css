@@ -9,7 +9,7 @@
 }
 .badge {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-weight: 800;
   letter-spacing: 0.14em;
   padding: 2px 10px;
@@ -17,6 +17,6 @@
   background: var(--caution);
   color: var(--bg);
 }
-.text { flex: 1 1 280px; font-size: 12.5px; }
+.text { flex: 1 1 280px; font-size: var(--fs-12-5); }
 
 @media (max-width: 640px) { .bar { padding-inline: var(--s-3); } }

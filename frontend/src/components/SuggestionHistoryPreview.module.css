@@ -24,7 +24,7 @@
   padding: 0;
   color: var(--accent-text);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   letter-spacing: 0.04em;
   cursor: pointer;
 }
@@ -41,7 +41,7 @@
 .stat { display: inline-flex; align-items: baseline; gap: 7px; }
 .statNum {
   font-family: var(--mono);
-  font-size: 19px;
+  font-size: 19px; /* one use, no exact token; --fs-h3 (18px) would change desktop */
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -49,14 +49,14 @@
 .statNum[data-tone="down"] { color: var(--negative); }
 .statLabel {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-10);
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-faint);
 }
 .pending {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   color: var(--text-faint);
 }
 
@@ -87,7 +87,7 @@
 
 .dayNum {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-10);
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
@@ -113,12 +113,12 @@
 
 .more {
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: 8.5px; /* one use, below the smallest token (--fs-9) */
   color: var(--text-faint);
 }
 
 .empty {
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--text-faint);
   line-height: 1.5;
 }

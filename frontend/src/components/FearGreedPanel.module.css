@@ -15,14 +15,14 @@
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 600;
 }
 
 .subtitle {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 
 .body {
@@ -39,7 +39,7 @@
 }
 
 .score {
-  font-size: 38px;
+  font-size: 38px; /* one use, no exact token; --fs-hero (34px) would change desktop */
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -55,7 +55,7 @@
 }
 
 .rating {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 700;
   color: var(--text);
 }
@@ -63,7 +63,7 @@
 .rating[data-tone="greed"] { color: var(--positive); }
 
 .scoreSub {
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-muted);
 }
 
@@ -111,7 +111,7 @@
 }
 
 .scaleLabel {
-  font-size: 10px;
+  font-size: var(--fs-10);
   color: var(--text-faint);
   white-space: nowrap;
 }

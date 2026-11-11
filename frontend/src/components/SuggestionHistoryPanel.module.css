@@ -14,21 +14,21 @@
   padding: var(--s-4) var(--s-5);
   border-bottom: 1px solid var(--border);
 }
-.title { margin: 0; font-size: 16px; font-weight: 700; }
-.subtitle { margin: 4px 0 0; font-size: 12.5px; color: var(--text-muted); max-width: 62ch; }
+.title { margin: 0; font-size: var(--fs-16); font-weight: 700; }
+.subtitle { margin: 4px 0 0; font-size: var(--fs-12-5); color: var(--text-muted); max-width: 62ch; }
 
 .tallies { display: flex; gap: var(--s-5); }
 .tally { display: flex; flex-direction: column; align-items: flex-end; }
 .tallyNum {
   font-family: var(--mono);
-  font-size: 22px;
+  font-size: var(--fs-h2);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--accent-text);
 }
 .tallyLabel {
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-faint);
@@ -49,14 +49,14 @@
   border-radius: var(--r-sm);
   background: var(--surface-2);
   color: var(--text-muted);
-  font-size: 15px;
+  font-size: var(--fs-15);
   line-height: 1;
   cursor: pointer;
 }
 .navBtn:hover { color: var(--accent-text); border-color: var(--accent); }
 .monthLabel {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 700;
   min-width: 15ch;
 }
@@ -66,7 +66,7 @@
   align-items: center;
   gap: 6px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-10);
   color: var(--text-faint);
 }
 .legend .dot { margin-left: 6px; }
@@ -79,7 +79,7 @@
 }
 .dayName {
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-faint);
@@ -108,7 +108,7 @@
 .cell[data-has="yes"]:hover { border-color: var(--accent); }
 .cell[data-open="yes"] { border-color: var(--accent); background: var(--accent-weak); }
 .cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.cellDay { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; }
+.cellDay { font-family: var(--mono); font-size: var(--fs-11); font-variant-numeric: tabular-nums; }
 
 .dots { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
 .dot {
@@ -122,7 +122,7 @@
 .dot[data-tone="down"] { background: var(--negative); }
 .dot[data-tone="flat"] { background: var(--text-muted); }
 .dot[data-tone="pending"] { background: transparent; border: 1px solid var(--border-strong); }
-.more { font-family: var(--mono); font-size: 9px; color: var(--text-faint); }
+.more { font-family: var(--mono); font-size: var(--fs-9); color: var(--text-faint); }
 
 .detail {
   overflow: hidden;
@@ -132,7 +132,7 @@
   margin: 0;
   padding: var(--s-3) var(--s-5) 0;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-faint);
@@ -146,7 +146,7 @@
   flex-wrap: wrap;
   padding: 8px 0;
   border-top: 1px solid var(--grid);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 .row:first-child { border-top: none; }
 
@@ -156,7 +156,7 @@
 
 .kind {
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 2px 7px;
@@ -182,14 +182,14 @@
 .outcome[data-tone="down"] { color: var(--negative); }
 .outcome[data-tone="pending"] { color: var(--text-faint); font-weight: 400; }
 .outcomeLabel {
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   font-weight: 400;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-faint);
 }
 
-.error { margin: 0; padding: var(--s-5); color: var(--negative); font-size: 13px; }
+.error { margin: 0; padding: var(--s-5); color: var(--negative); font-size: var(--fs-13); }
 
 @media (max-width: 720px) {
   .tallies { gap: var(--s-4); }

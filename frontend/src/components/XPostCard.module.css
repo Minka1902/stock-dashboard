@@ -21,7 +21,7 @@
   place-items: center;
   color: var(--on-accent);
   font-weight: 800;
-  font-size: 13px;
+  font-size: var(--fs-13);
   letter-spacing: 0.02em;
 }
 .avatarImg {
@@ -45,13 +45,13 @@
 
 .handle {
   font-weight: 700;
-  font-size: 13.5px;
+  font-size: var(--fs-13-5);
   color: var(--text);
 }
 
 .time {
   color: var(--text-faint);
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
 }
 
 .link {
@@ -63,7 +63,7 @@
 
 .text {
   color: var(--text);
-  font-size: 13.5px;
+  font-size: var(--fs-13-5);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -94,7 +94,7 @@
   background: var(--accent-weak);
   color: var(--accent-text);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 700;
   cursor: pointer;
 }
@@ -107,5 +107,5 @@
 }
 .compact .avatar,
 .compact .avatarImg { width: 32px; height: 32px; }
-.compact .handle { font-size: 12.5px; }
-.compact .text { font-size: 12.5px; line-height: 1.45; }
+.compact .handle { font-size: var(--fs-12-5); }
+.compact .text { font-size: var(--fs-12-5); line-height: 1.45; }

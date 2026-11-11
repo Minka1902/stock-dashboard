@@ -15,14 +15,14 @@
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 600;
 }
 
 .subtitle {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   max-width: 70ch;
 }
 
@@ -54,12 +54,12 @@
   font-family: var(--mono);
   font-weight: 700;
   color: var(--accent-text);
-  font-size: 15px;
+  font-size: var(--fs-15);
 }
 
 .meta {
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--fs-11);
 }
 
 .windows {
@@ -77,7 +77,7 @@
 }
 
 .wlabel {
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   font-weight: 600;
   color: var(--text-muted);
   cursor: help;
@@ -92,7 +92,7 @@
 .avg {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  font-size: 14px;
+  font-size: var(--fs-14);
   cursor: help;
 }
 .avg[data-tone="pos"] { color: var(--positive); }
@@ -100,7 +100,7 @@
 .avg[data-tone="flat"] { color: var(--text-muted); }
 
 .win {
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   color: var(--text-faint);
 }
 .win strong {
@@ -114,7 +114,7 @@
 
 .muted {
   color: var(--text-faint);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 
 .empty {

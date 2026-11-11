@@ -15,14 +15,14 @@
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 600;
 }
 
 .subtitle {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 
 .tableWrap {
@@ -32,7 +32,7 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: var(--fs-13-5);
 }
 
 .table thead th {
@@ -40,7 +40,7 @@
   z-index: var(--z-sticky);
   top: 0;
   text-align: left;
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--text-faint);
@@ -75,7 +75,7 @@
 }
 
 .state {
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   color: var(--text-faint);
 }
 
@@ -89,7 +89,7 @@
   display: inline-block;
   padding: 3px 10px;
   border-radius: var(--r-pill);
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   font-weight: 600;
   border: 1px solid var(--border);
   color: var(--text-muted);
@@ -117,7 +117,7 @@
 }
 
 .amount {
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -168,7 +168,7 @@
 
 .link {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 700;
   color: var(--accent-text);
   white-space: nowrap;

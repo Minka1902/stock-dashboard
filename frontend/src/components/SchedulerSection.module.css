@@ -13,8 +13,8 @@
   border-bottom: 1px solid var(--grid);
   flex-wrap: wrap;
 }
-.headRight { font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); }
-.muted { margin: var(--s-4); font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
+.headRight { font-family: var(--mono); font-size: var(--fs-10-5); color: var(--text-faint); }
+.muted { margin: var(--s-4); font-family: var(--mono); font-size: var(--fs-12); color: var(--text-faint); }
 
 /* Sized by the panel, not the window: the sidebar takes ~210px, so a
    viewport breakpoint let the one-line grid run at widths it can't fit. */
@@ -37,9 +37,9 @@
 }
 
 .name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.src { font-family: var(--mono); font-weight: 700; color: var(--text); font-size: 12.5px; }
+.src { font-family: var(--mono); font-weight: 700; color: var(--text); font-size: var(--fs-12-5); }
 .desc {
-  font-family: var(--mono); font-size: 10px; color: var(--text-faint);
+  font-family: var(--mono); font-size: var(--fs-10); color: var(--text-faint);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -59,7 +59,7 @@
   background: var(--surface-2);
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   padding: 4px 8px;
   cursor: pointer;
 }
@@ -68,12 +68,12 @@
 .segBtn:hover { color: var(--accent-text); }
 
 .when { min-width: 0; }
-.word { font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); }
+.word { font-family: var(--mono); font-size: var(--fs-10-5); color: var(--text-faint); }
 .interval, .times { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
 .num, .time, .tz {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   color: var(--text);
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -89,7 +89,7 @@
 
 .chip {
   display: inline-flex; align-items: center; gap: 4px;
-  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  font-family: var(--mono); font-size: var(--fs-11); font-weight: 700;
   color: var(--accent-text);
   background: var(--accent-weak);
   border-radius: var(--r-pill);
@@ -97,7 +97,7 @@
 }
 .chipX {
   appearance: none; border: none; background: none;
-  color: inherit; cursor: pointer; font-size: 13px; line-height: 1;
+  color: inherit; cursor: pointer; font-size: var(--fs-13); line-height: 1;
   padding: 0 4px; border-radius: var(--r-pill);
 }
 .chipX:hover:not(:disabled) { background: var(--accent); color: var(--bg); }
@@ -109,7 +109,7 @@
   background: var(--surface-2);
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   border-radius: var(--r-xs);
   padding: 4px 8px;
   cursor: pointer;
@@ -126,7 +126,7 @@
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-faint);
-  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  font-family: var(--mono); font-size: var(--fs-10); font-weight: 700;
   cursor: pointer;
   padding: 0;
 }
@@ -134,13 +134,13 @@
 
 .switch {
   display: inline-flex; align-items: center; gap: 5px;
-  font-family: var(--mono); font-size: 10.5px; color: var(--text-muted);
+  font-family: var(--mono); font-size: var(--fs-10-5); color: var(--text-muted);
   cursor: pointer; white-space: nowrap;
 }
 .switch input { accent-color: var(--accent); }
 
 .next {
-  font-family: var(--mono); font-size: 10.5px; color: var(--text-faint);
+  font-family: var(--mono); font-size: var(--fs-10-5); color: var(--text-faint);
   white-space: nowrap; text-align: right;
 }
 
@@ -149,10 +149,10 @@
   flex-basis: 100%;
   margin: 0;
   overflow: hidden;
-  font-family: var(--mono); font-size: 11px;
+  font-family: var(--mono); font-size: var(--fs-11);
   color: var(--negative);
 }
 
 @media (pointer: coarse) {
-  .day { width: 36px; height: 36px; font-size: 11px; }
+  .day { width: 36px; height: 36px; font-size: var(--fs-11); }
 }

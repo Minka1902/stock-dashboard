@@ -15,7 +15,7 @@ import { currencyForSymbol, currencySymbol } from "../lib/format";
 import { useDrawings } from "../lib/drawings/useDrawings";
 import { SessionPrimitive } from "../lib/drawings/SessionPrimitive";
 import { canvasToBlob, composeSnapshot, snapshotFileName } from "../lib/chartSnapshot";
-import { useThemeColors, withAlpha } from "../lib/themeColors";
+import { useThemeColors, useTypeSizes, withAlpha } from "../lib/themeColors";
 import DrawingRail from "./chart/DrawingRail";
 import ShapeProperties from "./chart/ShapeProperties";
 import TextEditor from "./chart/TextEditor";
@@ -72,6 +72,9 @@ const SNAP_TOKENS = {
   accent: "--accent",
   border: "--border",
 };
+
+// The axis labels follow the type scale, so they shrink on a phone too.
+const CHART_FONT = { axis: "--fs-11" };
 
 // Tel Aviv (TASE) listings have no pre-market or after-hours session at all.
 const isTase = (t) => /\.TA$/i.test(String(t || ""));
@@ -282,6 +285,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   const colors = useThemeColors(CHART_TOKENS);
   const drawColors = useThemeColors(DRAW_TOKENS);
   const snapColors = useThemeColors(SNAP_TOKENS);
+  const font = useTypeSizes(CHART_FONT);
   const wrapRef = useRef(null);
   const flashRef = useRef(null);
   const barsRef = useRef([]);          // bars on screen, for drawing anchors
@@ -437,15 +441,14 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       layout: {
         background: { color: "transparent" },
         fontFamily: monoFont(),
-        fontSize: 11,
         attributionLogo: false,
         panes: { enableResize: false },
       },
       timeScale: { rightOffset: 4, secondsVisible: false },
       crosshair: { mode: 0 },
     });
-    // Colours are applied by the theme effect below, which runs right after
-    // this one on mount and again on every theme change.
+    // Colours and the axis font size are applied by the effects below, which
+    // run right after this one on mount and again whenever they change.
     chartRef.current = chart;
 
     // The crosshair handler reads live maps/overlays from refs so it never has
@@ -571,6 +574,11 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       try { recolor(colors); } catch { /* series already removed */ }
     }
   }, [colors]);
+
+  // ---- type scale changes (phone breakpoint, text size): resize the labels ----
+  useEffect(() => {
+    chartRef.current?.applyOptions({ layout: { fontSize: font.axis } });
+  }, [font]);
 
   // ---- height changes: just resize, never rebuild ----
   useEffect(() => {

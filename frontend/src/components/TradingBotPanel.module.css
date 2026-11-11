@@ -14,7 +14,7 @@
 }
 .title {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -23,7 +23,7 @@
   margin-top: 3px;
   color: var(--text-faint);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   max-width: 90ch;
 }
 .tabs {

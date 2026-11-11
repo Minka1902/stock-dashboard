@@ -14,5 +14,5 @@
 .half { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--text-faint); }
 .band { position: absolute; top: 1px; bottom: 1px; border-radius: var(--r-pill); background: var(--accent-weak); }
 .mark { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: var(--accent); }
-.thin { font-size: 11px; color: var(--text-faint); white-space: nowrap; }
+.thin { font-size: var(--fs-11); color: var(--text-faint); white-space: nowrap; }
 .unknown { color: var(--text-faint); }

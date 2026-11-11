@@ -3,6 +3,7 @@ import {
   CartesianGrid, Line, LineChart, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { getSuggestionHistory } from "../api";
+import { useAxisTick } from "../lib/chartStyle";
 import { TONE_TOKEN, outcomeTone, pctLabel } from "../lib/suggestionHistory";
 import { useThemeColors } from "../lib/themeColors";
 import styles from "./SuggestionHistoryStrip.module.css";
@@ -19,7 +20,7 @@ const STRIP_TOKENS = {
 // The tooltip is an HTML overlay, so it takes var() directly.
 const TOOLTIP_STYLE = {
   background: "var(--surface)", border: "1px solid var(--border-strong)",
-  borderRadius: 6, fontSize: 12, color: "var(--text)",
+  borderRadius: 6, fontSize: "var(--fs-12)", color: "var(--text)",
 };
 
 /**
@@ -31,6 +32,7 @@ export default function SuggestionHistoryStrip({ ticker, daily = [] }) {
   const [entries, setEntries] = useState(null);
   const c = useThemeColors(STRIP_TOKENS);
   const tone = useThemeColors(TONE_TOKEN);
+  const tick = useAxisTick(c.tick);
 
   useEffect(() => {
     let alive = true;
@@ -91,7 +93,7 @@ export default function SuggestionHistoryStrip({ ticker, daily = [] }) {
               <YAxis
                 domain={["dataMin", "dataMax"]}
                 width={46}
-                tick={{ fill: c.tick, fontSize: 10 }}
+                tick={tick}
                 axisLine={false}
                 tickLine={false}
               />

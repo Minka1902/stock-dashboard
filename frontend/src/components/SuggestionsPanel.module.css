@@ -15,7 +15,7 @@
 
 .title {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -25,7 +25,7 @@
   margin-top: 3px;
   color: var(--text-faint);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   max-width: 92ch;
 }
 
@@ -50,7 +50,7 @@
 
 .sectionTitle {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -100,7 +100,7 @@
 .lists { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .listChip {
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 1px 6px;
@@ -113,7 +113,7 @@
   display: block;
   margin-top: 3px;
   font-family: var(--font);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
@@ -130,7 +130,7 @@
   background: var(--surface-2);
   color: var(--text-muted);
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -154,7 +154,7 @@
 }
 
 .action {
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--text);
 }
 .action[data-risk="yes"] {
@@ -171,7 +171,7 @@
 
 .chip {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -205,7 +205,7 @@
   align-items: baseline;
   gap: var(--s-3);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   padding: 6px var(--s-3);
   border: 1px solid var(--grid);
   border-radius: var(--r-sm);
@@ -224,7 +224,7 @@
   font-family: var(--mono);
   color: var(--text-muted);
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: var(--fs-10);
   letter-spacing: 0.04em;
 }
 .logStatus {
@@ -237,7 +237,7 @@
 
 .disclaimer {
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--fs-11);
   border-top: 1px solid var(--grid);
   padding-top: var(--s-3);
 }
@@ -267,7 +267,7 @@
 }
 .emptyText {
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 .emptyBtn {
   margin-top: var(--s-2);
@@ -287,7 +287,7 @@
   border: 1px solid var(--negative);
   border-radius: var(--r-sm);
   background: var(--negative-weak);
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 .paused strong { font-family: var(--mono); color: var(--negative); }
 .paused a { color: var(--accent-text); }
@@ -296,7 +296,7 @@
   border: 1px solid var(--caution);
   border-radius: var(--r-sm);
   background: var(--caution-weak);
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 .downgraded strong { font-family: var(--mono); color: var(--caution); }
 .downgraded a { color: var(--accent-text); }

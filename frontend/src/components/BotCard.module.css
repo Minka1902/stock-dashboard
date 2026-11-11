@@ -22,13 +22,13 @@
 .name {
   margin: 0;
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: var(--fs-14);
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.meta { font-size: 11.5px; color: var(--text-faint); }
+.meta { font-size: var(--fs-11-5); color: var(--text-faint); }
 .status {
   flex: none;
   padding: 2px 8px;
@@ -36,7 +36,7 @@
   border: 1px solid var(--positive-weak);
   color: var(--positive);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -53,7 +53,7 @@
 }
 .stats dt {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -62,19 +62,19 @@
 .stats dd {
   margin: 2px 0 0;
   font-family: var(--mono);
-  font-size: 15px;
+  font-size: var(--fs-15);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.stats dd em { font-style: normal; font-size: 12px; }
+.stats dd em { font-style: normal; font-size: var(--fs-12); }
 .stats dd[data-tone="pos"] { color: var(--positive); }
 .stats dd[data-tone="neg"] { color: var(--negative); }
-.note { font-size: 11px; font-weight: 400; color: var(--text-faint); }
+.note { font-size: var(--fs-11); font-weight: 400; color: var(--text-faint); }
 
 .params {
   padding: 0 var(--s-4) var(--s-2);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--text-faint);
 }
 
@@ -94,7 +94,7 @@
   padding: 6px 0;
   border-top: 1px solid var(--grid);
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   font-variant-numeric: tabular-nums;
 }
 .ticker { grid-area: ticker; border: none; background: none; padding: 0; cursor: pointer; font: inherit; }
@@ -102,12 +102,12 @@
 .posPl { grid-area: pl; text-align: right; }
 .posPl[data-tone="pos"] { color: var(--positive); }
 .posPl[data-tone="neg"] { color: var(--negative); }
-.levels { grid-area: levels; font-size: 11px; color: var(--text-faint); }
+.levels { grid-area: levels; font-size: var(--fs-11); color: var(--text-faint); }
 .levels:empty { display: none; }
 
 .universe {
   padding: var(--s-2) var(--s-4);
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-muted);
 }
 
@@ -126,7 +126,7 @@
   align-items: center;
   gap: var(--s-1);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;

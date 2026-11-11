@@ -13,7 +13,7 @@
 .score { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 .num {
   font-family: var(--mono);
-  font-size: 40px;
+  font-size: 40px; /* one use, no exact token; --fs-hero (34px) would change desktop */
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -21,7 +21,7 @@
 }
 .rating {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--accent-text);
@@ -32,7 +32,7 @@
   justify-content: space-between;
   width: min(100%, 240px);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-faint);

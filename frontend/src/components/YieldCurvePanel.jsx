@@ -10,23 +10,13 @@ import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
+import { CHART_CURSOR, CHART_TOOLTIP, useAxisTick } from "../lib/chartStyle";
 import styles from "./YieldCurvePanel.module.css";
 import InfoTip from "./InfoTip";
 import HintTip from "./Tooltip";
 
-// Recharts draws its hover cursor in #ccc unless told otherwise.
-const CURSOR = { stroke: "var(--border-strong)" };
-
-const TOOLTIP_STYLE = {
-  background: "var(--surface-2)",
-  border: "1px solid var(--border)",
-  borderRadius: "var(--r-sm)",
-  fontSize: "12px",
-  color: "var(--text)",
-  padding: "6px 10px",
-};
-
 export default function YieldCurvePanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
+  const tick = useAxisTick();
   const showEmpty = !loading && data.length === 0;
   const latest = data.length > 0 ? data[data.length - 1] : null;
   const spread = latest?.spread ?? null;
@@ -82,7 +72,7 @@ export default function YieldCurvePanel({ data, loading, busy, onRefresh, compac
                 <YAxis
                   width={42}
                   tickFormatter={(v) => `${v.toFixed(1)}%`}
-                  tick={{ fontSize: 10, fill: "var(--text-faint)" }}
+                  tick={tick}
                   axisLine={false}
                   tickLine={false}
                 />
@@ -101,8 +91,8 @@ export default function YieldCurvePanel({ data, loading, busy, onRefresh, compac
                   isAnimationActive={false}
                 />
                 <Tooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  cursor={CURSOR}
+                  contentStyle={CHART_TOOLTIP}
+                  cursor={CHART_CURSOR}
                   formatter={(v) => [`${v != null ? v.toFixed(2) : "—"}%`, "Spread"]}
                   labelFormatter={(l) => l}
                 />

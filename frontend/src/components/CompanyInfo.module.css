@@ -9,7 +9,7 @@
 .sectionTitle {
   margin: 0;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -17,12 +17,12 @@
 }
 
 .identity { display: flex; flex-direction: column; gap: 2px; }
-.name { font-size: 15px; font-weight: 700; color: var(--text); }
-.tags { font-family: var(--mono); font-size: 11px; color: var(--accent-text); }
+.name { font-size: var(--fs-15); font-weight: 700; color: var(--text); }
+.tags { font-family: var(--mono); font-size: var(--fs-11); color: var(--accent-text); }
 
 .summary {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   line-height: 1.55;
   color: var(--text-muted);
 }
@@ -33,7 +33,7 @@
   padding: 0 0 0 6px;
   color: var(--accent-text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-12);
   cursor: pointer;
 }
 .more:hover { text-decoration: underline; }
@@ -44,7 +44,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: var(--s-3);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 .rowLabel { color: var(--text-faint); white-space: nowrap; }
 .rowValue {
@@ -78,7 +78,7 @@
 .holder:last-child, .officer:last-child { border-bottom: none; padding-bottom: 0; }
 
 .holderName, .officerName {
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -86,7 +86,7 @@
 }
 .holderPct {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--accent-text);
@@ -95,7 +95,7 @@
 .holderMeta, .officerMeta, .officerTitle {
   grid-column: 1 / -1;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   color: var(--text-faint);
 }
 .officerTitle { grid-column: 1; color: var(--text-muted); }
@@ -103,6 +103,6 @@
 
 .empty, .none {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-faint);
 }

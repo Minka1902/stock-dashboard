@@ -271,7 +271,7 @@ Tick an item in the same commit that completes it.
 - [x] Phase 2 — STC-108 back-to-top
 - [x] Phase 2 — STC-91 alerts
 - [x] Phase 2 — STC-107 watchlist touch
-- [ ] Phase 3 — STC-98 font-size migration
+- [x] Phase 3 — STC-98 font-size migration
 - [ ] Phase 3 — STC-100 layout contract
 - [ ] Phase 4 — STC-101 DataTable + sheet menus + Segmented scroll + SectionIndex
 - [ ] Phase 4 — STC-102 table migrations
