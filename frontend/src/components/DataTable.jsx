@@ -6,6 +6,7 @@ import ScrollHint from "./ScrollHint";
 import Skeleton from "./Skeleton";
 import SortHeader from "./SortHeader";
 import Tooltip from "./Tooltip";
+import { useElementWidth } from "../hooks/useElementWidth";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useSortableRows } from "../hooks/useSortableRows";
 import { cellContent, cx, groupRows, phoneRole } from "../lib/dataTable";
@@ -62,7 +63,9 @@ function groupCells(columns, entries, title) {
  * Table: `initialSort`, `limit`, `empty`, `loading` + `skeletonRows`,
  * `dense`, `stickyHeader`, `caption`, `label`, `groupBy(row)` +
  * `groupHeader(key, rows)` ({ colKey: cell }), `footer` ({ colKey: cell }),
- * `layout` ("auto" | "table" | "cards" | "scroll"), `animate` (rows
+ * `layout` ("auto" | "table" | "cards" | "scroll"), `cardsBelow` (px: with
+ * "auto", cards whenever the table's own container is that narrow, e.g. a
+ * table inside a card, instead of only on a phone), `animate` (rows
  * stagger in), and `classes` ({ wrap, table, row, groupRow, groupLabel,
  * footRow }) to style the table with a module's own classes instead of the
  * defaults.
@@ -71,9 +74,10 @@ export default function DataTable({
   columns, rows, rowKey, rowLabel, onRowClick, rowActions, rowProps, rowAfter, expanded,
   initialSort = null, limit, empty = null, loading = false, skeletonRows = 8,
   dense = false, stickyHeader = false, caption, label, groupBy, groupHeader, footer,
-  layout = "auto", animate = false, classes = {},
+  layout = "auto", cardsBelow, animate = false, classes = {},
 }) {
   const phone = useMediaQuery(PHONE);
+  const [measure, width] = useElementWidth();
   const accessors = useMemo(
     () => Object.fromEntries(columns.filter((c) => c.sort).map((c) => [c.key, c.sort])),
     [columns],
@@ -85,15 +89,18 @@ export default function DataTable({
 
   if (!loading && rows.length === 0) return empty;
 
-  if (layout === "cards" || (layout === "auto" && phone)) {
-    return (
+  const narrow = phone || (cardsBelow != null && width != null && width <= cardsBelow);
+  const measured = (content) => (cardsBelow == null ? content : <div ref={measure}>{content}</div>);
+
+  if (layout === "cards" || (layout === "auto" && narrow)) {
+    return measured(
       <DataCards
         columns={columns} groups={groups} rowKey={rowKey} rowLabel={rowLabel} onRowClick={onRowClick}
         rowActions={rowActions} rowProps={rowProps} rowAfter={rowAfter} expanded={expanded}
         sort={sort} onSort={setSort} unsorted={!initialSort} loading={loading} skeletonRows={skeletonRows}
         label={label ?? (typeof caption === "string" ? caption : undefined)}
         groupBy={groupBy} groupHeader={groupHeader} footer={footer}
-      />
+      />,
     );
   }
 
@@ -216,5 +223,5 @@ export default function DataTable({
   );
 
   const wrap = classes.wrap ?? (dense ? styles.wrap : styles.tableWrap);
-  return layout === "table" ? <div className={wrap}>{table}</div> : <ScrollHint className={wrap}>{table}</ScrollHint>;
+  return measured(layout === "table" ? <div className={wrap}>{table}</div> : <ScrollHint className={wrap}>{table}</ScrollHint>);
 }

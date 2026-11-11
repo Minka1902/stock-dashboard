@@ -1,19 +1,14 @@
 import { useMemo, useState } from "react";
+import DataTable from "./DataTable";
 import ScrollHint from "./ScrollHint";
 import Segmented from "./Segmented";
-import SortHeader from "./SortHeader";
-import { useSortableRows } from "../hooks/useSortableRows";
 import { currencyForSymbol, formatPercentSigned, formatPrice, formatRelativeTime } from "../lib/format";
 import { openTickerTab } from "../lib/nav";
 import styles from "./ScannerPanel.module.css";
 
-const COLUMNS = {
-  ticker: (r) => r.ticker,
-  change: (r) => r.change_pct,
-  price: (r) => r.price,
-  metric: (r) => r.metric,
-  first: (r) => r.first_seen_at,
-};
+// Inside the Scanner tab's narrow column, or a phone, the matches are a list.
+const CARDS_BELOW = 640;
+const INITIAL_SORT = { key: "first", dir: "desc" };
 
 function groupByTicker(hits, order) {
   const by = new Map();
@@ -61,8 +56,30 @@ export default function ScannerPanel({
       const shown = filter === "all" ? r.hits[0] : r.hits.find((h) => h.scan === filter);
       return { ...r, metric: shown.metric, metricScan: shown.scan };
     }), [visible, filter]);
-  const { sorted, sortProps } = useSortableRows(rows, COLUMNS, { key: "first", dir: "desc" });
   const earlier = grouped.filter((r) => !r.current).length;
+
+  const columns = [
+    { key: "ticker", label: "Ticker", phone: "title", sort: (r) => r.ticker,
+      render: (r) => <button type="button" className={styles.ticker} onClick={() => onOpen(r.ticker)}>{r.ticker}</button> },
+    { key: "scans", label: "Matched", phone: "subtitle",
+      render: (r) => r.hits.map((h) => (
+        <span key={h.scan} className={styles.chip} title={meta[h.scan]?.description}>{meta[h.scan]?.label || h.scan}</span>
+      )) },
+    { key: "price", label: "Price", className: styles.num, phone: "value", sort: (r) => r.price,
+      render: (r) => formatPrice(r.price, currencyForSymbol(r.ticker)) },
+    { key: "change", label: "Today", className: styles.num, phone: "value", sort: (r) => r.change_pct,
+      cellProps: (r) => ({ "data-tone": r.change_pct > 0 ? "up" : r.change_pct < 0 ? "down" : "flat" }),
+      tone: (r) => (r.change_pct > 0 ? "pos" : r.change_pct < 0 ? "neg" : null),
+      render: (r) => (r.change_pct == null ? "—" : formatPercentSigned(r.change_pct / 100, 2)) },
+    { key: "metric", label: filter === "all" ? "Metric" : meta[filter]?.metric_label, caption: "Metric",
+      className: styles.num, sort: (r) => r.metric,
+      render: (r) => (r.metric == null ? "—"
+        : <><span className={styles.faint}>{meta[r.metricScan]?.metric_label} </span>{r.metric}</>) },
+    { key: "first", label: "First seen", cellClassName: styles.faint, sort: (r) => r.first_seen_at,
+      render: (r) => formatRelativeTime(r.first_seen_at) },
+    ...(rowActions ? [{ key: "actions", label: "Actions", hideLabel: true, cellClassName: styles.actions,
+      render: (r) => rowActions(r.ticker) }] : []),
+  ];
 
   const options = [
     { value: "all", label: "All", badge: visible.length },
@@ -82,49 +99,16 @@ export default function ScannerPanel({
           </label>
         )}
       </div>
-      {sorted.length === 0 ? <p className={styles.empty}>{emptyText}</p> : (
-        <ScrollHint className={styles.wrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <SortHeader label="Ticker" {...sortProps("ticker")} />
-                <th>Matched</th>
-                <SortHeader label="Price" className={styles.num} {...sortProps("price")} />
-                <SortHeader label="Today" className={styles.num} {...sortProps("change")} />
-                <SortHeader label={filter === "all" ? "Metric" : meta[filter]?.metric_label} className={styles.num}
-                            {...sortProps("metric")} />
-                <SortHeader label="First seen" {...sortProps("first")} />
-                {rowActions && <th><span className={styles.srOnly}>Actions</span></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((r) => (
-                <tr key={r.ticker} data-current={r.current ? "yes" : "no"}>
-                  <td data-col="ticker">
-                    <button type="button" className={styles.ticker} onClick={() => onOpen(r.ticker)}>{r.ticker}</button>
-                  </td>
-                  <td data-col="scans">
-                    {r.hits.map((h) => (
-                      <span key={h.scan} className={styles.chip} title={meta[h.scan]?.description}>
-                        {meta[h.scan]?.label || h.scan}
-                      </span>
-                    ))}
-                  </td>
-                  <td data-col="price" className={styles.num}>{formatPrice(r.price, currencyForSymbol(r.ticker))}</td>
-                  <td data-col="change" className={styles.num} data-tone={r.change_pct > 0 ? "up" : r.change_pct < 0 ? "down" : "flat"}>
-                    {r.change_pct == null ? "—" : formatPercentSigned(r.change_pct / 100, 2)}
-                  </td>
-                  <td data-col="metric" className={styles.num}>
-                    {r.metric == null ? "—" : <><span className={styles.faint}>{meta[r.metricScan]?.metric_label} </span>{r.metric}</>}
-                  </td>
-                  <td data-col="first" className={styles.faint}>{formatRelativeTime(r.first_seen_at)}</td>
-                  {rowActions && <td data-col="actions" className={styles.actions}>{rowActions(r.ticker)}</td>}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </ScrollHint>
-      )}
+      <DataTable
+        columns={columns}
+        rows={rows}
+        rowKey={(r) => r.ticker}
+        rowProps={(r) => ({ "data-current": r.current ? "yes" : "no" })}
+        initialSort={INITIAL_SORT}
+        cardsBelow={CARDS_BELOW}
+        empty={<p className={styles.empty}>{emptyText}</p>}
+        classes={{ wrap: styles.wrap, table: styles.table }}
+      />
     </div>
   );
 }

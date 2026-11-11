@@ -1,30 +1,56 @@
 import Icon from "./Icon";
-import Skeleton from "./Skeleton";
+import DataTable from "./DataTable";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
-import SortHeader from "./SortHeader";
-import { useSortableRows } from "../hooks/useSortableRows";
 import { formatDate } from "../lib/format";
 import styles from "./CongressPanel.module.css";
 import Tooltip from "./Tooltip";
 import InfoTip from "./InfoTip";
-import ScrollHint from "./ScrollHint";
 
 const COMPACT_LIMIT = 5;
 
 // Amount is a bucket string ("$1,001 - $15,000"); sort by its lower bound.
 const AMOUNT_RE = /[\d,]+/;
-const COLUMNS = {
-  representative: (t) => t.representative,
-  party: (t) => t.party,
-  ticker: (t) => t.ticker,
-  type: (t) => t.transaction_type,
-  amount: (t) => {
-    const m = (t.amount_range || "").match(AMOUNT_RE);
-    return m ? Number(m[0].replace(/,/g, "")) : null;
-  },
-  date: (t) => Date.parse(t.transaction_date) || 0,
-};
+
+const COLUMNS = [
+  { key: "representative", label: "Representative", cellClassName: styles.rep, phone: "title", skeleton: "140px",
+    sort: (t) => t.representative,
+    render: (t) => (
+      <>
+        <Tooltip truncate content={t.state ? `${t.representative} (${t.state})` : t.representative}>
+          <span className={styles.repName}>{t.representative}</span>
+        </Tooltip>
+        {t.state && <span className={styles.state}>{t.state}</span>}
+      </>
+    ) },
+  { key: "party", label: "Party", skeleton: "28px", sort: (t) => t.party,
+    render: (t) => (t.party ? <span className={styles.badge} data-tone={partyTone(t.party)}>{t.party}</span> : "—") },
+  { key: "ticker", label: "Ticker", phone: "subtitle", skeleton: "46px", sort: (t) => t.ticker,
+    render: (t) => (t.asset_description ? (
+      <Tooltip content={t.asset_description}>
+        <span className={styles.ticker}>{t.ticker || "—"}</span>
+      </Tooltip>
+    ) : <span className={styles.ticker}>{t.ticker || "—"}</span>) },
+  { key: "type", label: "Type", phone: "value", skeleton: "70px", sort: (t) => t.transaction_type,
+    render: (t) => (
+      <span className={styles.badge} data-tone={typeTone(t.transaction_type)}>{t.transaction_type}</span>
+    ) },
+  { key: "amount", label: "Amount", cellClassName: styles.amount, phone: "value", skeleton: "120px",
+    sort: (t) => {
+      const m = (t.amount_range || "").match(AMOUNT_RE);
+      return m ? Number(m[0].replace(/,/g, "")) : null;
+    },
+    render: (t) => t.amount_range || "—" },
+  { key: "date", label: "Date", cellClassName: styles.muted, phone: "subtitle", skeleton: "64px",
+    sort: (t) => Date.parse(t.transaction_date) || 0, render: (t) => formatDate(t.transaction_date) },
+  { key: "filing", label: "Filing", skeleton: "32px",
+    render: (t) => (t.source_url ? (
+      <a className={styles.link} href={t.source_url} target="_blank" rel="noreferrer"
+         title={t.doc_id ? `House Clerk PTR ${t.doc_id}, filed ${t.filed_at}` : "Senate Stock Watcher"}>
+        {t.doc_id ? "PTR ↗" : "source ↗"}
+      </a>
+    ) : <span className={styles.muted}>—</span>) },
+];
 
 function partyTone(party) {
   if (party === "D") return "dem";
@@ -38,24 +64,8 @@ function typeTone(type) {
   return "neutral";
 }
 
-function SkeletonRows({ rows = 8 }) {
-  return Array.from({ length: rows }).map((_, i) => (
-    <tr key={i}>
-      <td><Skeleton w="140px" /></td>
-      <td><Skeleton w="28px" /></td>
-      <td><Skeleton w="46px" /></td>
-      <td><Skeleton w="70px" /></td>
-      <td><Skeleton w="120px" /></td>
-      <td><Skeleton w="64px" /></td>
-      <td><Skeleton w="32px" /></td>
-    </tr>
-  ));
-}
-
 export default function CongressPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
-  const { sorted, sortProps } = useSortableRows(data, COLUMNS);
-  const rows = compact ? sorted.slice(0, COMPACT_LIMIT) : sorted;
 
   return (
     <section className={styles.panel} id="congress">
@@ -79,66 +89,8 @@ export default function CongressPanel({ data, loading, busy, onRefresh, compact 
           </button>
         </div>
       ) : (
-        <ScrollHint className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <SortHeader label="Representative" {...sortProps("representative")} />
-                <SortHeader label="Party" {...sortProps("party")} />
-                <SortHeader label="Ticker" {...sortProps("ticker")} />
-                <SortHeader label="Type" {...sortProps("type")} />
-                <SortHeader label="Amount" {...sortProps("amount")} />
-                <SortHeader label="Date" {...sortProps("date")} />
-                <th>Filing</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <SkeletonRows />
-              ) : (
-                rows.map((t) => (
-                  <tr key={t.trade_hash}>
-                    <td className={styles.rep}>
-                      <Tooltip truncate content={t.state ? `${t.representative} (${t.state})` : t.representative}>
-                        <span className={styles.repName}>{t.representative}</span>
-                      </Tooltip>
-                      {t.state && <span className={styles.state}>{t.state}</span>}
-                    </td>
-                    <td>
-                      {t.party ? (
-                        <span className={styles.badge} data-tone={partyTone(t.party)}>
-                          {t.party}
-                        </span>
-                      ) : "—"}
-                    </td>
-                    <td>
-                      {t.asset_description ? (
-                        <Tooltip content={t.asset_description}>
-                          <span className={styles.ticker}>{t.ticker || "—"}</span>
-                        </Tooltip>
-                      ) : <span className={styles.ticker}>{t.ticker || "—"}</span>}
-                    </td>
-                    <td>
-                      <span className={styles.badge} data-tone={typeTone(t.transaction_type)}>
-                        {t.transaction_type}
-                      </span>
-                    </td>
-                    <td className={styles.amount}>{t.amount_range || "—"}</td>
-                    <td className={styles.muted}>{formatDate(t.transaction_date)}</td>
-                    <td>
-                      {t.source_url ? (
-                        <a className={styles.link} href={t.source_url} target="_blank" rel="noreferrer"
-                           title={t.doc_id ? `House Clerk PTR ${t.doc_id}, filed ${t.filed_at}` : "Senate Stock Watcher"}>
-                          {t.doc_id ? "PTR ↗" : "source ↗"}
-                        </a>
-                      ) : <span className={styles.muted}>—</span>}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </ScrollHint>
+        <DataTable columns={COLUMNS} rows={data} rowKey={(t) => t.trade_hash} limit={compact ? COMPACT_LIMIT : undefined}
+                   loading={loading} skeletonRows={8} stickyHeader />
       ))}
     </section>
   );

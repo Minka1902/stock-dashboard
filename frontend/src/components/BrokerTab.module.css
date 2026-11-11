@@ -12,10 +12,6 @@
 .checks { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-4); font-size: var(--fs-12-5); }
 .checks li[data-ok="yes"] { color: var(--positive); }
 .checks li[data-ok="no"] { color: var(--caution); }
-.wrap { overflow-x: auto; }
-.table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
-.table th { text-align: left; font-size: var(--fs-10); font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-faint); background: var(--surface-2); padding: 6px var(--s-3); }
-.table td { padding: 7px var(--s-3); border-top: 1px solid var(--grid); }
 .num { text-align: right; }
 .ticker { font-weight: 700; color: var(--accent-text); }
 .orders { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }

@@ -274,7 +274,7 @@ Tick an item in the same commit that completes it.
 - [x] Phase 3 — STC-98 font-size migration
 - [x] Phase 3 — STC-100 layout contract
 - [x] Phase 4 — STC-101 DataTable + sheet menus + Segmented scroll + SectionIndex
-- [ ] Phase 4 — STC-102 table migrations
+- [x] Phase 4 — STC-102 table migrations
 - [ ] Phase 5 — Core views
 - [ ] Phase 5 — Watchlist + stock page
 - [ ] Phase 5 — Trading Bot

@@ -1,4 +1,3 @@
-.root { container-type: inline-size; }
 .wrap { overflow-x: auto; }
 .empty {
   padding: var(--s-3) var(--s-4);
@@ -53,27 +52,3 @@
 .kind[data-kind="sell"] { color: var(--negative); border-color: var(--negative-weak); }
 .kind[data-kind="error"] { color: var(--negative); background: var(--negative-weak); }
 .kind[data-kind="skip"] { color: var(--caution); border-color: var(--caution-weak); }
-
-/* Narrow (a phone, or inside a bot card): each event is a small card —
-   action / ticker / qty / price on one line, the reason underneath. */
-@container (max-width: 560px) {
-  .wrap { overflow: visible; }
-  .table thead { display: none; }
-  .table, .table tbody { display: block; }
-  .table tr {
-    display: grid;
-    grid-template-columns: auto auto 1fr auto;
-    grid-template-areas: "kind ticker qty price" "reason reason reason reason" "at at at at";
-    column-gap: var(--s-2);
-    row-gap: 3px;
-    padding: var(--s-2) var(--s-3);
-    border-top: 1px solid var(--grid);
-  }
-  .table td { padding: 0; border: none; }
-  .table td[data-col="at"] { grid-area: at; font-size: var(--fs-10-5); color: var(--text-faint); }
-  .table td[data-col="kind"] { grid-area: kind; }
-  .table td[data-col="ticker"] { grid-area: ticker; font-weight: 700; }
-  .table td[data-col="qty"] { grid-area: qty; }
-  .table td[data-col="price"] { grid-area: price; }
-  .table td.reason { grid-area: reason; min-width: 0; }
-}

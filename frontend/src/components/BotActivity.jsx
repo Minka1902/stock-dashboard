@@ -1,54 +1,40 @@
-import ScrollHint from "./ScrollHint";
-import SortHeader from "./SortHeader";
-import { useSortableRows } from "../hooks/useSortableRows";
+import DataTable from "./DataTable";
 import { formatMoney, formatRelativeTime } from "../lib/format";
 import styles from "./BotActivity.module.css";
 
-const COLUMNS = {
-  at: (e) => e.at,
-  kind: (e) => e.kind,
-  ticker: (e) => e.ticker,
-};
 const KIND_LABEL = { buy: "Buy", sell: "Sell", skip: "Skip", error: "Error", info: "Info" };
+const KIND_TONE = { buy: "pos", sell: "neg" };
+// A bot card is narrow even on a desktop; there the log is a list too.
+const CARDS_BELOW = 560;
 
 /**
  * A bot's decision log: every fill and every skip worth explaining, with the
- * reason in words. Newest first, sortable; rows stack into cards whenever
- * the log itself is narrow (a container query: a phone, or a bot card).
+ * reason in words. Newest first, sortable; rows become cards whenever the
+ * log itself is narrow (a phone, or a bot card).
  * Props: events [{at, kind, ticker, qty, price, reason}], currency, empty text.
  */
 export default function BotActivity({ events, currency, emptyText = "Nothing yet — the bot acts while its market is open." }) {
-  const { sorted, sortProps } = useSortableRows(events, COLUMNS);
+  const columns = [
+    { key: "at", label: "When", phone: "subtitle", sort: (e) => e.at, cellProps: (e) => ({ title: e.at }),
+      render: (e) => formatRelativeTime(e.at) },
+    { key: "kind", label: "Action", phone: "title", sort: (e) => e.kind,
+      render: (e) => <span className={styles.kind} data-kind={e.kind}>{KIND_LABEL[e.kind] || e.kind}</span> },
+    { key: "ticker", label: "Ticker", phone: "title", sort: (e) => e.ticker, render: (e) => e.ticker || "—" },
+    { key: "qty", label: "Qty", className: styles.num, phone: "value", render: (e) => (e.qty != null ? e.qty : "—") },
+    { key: "price", label: "Price", className: styles.num, phone: "value", tone: (e) => KIND_TONE[e.kind],
+      render: (e) => (e.price != null ? formatMoney(e.price, currency) : "—") },
+    { key: "reason", label: "Why", cellClassName: styles.reason, phone: "subtitle", render: (e) => e.reason },
+  ];
 
-  if (!events.length) return <p className={styles.empty}>{emptyText}</p>;
   return (
-    <div className={styles.root}>
-      <ScrollHint className={styles.wrap}>
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <SortHeader label="When" {...sortProps("at")} />
-              <SortHeader label="Action" {...sortProps("kind")} />
-              <SortHeader label="Ticker" {...sortProps("ticker")} />
-              <th className={styles.num}>Qty</th>
-              <th className={styles.num}>Price</th>
-              <th>Why</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((e) => (
-              <tr key={e.id}>
-                <td data-col="at" title={e.at}>{formatRelativeTime(e.at)}</td>
-                <td data-col="kind"><span className={styles.kind} data-kind={e.kind}>{KIND_LABEL[e.kind] || e.kind}</span></td>
-                <td data-col="ticker">{e.ticker || "—"}</td>
-                <td data-col="qty" className={styles.num}>{e.qty != null ? e.qty : "—"}</td>
-                <td data-col="price" className={styles.num}>{e.price != null ? formatMoney(e.price, currency) : "—"}</td>
-                <td data-col="reason" className={styles.reason}>{e.reason}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </ScrollHint>
-    </div>
+    <DataTable
+      columns={columns}
+      rows={events}
+      rowKey={(e) => e.id}
+      rowLabel={(e) => `${KIND_LABEL[e.kind] || e.kind} ${e.ticker || ""}`.trim()}
+      cardsBelow={CARDS_BELOW}
+      empty={<p className={styles.empty}>{emptyText}</p>}
+      classes={{ wrap: styles.wrap, table: styles.table }}
+    />
   );
 }

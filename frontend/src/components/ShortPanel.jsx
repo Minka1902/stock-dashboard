@@ -1,5 +1,5 @@
 import Icon from "./Icon";
-import Skeleton from "./Skeleton";
+import DataTable from "./DataTable";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import TickerLabel from "./TickerLabel";
@@ -8,22 +8,24 @@ import styles from "./ShortPanel.module.css";
 import Tooltip from "./Tooltip";
 import Term from "./Term";
 import InfoTip from "./InfoTip";
-import ScrollHint from "./ScrollHint";
 import { freshnessTip } from "../lib/freshness";
 
 const COMPACT_LIMIT = 5;
 
-function SkeletonRows({ rows = 6 }) {
-  return Array.from({ length: rows }).map((_, i) => (
-    <tr key={i}>
-      <td><Skeleton w="52px" /></td>
-      <td><Skeleton w="64px" /></td>
-      <td><Skeleton w="56px" /></td>
-      <td><Skeleton w="70px" /></td>
-      <td><Skeleton w="60px" /></td>
-    </tr>
-  ));
-}
+const COLUMNS = [
+  { key: "ticker", label: "Ticker", phone: "title", skeleton: "52px",
+    render: (s) => <TickerLabel ticker={s.ticker} className={styles.ticker} /> },
+  { key: "short", caption: "Short % float", label: <Term term="short_interest">Short % Float</Term>,
+    align: "end", phone: "value", skeleton: "64px", render: (s) => fmtPct(s.short_pct_float) },
+  { key: "cover", caption: "Days to cover", label: <Term term="days_to_cover">Days to Cover</Term>,
+    align: "end", phone: "value", skeleton: "56px", render: (s) => fmtCover(s.days_to_cover) },
+  { key: "squeeze", caption: "Squeeze", label: <Term term="short_squeeze">Squeeze</Term>, phone: "subtitle",
+    skeleton: "70px",
+    render: (s) => (s.squeeze_flag
+      ? <span className={styles.badge} data-tone="squeeze">Squeeze</span>
+      : <span className={styles.badge}>Normal</span>) },
+  { key: "updated", label: "Updated", skeleton: "60px", render: (s) => <FreshnessCell fetched_at={s.fetched_at} /> },
+];
 
 function FreshnessCell({ fetched_at }) {
   const text = formatRelativeTime(fetched_at);
@@ -47,7 +49,6 @@ function fmtCover(v) {
 
 export default function ShortPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
-  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data;
 
   return (
     <section className={styles.panel} id="short-interest">
@@ -69,40 +70,8 @@ export default function ShortPanel({ data, loading, busy, onRefresh, compact = f
           </button>
         </div>
       ) : (
-        <ScrollHint className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th className={styles.num}><Term term="short_interest">Short % Float</Term></th>
-                <th className={styles.num}><Term term="days_to_cover">Days to Cover</Term></th>
-                <th><Term term="short_squeeze">Squeeze</Term></th>
-                <th>Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <SkeletonRows />
-              ) : (
-                rows.map((s) => (
-                  <tr key={s.ticker}>
-                    <td><TickerLabel ticker={s.ticker} className={styles.ticker} /></td>
-                    <td className={styles.num}>{fmtPct(s.short_pct_float)}</td>
-                    <td className={styles.num}>{fmtCover(s.days_to_cover)}</td>
-                    <td>
-                      {s.squeeze_flag ? (
-                        <span className={styles.badge} data-tone="squeeze">Squeeze</span>
-                      ) : (
-                        <span className={styles.badge}>Normal</span>
-                      )}
-                    </td>
-                    <td><FreshnessCell fetched_at={s.fetched_at} /></td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </ScrollHint>
+        <DataTable columns={COLUMNS} rows={data} rowKey={(s) => s.ticker} limit={compact ? COMPACT_LIMIT : undefined}
+                   loading={loading} skeletonRows={6} stickyHeader />
       ))}
     </section>
   );

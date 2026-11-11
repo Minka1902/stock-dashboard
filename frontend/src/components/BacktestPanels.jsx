@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import DataTable from "./DataTable";
 import HitRateCell from "./HitRateCell";
 import Segmented from "./Segmented";
 import Skeleton from "./Skeleton";
@@ -6,16 +7,42 @@ import VersionPicker from "./VersionPicker";
 import { getSignalReplay, getTrackRecord } from "../api";
 import styles from "./BacktestPanels.module.css";
 import Term from "./Term";
-import ScrollHint from "./ScrollHint";
 
 const BASIS_OPTIONS = [
   { value: "net", label: "Net", title: "After paying the cost model on the way in and out" },
   { value: "gross", label: "Gross", title: "The raw price move, before costs" },
 ];
 
+const medianTone = (median) => (median == null ? "" : median >= 0 ? "pos" : "neg");
+const CLASSES = { wrap: styles.tableWrap, table: styles.table };
+
 /** null means "we don't know", and must never render as 0. */
 function num(v, suffix = "") {
   return v == null ? <span className={styles.unknown}>—</span> : `${v}${suffix}`;
+}
+
+/**
+ * The outcome columns both tables share. `stats(row)` gives the scored count
+ * `n`, the `pending` count and the hit/median stats `h` for the chosen
+ * window and basis.
+ */
+function outcomeColumns(stats) {
+  return [
+    { key: "scored", caption: "Scored", className: styles.num, render: (r) => stats(r).n,
+      label: <Term tip="Entries whose forward window has ended, so a price change can be measured">Scored</Term> },
+    { key: "pending", caption: "Pending", className: styles.num,
+      label: <Term tip="Entries whose window has not ended yet — counted neither as hits nor as misses">Pending</Term>,
+      cellProps: (r) => ({ "data-pending": stats(r).pending > 0 ? "yes" : "no" }),
+      render: (r) => (stats(r).pending > 0 ? stats(r).pending : "—") },
+    { key: "hit", caption: "Hit rate", className: styles.num, phone: "value",
+      label: <Term tip="Share of scored entries whose price was higher at the end of the window, with its 95% interval. It does not look at which way the suggestion pointed. Fewer than 30 outcomes show as not enough data.">Hit rate</Term>,
+      render: (r) => <HitRateCell stats={stats(r).h} /> },
+    { key: "median", caption: "Median", className: styles.num, phone: "value",
+      label: <Term tip="Median price change over the window, across scored entries">Median</Term>,
+      cellProps: (r) => ({ "data-tone": medianTone(stats(r).h.median) }),
+      tone: (r) => medianTone(stats(r).h.median) || null,
+      render: (r) => num(stats(r).h.median, "%") },
+  ];
 }
 
 function Coverage({ coverage, caveat }) {
@@ -30,27 +57,6 @@ function Coverage({ coverage, caveat }) {
       {/* The caveat ships with the numbers rather than being implied by them. */}
       <span className={styles.covNote}>{caveat}</span>
     </div>
-  );
-}
-
-function StatRow({ bucket, horizon, basis }) {
-  const h = bucket[`d${horizon}${basis === "net" ? "_net" : ""}`] || {};
-  const pending = bucket[`d${horizon}_pending`] ?? 0;
-  return (
-    <tr>
-      <td className={styles.label}>{bucket.label}</td>
-      <td className={styles.num}>{bucket.n}</td>
-      <td className={styles.num}>{h.n ?? 0}</td>
-      <td className={styles.num} data-pending={pending > 0 ? "yes" : "no"}>
-        {pending > 0 ? pending : "—"}
-      </td>
-      <td className={styles.num}><HitRateCell stats={h} /></td>
-      <td className={styles.num} data-tone={h.median == null ? "" : h.median >= 0 ? "pos" : "neg"}>
-        {num(h.median, "%")}
-      </td>
-      <td className={styles.num}>{num(h.best, "%")}</td>
-      <td className={styles.num}>{num(h.worst, "%")}</td>
-    </tr>
   );
 }
 
@@ -82,6 +88,16 @@ function TrackRecord() {
     ticker: named(data.by_ticker),
   };
   const buckets = GROUPS[groupBy] || GROUPS.action;
+  const stat = (b) => b[`d${horizon}${basis === "net" ? "_net" : ""}`] || {};
+  const columns = [
+    { key: "label", label: groupBy === "ticker" ? "Stock" : "Bucket", cellClassName: styles.label, phone: "title",
+      render: (b) => b.label },
+    { key: "total", label: "Total", className: styles.num, phone: "subtitle", render: (b) => b.n,
+      phoneRender: (b) => `${b.n} total` },
+    ...outcomeColumns((b) => ({ n: stat(b).n ?? 0, pending: b[`d${horizon}_pending`] ?? 0, h: stat(b) })),
+    { key: "best", label: "Best", className: styles.num, render: (b) => num(stat(b).best, "%") },
+    { key: "worst", label: "Worst", className: styles.num, render: (b) => num(stat(b).worst, "%") },
+  ];
 
   return (
     <div className={styles.body}>
@@ -123,22 +139,7 @@ function TrackRecord() {
           never made would be inventing them.
         </p>
       ) : (
-        <ScrollHint className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>{groupBy === "ticker" ? "Stock" : "Bucket"}</th>
-                <th className={styles.num}>Total</th>
-                <th className={styles.num}><Term tip="Entries whose forward window has ended, so a price change can be measured">Scored</Term></th><th className={styles.num}><Term tip="Entries whose window has not ended yet — counted neither as hits nor as misses">Pending</Term></th>
-                <th className={styles.num}><Term tip="Share of scored entries whose price was higher at the end of the window, with its 95% interval. It does not look at which way the suggestion pointed. Fewer than 30 outcomes show as not enough data.">Hit rate</Term></th><th className={styles.num}><Term tip="Median price change over the window, across scored entries">Median</Term></th>
-                <th className={styles.num}>Best</th><th className={styles.num}>Worst</th>
-              </tr>
-            </thead>
-            <tbody>
-              {buckets.map((b) => <StatRow key={b.label} bucket={b} horizon={horizon} basis={basis} />)}
-            </tbody>
-          </table>
-        </ScrollHint>
+        <DataTable columns={columns} rows={buckets} rowKey={(b) => b.label} classes={CLASSES} />
       )}
     </div>
   );
@@ -163,6 +164,20 @@ function SignalReplay() {
   if (!data) return <Skeleton w="100%" h="260px" />;
 
   const max = Math.max(1, ...data.thresholds.map((t) => t.crossings));
+  const columns = [
+    { key: "threshold", label: "Threshold", cellClassName: styles.label, phone: "title", render: (t) => <>≥ {t.threshold}</> },
+    { key: "crossings", label: "Crossings", className: styles.num, phone: "subtitle", render: (t) => t.crossings,
+      phoneRender: (t) => `${t.crossings} crossings` },
+    ...outcomeColumns((t) => ({ n: t.n, pending: t.pending, h: basis === "net" ? t.net : t })),
+    // Bar width is sample size, so a 100% hit rate off two crossings
+    // visibly isn't the same as off forty.
+    { key: "sample", label: "Sample",
+      render: (t) => (
+        <span className={styles.bar}>
+          <span className={styles.barFill} style={{ width: `${(t.crossings / max) * 100}%` }} />
+        </span>
+      ) },
+  ];
 
   return (
     <div className={styles.body}>
@@ -192,44 +207,7 @@ function SignalReplay() {
           builds up as the scorer runs.
         </p>
       ) : (
-        <ScrollHint className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Threshold</th><th className={styles.num}>Crossings</th>
-                <th className={styles.num}><Term tip="Entries whose forward window has ended, so a price change can be measured">Scored</Term></th><th className={styles.num}><Term tip="Entries whose window has not ended yet — counted neither as hits nor as misses">Pending</Term></th>
-                <th className={styles.num}><Term tip="Share of scored entries whose price was higher at the end of the window, with its 95% interval. It does not look at which way the suggestion pointed. Fewer than 30 outcomes show as not enough data.">Hit rate</Term></th><th className={styles.num}><Term tip="Median price change over the window, across scored entries">Median</Term></th>
-                <th>Sample</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.thresholds.map((t) => {
-                const st = basis === "net" ? t.net : t;
-                return (
-                <tr key={t.threshold}>
-                  <td className={styles.label}>≥ {t.threshold}</td>
-                  <td className={styles.num}>{t.crossings}</td>
-                  <td className={styles.num}>{t.n}</td>
-                  <td className={styles.num} data-pending={t.pending > 0 ? "yes" : "no"}>
-                    {t.pending > 0 ? t.pending : "—"}
-                  </td>
-                  <td className={styles.num}><HitRateCell stats={st} /></td>
-                  <td className={styles.num} data-tone={st.median == null ? "" : st.median >= 0 ? "pos" : "neg"}>
-                    {num(st.median, "%")}
-                  </td>
-                  <td>
-                    {/* Bar width is sample size, so a 100% hit rate off two
-                        crossings visibly isn't the same as off forty. */}
-                    <span className={styles.bar}>
-                      <span className={styles.barFill} style={{ width: `${(t.crossings / max) * 100}%` }} />
-                    </span>
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </ScrollHint>
+        <DataTable columns={columns} rows={data.thresholds} rowKey={(t) => t.threshold} classes={CLASSES} />
       )}
     </div>
   );

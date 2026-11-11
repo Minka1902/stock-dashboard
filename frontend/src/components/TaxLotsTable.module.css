@@ -1,8 +1,4 @@
-.wrap { overflow-x: auto; }
 .empty { padding: var(--s-3) 0; font-size: var(--fs-12-5); color: var(--text-faint); }
-.table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
-.table th { text-align: left; font-size: var(--fs-10); font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-faint); background: var(--surface-2); padding: 6px var(--s-3); white-space: nowrap; }
-.table td { padding: 7px var(--s-3); border-top: 1px solid var(--grid); white-space: nowrap; }
 .num { text-align: right; }
 .ticker { font-weight: 700; color: var(--accent-text); }
 td[data-tone="up"] { color: var(--positive); }
@@ -11,3 +7,19 @@ td[data-tone="down"] { color: var(--negative); }
 .toggle { appearance: none; border: none; background: none; padding: 0; font: inherit; color: var(--text-muted); cursor: pointer; }
 .approx { color: var(--caution); }
 .faint { color: var(--text-faint); }
+
+/* A card's lots, one per line: lot, size and cost / gain and term / when. */
+.lotList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: var(--s-2) 0 0;
+  padding: var(--s-2) 0 0;
+  list-style: none;
+  border-top: 1px dashed var(--grid);
+  font-family: var(--mono);
+  font-size: var(--fs-11-5);
+}
+.lotList li { display: flex; flex-wrap: wrap; gap: 2px var(--s-3); }
+.lotList li[data-tone="up"] .gain { color: var(--positive); }
+.lotList li[data-tone="down"] .gain { color: var(--negative); }

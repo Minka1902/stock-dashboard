@@ -1,5 +1,5 @@
 import Icon from "./Icon";
-import Skeleton from "./Skeleton";
+import DataTable from "./DataTable";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import TickerLabel from "./TickerLabel";
@@ -7,20 +7,21 @@ import styles from "./SocialPanel.module.css";
 import Term from "./Term";
 import Tooltip from "./Tooltip";
 import InfoTip from "./InfoTip";
-import ScrollHint from "./ScrollHint";
 
 const COMPACT_LIMIT = 5;
 
-function SkeletonRows({ rows = 6 }) {
-  return Array.from({ length: rows }).map((_, i) => (
-    <tr key={i}>
-      <td><Skeleton w="52px" /></td>
-      <td><Skeleton w="40px" /></td>
-      <td><Skeleton w="60px" /></td>
-      <td><Skeleton w="56px" /></td>
-    </tr>
-  ));
-}
+const COLUMNS = [
+  { key: "ticker", label: "Ticker", phone: "title", skeleton: "52px",
+    render: (s) => <TickerLabel ticker={s.ticker} className={styles.ticker} /> },
+  { key: "rank", caption: "Rank", label: <Term term="wsb_rank">Rank</Term>, align: "end", phone: "subtitle",
+    skeleton: "40px", phoneRender: (s) => (s.rank == null ? "unranked" : `#${s.rank}`), render: (s) => s.rank ?? "—" },
+  { key: "mentions", caption: "Mentions", align: "end", phone: "value", skeleton: "60px",
+    label: <Term tip="Mention count across Reddit stock communities, as reported by ApeWisdom (last 24 hours)">Mentions</Term>,
+    render: (s) => (s.mentions != null ? s.mentions.toLocaleString() : "—") },
+  { key: "change", caption: "Rank change", phone: "value", skeleton: "56px",
+    label: <Term tip="Places gained (↑) or lost (↓) in the mention rank vs 24 hours ago">Rank Change</Term>,
+    render: (s) => <RankChange change={s.rank_change} /> },
+];
 
 function RankChange({ change }) {
   if (change == null) return <span className={styles.muted}>—</span>;
@@ -44,7 +45,6 @@ function RankChange({ change }) {
 
 export default function SocialPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
-  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data;
 
   return (
     <section className={styles.panel} id="social">
@@ -66,32 +66,8 @@ export default function SocialPanel({ data, loading, busy, onRefresh, compact = 
           </button>
         </div>
       ) : (
-        <ScrollHint className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th className={styles.num}><Term term="wsb_rank">Rank</Term></th>
-                <th className={styles.num}><Term tip="Mention count across Reddit stock communities, as reported by ApeWisdom (last 24 hours)">Mentions</Term></th>
-                <th><Term tip="Places gained (↑) or lost (↓) in the mention rank vs 24 hours ago">Rank Change</Term></th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <SkeletonRows />
-              ) : (
-                rows.map((s) => (
-                  <tr key={s.ticker}>
-                    <td><TickerLabel ticker={s.ticker} className={styles.ticker} /></td>
-                    <td className={styles.num}>{s.rank ?? "—"}</td>
-                    <td className={styles.num}>{s.mentions != null ? s.mentions.toLocaleString() : "—"}</td>
-                    <td><RankChange change={s.rank_change} /></td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </ScrollHint>
+        <DataTable columns={COLUMNS} rows={data} rowKey={(s) => s.ticker} limit={compact ? COMPACT_LIMIT : undefined}
+                   loading={loading} skeletonRows={6} stickyHeader />
       ))}
     </section>
   );

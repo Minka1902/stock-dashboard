@@ -39,6 +39,7 @@ export default function DataCards({
     <div className={styles.root}>
       {options.length > 1 && rowCount > 1 && (
         <div className={styles.sortBar}>
+          <span className="caption" aria-hidden="true">Sort</span>
           <SelectMenu label="Sort" value={sortValue(sort)} options={options}
                       onChange={(v) => onSort(parseSort(v))} className={styles.sort} />
         </div>

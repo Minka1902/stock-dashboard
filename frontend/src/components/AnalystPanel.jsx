@@ -1,5 +1,5 @@
 import Icon from "./Icon";
-import Skeleton from "./Skeleton";
+import DataTable from "./DataTable";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import TickerLabel from "./TickerLabel";
@@ -9,25 +9,28 @@ import { freshnessTip } from "../lib/freshness";
 import Tooltip from "./Tooltip";
 import Term from "./Term";
 import InfoTip from "./InfoTip";
-import ScrollHint from "./ScrollHint";
 
 const COMPACT_LIMIT = 5;
 
-function SkeletonRows({ rows = 6 }) {
-  return Array.from({ length: rows }).map((_, i) => (
-    <tr key={i}>
-      <td><Skeleton w="52px" /></td>
-      <td><Skeleton w="76px" /></td>
-      <td><Skeleton w="32px" /></td>
-      <td><Skeleton w="32px" /></td>
-      <td><Skeleton w="32px" /></td>
-      <td><Skeleton w="32px" /></td>
-      <td><Skeleton w="56px" /></td>
-      <td><Skeleton w="80px" /></td>
-      <td><Skeleton w="60px" /></td>
-    </tr>
-  ));
-}
+const COLUMNS = [
+  { key: "ticker", label: "Ticker", phone: "title", skeleton: "52px",
+    render: (s) => <TickerLabel ticker={s.ticker} className={styles.ticker} /> },
+  { key: "next", label: "Next Earnings", caption: "Next earnings", cellClassName: styles.muted, skeleton: "76px",
+    render: (s) => (s.next_earnings ? formatDate(s.next_earnings) : "—") },
+  { key: "strong", label: <Term tip="Number of analysts rating it Strong Buy">Str Buy</Term>, caption: "Strong buy",
+    align: "end", skeleton: "32px", render: (s) => s.rec_strong_buy ?? "—" },
+  { key: "buy", label: "Buy", align: "end", skeleton: "32px", render: (s) => s.rec_buy ?? "—" },
+  { key: "hold", label: "Hold", align: "end", skeleton: "32px", render: (s) => s.rec_hold ?? "—" },
+  { key: "sell", label: "Sell", align: "end", skeleton: "32px", render: (s) => s.rec_sell ?? "—" },
+  { key: "latest", caption: "Latest", phone: "value", skeleton: "56px",
+    label: <Term tip="The most recent rating action: upgrade, downgrade, initiation or reiteration">Latest</Term>,
+    render: (s) => (
+      <span className={styles.badge} data-tone={actionTone(s.latest_action)}>{actionLabel(s.latest_action)}</span>
+    ) },
+  { key: "firm", label: "Firm", cellClassName: styles.firm, truncate: true, phone: "subtitle", skeleton: "80px",
+    render: (s) => s.latest_firm || "—" },
+  { key: "updated", label: "Updated", skeleton: "60px", render: (s) => <FreshnessCell fetched_at={s.fetched_at} /> },
+];
 
 function FreshnessCell({ fetched_at }) {
   const text = formatRelativeTime(fetched_at);
@@ -55,7 +58,6 @@ function actionLabel(action) {
 
 export default function AnalystPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
-  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data;
 
   return (
     <section className={styles.panel} id="analyst">
@@ -77,46 +79,8 @@ export default function AnalystPanel({ data, loading, busy, onRefresh, compact =
           </button>
         </div>
       ) : (
-        <ScrollHint className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th>Next Earnings</th>
-                <th className={styles.num}><Term tip="Number of analysts rating it Strong Buy">Str Buy</Term></th>
-                <th className={styles.num}>Buy</th>
-                <th className={styles.num}>Hold</th>
-                <th className={styles.num}>Sell</th>
-                <th><Term tip="The most recent rating action: upgrade, downgrade, initiation or reiteration">Latest</Term></th>
-                <th>Firm</th>
-                <th>Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <SkeletonRows />
-              ) : (
-                rows.map((s) => (
-                  <tr key={s.ticker}>
-                    <td><TickerLabel ticker={s.ticker} className={styles.ticker} /></td>
-                    <td className={styles.muted}>{s.next_earnings ? formatDate(s.next_earnings) : "—"}</td>
-                    <td className={styles.num}>{s.rec_strong_buy ?? "—"}</td>
-                    <td className={styles.num}>{s.rec_buy ?? "—"}</td>
-                    <td className={styles.num}>{s.rec_hold ?? "—"}</td>
-                    <td className={styles.num}>{s.rec_sell ?? "—"}</td>
-                    <td>
-                      <span className={styles.badge} data-tone={actionTone(s.latest_action)}>
-                        {actionLabel(s.latest_action)}
-                      </span>
-                    </td>
-                    <Tooltip truncate><td className={styles.firm}>{s.latest_firm || "—"}</td></Tooltip>
-                    <td><FreshnessCell fetched_at={s.fetched_at} /></td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </ScrollHint>
+        <DataTable columns={COLUMNS} rows={data} rowKey={(s) => s.ticker} limit={compact ? COMPACT_LIMIT : undefined}
+                   loading={loading} skeletonRows={6} stickyHeader />
       ))}
     </section>
   );

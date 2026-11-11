@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Button from "./Button";
+import DataTable from "./DataTable";
 import ExitRuleDialog from "./ExitRuleDialog";
 import { useExitRules } from "../hooks/useExitRules";
 import { openTickerTab } from "../lib/nav";
@@ -7,6 +8,8 @@ import { formatMoney } from "../lib/format";
 import styles from "./ExitRulesTable.module.css";
 
 const KIND_LABEL = { stop: "stop", take_profit: "target", trailing: "trail" };
+// Inside a narrow pane (a phone, or a side column) the rules are a list.
+const CARDS_BELOW = 640;
 
 function statusOf(item) {
   const r = item.rule;
@@ -29,6 +32,33 @@ export default function ExitRulesTable({ account = "manual", title = "Exit rules
 
   const held = items.filter((i) => i.held);
   const orphans = items.filter((i) => !i.held && i.rule);
+  const money = (i) => (v) => (v == null ? "—" : formatMoney(v, i.currency));
+  const columns = [
+    { key: "ticker", label: "Ticker", phone: "title",
+      render: (i) => (
+        <button type="button" className={styles.symbol} onClick={() => openTickerTab(i.ticker)}>{i.ticker}</button>
+      ) },
+    { key: "price", label: "Price", className: styles.num, render: (i) => money(i)(i.price) },
+    { key: "cost", label: "Avg cost", className: styles.num, render: (i) => money(i)(i.avg_cost) },
+    { key: "stop", label: "Stop", className: styles.num,
+      render: (i) => (i.levels?.stop != null ? money(i)(i.levels.stop) : i.suggested ? (
+        <span className={styles.suggested} title={i.suggested.reason}>suggested {money(i)(i.suggested.stop_price)}</span>
+      ) : "—") },
+    { key: "target", label: "Target", className: styles.num, render: (i) => money(i)(i.levels?.take_profit) },
+    { key: "trail", label: "Trail", className: styles.num,
+      render: (i) => (i.rule?.trailing_pct != null ? `${i.rule.trailing_pct}% → ${money(i)(i.levels?.trailing)}` : "—") },
+    { key: "status", label: "Status", phone: "subtitle",
+      render: (i) => {
+        const st = statusOf(i);
+        return <span className={styles.status} data-tone={st.tone}>{st.text}</span>;
+      } },
+    { key: "actions", label: "", caption: "Rule", headProps: { "aria-label": "Actions" }, phone: "value",
+      render: (i) => (
+        <Button size="sm" variant={i.rule ? "quiet" : "ghost"} onClick={() => setEditing(i)}>
+          {i.rule ? "Edit" : "Add rule"}
+        </Button>
+      ) },
+  ];
 
   return (
     <section className={styles.root} aria-labelledby={`rules-${account}`}>
@@ -42,56 +72,13 @@ export default function ExitRulesTable({ account = "manual", title = "Exit rules
       ) : held.length === 0 ? (
         <p className={styles.empty}>{emptyText}</p>
       ) : (
-        <div className={styles.wrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th scope="col">Ticker</th>
-                <th scope="col" className={styles.num}>Price</th>
-                <th scope="col" className={styles.num}>Avg cost</th>
-                <th scope="col" className={styles.num}>Stop</th>
-                <th scope="col" className={styles.num}>Target</th>
-                <th scope="col" className={styles.num}>Trail</th>
-                <th scope="col">Status</th>
-                <th scope="col" aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {held.map((i) => {
-                const st = statusOf(i);
-                const m = (v) => (v == null ? "—" : formatMoney(v, i.currency));
-                return (
-                  <tr key={i.ticker}>
-                    <td data-col="ticker">
-                      <button type="button" className={styles.symbol} onClick={() => openTickerTab(i.ticker)}>
-                        {i.ticker}
-                      </button>
-                    </td>
-                    <td data-col="price" className={styles.num}>{m(i.price)}</td>
-                    <td data-col="cost" className={styles.num}>{m(i.avg_cost)}</td>
-                    <td data-col="stop" className={styles.num}>
-                      {i.levels?.stop != null ? m(i.levels.stop) : i.suggested ? (
-                        <span className={styles.suggested} title={i.suggested.reason}>
-                          suggested {m(i.suggested.stop_price)}
-                        </span>
-                      ) : "—"}
-                    </td>
-                    <td data-col="target" className={styles.num}>{m(i.levels?.take_profit)}</td>
-                    <td data-col="trail" className={styles.num}>
-                      {i.rule?.trailing_pct != null ? `${i.rule.trailing_pct}% → ${m(i.levels?.trailing)}` : "—"}
-                    </td>
-                    <td data-col="status"><span className={styles.status} data-tone={st.tone}>{st.text}</span></td>
-                    <td data-col="actions">
-                      <Button size="sm" variant={i.rule ? "quiet" : "ghost"} onClick={() => setEditing(i)}>
-                        {i.rule ? "Edit" : "Add rule"}
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={columns}
+          rows={held}
+          rowKey={(i) => i.ticker}
+          cardsBelow={CARDS_BELOW}
+          classes={{ wrap: styles.wrap, table: styles.table }}
+        />
       )}
       {orphans.length > 0 && (
         <p className={styles.empty}>

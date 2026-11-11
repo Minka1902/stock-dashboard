@@ -1,4 +1,4 @@
-.root { container-type: inline-size; border-bottom: 1px solid var(--grid); }
+.root { border-bottom: 1px solid var(--grid); }
 .head {
   display: flex;
   flex-wrap: wrap;
@@ -70,36 +70,3 @@
 .status[data-tone="watching"] { color: var(--positive); border-color: var(--positive-weak); }
 .status[data-tone="fired"] { color: var(--negative); background: var(--negative-weak); }
 .status[data-tone="paused"] { color: var(--caution); border-color: var(--caution-weak); }
-
-/* Narrow (a phone): each holding is a small card. */
-@container (max-width: 640px) {
-  .wrap { overflow: visible; }
-  .table thead { display: none; }
-  .table, .table tbody { display: block; }
-  .table tr {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    grid-template-areas:
-      "ticker actions"
-      "price status"
-      "stop target"
-      "trail cost";
-    gap: 4px var(--s-2);
-    padding: var(--s-2) var(--s-3);
-    border-top: 1px solid var(--grid);
-  }
-  .table td { padding: 0; border: none; text-align: left; }
-  .table td[data-col="ticker"] { grid-area: ticker; }
-  .table td[data-col="actions"] { grid-area: actions; }
-  .table td[data-col="price"] { grid-area: price; }
-  .table td[data-col="status"] { grid-area: status; }
-  .table td[data-col="stop"] { grid-area: stop; }
-  .table td[data-col="target"] { grid-area: target; }
-  .table td[data-col="trail"] { grid-area: trail; }
-  .table td[data-col="cost"] { grid-area: cost; }
-  .table td[data-col="price"]::before { content: "Price "; color: var(--text-faint); }
-  .table td[data-col="stop"]::before { content: "Stop "; color: var(--text-faint); }
-  .table td[data-col="target"]::before { content: "Target "; color: var(--text-faint); }
-  .table td[data-col="trail"]::before { content: "Trail "; color: var(--text-faint); }
-  .table td[data-col="cost"]::before { content: "Cost "; color: var(--text-faint); }
-}

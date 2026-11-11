@@ -1,25 +1,33 @@
 import CollapseToggle from "./CollapseToggle";
+import DataTable from "./DataTable";
 import EmptyState from "./EmptyState";
-import ScrollHint from "./ScrollHint";
-import SortHeader from "./SortHeader";
 import Tooltip from "./Tooltip";
 import ViewAll from "./ViewAll";
-import { useSortableRows } from "../hooks/useSortableRows";
 import { formatCurrencyCompact, formatDate } from "../lib/format";
 import { openTickerTab } from "../lib/nav";
 import styles from "./InvestorsPanel.module.css";
 
 const COMPACT_LIMIT = 8;
 const MOVE_TONE = { NEW: "buy", ADDED: "buy", TRIMMED: "sell", "SOLD OUT": "sell" };
-const COLUMNS = {
-  filer: (m) => m.filer,
-  move: (m) => m.status,
-  ticker: (m) => m.ticker || m.issuer,
-  change: (m) => m.change_pct,
-  value: (m) => Math.max(m.value, m.prev_value),
-  pct: (m) => m.pct,
-};
 const EDGAR = (f) => `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${f.cik}&type=13F-HR`;
+
+const COLUMNS = [
+  { key: "filer", label: "Investor", phone: "subtitle", sort: (m) => m.filer,
+    render: (m) => <Tooltip content={m.person}><span className={styles.filer}>{m.filer}</span></Tooltip> },
+  { key: "move", label: "Move", phone: "subtitle", sort: (m) => m.status,
+    render: (m) => <span className={styles.badge} data-tone={MOVE_TONE[m.status]}>{m.status.toLowerCase()}</span> },
+  { key: "ticker", label: "Stock", phone: "title", sort: (m) => m.ticker || m.issuer,
+    render: (m) => (m.ticker ? (
+      <button type="button" className={styles.ticker} onClick={() => openTickerTab(m.ticker)}
+              title={`${m.issuer} · ticker matched by ${m.ticker_source}`}>{m.ticker}</button>
+    ) : <span className={styles.muted} title="no ticker matched">{m.issuer}</span>) },
+  { key: "change", label: "Change", cellClassName: styles.muted, sort: (m) => m.change_pct,
+    render: changeText },
+  { key: "value", label: "Value", className: styles.num, phone: "value", sort: (m) => Math.max(m.value, m.prev_value),
+    render: (m) => formatCurrencyCompact(Math.max(m.value, m.prev_value)) },
+  { key: "pct", label: "% of 13F", className: styles.num, phone: "value", sort: (m) => m.pct, render: pctText },
+  { key: "period", label: "As of", cellClassName: styles.muted, phone: "subtitle", render: (m) => formatDate(m.period) },
+];
 
 function pctText(m) {
   if (m.status === "SOLD OUT") return "—";
@@ -43,8 +51,6 @@ export default function InvestorsPanel({ data, loading, busy, onRefresh, compact
   collapsible = false, collapsed = false, onToggleCollapse }) {
   const moves = data?.moves || [];
   const filers = data?.filers || [];
-  const { sorted, sortProps } = useSortableRows(moves, COLUMNS);
-  const rows = compact ? sorted.slice(0, COMPACT_LIMIT) : sorted;
 
   return (
     <section className={styles.panel} id="investors">
@@ -64,41 +70,14 @@ export default function InvestorsPanel({ data, loading, busy, onRefresh, compact
         <EmptyState icon="layers" title="No 13F filings loaded yet" onRetry={onRefresh} busy={busy} />
       ) : (
         <>
-          <ScrollHint className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <SortHeader label="Investor" {...sortProps("filer")} />
-                  <SortHeader label="Move" {...sortProps("move")} />
-                  <SortHeader label="Stock" {...sortProps("ticker")} />
-                  <SortHeader label="Change" {...sortProps("change")} />
-                  <SortHeader label="Value" className={styles.num} {...sortProps("value")} />
-                  <SortHeader label="% of 13F" className={styles.num} {...sortProps("pct")} />
-                  <th>As of</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((m) => (
-                  <tr key={`${m.cik}:${m.cusip}`}>
-                    <td>
-                      <Tooltip content={m.person}><span className={styles.filer}>{m.filer}</span></Tooltip>
-                    </td>
-                    <td><span className={styles.badge} data-tone={MOVE_TONE[m.status]}>{m.status.toLowerCase()}</span></td>
-                    <td>
-                      {m.ticker ? (
-                        <button type="button" className={styles.ticker} onClick={() => openTickerTab(m.ticker)}
-                                title={`${m.issuer} · ticker matched by ${m.ticker_source}`}>{m.ticker}</button>
-                      ) : <span className={styles.muted} title="no ticker matched">{m.issuer}</span>}
-                    </td>
-                    <td className={styles.muted}>{changeText(m)}</td>
-                    <td className={styles.num}>{formatCurrencyCompact(Math.max(m.value, m.prev_value))}</td>
-                    <td className={styles.num}>{pctText(m)}</td>
-                    <td className={styles.muted}>{formatDate(m.period)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </ScrollHint>
+          <DataTable
+            columns={COLUMNS}
+            rows={moves}
+            rowKey={(m) => `${m.cik}:${m.cusip}`}
+            rowLabel={(m) => `${m.filer}: ${m.ticker || m.issuer}`}
+            limit={compact ? COMPACT_LIMIT : undefined}
+            classes={{ wrap: styles.tableWrap, table: styles.table }}
+          />
           {!compact && filers.length > 0 && (
             <ul className={styles.filers}>
               {filers.map((f) => (

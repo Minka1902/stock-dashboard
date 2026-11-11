@@ -25,56 +25,10 @@
   font-size: var(--fs-12-5);
 }
 
-.tableWrap {
-  overflow-x: auto;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--fs-13-5);
-}
-
-.table thead th.num {
-  text-align: right;
-}
-.table thead th {
-  position: sticky;
-  z-index: var(--z-sticky);
-  top: 0;
-  text-align: left;
-  font-size: var(--fs-11);
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--text-faint);
-  background: var(--surface-2);
-  padding: 10px var(--gutter, var(--s-5));
-  white-space: nowrap;
-}
-
-.table tbody td {
-  padding: 11px var(--gutter, var(--s-5));
-  border-top: 1px solid var(--border);
-  vertical-align: middle;
-}
-
-.table tbody tr:nth-child(even) {
-  background: color-mix(in oklch, var(--surface-2) 45%, transparent);
-}
-.table tbody tr:hover {
-  background: var(--surface-hover);
-}
-
 .ticker {
   font-family: var(--mono);
   font-weight: 700;
   color: var(--accent-text);
-}
-
-.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 .muted {

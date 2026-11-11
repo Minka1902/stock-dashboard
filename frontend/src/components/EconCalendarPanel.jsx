@@ -1,41 +1,38 @@
 import { useMemo, useState } from "react";
+import DataTable from "./DataTable";
 import Icon from "./Icon";
-import Skeleton from "./Skeleton";
 import SuggestionHistoryPreview from "./SuggestionHistoryPreview";
 import { formatDate } from "../lib/format";
 import styles from "./EconCalendarPanel.module.css";
 import Tooltip from "./Tooltip";
-import ScrollHint from "./ScrollHint";
 
 const IMPORTANCE_LABEL = { high: "High impact", medium: "Medium impact", low: "Low impact" };
 
-function SkeletonRows({ rows = 8 }) {
-  return Array.from({ length: rows }).map((_, i) => (
-    <tr key={i}>
-      <td><Skeleton w="48px" /></td>
-      <td><Skeleton w="14px" /></td>
-      <td><Skeleton w="200px" /></td>
-      <td><Skeleton w="56px" /></td>
-      <td><Skeleton w="56px" /></td>
-      <td><Skeleton w="56px" /></td>
-    </tr>
-  ));
-}
-
-// Group events into ordered [dateLabel, rows[]] buckets, preserving array order
-// (the API already sorts by date then time).
-function groupByDate(events) {
-  const groups = [];
-  const index = new Map();
-  for (const ev of events) {
-    if (!index.has(ev.date)) {
-      index.set(ev.date, groups.length);
-      groups.push([ev.date, []]);
-    }
-    groups[index.get(ev.date)][1].push(ev);
-  }
-  return groups;
-}
+// Rows arrive sorted by date then time; each date is a group.
+const COLUMNS = [
+  { key: "time", label: "Time", cellClassName: styles.time, phone: "subtitle", skeleton: "48px",
+    render: (ev) => ev.time || "—" },
+  { key: "impact", label: "", caption: "Impact", headProps: { "aria-label": "Impact" }, phone: "subtitle",
+    skeleton: "14px",
+    render: (ev) => (
+      <Tooltip content={IMPORTANCE_LABEL[ev.importance] || ev.importance}>
+        <span className={styles.dot} data-impact={ev.importance} role="img"
+              aria-label={IMPORTANCE_LABEL[ev.importance] || ev.importance} />
+      </Tooltip>
+    ) },
+  { key: "event", label: "Event", cellClassName: styles.event, phone: "title", skeleton: "200px",
+    render: (ev) => (
+      <>
+        <Tooltip truncate><span className={styles.eventName}>{ev.event}</span></Tooltip>
+        {ev.country && <span className={styles.country}>{ev.country}</span>}
+      </>
+    ) },
+  { key: "actual", label: "Actual", className: styles.num, cellClassName: (ev) => (ev.actual ? styles.actual : ""),
+    phone: "value", skeleton: "56px", render: (ev) => ev.actual || "—" },
+  { key: "forecast", label: "Forecast", className: styles.num, skeleton: "56px", render: (ev) => ev.forecast || "—" },
+  { key: "previous", label: "Previous", className: styles.num, cellClassName: styles.muted, skeleton: "56px",
+    render: (ev) => ev.previous || "—" },
+];
 
 export default function EconCalendarPanel({ data = [], loading, busy, onRefresh, onNavigate }) {
   const [highOnly, setHighOnly] = useState(false);
@@ -44,7 +41,6 @@ export default function EconCalendarPanel({ data = [], loading, busy, onRefresh,
     () => (highOnly ? data.filter((e) => e.importance === "high") : data),
     [data, highOnly],
   );
-  const groups = useMemo(() => groupByDate(filtered), [filtered]);
 
   // Impact ratings are uniform per fetch: official from FMP, or our curated read.
   const curated = data.length > 0 && data.every((e) => e.importance_source === "curated");
@@ -93,65 +89,18 @@ export default function EconCalendarPanel({ data = [], loading, busy, onRefresh,
           </button>
         </div>
       ) : (
-        <ScrollHint className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th aria-label="Impact"></th>
-                <th>Event</th>
-                <th className={styles.num}>Actual</th>
-                <th className={styles.num}>Forecast</th>
-                <th className={styles.num}>Previous</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <SkeletonRows />
-              ) : (
-                groups.map(([date, rows]) => (
-                  <DateGroup key={date} date={date} rows={rows} />
-                ))
-              )}
-            </tbody>
-          </table>
-        </ScrollHint>
+        <DataTable
+          columns={COLUMNS}
+          rows={filtered}
+          rowKey={(ev) => ev.event_id}
+          rowLabel={(ev) => ev.event}
+          loading={loading}
+          groupBy={(ev) => ev.date}
+          groupHeader={(date) => ({ time: formatDate(date) })}
+          classes={{ wrap: styles.tableWrap, table: styles.table, groupRow: styles.dateRow }}
+        />
       )}
     </section>
-    </>
-  );
-}
-
-function DateGroup({ date, rows }) {
-  return (
-    <>
-      <tr className={styles.dateRow}>
-        <td colSpan={6}>{formatDate(date)}</td>
-      </tr>
-      {rows.map((ev) => (
-        <tr key={ev.event_id}>
-          <td className={styles.time}>{ev.time || "—"}</td>
-          <td>
-            <Tooltip content={IMPORTANCE_LABEL[ev.importance] || ev.importance}>
-              <span
-                className={styles.dot}
-                data-impact={ev.importance}
-                role="img"
-                aria-label={IMPORTANCE_LABEL[ev.importance] || ev.importance}
-              />
-            </Tooltip>
-          </td>
-          <td className={styles.event}>
-            <Tooltip truncate><span className={styles.eventName}>{ev.event}</span></Tooltip>
-            {ev.country && <span className={styles.country}>{ev.country}</span>}
-          </td>
-          <td className={`${styles.num} ${ev.actual ? styles.actual : ""}`}>
-            {ev.actual || "—"}
-          </td>
-          <td className={styles.num}>{ev.forecast || "—"}</td>
-          <td className={`${styles.num} ${styles.muted}`}>{ev.previous || "—"}</td>
-        </tr>
-      ))}
     </>
   );
 }

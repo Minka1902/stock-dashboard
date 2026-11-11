@@ -1,13 +1,39 @@
 import Icon from "./Icon";
-import Skeleton from "./Skeleton";
+import DataTable from "./DataTable";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import styles from "./FundamentalsPanel.module.css";
 import Term from "./Term";
-import Tooltip from "./Tooltip";
-import ScrollHint from "./ScrollHint";
 
 const COMPACT_LIMIT = 5;
+
+const COLUMNS = [
+  { key: "ticker", label: "Ticker", phone: "title", skeleton: "48px",
+    render: (f) => <span className={styles.ticker}>{f.ticker}</span> },
+  { key: "sector", label: "Sector", cellClassName: styles.sector, truncate: true, phone: "subtitle", skeleton: "80px",
+    render: (f) => f.sector || "—" },
+  { key: "pe", caption: "P/E", align: "end", phone: "value", skeleton: "40px",
+    label: <Term term="pe_ratio" tip="This column is the trailing (last 12 months) P/E.">P/E</Term>,
+    render: (f) => fmtRatio(f.pe_ratio) },
+  { key: "fpe", caption: "Fwd P/E", align: "end", skeleton: "40px",
+    label: <Term term="pe_ratio" tip="This column is the forward P/E, from analysts' next-12-month estimates.">Fwd P/E</Term>,
+    render: (f) => fmtRatio(f.forward_pe) },
+  { key: "peg", caption: "PEG", label: <Term term="peg">PEG</Term>, align: "end", skeleton: "36px",
+    render: (f) => (f.peg_ratio != null ? f.peg_ratio.toFixed(2) : "—") },
+  { key: "pb", caption: "P/B", label: <Term term="price_to_book">P/B</Term>, align: "end", skeleton: "40px",
+    render: (f) => fmtRatio(f.pb_ratio) },
+  { key: "growth", caption: "Rev growth", align: "end", cellClassName: styles.growth, phone: "value", skeleton: "52px",
+    label: <Term tip="Revenue growth, year over year">Rev Growth</Term>,
+    cellProps: (f) => ({ "data-tone": growthTone(f.revenue_growth) }),
+    tone: (f) => growthTone(f.revenue_growth),
+    render: (f) => fmtPct(f.revenue_growth) },
+  { key: "margin", caption: "Margin", align: "end", skeleton: "52px",
+    label: <Term tip="Profit margin: net income as a share of revenue">Margin</Term>,
+    render: (f) => fmtPct(f.profit_margin) },
+  { key: "cap", caption: "Mkt cap", align: "end", skeleton: "60px",
+    label: <Term tip="Market capitalisation: share price × shares outstanding">Mkt Cap</Term>,
+    render: (f) => fmtCap(f.market_cap) },
+];
 
 function fmtRatio(v) {
   if (v == null) return "—";
@@ -34,25 +60,8 @@ function growthTone(v) {
   return "neutral";
 }
 
-function SkeletonRows({ rows = 5 }) {
-  return Array.from({ length: rows }).map((_, i) => (
-    <tr key={i}>
-      <td><Skeleton w="48px" /></td>
-      <td><Skeleton w="80px" /></td>
-      <td><Skeleton w="40px" /></td>
-      <td><Skeleton w="40px" /></td>
-      <td><Skeleton w="36px" /></td>
-      <td><Skeleton w="40px" /></td>
-      <td><Skeleton w="52px" /></td>
-      <td><Skeleton w="52px" /></td>
-      <td><Skeleton w="60px" /></td>
-    </tr>
-  ));
-}
-
 export default function FundamentalsPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
-  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data;
 
   return (
     <section className={styles.panel} id="fundamentals">
@@ -74,44 +83,8 @@ export default function FundamentalsPanel({ data, loading, busy, onRefresh, comp
           </button>
         </div>
       ) : (
-        <ScrollHint className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th>Sector</th>
-                <th className={styles.num}><Term term="pe_ratio" tip="This column is the trailing (last 12 months) P/E.">P/E</Term></th>
-                <th className={styles.num}><Term term="pe_ratio" tip="This column is the forward P/E, from analysts' next-12-month estimates.">Fwd P/E</Term></th>
-                <th className={styles.num}><Term term="peg">PEG</Term></th>
-                <th className={styles.num}><Term term="price_to_book">P/B</Term></th>
-                <th className={styles.num}><Term tip="Revenue growth, year over year">Rev Growth</Term></th>
-                <th className={styles.num}><Term tip="Profit margin: net income as a share of revenue">Margin</Term></th>
-                <th className={styles.num}><Term tip="Market capitalisation: share price × shares outstanding">Mkt Cap</Term></th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <SkeletonRows />
-              ) : (
-                rows.map((f) => (
-                  <tr key={f.ticker}>
-                    <td><span className={styles.ticker}>{f.ticker}</span></td>
-                    <Tooltip truncate><td className={styles.sector}>{f.sector || "—"}</td></Tooltip>
-                    <td className={styles.num}>{fmtRatio(f.pe_ratio)}</td>
-                    <td className={styles.num}>{fmtRatio(f.forward_pe)}</td>
-                    <td className={styles.num}>{f.peg_ratio != null ? f.peg_ratio.toFixed(2) : "—"}</td>
-                    <td className={styles.num}>{fmtRatio(f.pb_ratio)}</td>
-                    <td className={`${styles.num} ${styles.growth}`} data-tone={growthTone(f.revenue_growth)}>
-                      {fmtPct(f.revenue_growth)}
-                    </td>
-                    <td className={styles.num}>{fmtPct(f.profit_margin)}</td>
-                    <td className={styles.num}>{fmtCap(f.market_cap)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </ScrollHint>
+        <DataTable columns={COLUMNS} rows={data} rowKey={(f) => f.ticker} limit={compact ? COMPACT_LIMIT : undefined}
+                   loading={loading} skeletonRows={5} stickyHeader />
       ))}
     </section>
   );

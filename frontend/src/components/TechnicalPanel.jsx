@@ -1,6 +1,6 @@
 import { LineChart, Line, ResponsiveContainer } from "recharts";
+import DataTable from "./DataTable";
 import Icon from "./Icon";
-import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import { currencyForSymbol, formatMoney, formatRelativeTime, freshnessTone } from "../lib/format";
@@ -10,10 +10,46 @@ const money = (v, t) => formatMoney(v, currencyForSymbol(t) || "USD", { compact:
 import styles from "./TechnicalPanel.module.css";
 import Tooltip from "./Tooltip";
 import Term from "./Term";
-import ScrollHint from "./ScrollHint";
 import { freshnessTip } from "../lib/freshness";
 
 const COMPACT_LIMIT = 5;
+const priceCol = (key, label, field) => ({
+  key, label, caption: typeof label === "string" ? label : undefined, className: styles.num, cellClassName: "tabular",
+  skeleton: "52px", render: (s) => (s[field] != null ? money(s[field], s.ticker) : "—"),
+});
+
+const COLUMNS = [
+  { key: "ticker", label: "Ticker", cellClassName: styles.ticker, phone: "title", skeleton: "50px",
+    render: (s) => s.ticker },
+  { ...priceCol("price", "Price", "price"), phone: "value" },
+  { key: "chg", caption: "Chg%", label: <Term tip="Change since the previous close, in percent">Chg%</Term>,
+    className: styles.num, cellClassName: "tabular", phone: "value", skeleton: "44px",
+    tone: (s) => (s.change_pct == null ? null : s.change_pct >= 0 ? "pos" : "neg"),
+    render: (s) => (s.change_pct != null ? (
+      <span data-tone={s.change_pct >= 0 ? "pos" : "neg"} className={styles.chg}>
+        {s.change_pct >= 0 ? "+" : ""}{s.change_pct.toFixed(2)}%
+      </span>
+    ) : "—") },
+  { key: "rsi", caption: "RSI14", label: <Term term="rsi" tip="Computed over 14 days.">RSI14</Term>,
+    className: styles.num, skeleton: "38px", render: (s) => <RsiCell rsi={s.rsi14} /> },
+  { ...priceCol("ma50", <Term term="moving_average" tip="MA50: the 50-day average.">MA50</Term>, "ma50"), caption: "MA50" },
+  { ...priceCol("ma200", <Term term="moving_average" tip="MA200: the 200-day average.">MA200</Term>, "ma200"),
+    caption: "MA200" },
+  { key: "cross", caption: "Cross", phone: "subtitle", skeleton: "56px",
+    label: <Term tip="Golden: MA50 is above MA200 (uptrend). Death: MA50 is below MA200 (downtrend).">Cross</Term>,
+    render: (s) => <CrossCell golden_cross={s.golden_cross} /> },
+  { key: "macd", caption: "MACD", skeleton: "64px",
+    label: <Term term="macd" tip="Shows “Crossover” when it just crossed its signal line; otherwise the MACD value.">MACD</Term>,
+    render: (s) => <MacdCell macd_crossover={s.macd_crossover} macd={s.macd} /> },
+  { key: "vol", caption: "Vol ratio", label: <Term term="relative_volume">Vol Ratio</Term>, className: styles.num,
+    skeleton: "40px", render: (s) => <VolCell rel_volume={s.rel_volume} /> },
+  { ...priceCol("hi", <Term tip="Highest price in the last 52 weeks">52W Hi</Term>, "high_52w"), caption: "52W hi" },
+  { ...priceCol("lo", <Term tip="Lowest price in the last 52 weeks">52W Lo</Term>, "low_52w"), caption: "52W lo" },
+  { key: "trend", caption: "Trend", skeleton: "60px",
+    label: <Term tip="Recent closing prices; green if the last is above the first">Trend</Term>,
+    render: (s) => <MiniSparkline pricesJson={s.prices_json} /> },
+  { key: "updated", label: "Updated", skeleton: "56px", render: (s) => <FreshnessCell fetched_at={s.fetched_at} /> },
+];
 
 function RsiCell({ rsi }) {
   if (rsi == null) return <span className={styles.muted}>—</span>;
@@ -81,29 +117,8 @@ function MiniSparkline({ pricesJson }) {
   );
 }
 
-function SkeletonRows({ rows = 5 }) {
-  return Array.from({ length: rows }).map((_, i) => (
-    <tr key={i}>
-      <td><Skeleton w="50px" /></td>
-      <td className={styles.num}><Skeleton w="52px" /></td>
-      <td className={styles.num}><Skeleton w="44px" /></td>
-      <td className={styles.num}><Skeleton w="38px" /></td>
-      <td className={styles.num}><Skeleton w="52px" /></td>
-      <td className={styles.num}><Skeleton w="52px" /></td>
-      <td><Skeleton w="56px" /></td>
-      <td><Skeleton w="64px" /></td>
-      <td className={styles.num}><Skeleton w="40px" /></td>
-      <td className={styles.num}><Skeleton w="52px" /></td>
-      <td className={styles.num}><Skeleton w="52px" /></td>
-      <td><Skeleton w="60px" /></td>
-      <td><Skeleton w="56px" /></td>
-    </tr>
-  ));
-}
-
 export default function TechnicalPanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
-  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data;
 
   return (
     <section className={styles.panel} id="signals">
@@ -127,56 +142,15 @@ export default function TechnicalPanel({ data, loading, busy, onRefresh, compact
           </button>
         </div>
       ) : (
-        <ScrollHint className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th className={styles.num}>Price</th>
-                <th className={styles.num}><Term tip="Change since the previous close, in percent">Chg%</Term></th>
-                <th className={styles.num}><Term term="rsi" tip="Computed over 14 days.">RSI14</Term></th>
-                <th className={styles.num}><Term term="moving_average" tip="MA50: the 50-day average.">MA50</Term></th>
-                <th className={styles.num}><Term term="moving_average" tip="MA200: the 200-day average.">MA200</Term></th>
-                <th><Term tip="Golden: MA50 is above MA200 (uptrend). Death: MA50 is below MA200 (downtrend).">Cross</Term></th>
-                <th><Term term="macd" tip="Shows “Crossover” when it just crossed its signal line; otherwise the MACD value.">MACD</Term></th>
-                <th className={styles.num}><Term term="relative_volume">Vol Ratio</Term></th>
-                <th className={styles.num}><Term tip="Highest price in the last 52 weeks">52W Hi</Term></th>
-                <th className={styles.num}><Term tip="Lowest price in the last 52 weeks">52W Lo</Term></th>
-                <th><Term tip="Recent closing prices; green if the last is above the first">Trend</Term></th>
-                <th>Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <SkeletonRows />
-              ) : (
-                rows.map((s) => (
-                  <tr key={s.ticker}>
-                    <td className={styles.ticker}>{s.ticker}</td>
-                    <td className={`${styles.num} tabular`}>{s.price != null ? money(s.price, s.ticker) : "—"}</td>
-                    <td className={`${styles.num} tabular`}>
-                      {s.change_pct != null ? (
-                        <span data-tone={s.change_pct >= 0 ? "pos" : "neg"} className={styles.chg}>
-                          {s.change_pct >= 0 ? "+" : ""}{s.change_pct.toFixed(2)}%
-                        </span>
-                      ) : "—"}
-                    </td>
-                    <td className={styles.num}><RsiCell rsi={s.rsi14} /></td>
-                    <td className={`${styles.num} tabular`}>{s.ma50 != null ? money(s.ma50, s.ticker) : "—"}</td>
-                    <td className={`${styles.num} tabular`}>{s.ma200 != null ? money(s.ma200, s.ticker) : "—"}</td>
-                    <td><CrossCell golden_cross={s.golden_cross} /></td>
-                    <td><MacdCell macd_crossover={s.macd_crossover} macd={s.macd} /></td>
-                    <td className={styles.num}><VolCell rel_volume={s.rel_volume} /></td>
-                    <td className={`${styles.num} tabular`}>{s.high_52w != null ? money(s.high_52w, s.ticker) : "—"}</td>
-                    <td className={`${styles.num} tabular`}>{s.low_52w != null ? money(s.low_52w, s.ticker) : "—"}</td>
-                    <td><MiniSparkline pricesJson={s.prices_json} /></td>
-                    <td><FreshnessCell fetched_at={s.fetched_at} /></td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </ScrollHint>
+        <DataTable
+          columns={COLUMNS}
+          rows={data}
+          rowKey={(s) => s.ticker}
+          limit={compact ? COMPACT_LIMIT : undefined}
+          loading={loading}
+          skeletonRows={5}
+          classes={{ wrap: styles.tableWrap, table: styles.table }}
+        />
       ))}
     </section>
   );

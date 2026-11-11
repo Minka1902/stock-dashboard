@@ -2,7 +2,9 @@
 
 .sortBar {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: var(--s-2);
   padding: var(--s-2) var(--gutter, var(--s-3));
   border-bottom: 1px solid var(--grid);
 }

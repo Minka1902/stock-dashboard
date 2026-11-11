@@ -1,13 +1,25 @@
 import { useEffect, useState } from "react";
 import Button from "./Button";
+import DataTable from "./DataTable";
 import Field from "./Field";
 import PaperTradeButton from "./PaperTradeButton";
-import ScrollHint from "./ScrollHint";
 import { getRebalance, getTargets, saveTargets } from "../api";
 import { formatMoney } from "../lib/format";
 import styles from "./RebalancePlanner.module.css";
 
 const blankRow = () => ({ ticker: "", weight: "" });
+
+const DRIFT_COLUMNS = [
+  { key: "ticker", label: "Ticker", cellClassName: styles.ticker, phone: "title", render: (r) => r.ticker },
+  { key: "now", label: "Now", className: styles.num, phone: "value", render: (r) => <>{r.current_pct.toFixed(1)}%</> },
+  { key: "target", label: "Target", className: styles.num, phone: "subtitle",
+    render: (r) => (r.target_pct == null ? "—" : `${r.target_pct}%`),
+    phoneRender: (r) => (r.target_pct == null ? "no target" : `target ${r.target_pct}%`) },
+  { key: "drift", label: "Drift", className: styles.num, phone: "value",
+    tone: (r) => (r.drift > 0 ? "pos" : r.drift < 0 ? "neg" : null),
+    render: (r) => (r.drift == null ? "—" : `${r.drift > 0 ? "+" : ""}${r.drift.toFixed(1)}`) },
+  { key: "action", label: "Action", cellClassName: styles.faint, phone: "subtitle", render: (r) => r.action },
+];
 
 /**
  * Target weights for an account and the plan back to them: the drift table
@@ -98,24 +110,7 @@ export default function RebalancePlanner({ account, onPlaced }) {
           <p className={styles.faint}>
             Account {m(plan.account_value)} · cash {m(plan.cash)} → {m(plan.cash_after)} after the trades · band {plan.band} points
           </p>
-          <ScrollHint className={styles.wrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr><th>Ticker</th><th className={styles.num}>Now</th><th className={styles.num}>Target</th><th className={styles.num}>Drift</th><th>Action</th></tr>
-              </thead>
-              <tbody>
-                {plan.rows.map((r) => (
-                  <tr key={r.ticker}>
-                    <td className={styles.ticker}>{r.ticker}</td>
-                    <td className={styles.num}>{r.current_pct.toFixed(1)}%</td>
-                    <td className={styles.num}>{r.target_pct == null ? "—" : `${r.target_pct}%`}</td>
-                    <td className={styles.num}>{r.drift == null ? "—" : `${r.drift > 0 ? "+" : ""}${r.drift.toFixed(1)}`}</td>
-                    <td className={styles.faint}>{r.action}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </ScrollHint>
+          <DataTable columns={DRIFT_COLUMNS} rows={plan.rows} rowKey={(r) => r.ticker} dense />
           {plan.orders.length === 0 ? <p className={styles.faint}>Nothing is outside the band.</p> : (
             <ul className={styles.orders}>
               {plan.orders.map((o) => (
