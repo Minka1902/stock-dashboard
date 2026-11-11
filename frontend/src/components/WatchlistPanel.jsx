@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { AnimatePresence, Reorder, useDragControls } from "motion/react";
+import DragHandle from "./DragHandle";
 import Icon from "./Icon";
 import ExtHoursBadge from "./ExtHoursBadge";
 import MenuButton, { MenuDivider, MenuItem, MenuLabel } from "./MenuButton";
@@ -9,22 +10,35 @@ import TickerLabel from "./TickerLabel";
 import { useWatchlists } from "../hooks/useWatchlists";
 import { useLocalOrder } from "../hooks/useLocalOrder";
 import { useSparklines } from "../hooks/useSparklines";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { openTickerTab } from "../lib/nav";
 import { prefersReducedMotion, staggerItem } from "../lib/motionConfig";
 import { currencyForSymbol, formatPrice, formatRelativeTime } from "../lib/format";
 import styles from "./WatchlistPanel.module.css";
 import Tooltip from "./Tooltip";
 
+const itemId = (w) => w.ticker;
+
+const MARKET_STATE_TIP = {
+  LIVE: "Regular session open — the price is live.",
+  REGULAR: "Regular session open — the price is live.",
+  CLOSED: "Market closed — showing the last traded price.",
+};
+
+// On a phone each row is two lines, with a narrower sparkline.
+const PHONE = "(max-width: 640px)";
+const PHONE_SPARK_WIDTH = 64;
+
 function changeTone(pct) {
   if (pct == null) return "flat";
   return pct >= 0 ? "pos" : "neg";
 }
 
-const itemId = (w) => w.ticker;
-
 /**
  * One reorderable row. useDragControls has to live in a component per row —
- * hooks can't be called inside the map in the parent.
+ * hooks can't be called inside the map in the parent. dragListener={false}
+ * confines dragging to the DragHandle, which keeps the row's inline note
+ * editor and kebab menu clickable instead of swallowing every press as a drag.
  */
 function WatchRow({ item, position, total, onMove, children }) {
   const controls = useDragControls();
@@ -44,52 +58,12 @@ function WatchRow({ item, position, total, onMove, children }) {
     >
       <DragHandle
         controls={controls}
-        ticker={item.ticker}
+        className={styles.handle}
+        label={`Reorder ${item.ticker}. Position ${position} of ${total}. Use arrow up and down to move.`}
         onMove={onMove}
-        position={position}
-        total={total}
       />
       {children}
     </Reorder.Item>
-  );
-}
-
-/**
- * A drag handle that also works from the keyboard.
- *
- * Reorder.Item is pointer-only, so on its own it would make reordering
- * mouse-exclusive. dragListener={false} + dragControls confines dragging to
- * this handle, which also keeps the row's inline note editor and kebab menu
- * clickable instead of swallowing every press as a drag.
- */
-const MARKET_STATE_TIP = {
-  LIVE: "Regular session open — the price is live.",
-  REGULAR: "Regular session open — the price is live.",
-  CLOSED: "Market closed — showing the last traded price.",
-};
-
-function DragHandle({ controls, ticker, onMove, position, total }) {
-  return (
-    <Tooltip content="Drag to reorder — or focus it and use the arrow keys" shortcut={[["↑"], ["↓"]]}>
-    <button
-      type="button"
-      className={styles.handle}
-      aria-label={`Reorder ${ticker}. Position ${position} of ${total}. Use arrow up and down to move.`}
-      onPointerDown={(e) => {
-        e.preventDefault(); // don't start a text selection while dragging
-        // preventDefault on pointerdown also suppresses the browser's default
-        // focus step, which would silently break the keyboard path below.
-        e.currentTarget.focus();
-        controls.start(e);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "ArrowUp") { e.preventDefault(); onMove(-1); }
-        if (e.key === "ArrowDown") { e.preventDefault(); onMove(1); }
-      }}
-    >
-      <Icon name="grip" size={14} />
-    </button>
-    </Tooltip>
   );
 }
 
@@ -104,6 +78,7 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
   const [range, setRange] = useState("1m");
+  const phone = useMediaQuery(PHONE);
 
   // Manual ordering, remembered locally per list. Server-side ordering would
   // need a schema column; local is enough while this is a single-device
@@ -363,6 +338,7 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
                 error={sparks[w.ticker]?.error}
                 loading={!sparks[w.ticker]}
                 range={range}
+                width={phone ? PHONE_SPARK_WIDTH : undefined}
               />
               {noteTicker === w.ticker ? (
                 <input

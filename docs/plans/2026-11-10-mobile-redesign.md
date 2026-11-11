@@ -270,7 +270,7 @@ Tick an item in the same commit that completes it.
 - [x] Phase 2 — STC-99 shell (ticker tape, top bar, nav pins)
 - [x] Phase 2 — STC-108 back-to-top
 - [x] Phase 2 — STC-91 alerts
-- [ ] Phase 2 — STC-107 watchlist touch
+- [x] Phase 2 — STC-107 watchlist touch
 - [ ] Phase 3 — STC-98 font-size migration
 - [ ] Phase 3 — STC-100 layout contract
 - [ ] Phase 4 — STC-101 DataTable + sheet menus + Segmented scroll + SectionIndex

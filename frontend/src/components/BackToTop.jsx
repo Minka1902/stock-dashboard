@@ -16,18 +16,22 @@ export default function BackToTop({ scrollRef, threshold = 600 }) {
   useEffect(() => {
     const el = scrollRef?.current;
     if (!el) return undefined;
-    let ticking = false;
+    // One read per frame, and none after unmount: a frame still pending when
+    // the view changes must not touch a scroller that is gone.
+    let frame = 0;
     const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(() => {
-        setVisible(el.scrollTop > threshold);
-        ticking = false;
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        setVisible(el.isConnected && el.scrollTop > threshold);
       });
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     onScroll();
-    return () => el.removeEventListener("scroll", onScroll);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+    };
   }, [scrollRef, threshold]);
 
   const toTop = () => {

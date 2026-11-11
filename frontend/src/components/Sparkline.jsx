@@ -14,7 +14,7 @@ export default function Sparkline({
   width = 92, height = 30,
 }) {
   if (loading) return <span className={styles.dash} style={{ width }}>···</span>;
-  if (error || !closes || closes.length < 2) {
+  if (error || !Array.isArray(closes) || closes.length < 2) {
     return (
       <Tooltip content={error ? "No price history available for this range" : "Not enough price history to draw a trend"}>
         <span className={styles.dash} style={{ width }}>—</span>
