@@ -9,7 +9,7 @@ export default function MetricTiles({ items }) {
   return (
     <dl className={styles.tiles}>
       {items.map((m) => (
-        <div key={m.key} className={styles.tile}>
+        <div key={m.key} className={styles.tile} data-card>
           <dt>{m.tip ? <Term tip={m.tip}>{m.label}</Term> : m.label}</dt>
           <dd data-tone={m.value == null ? "none" : m.tone || "flat"}>{m.value ?? "—"}</dd>
         </div>

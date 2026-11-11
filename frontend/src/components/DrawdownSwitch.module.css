@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
 }
 .card[data-state="tripped"] { background: var(--negative-weak); }
@@ -49,7 +49,3 @@
 }
 .actions { display: flex; gap: var(--s-2); }
 .error { color: var(--negative); font-size: var(--fs-12-5); }
-
-@media (max-width: 640px) {
-  .card { padding-inline: var(--s-3); }
-}

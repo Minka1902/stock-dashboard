@@ -12,7 +12,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s-3);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
 }
 
@@ -35,7 +35,7 @@
 .form {
   display: flex;
   gap: var(--s-2);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
   flex-wrap: wrap;
 }
@@ -83,7 +83,7 @@
 }
 
 .error {
-  padding: 8px var(--s-4);
+  padding: 8px var(--gutter, var(--s-4));
   color: var(--negative);
   font-family: var(--mono);
   font-size: var(--fs-12);
@@ -116,13 +116,13 @@
   letter-spacing: 0.07em;
   color: var(--text-faint);
   background: var(--surface-2);
-  padding: 8px var(--s-4);
+  padding: 8px var(--gutter, var(--s-4));
   white-space: nowrap;
   border-bottom: 1px solid var(--border);
 }
 
 .table tbody td {
-  padding: 9px var(--s-4);
+  padding: 9px var(--gutter, var(--s-4));
   border-top: 1px solid var(--grid);
   vertical-align: middle;
 }
@@ -144,7 +144,7 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--s-3);
-  padding: var(--s-4);
+  padding: var(--s-4) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
 }
 .card {
@@ -190,7 +190,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px var(--s-4);
+  padding: 8px var(--gutter, var(--s-4));
   color: var(--accent-text);
   font-family: var(--mono);
   font-size: var(--fs-12);
@@ -203,7 +203,7 @@
   top: 0;
   background: var(--surface-2);
   border-top: 1px solid var(--border);
-  padding: 6px var(--s-4);
+  padding: 6px var(--gutter, var(--s-4));
 }
 .groupName {
   font-family: var(--mono);
@@ -385,7 +385,7 @@
   align-items: center;
   text-align: center;
   gap: 6px;
-  padding: 48px var(--s-5);
+  padding: 48px var(--gutter, var(--s-5));
 }
 .emptyIcon {
   display: grid;
@@ -428,7 +428,7 @@
 }
 
 .totals td {
-  padding: 9px var(--s-4);
+  padding: 9px var(--gutter, var(--s-4));
   border-top: 1px solid var(--border-strong, var(--grid));
   font-family: var(--mono);
   font-weight: 700;
@@ -511,7 +511,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--s-2) var(--s-4);
-  padding: var(--s-2) var(--s-4);
+  padding: var(--s-2) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
   font-family: var(--mono);
   font-size: var(--fs-11-5);
@@ -578,12 +578,12 @@
 
 /* --- phones: each position is a stacked card instead of a 10-column row --- */
 @media (max-width: 640px) {
-  .summary { grid-template-columns: 1fr 1fr; gap: var(--s-2); padding: var(--s-3); }
+  .summary { grid-template-columns: 1fr 1fr; gap: var(--s-2); padding: var(--s-3) var(--gutter); }
   .summary > :first-child { grid-column: 1 / -1; }
-  .card { padding: var(--s-2) var(--s-3); }
+  .card { padding-block: var(--s-2); }
   .cardValue { font-size: var(--fs-lead); }
 
-  .form { padding: var(--s-3); }
+  .form { padding: var(--s-3) var(--gutter); }
   .ticker, .num { flex: 1 1 calc(50% - var(--s-1)); width: auto; min-width: 0; }
   .ccyPick { flex: 1 1 calc(50% - var(--s-1)); }
   .payCash { flex: 1 1 calc(50% - var(--s-1)); }
@@ -605,7 +605,7 @@
     background: var(--surface-2);
     border-top: 1px solid var(--border);
   }
-  .groupRow td { position: static; border: none; padding: 6px var(--s-3); }
+  .groupRow td { position: static; border: none; padding: 6px var(--gutter); }
   .groupRow td:first-child { flex: 1; }
   .groupRow td:empty { display: none; }
 
@@ -621,7 +621,7 @@
       "actions actions";
     column-gap: var(--s-3);
     row-gap: 2px;
-    padding: var(--s-2) var(--s-3);
+    padding: var(--s-2) var(--gutter);
     border-top: 1px solid var(--grid);
   }
   .table tbody tr.row td { padding: 0; border: none; text-align: left; }

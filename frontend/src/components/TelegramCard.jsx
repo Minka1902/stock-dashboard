@@ -48,7 +48,7 @@ export default function TelegramCard({ legend = "Telegram" }) {
   const unlink = () => run(async () => { setInfo(await unlinkTelegram()); setIssued(null); });
 
   return (
-    <fieldset className={styles.group}>
+    <fieldset className={styles.group} data-card>
       <legend className={styles.legend}>{legend}</legend>
       <p className={styles.hint}>
         High-severity alerts (exit-rule hits, kill switches, recommendations turning buy or sell) and bot fills, sent to a private

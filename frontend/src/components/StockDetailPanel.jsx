@@ -392,7 +392,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
                       : null;
                     const label = an.years_ago === "max" ? "earliest" : `${an.years_ago}y ago`;
                     return (
-                      <div key={`${an.years_ago}`} className={styles.anchor}>
+                      <div key={`${an.years_ago}`} className={styles.anchor} data-card>
                         <span className={styles.anchorLabel}>{label}</span>
                         <span className={styles.anchorDate}>{an.date}</span>
                         <span className={styles.anchorClose}>{px(an.close)}</span>
@@ -476,7 +476,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
                   <div className={styles.ladder}>
                     {a.targets.map((t) => (
                       <Tooltip key={t.r} content={t.why}>
-                        <div className={styles.rung} tabIndex={0}>
+                        <div className={styles.rung} data-card tabIndex={0}>
                           <span className={styles.rungR}>{t.r}:1</span>
                           <span className={styles.rungPrice}>{px(t.price)}</span>
                           <span className={styles.feas} data-tone={FEAS_TONE[t.feasibility]}>{t.feasibility}</span>
@@ -562,7 +562,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
               ) : (
                 <ul className={styles.patterns}>
                   {shownPatterns.map((p, i) => (
-                    <li key={i} className={styles.pattern} data-status={p.status}>
+                    <li key={i} className={styles.pattern} data-card data-status={p.status}>
                       <span className={styles.patName}>{p.label}</span>
                       <span className={styles.patDir} data-tone={p.direction === "bullish" ? "pos" : p.direction === "bearish" ? "neg" : ""}>{p.direction}</span>
                       <span className={styles.patConf}>{Math.round(p.confidence * 100)}%</span>
@@ -604,7 +604,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
               ) : (
                 <ul className={styles.patterns}>
                   {a.trendlines.map((t, i) => (
-                    <li key={i} className={styles.pattern}>
+                    <li key={i} className={styles.pattern} data-card>
                       <span className={styles.patName}>{t.kind === "support" ? "Rising support" : "Falling resistance"}</span>
                       <span className={styles.patDir} data-tone={t.kind === "support" ? "pos" : "neg"}>{t.kind}</span>
                       <span className={styles.patConf}>{t.touches} touches</span>
@@ -650,7 +650,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
               {a.candles && a.candles.length > 0 ? (
                 <ul className={styles.patterns}>
                   {a.candles.slice(-4).reverse().map((c, i) => (
-                    <li key={i} className={styles.pattern}>
+                    <li key={i} className={styles.pattern} data-card>
                       <span className={styles.patName}>{c.label}</span>
                       <span className={styles.patDir} data-tone={SIGNAL_TONE[c.direction]}>{c.direction}</span>
                       <span className={styles.patConf}>{c.date}</span>

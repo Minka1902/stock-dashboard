@@ -85,7 +85,7 @@ function AlertRow({ a }) {
   const tone = a.pl_pct == null ? "flat" : a.pl_pct >= 0 ? "pos" : "neg";
   const risky = /trim|watch|earnings|hedg/i.test(a.action);
   return (
-    <li className={styles.alert}>
+    <li className={styles.alert} data-card>
       <Symbol ticker={a.ticker} /><Lists lists={a.lists} />
       {a.pl_pct != null && (
         <span className={styles.pl} data-tone={tone}>
@@ -142,7 +142,7 @@ function OpportunityBody({ o }) {
 
 function OpportunityRow({ o, forDate }) {
   return (
-    <li className={styles.alert}>
+    <li className={styles.alert} data-card>
       <OpportunityBody o={o} />
       {!o.ta_pending && <PaperTradeButton ticker={o.ticker} suggestionForDate={forDate} className={styles.watchBtn} />}
     </li>
@@ -161,7 +161,7 @@ function NewIdeaRow({ o, onWatch }) {
       .finally(() => setAdding(false));
   };
   return (
-    <li className={styles.alert}>
+    <li className={styles.alert} data-card>
       <OpportunityBody o={o} />
       {onWatch && (
         <Tooltip content={added
@@ -271,7 +271,7 @@ export default function SuggestionsPanel({ data, loading, busy, onRefresh, onAdd
               <h3 className={styles.sectionTitle}>Seasonal edge (this time of year)</h3>
               <ul className={styles.list}>
                 {data.seasonality.map((s) => (
-                  <li key={s.ticker} className={styles.alert}>
+                  <li key={s.ticker} className={styles.alert} data-card>
                     <Symbol ticker={s.ticker} /><Lists lists={s.lists} />
                     <span className={styles.action} data-risk={s.kind === "headwind" ? "yes" : "no"}>
                       {s.window_label}: avg {s.avg_pct >= 0 ? "+" : ""}{s.avg_pct}%, win {Math.round(s.win_rate * 100)}% / {s.n}y

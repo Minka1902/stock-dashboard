@@ -10,7 +10,7 @@
   display: flex;
   align-items: flex-start;
   gap: var(--s-3);
-  padding: var(--s-5);
+  padding: var(--s-5) var(--gutter, var(--s-5));
   border-bottom: 1px solid var(--border);
 }
 
@@ -35,7 +35,7 @@
 .row {
   display: flex;
   gap: var(--s-4);
-  padding: 16px var(--s-5);
+  padding: 16px var(--gutter, var(--s-5));
   border-top: 1px solid var(--border);
   align-items: center;
 }
@@ -123,7 +123,7 @@
   align-items: center;
   text-align: center;
   gap: var(--s-2);
-  padding: 56px var(--s-5);
+  padding: 56px var(--gutter, var(--s-5));
 }
 
 .emptyIcon {
@@ -189,3 +189,9 @@
 }
 .anchorChip b[data-tone="pos"] { color: var(--positive); font-weight: 600; }
 .anchorChip b[data-tone="neg"] { color: var(--negative); font-weight: 600; }
+
+/* Phone: the ticker heads its row, so the windows get the full width. */
+@media (max-width: 640px) {
+  .row { flex-direction: column; align-items: stretch; gap: var(--s-2); }
+  .tickerCol { flex-direction: row; align-items: baseline; gap: var(--s-2); }
+}

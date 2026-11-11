@@ -45,7 +45,7 @@ export default function BotCard({ bot, spec, onPause, onResume, onStop, busy = f
   const universe = bot.universe || [];
 
   return (
-    <article className={styles.card} data-status={bot.status}>
+    <article className={styles.card} data-card data-status={bot.status}>
       <header className={styles.head}>
         <div className={styles.identity}>
           <h3 className={styles.name}>{bot.name}</h3>

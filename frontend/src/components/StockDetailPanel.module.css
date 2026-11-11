@@ -9,7 +9,7 @@
   flex-wrap: wrap; /* never wider than the page: controls wrap to a 2nd row */
   align-items: center;
   gap: var(--s-2) var(--s-3);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) var(--gutter, var(--s-4));
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -231,7 +231,7 @@
 
 .empty {
   display: flex; flex-direction: column; align-items: center; gap: 6px;
-  padding: var(--s-7) var(--s-4); border: 1px dashed var(--border); border-radius: var(--r-md);
+  padding: var(--s-7) var(--gutter, var(--s-4)); border: 1px dashed var(--border); border-radius: var(--r-md);
 }
 .emptyTitle { font-family: var(--mono); font-weight: 600; }
 .emptyText { color: var(--text-muted); font-size: var(--fs-12-5); }
@@ -333,7 +333,7 @@
 
 /* --- phones --- */
 @media (max-width: 640px) {
-  .topbar { padding: var(--s-2) var(--s-3); }
+  .topbar { padding: var(--s-2) var(--gutter); }
   .stats { grid-template-columns: repeat(2, 1fr); gap: var(--s-2); }
   /* R | price | feasibility on one line, the reason underneath. */
   .rung { grid-template-columns: 36px 1fr auto; row-gap: 4px; }

@@ -11,7 +11,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s-3);
-  padding: var(--s-5);
+  padding: var(--s-5) var(--gutter, var(--s-5));
   border-bottom: 1px solid var(--border);
 }
 
@@ -31,7 +31,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--s-2);
-  padding: var(--s-3) var(--s-5);
+  padding: var(--s-3) var(--gutter, var(--s-5));
   border-bottom: 1px solid var(--border);
 }
 .tabWrap {
@@ -90,7 +90,7 @@
   align-items: center;
   gap: var(--s-3);
   flex-wrap: wrap;
-  margin: 0 var(--s-5) var(--s-4);
+  margin: 0 var(--gutter, var(--s-5)) var(--s-4);
   padding: var(--s-3) var(--s-4);
   border: 1px solid var(--negative-weak);
   border-radius: var(--r-md);
@@ -114,7 +114,7 @@
 .form {
   display: flex;
   gap: var(--s-2);
-  padding: var(--s-4) var(--s-5);
+  padding: var(--s-4) var(--gutter, var(--s-5));
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
@@ -161,7 +161,7 @@
 }
 
 .error {
-  padding: 8px var(--s-5);
+  padding: 8px var(--gutter, var(--s-5));
   color: var(--negative);
   font-size: var(--fs-13);
 }
@@ -176,7 +176,7 @@
   display: flex;
   align-items: center;
   gap: var(--s-4);
-  padding: 12px var(--s-5);
+  padding: 12px var(--gutter, var(--s-5));
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
@@ -330,7 +330,7 @@
   align-items: center;
   text-align: center;
   gap: 6px;
-  padding: 48px var(--s-5);
+  padding: 48px var(--gutter, var(--s-5));
 }
 .emptyIcon {
   display: grid;

@@ -12,7 +12,7 @@
   display: flex;
   align-items: center;
   gap: var(--s-2);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
   transition: border-color 0.2s ease;
 }
@@ -49,7 +49,17 @@
 }
 
 .body {
-  padding: var(--s-4);
+  padding: var(--s-4) var(--gutter, var(--s-4));
+}
+
+/* Phone: the section-header contract (index.css), a title row and then the
+   right slot as a caption row. */
+@media (max-width: 640px) {
+  .head { flex-wrap: wrap; row-gap: var(--s-1); }
+  .right { flex-basis: 100%; justify-content: flex-start; text-align: left; }
+}
+@media (pointer: coarse) {
+  .hit { min-height: var(--tap); }
 }
 
 @media (prefers-reduced-motion: reduce) {

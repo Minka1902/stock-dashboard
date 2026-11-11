@@ -478,15 +478,47 @@ button {
 }
 
 /* ============================================================
-   Phones (≤640px). Panel headers let their controls drop under the title
-   instead of squeezing the title into a narrow column; every panel shares
-   the <section><header> structure, so this is one rule, not 25.
+   Phone layout contract (≤640px), one set of rules for every view:
+   - One gutter. A pane's content sits --gutter in from its edges. Modules
+     write their pane-edge padding as `var(--gutter, <desktop inset>)`, and
+     --gutter only exists here, so the desktop keeps its own insets.
+   - A section header (its <header>, or a first-child <div> holding its
+     heading or caption) is a title row, then a caption row: the title
+     block takes the first row (beside a leading collapse toggle), and
+     everything after it follows below instead of squeezing it.
+   - Grid and flex children may shrink below their content, and a long word
+     breaks instead of pushing its pane wider than the screen.
+   - No nested containers (DESIGN.md): a card inside a pane ([data-card])
+     is flattened into it, its content on the pane's gutter.
    ============================================================ */
 @media (max-width: 640px) {
-  main section > header {
+  :root { --gutter: var(--s-3); }
+  main { overflow-wrap: break-word; }
+  :where(main) :where(div, section, article, header, footer, form, fieldset, ul, ol, li, dl, dt, dd, p) {
+    min-width: 0;
+  }
+
+  main section > :is(header, div:first-child:has(> :is(h2, h3, .caption))) {
     flex-wrap: wrap;
     row-gap: var(--s-2);
   }
+  main section > :is(header, div:first-child:has(> :is(h2, h3, .caption))) > :first-child:not(button) {
+    flex-basis: 100%;
+  }
+  main section > header:has(> button:first-child) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  main section > header:has(> button:first-child) > :nth-child(n + 3) { grid-column: 1 / -1; }
+
+  main [data-card] {
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    padding-inline: 0;
+  }
+  main [data-card] > legend { padding-inline: 0; }
 }
 
 /* ============================================================

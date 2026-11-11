@@ -2,7 +2,7 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  padding: var(--s-4) var(--s-5);
+  padding: var(--s-4) var(--gutter, var(--s-5));
   margin-bottom: var(--s-4);
 }
 

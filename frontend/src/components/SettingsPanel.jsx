@@ -216,7 +216,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
       <div className={styles.body}>
         {/* Account: who's signed in */}
         {user && (
-          <fieldset className={styles.group}>
+          <fieldset className={styles.group} data-card>
             <legend className={styles.legend}>Account</legend>
             <div className={styles.account}>
               <span
@@ -240,7 +240,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
         )}
 
         {/* Analysis schedule + data refresh (server-side; drives the cron job) */}
-        <fieldset className={styles.group}>
+        <fieldset className={styles.group} data-card>
           <legend className={styles.legend}>Analysis schedule &amp; data refresh</legend>
           <p className={styles.groupHint}>
             Every weekday at this time, the dashboard force-refreshes all sources, recomputes every
@@ -313,7 +313,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
         </fieldset>
 
         {/* X Watch monitored accounts (server-side; drives the x_posts source) */}
-        <fieldset className={styles.group}>
+        <fieldset className={styles.group} data-card>
           <legend className={styles.legend}>X Watch accounts</legend>
           <p className={styles.groupHint}>
             Handles the X Watch feed monitors for market-moving posts and cashtags. Applies on the
@@ -373,7 +373,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
         </fieldset>
 
         {/* Onboarding: the in-app Info page + guided tours */}
-        <fieldset className={styles.group}>
+        <fieldset className={styles.group} data-card>
           <legend className={styles.legend}>Learn the dashboard</legend>
           <p className={styles.groupHint}>
             New here? The <strong>Info</strong> page explains what every panel shows, how it feeds the
@@ -396,7 +396,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
         </fieldset>
 
         {/* Trading & risk: position sizing for each holding's analysis */}
-        <fieldset className={styles.group}>
+        <fieldset className={styles.group} data-card>
           <legend className={styles.legend}>Trading &amp; risk</legend>
           <p className={styles.groupHint}>
             Sizes positions in each holding's analysis: shares = (risk&nbsp;% × account) ÷ risk-per-share.
@@ -448,7 +448,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
         <FxWatchEditor />
 
         {/* Notifications: email + phone for the daily suggestion digest */}
-        <fieldset className={styles.group}>
+        <fieldset className={styles.group} data-card>
           <legend className={styles.legend}>Daily suggestions — email &amp; phone</legend>
           <p className={styles.groupHint}>
             Get a few tailored ideas for the next trading day, based on your portfolio and watchlist.
@@ -542,7 +542,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
         <TelegramCard />
 
         {/* Seasonality windows */}
-        <fieldset className={styles.group}>
+        <fieldset className={styles.group} data-card>
           <legend className={styles.legend}>Seasonality windows</legend>
           <p className={styles.groupHint}>Which "this time of year" windows to show in the Seasonality panel.</p>
           <div className={styles.checks}>
@@ -563,7 +563,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
         </fieldset>
 
         {/* Lookback */}
-        <fieldset className={styles.group}>
+        <fieldset className={styles.group} data-card>
           <legend className={styles.legend}>History lookback</legend>
           <p className={styles.groupHint}>How many past years feed the averages and win-rate.</p>
           <div className={styles.segmented} role="group" aria-label="History lookback">
@@ -584,7 +584,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
 
         {/* Appearance: color theme */}
         {onSetTheme && themes.length > 0 && (
-          <fieldset className={styles.group}>
+          <fieldset className={styles.group} data-card>
             <legend className={styles.legend}>Appearance</legend>
             <p className={styles.groupHint}>
               Pick a color theme. Applies instantly and is saved on this device.
@@ -613,7 +613,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
           </fieldset>
         )}
 
-        <fieldset className={`${styles.group} ${styles.phoneOnly}`}>
+        <fieldset className={`${styles.group} ${styles.phoneOnly}`} data-card>
           <legend className={styles.legend}>Text size</legend>
           <p className={styles.groupHint}>
             How large text reads on this phone. Applies instantly and is saved on this device;
@@ -628,7 +628,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
         </fieldset>
 
         {/* Reading & focus */}
-        <fieldset className={styles.group}>
+        <fieldset className={styles.group} data-card>
           <legend className={styles.legend}>Ticker labels</legend>
           <p className={styles.groupHint}>
             How stocks are named across the dashboard. Company names come from the
@@ -643,7 +643,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
           })}
         </fieldset>
 
-        <fieldset className={styles.group}>
+        <fieldset className={styles.group} data-card>
           <legend className={styles.legend}>Company information</legend>
           <p className={styles.groupHint}>
             Which sections the analysis page shows for a stock. Anything a data source
@@ -676,7 +676,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
           })}
         </fieldset>
 
-        <fieldset className={styles.group}>
+        <fieldset className={styles.group} data-card>
           <legend className={styles.legend}>Reading &amp; focus</legend>
           <label className={styles.switchRow}>
             <span className={styles.switchText}>

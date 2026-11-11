@@ -326,7 +326,7 @@ export default function PortfolioPanel({
             animate="visible"
           >
             {cards.map((c) => (
-              <motion.div key={c.key} className={styles.card} data-tone={c.tone}
+              <motion.div key={c.key} className={styles.card} data-card data-tone={c.tone}
                           variants={staggerItem} layout={!reduced}>
                 <span className={styles.cardLabel}>
                   {c.label} <span className={styles.cardBase}>in {base}</span>

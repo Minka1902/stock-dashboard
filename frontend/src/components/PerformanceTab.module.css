@@ -4,7 +4,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--s-2) var(--s-4);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
 }
 .picker { max-width: 300px; }
@@ -14,7 +14,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
 }
 .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-1) var(--s-3); }
@@ -27,9 +27,5 @@
 }
 .source { font-size: var(--fs-11-5); color: var(--text-faint); }
 .note { font-size: var(--fs-12-5); color: var(--text-muted); }
-.error { padding: var(--s-2) var(--s-4); color: var(--negative); font-size: var(--fs-12-5); }
-.bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s-4); }
-
-@media (max-width: 640px) {
-  .bar, .section { padding-inline: var(--s-3); }
-}
+.error { padding: var(--s-2) var(--gutter, var(--s-4)); color: var(--negative); font-size: var(--fs-12-5); }
+.bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: var(--s-4); }

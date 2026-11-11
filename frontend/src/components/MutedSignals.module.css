@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
 }
 .title {
@@ -46,7 +46,4 @@
 @media (max-width: 900px) {
   .row { grid-template-columns: 1fr auto; }
   .reason { grid-column: 1 / -1; }
-}
-@media (max-width: 640px) {
-  .card { padding-inline: var(--s-3); }
 }

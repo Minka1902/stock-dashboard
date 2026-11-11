@@ -1,12 +1,12 @@
 .root { display: flex; flex-direction: column; }
-.placeholder { padding: var(--s-4); color: var(--text-muted); font-size: var(--fs-13); max-width: 80ch; }
-.section { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--grid); }
+.placeholder { padding: var(--s-4) var(--gutter, var(--s-4)); color: var(--text-muted); font-size: var(--fs-13); max-width: 80ch; }
+.section { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-3) var(--gutter, var(--s-4)); border-bottom: 1px solid var(--grid); }
 .head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
 .title { font-family: var(--mono); font-size: var(--fs-11); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
 .mode { font-family: var(--mono); font-size: var(--fs-10); font-weight: 700; text-transform: uppercase; padding: 2px 8px; border-radius: var(--r-pill); color: var(--caution); background: var(--caution-weak); }
 .mode[data-mode="live"] { color: var(--negative); background: var(--negative-weak); }
 .actions { display: flex; gap: var(--s-2); margin-left: auto; }
-.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--s-3); margin: 0; }
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); gap: var(--s-3); margin: 0; }
 .summary dt { font-family: var(--mono); font-size: var(--fs-10); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
 .summary dd { margin: 0; font-family: var(--mono); font-size: var(--fs-15); font-weight: 700; font-variant-numeric: tabular-nums; }
 .checks { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-4); font-size: var(--fs-12-5); }
@@ -27,4 +27,4 @@
 .faint { color: var(--text-faint); font-size: var(--fs-12); }
 .error { color: var(--negative); font-size: var(--fs-12-5); }
 
-@media (max-width: 640px) { .section { padding-inline: var(--s-3); } .actions { margin-left: 0; } }
+@media (max-width: 640px) { .actions { margin-left: 0; } }

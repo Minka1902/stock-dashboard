@@ -79,7 +79,7 @@ export default function FxWatchEditor() {
   const options = currencies.map((c) => ({ value: c, label: c }));
 
   return (
-    <fieldset className={styles.group} data-tour="fx-watch">
+    <fieldset className={styles.group} data-card data-tour="fx-watch">
       <legend className={styles.legend}>
         Currencies in the ticker tape <InfoTip term="fx_pair" size={14} />
       </legend>

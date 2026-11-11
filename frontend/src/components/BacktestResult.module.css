@@ -5,7 +5,7 @@
 .stretch { display: flex; flex-direction: column; gap: var(--s-2); }
 .title { font-family: var(--mono); font-size: var(--fs-10-5); font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-faint); }
 .thin { font-size: var(--fs-12-5); color: var(--text-muted); }
-.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--s-4); }
+.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: var(--s-4); }
 .trades summary { cursor: pointer; font-family: var(--mono); font-size: var(--fs-11); font-weight: 700; text-transform: uppercase; color: var(--text-muted); }
 .trades ul { margin: var(--s-2) 0 0; padding: 0; list-style: none; font-family: var(--mono); font-size: var(--fs-12); font-variant-numeric: tabular-nums; max-height: 320px; overflow-y: auto; }
 .trades li { display: grid; grid-template-columns: 1.4fr 1.2fr 0.7fr 1.2fr; gap: var(--s-2); padding: 4px 0; border-top: 1px solid var(--grid); }
