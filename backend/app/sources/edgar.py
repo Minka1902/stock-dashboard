@@ -10,6 +10,7 @@ Flow:
 
 SEC asks clients to send a descriptive User-Agent and stay under ~10 req/sec.
 """
+import html
 import re
 import time
 
@@ -36,8 +37,9 @@ _CODE_LABEL = {
 
 
 def _tag(text: str, tag: str) -> str | None:
+    """Text of the first <tag>, XML entities decoded ("Pres. &amp; CEO" -> "Pres. & CEO")."""
     m = re.search(rf"<{tag}>(.*?)</{tag}>", text, re.S)
-    return m.group(1).strip() if m else None
+    return html.unescape(m.group(1)).strip() if m else None
 
 
 def _value(text: str, tag: str) -> str | None:
