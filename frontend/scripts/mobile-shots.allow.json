@@ -1,10 +1,10 @@
 {
   "summary": {
-    "recordedAt": "2026-11-11T13:22:43.125Z",
+    "recordedAt": "2026-11-11T14:11:15.727Z",
     "gates": {
       "overflow": {"360": 0, "390": 0, "430": 0},
       "clip": {"360": 0, "390": 0, "430": 0},
-      "hit": {"360": 70, "390": 70, "430": 70},
+      "hit": {"360": 68, "390": 68, "430": 68},
       "error": {"360": 0, "390": 0, "430": 0}
     },
     "screens": {
@@ -28,23 +28,23 @@
       "seasonality": {"360": 19.4, "390": 15.3, "430": 12.7},
       "suggestions": {"360": 4.4, "390": 3.4, "430": 2.9},
       "suggestion-history": {"360": 2.2, "390": 1.9, "430": 1.6},
-      "portfolio": {"360": 2.7, "390": 2.3, "430": 2.1},
-      "trading-bot": {"360": 1.3, "390": 1, "430": 1},
+      "portfolio": {"360": 2.1, "390": 1.8, "430": 1.6},
+      "trading-bot": {"360": 1.1, "390": 1, "430": 1},
       "x": {"360": 1, "390": 1, "430": 1},
       "earnings": {"360": 1.5, "390": 1.3, "430": 1.1},
       "info": {"360": 23.3, "390": 19.3, "430": 16.5},
       "settings": {"360": 9.4, "390": 7.6, "430": 6.6},
       "server": {"360": 21.2, "390": 16.8, "430": 13.7},
-      "trading-bot?tab=risk": {"360": 5.3, "390": 4.4, "430": 3.9},
-      "trading-bot?tab=paper": {"360": 1.1, "390": 1, "430": 1},
+      "trading-bot?tab=risk": {"360": 5.2, "390": 4.4, "430": 3.8},
+      "trading-bot?tab=paper": {"360": 1, "390": 1, "430": 1},
       "trading-bot?tab=broker": {"360": 1, "390": 1, "430": 1},
-      "trading-bot?tab=performance": {"360": 2.6, "390": 2.1, "430": 1.9},
-      "trading-bot?tab=rules": {"360": 2.4, "390": 2, "430": 1.6},
-      "trading-bot?tab=lots": {"360": 2.5, "390": 2, "430": 1.7},
-      "trading-bot?tab=scanner": {"360": 1.9, "390": 1.6, "430": 1.4},
+      "trading-bot?tab=performance": {"360": 2.5, "390": 2.1, "430": 1.8},
+      "trading-bot?tab=rules": {"360": 2.3, "390": 1.9, "430": 1.5},
+      "trading-bot?tab=lots": {"360": 2.4, "390": 1.9, "430": 1.7},
+      "trading-bot?tab=scanner": {"360": 1.8, "390": 1.5, "430": 1.3},
       "trading-bot?tab=audit": {"360": 1, "390": 1, "430": 1},
-      "stock/AAPL": {"360": 10.3, "390": 8.8, "430": 7.8},
-      "stock/TEVA.TA": {"360": 9.4, "390": 7.9, "430": 7},
+      "stock/AAPL": {"360": 3.4, "390": 3, "430": 2.6},
+      "stock/TEVA.TA": {"360": 3.5, "390": 2.9, "430": 2.6},
       "auth/login": {"360": 1, "390": 1, "430": 1},
       "auth/register": {"360": 1, "390": 1, "430": 1},
       "auth/totp-setup": {"360": 1.1, "390": 1, "430": 1},
@@ -173,16 +173,6 @@
     "stock/AAPL": [
       {
         "gate": "hit",
-        "element": "div.row span.rowValue a.link",
-        "sample": "apple.com",
-        "px": 26,
-        "size": "65x14",
-        "widths": [360, 390, 430],
-        "count": 3,
-        "reason": "pre-existing before the mobile redesign (baseline 2026-11-10)"
-      },
-      {
-        "gate": "hit",
         "element": "div.topbar span.reportBtns a.reportBtn",
         "sample": "Report",
         "px": 8.8,
@@ -193,16 +183,6 @@
       }
     ],
     "stock/TEVA.TA": [
-      {
-        "gate": "hit",
-        "element": "div.row span.rowValue a.link",
-        "sample": "tevapharm.com",
-        "px": 26,
-        "size": "94x14",
-        "widths": [360, 390, 430],
-        "count": 3,
-        "reason": "pre-existing before the mobile redesign (baseline 2026-11-10)"
-      },
       {
         "gate": "hit",
         "element": "div.topbar span.reportBtns a.reportBtn",

@@ -41,3 +41,10 @@
   font-variant-numeric: tabular-nums;
 }
 .tab[data-active="yes"] .badge { color: var(--accent-text); }
+
+/* overflow="scroll": one row on a phone, scrolled sideways. */
+@media (max-width: 640px) {
+  .scroller { overflow-x: auto; }
+  .group[data-overflow="scroll"] { flex-wrap: nowrap; width: max-content; }
+  .group[data-overflow="scroll"] .tab { flex: none; white-space: nowrap; }
+}

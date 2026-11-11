@@ -1,0 +1,32 @@
+.layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-4);
+}
+.backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+}
+.panel {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-top: 3px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Phones: a bottom sheet, clear of the home indicator. */
+@media (max-width: 640px) {
+  .layer { align-items: flex-end; padding: 0; }
+  .panel {
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    border-bottom: none;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}

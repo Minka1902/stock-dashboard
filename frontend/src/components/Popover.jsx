@@ -1,8 +1,24 @@
 import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
+import Sheet from "./Sheet";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import { dropdownStyle } from "../lib/floating";
+import styles from "./Popover.module.css";
+
+const PHONE = "(max-width: 640px)";
+// A phone shows every popup as a bottom sheet. Inline, so it wins over the
+// caller's own box (a menu's width, radius and border).
+const SHEET_STYLE = {
+  width: "100%",
+  minWidth: 0,
+  maxWidth: "none",
+  maxHeight: "85svh",
+  overflowY: "auto",
+  borderRadius: "var(--r-lg) var(--r-lg) 0 0",
+  borderBottom: "none",
+};
 
 /**
  * An anchored popup that is immune to its parent's stacking and clipping.
@@ -24,6 +40,11 @@ import { dropdownStyle } from "../lib/floating";
  * Anchoring uses `right` rather than a translateX so it does not fight the
  * transform Motion animates. The placement math lives in lib/floating.js,
  * shared with Tooltip.
+ *
+ * At 640px and below it is a bottom sheet instead (Sheet, as Dialog uses),
+ * so every menu, picker and account popup opens the same way on a phone. The
+ * caller keeps its focus handling, Escape and outside-press closing (a tap
+ * on the scrim is outside); `onDismiss` also runs on that tap.
  */
 export default function Popover({
   open,
@@ -35,13 +56,15 @@ export default function Popover({
   align = "end",
   gap = 8,
   className = "",
+  onDismiss,
   children,
   ...rest
 }) {
+  const phone = useMediaQuery(PHONE);
   const [style, setStyle] = useState(null);
 
   useLayoutEffect(() => {
-    if (!open) return undefined;
+    if (!open || phone) return undefined;
     const place = () => {
       if (anchorRef.current) setStyle(dropdownStyle(anchorRef.current, align, gap));
     };
@@ -54,7 +77,7 @@ export default function Popover({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, anchorRef, align, gap]);
+  }, [open, phone, anchorRef, align, gap]);
 
   // The last position is deliberately kept while closing: AnimatePresence
   // keeps the element mounted through its exit animation, and it should fade
@@ -62,6 +85,15 @@ export default function Popover({
   // next paint on reopen, so no stale frame is ever visible.
 
   const reduced = prefersReducedMotion();
+
+  if (phone) {
+    return (
+      <Sheet open={open} onDismiss={onDismiss} panelRef={contentRef} className={className} style={SHEET_STYLE} {...rest}>
+        <span className={styles.grabber} aria-hidden="true" />
+        {children}
+      </Sheet>
+    );
+  }
 
   // The portal wraps AnimatePresence, not the other way round. Handing a raw
   // portal object to AnimatePresence gives it nothing it can recognise as an

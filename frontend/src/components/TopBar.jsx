@@ -29,8 +29,17 @@ function ThemeMenu({ theme, themes, onSetTheme }) {
       if (menuRef.current?.contains(e.target)) return;
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
     };
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      ref.current?.querySelector("button")?.focus();
+    };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
   const isLight = theme === "light" || theme === "warm";
   return (

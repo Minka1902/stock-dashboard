@@ -1,0 +1,9 @@
+/* The sheet's handle: says "this slides away", the scrim closes it. */
+.grabber {
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 2px auto var(--s-2);
+  border-radius: var(--r-pill);
+  background: var(--border-strong);
+}

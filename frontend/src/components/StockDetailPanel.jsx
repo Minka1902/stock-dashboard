@@ -10,6 +10,7 @@ import InsiderTrades from "./InsiderTrades";
 import Skeleton from "./Skeleton";
 import StockAlerts from "./StockAlerts";
 import SuggestionHistoryStrip from "./SuggestionHistoryStrip";
+import SectionIndex from "./SectionIndex";
 import Segmented from "./Segmented";
 import Term from "./Term";
 import TickerLabel from "./TickerLabel";
@@ -17,6 +18,7 @@ import Tooltip from "./Tooltip";
 import XPostCard from "./XPostCard";
 import { getAnalyze, analysisReportUrl } from "../api";
 import { currencyForSymbol, formatMoney, formatPrice } from "../lib/format";
+import { useCollapsedSections } from "../hooks/useCollapsedSections";
 import { useSettingsContext } from "../hooks/useSettingsContext";
 import styles from "./StockDetailPanel.module.css";
 
@@ -42,15 +44,23 @@ function n(v, d = 2) {
   return v == null ? "—" : Number(v).toFixed(d);
 }
 
-// Collapsed state lives in settings.collapsedSections under "stock:<id>".
-// Deliberately NOT keyed per ticker: someone who never reads insider trades
-// shouldn't have to collapse that pane again on every stock they open.
+// Collapsed state lives in settings.collapsedSections under "stock:<id>"
+// (useCollapsedSections). Deliberately NOT keyed per ticker: someone who
+// never reads insider trades shouldn't have to collapse that pane again on
+// every stock they open.
 const SECTION_PREFIX = "stock:";
-const sectionKey = (id) => `${SECTION_PREFIX}${id}`;
+// On a phone every section starts folded except the chart, the page's point.
+const OPEN_ON_PHONE = ["chart"];
+// The phone's SectionIndex chips, one per section id.
+const SECTION_LABELS = {
+  chart: "Chart", company: "Company", insiders: "Insiders", investors: "13F", alerts: "Alerts",
+  history: "History", anchors: "This day", xwatch: "X Watch", plan: "Plan", structure: "Structure",
+  patterns: "Patterns", trendlines: "Trendlines", breakout: "Breakout", candles: "Candles", why: "Why",
+};
 
-function Pane({ caption, right, collapsed, onToggle, children }) {
+function Pane({ anchor, caption, right, collapsed, onToggle, children }) {
   return (
-    <CollapsibleSection caption={caption} right={right} collapsed={collapsed} onToggle={onToggle}>
+    <CollapsibleSection anchor={anchor} caption={caption} right={right} collapsed={collapsed} onToggle={onToggle}>
       {children}
     </CollapsibleSection>
   );
@@ -72,7 +82,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   const [attempt, setAttempt] = useState(0);
   const [watchBusy, setWatchBusy] = useState(false);
   const [ruling, setRuling] = useState(false);
-  const { settings, setSetting } = useSettingsContext();
+  const { settings } = useSettingsContext();
 
   useEffect(() => {
     let alive = true;
@@ -142,32 +152,28 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
     "chart",
     companyInfo.profile !== false && "company",
     companyInfo.insiders !== false && "insiders",
+    !isTase && "investors",
     "alerts",
     "history",
     anchors.length > 0 && "anchors",
     xPosts.length > 0 && "xwatch",
     ...(a ? ["plan", "structure", "patterns", "trendlines", "breakout", "candles", "why"] : []),
   ].filter(Boolean);
-  const collapsedMap = settings.collapsedSections || {};
+  const sections = useCollapsedSections(SECTION_PREFIX, OPEN_ON_PHONE);
   // Arriving from an alert link (focusAlertKey) the Alerts pane renders open
   // even if it was collapsed — otherwise the alert you clicked through to
   // would be hidden. The override ends as soon as the user toggles it (or
   // uses Collapse all), and the stored preference is never rewritten by it.
   const [alertsOverrideDone, setAlertsOverrideDone] = useState(null);
   const forceAlertsOpen = Boolean(focusAlertKey) && alertsOverrideDone !== focusAlertKey;
-  const isCollapsed = (id) =>
-    !(id === "alerts" && forceAlertsOpen) && Boolean(collapsedMap[sectionKey(id)]);
+  const isCollapsed = (id) => !(id === "alerts" && forceAlertsOpen) && sections.isCollapsed(id);
   const setCollapsed = (ids, value) => {
-    const next = { ...collapsedMap };
-    for (const id of ids) {
-      if (value) next[sectionKey(id)] = true;
-      else delete next[sectionKey(id)];
-    }
-    setSetting("collapsedSections", next);
+    sections.setCollapsed(ids, value);
     if (ids.includes("alerts")) setAlertsOverrideDone(focusAlertKey);
   };
   // Props for one <Pane>: its effective state and a toggle that persists it.
   const sec = (id) => ({
+    anchor: id,
     collapsed: isCollapsed(id),
     onToggle: () => setCollapsed([id], !isCollapsed(id)),
   });
@@ -326,6 +332,11 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
           </span>
         </div>
       )}
+
+      <SectionIndex
+        sections={sectionIds.map((id) => ({ id, label: SECTION_LABELS[id] }))}
+        onJump={(id) => setCollapsed([id], false)}
+      />
 
       {loading ? (
         <Skeleton w="100%" h="460px" />

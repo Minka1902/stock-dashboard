@@ -1,28 +1,8 @@
-.layer {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--s-4);
-}
-.backdrop {
-  position: absolute;
-  inset: 0;
-  background: var(--scrim);
-}
 .panel {
-  position: relative;
   width: min(520px, 100%);
   max-height: calc(100svh - 2 * var(--s-4));
   display: flex;
   flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-top: 3px solid var(--border-strong);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-lg);
 }
 .panel[data-size="sm"] { width: min(400px, 100%); }
 .panel[data-size="lg"] { width: min(720px, 100%); }
@@ -76,14 +56,11 @@
   border-top: 1px solid var(--grid);
 }
 
-/* Phones: a bottom sheet the full width of the screen. */
+/* Phones: the sheet (Sheet) spans the screen. */
 @media (max-width: 640px) {
-  .layer { align-items: flex-end; padding: 0; }
   .panel, .panel[data-size] {
     width: 100%;
     max-height: 92svh;
-    border-radius: var(--r-lg) var(--r-lg) 0 0;
-    border-bottom: none;
   }
 }
 

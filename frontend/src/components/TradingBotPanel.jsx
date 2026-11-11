@@ -59,7 +59,8 @@ export default function TradingBotPanel(props) {
         <KillSwitchButton />
       </header>
       <div className={styles.tabs}>
-        <Segmented options={TAB_OPTIONS} value={tab} onChange={selectTab} ariaLabel="Trading Bot sections" />
+        <Segmented options={TAB_OPTIONS} value={tab} onChange={selectTab} ariaLabel="Trading Bot sections"
+                   overflow="scroll" />
       </div>
       <div role="tabpanel" aria-label={TABS[tab].label}>
         {TABS[tab].render(props)}

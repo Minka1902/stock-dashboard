@@ -33,7 +33,11 @@ export default function UserMenu({ user, onLogout, onNavigate, phoneItems = [] }
       if (menuRef.current?.contains(e.target)) return;
       if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
     };
-    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      wrapRef.current?.querySelector("button")?.focus();
+    };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     return () => {

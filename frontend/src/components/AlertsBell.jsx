@@ -1,17 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import Button from "./Button";
-import Dialog from "./Dialog";
 import Icon from "./Icon";
 import Popover from "./Popover";
 import Tooltip from "./Tooltip";
 import TickerLabel from "./TickerLabel";
-import { useMediaQuery } from "../hooks/useMediaQuery";
 import { alertIcon, alertRoute } from "../lib/alertMeta";
 import { routeToPath } from "../lib/nav";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./AlertsBell.module.css";
-
-const PHONE = "(max-width: 640px)";
 
 /** Unread first, each part newest first (the order the API returns). */
 function unreadFirst(alerts) {
@@ -20,18 +16,17 @@ function unreadFirst(alerts) {
 
 /**
  * Passive unread indicator plus every alert the API returns, unread first,
- * in a scrolling list: a popover on desktop, a sheet on a phone. Each unread
+ * in a scrolling list: a popover (a sheet on a phone, see Popover). Each unread
  * alert has its own "mark read" button; a row opens the alert. No full page.
  */
 export default function AlertsBell({ alerts = [], unread = 0, onMarkRead, onOpen }) {
   const [open, setOpen] = useState(false);
-  const phone = useMediaQuery(PHONE);
   const wrapRef = useRef(null);
   const popRef = useRef(null);
 
-  // The popover closes on a press outside it or Esc; the sheet (Dialog) does both itself.
+  // The popover closes on a press outside it (the sheet's scrim included) or Esc.
   useEffect(() => {
-    if (!open || phone) return undefined;
+    if (!open) return undefined;
     function onDown(e) {
       // Portaled to <body>, so it is not inside wrapRef — check it separately.
       if (popRef.current?.contains(e.target)) return;
@@ -44,7 +39,7 @@ export default function AlertsBell({ alerts = [], unread = 0, onMarkRead, onOpen
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey);
     };
-  }, [open, phone]);
+  }, [open]);
 
   const listed = unreadFirst(alerts);
   // The API lists the newest alerts only; an older unread one is counted but not shown.
@@ -134,27 +129,20 @@ export default function AlertsBell({ alerts = [], unread = 0, onMarkRead, onOpen
         </button>
       </Tooltip>
 
-      {phone ? (
-        <Dialog open={open} title="Alerts" caption={unread > 0 ? `${unread} unread` : "All read"}
-                className={styles.sheet} onClose={() => setOpen(false)} footer={markAll || null}>
-          {list}
-        </Dialog>
-      ) : (
-        <Popover
-          open={open}
-          anchorRef={wrapRef}
-          contentRef={popRef}
-          className={styles.pop}
-          role="dialog"
-          aria-label="Alerts"
-        >
-          <div className={styles.popHead}>
-            <span className="caption">Alerts{unread > 0 ? ` · ${unread} unread` : ""}</span>
-            {markAll}
-          </div>
-          {list}
-        </Popover>
-      )}
+      <Popover
+        open={open}
+        anchorRef={wrapRef}
+        contentRef={popRef}
+        className={styles.pop}
+        role="dialog"
+        aria-label="Alerts"
+      >
+        <div className={styles.popHead}>
+          <span className="caption">Alerts{unread > 0 ? ` · ${unread} unread` : ""}</span>
+          {markAll}
+        </div>
+        {list}
+      </Popover>
     </div>
   );
 }

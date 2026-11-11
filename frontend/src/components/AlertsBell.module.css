@@ -76,12 +76,11 @@
   margin: 0;
   padding: var(--s-2);
 }
-/* The popover scrolls its list; the sheet scrolls its whole body. */
+/* The list scrolls under the header. */
 .pop .list {
   max-height: 60vh;
   overflow-y: auto;
 }
-.sheet .list { padding: 0; }
 
 .item {
   display: flex;
@@ -174,7 +173,6 @@
   font-size: var(--fs-11-5);
   color: var(--text-faint);
 }
-.sheet .unlisted { padding: 0; }
 
 @media (pointer: coarse) {
   .bell { width: var(--tap); height: var(--tap); }
