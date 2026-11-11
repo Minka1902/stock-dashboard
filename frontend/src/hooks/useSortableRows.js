@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
  * header control to wire `aria-sort`, the active direction and the click
  * handler. Clicking cycles ascending → descending on the same column; clicking
  * a different column starts ascending. Null/blank values always sort last.
+ * `setSort` sets it directly (a phone's sort picker), `null` for input order.
  */
 export function useSortableRows(rows, columns, initial = null) {
   const [sort, setSort] = useState(initial); // { key, dir: "asc" | "desc" } | null
@@ -48,5 +49,5 @@ export function useSortableRows(rows, columns, initial = null) {
     onSort: () => toggle(key),
   });
 
-  return { sorted, sort, sortProps };
+  return { sorted, sort, setSort, sortProps };
 }

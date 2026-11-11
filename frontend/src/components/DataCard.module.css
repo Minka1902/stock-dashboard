@@ -1,0 +1,120 @@
+/* One ruled two-line row. The card's button is stretched underneath; the
+   row's own links and buttons sit above it. */
+.card {
+  position: relative;
+  padding: var(--s-2) var(--gutter, var(--s-3));
+  border-top: 1px solid var(--grid);
+}
+.card[data-open="yes"] { background: color-mix(in oklch, var(--surface-2) 45%, transparent); }
+
+.hit {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.hit:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.card :is(a[href], button, input, select, textarea, label, [tabindex]):not(.hit) {
+  position: relative;
+  z-index: 1;
+}
+
+.main {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  min-height: var(--tap);
+}
+.ident { flex: 1; min-width: 0; }
+.title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--s-2);
+  font-family: var(--mono);
+  font-size: var(--fs-14);
+  font-weight: 700;
+  color: var(--text);
+}
+.subtitle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--s-2);
+  margin-top: 2px;
+  font-size: var(--fs-11-5);
+  color: var(--text-faint);
+}
+.subtitle > * + *::before { content: "· "; }
+.title *,
+.subtitle * { white-space: normal; }
+
+.values {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 55%;
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.value { font-size: var(--fs-12); font-weight: 600; color: var(--text-muted); }
+.value:first-child { font-size: var(--fs-14); font-weight: 700; color: var(--text); }
+.value[data-tone="pos"] { color: var(--positive); }
+.value[data-tone="neg"] { color: var(--negative); }
+.glyph { margin-right: 3px; font-size: 0.8em; }
+
+.chevron {
+  flex: none;
+  color: var(--text-faint);
+  font-size: var(--fs-11);
+  transition: transform var(--dur-1) var(--ease-out-quart);
+}
+.card[data-open="yes"] .chevron { transform: rotate(180deg); color: var(--accent-text); }
+.more {
+  flex: none;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  border: 0;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.menu { flex: none; }
+
+.meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(130px, 100%), 1fr));
+  gap: var(--s-2) var(--s-3);
+  margin: var(--s-2) 0 var(--s-1);
+  padding-top: var(--s-2);
+  border-top: 1px dashed var(--grid);
+}
+.field { min-width: 0; }
+.field dt {
+  font-family: var(--mono);
+  font-size: var(--fs-10);
+  text-transform: uppercase;
+  letter-spacing: var(--caption-spacing);
+  color: var(--text-faint);
+}
+.field dd {
+  margin: 2px 0 0;
+  font-size: var(--fs-12-5);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.field dd * { white-space: normal; }
+
+/* Every link on a card gets a full touch target, as buttons do (index.css). */
+@media (pointer: coarse) {
+  .card a[href]::after {
+    content: "";
+    position: absolute;
+    inset: min(0px, 50% - var(--tap) / 2 - 0.5px);
+  }
+}

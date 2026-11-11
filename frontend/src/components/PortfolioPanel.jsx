@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
 import AnimatedNumber from "./AnimatedNumber";
 import CashBalances from "./CashBalances";
+import DataTable from "./DataTable";
 import ExitRuleDialog from "./ExitRuleDialog";
 import ExtHoursBadge from "./ExtHoursBadge";
 import InfoTip from "./InfoTip";
@@ -262,6 +263,241 @@ export default function PortfolioPanel({
   const fxPending = fx.loading && foreign.length > 0;
   const excludedAmounts = summary.byCurrency.filter((s) => summary.excluded.includes(s.currency));
 
+  const byCat = Object.fromEntries(groups.map((g) => [g.cat, g]));
+  const orderedRows = groups.flatMap((g) => g.rows);
+
+  // Everything a row shows, in the holding's own currency.
+  const rowOf = (h) => {
+    const pos = positions[h.ticker];
+    const q = quotes[h.ticker];
+    const plPct = pos.price != null && h.avg_cost > 0 ? (pos.price - h.avg_cost) / h.avg_cost * 100 : null;
+    const dayPct = q && q.change_pct != null ? q.change_pct : null;
+    return {
+      pos, q, plPct, dayPct,
+      tone: plPct == null ? "flat" : plPct >= 0 ? "pos" : "neg",
+      dayTone: dayPct == null ? "flat" : dayPct >= 0 ? "pos" : "neg",
+    };
+  };
+  const sharesInput = (h) => (
+    <input className={styles.editInput} type="number" min="0" step="any"
+           aria-label={`Shares of ${h.ticker}`}
+           value={editShares} onChange={(e) => setEditShares(e.target.value)} autoFocus />
+  );
+
+  const columns = [
+    {
+      key: "ticker", label: "Ticker", phone: "title",
+      render: (h) => {
+        const ccy = rowOf(h).pos.currency;
+        return (
+          <>
+            <span className={styles.tickerLine}>
+              <Tooltip content={`Analyze ${h.ticker} in a new tab`}>
+                <button className={styles.symbolBtn} onClick={() => openTickerTab(h.ticker)}
+                        aria-label={`Analyze ${h.ticker} in a new tab`}>
+                  <TickerLabel ticker={h.ticker} className={styles.symbol} />
+                </button>
+              </Tooltip>
+              <Tooltip content={ccyTip(ccy, h.ticker)}>
+                <span className={styles.ccyBadge} data-ccy={ccy} tabIndex={0}
+                      aria-label={`Held in ${CURRENCY_NAMES[ccy] || ccy}`}>
+                  {currencySymbol(ccy).trim()} {ccy}
+                </span>
+              </Tooltip>
+            </span>
+            <CategoryCell
+              ticker={h.ticker}
+              category={h.category || "Other"}
+              source={h.category_source}
+              editing={editing === h.ticker}
+              onSetCategory={onSetCategory}
+            />
+          </>
+        );
+      },
+    },
+    {
+      key: "shares", label: "Shares", className: styles.numCol, phone: "subtitle",
+      render: (h) => (editing === h.ticker ? sharesInput(h) : h.shares),
+      phoneRender: (h) => (editing === h.ticker ? sharesInput(h) : `${h.shares} sh`),
+    },
+    {
+      key: "cost", label: "Avg Cost", caption: "Avg cost", className: styles.numCol,
+      render: (h) => (editing === h.ticker ? (
+        <span className={styles.editCost}>
+          <input className={styles.editInput} type="number" min="0" step="any"
+                 aria-label={`Average cost of ${h.ticker} in ${editCcy}`}
+                 value={editCost} onChange={(e) => setEditCost(e.target.value)}
+                 onKeyDown={(e) => { if (e.key === "Escape") setEditing(null); if (e.key === "Enter") saveEdit(h); }} />
+          <SelectMenu
+            label={`Currency of ${h.ticker}`}
+            value={editCcy}
+            options={HOLDING_CURRENCIES.map((c) => ({ value: c, label: c }))}
+            onChange={setEditCcy}
+            className={styles.editCcy}
+          />
+        </span>
+      ) : formatMoney(h.avg_cost, rowOf(h).pos.currency)),
+    },
+    {
+      key: "price", label: "Price", className: styles.numCol,
+      render: (h) => {
+        const { pos, q, dayTone } = rowOf(h);
+        if (pos.price != null) {
+          return (
+            <span className={styles.priceCell}>
+              <span key={pos.price} className={styles.tick} data-tone={dayTone}>{formatMoney(pos.price, pos.currency)}</span>
+              <ExtHoursBadge quote={q} />
+            </span>
+          );
+        }
+        return pos.priceMismatch ? (
+          <Tooltip content={`Quoted in ${quoteCcy(h.ticker)} but held in ${pos.currency}, and no ${quoteCcy(h.ticker)}→${pos.currency} rate is available right now.`}>
+            <span className={styles.fxMissingCell} tabIndex={0}>FX unavailable</span>
+          </Tooltip>
+        ) : "—";
+      },
+    },
+    {
+      key: "day", label: "Day", className: styles.numCol,
+      render: (h) => {
+        const { dayPct, dayTone } = rowOf(h);
+        return <span className={styles.pl} data-tone={dayTone}>{dayPct != null ? signedPct(dayPct, 2) : "—"}</span>;
+      },
+    },
+    {
+      key: "value", caption: "Mkt value", className: styles.numCol, phone: "value",
+      label: <Term tip="Shares × price, in the position's own currency. Group and total rows are in your base currency.">Mkt Value</Term>,
+      render: (h) => {
+        const { pos } = rowOf(h);
+        return pos.value != null ? compact(pos.value, pos.currency) : "—";
+      },
+    },
+    {
+      key: "pl", caption: "P/L", label: <Term term="pl_pct">P/L</Term>, className: styles.numCol, phone: "value",
+      tone: (h) => rowOf(h).tone,
+      render: (h) => {
+        const { plPct, tone } = rowOf(h);
+        return <span className={styles.pl} data-tone={tone}>{plPct != null ? signedPct(plPct) : "—"}</span>;
+      },
+    },
+    {
+      key: "advice", label: "Advice",
+      render: (h) => {
+        const an = analysisByTicker[h.ticker];
+        return an ? (
+          <span className={styles.advice} data-tone={DIRECTIVE_TONE[an.directive]}>
+            {an.directive}
+            <em className={styles.conv}>{an.conviction > 0 ? "+" : ""}{an.conviction}</em>
+          </span>
+        ) : (
+          <span className={styles.advicePending}>analyzing…</span>
+        );
+      },
+    },
+    {
+      key: "trend", label: "Trend", className: styles.numCol,
+      render: (h) => (
+        <Sparkline
+          closes={sparks[h.ticker]?.closes}
+          changePct={sparks[h.ticker]?.change_pct}
+          error={sparks[h.ticker]?.error}
+          loading={!sparks[h.ticker]}
+          range={range}
+          width={80}
+        />
+      ),
+    },
+    {
+      key: "actions", label: "Actions", hideLabel: true, cellClassName: styles.actionsCol, phone: "actions",
+      render: (h) => (editing === h.ticker ? (
+        <span className={styles.editActions}>
+          <Tooltip content={`Save ${h.ticker}`}>
+            <button className={styles.iconAction} onClick={() => saveEdit(h)}
+                    aria-label={`Save ${h.ticker}`}>✓</button>
+          </Tooltip>
+          <Tooltip content="Cancel edit">
+            <button className={styles.iconAction} onClick={() => setEditing(null)}
+                    aria-label="Cancel edit">×</button>
+          </Tooltip>
+        </span>
+      ) : (
+        <span className={styles.rowActions}>
+          <Tooltip content={`Record a sale of ${h.ticker}`}>
+            <button className={styles.textAction} onClick={() => setSelling(h)}
+                    aria-label={`Sell ${h.ticker}`}>Sell</button>
+          </Tooltip>
+          <Tooltip content={`Exit rule for ${h.ticker}: stop, take-profit, trailing stop (alerts only)`}>
+            <button className={styles.iconAction} onClick={() => setRuling(h.ticker)}
+                    aria-label={`Exit rule for ${h.ticker}`}><Icon name="shield" size={14} /></button>
+          </Tooltip>
+          <Tooltip content={`Correct ${h.ticker} (recorded as an adjustment)`}>
+            <button className={styles.iconAction} onClick={() => startEdit(h)}
+                    aria-label={`Edit ${h.ticker}`}>✎</button>
+          </Tooltip>
+          <Tooltip content={`Remove ${h.ticker} without a sale (for a mistaken entry)`}>
+            <button className={styles.remove} onClick={() => onRemove(h.ticker)}
+                    aria-label={`Remove ${h.ticker}`}>×</button>
+          </Tooltip>
+        </span>
+      )),
+    },
+  ];
+
+  const rowActions = (h, close) => {
+    const run = (fn) => () => { close(); fn(); };
+    if (editing === h.ticker) {
+      return (
+        <>
+          <MenuItem onSelect={run(() => saveEdit(h))}>Save {h.ticker}</MenuItem>
+          <MenuItem onSelect={run(() => setEditing(null))}>Cancel edit</MenuItem>
+        </>
+      );
+    }
+    return (
+      <>
+        <MenuItem onSelect={run(() => setSelling(h))}>Sell…</MenuItem>
+        <MenuItem onSelect={run(() => setRuling(h.ticker))}><Icon name="shield" size={14} /> Exit rule…</MenuItem>
+        <MenuItem onSelect={run(() => startEdit(h))}>Edit shares, cost or theme</MenuItem>
+        <MenuDivider />
+        <MenuItem tone="danger" onSelect={run(() => onRemove(h.ticker))}>Remove (a mistaken entry)</MenuItem>
+      </>
+    );
+  };
+
+  const groupHeader = (cat) => {
+    const g = byCat[cat];
+    return {
+      value: g.value != null ? (
+        <Tooltip content={g.mixed
+          ? `Converted into ${base} — this group holds more than one currency${g.excluded.length ? ` (${g.excluded.join(", ")} left out: FX unavailable)` : ""}`
+          : `In ${base}`}>
+          <span tabIndex={0}>{compact(g.value, base)}</span>
+        </Tooltip>
+      ) : "—",
+      pl: g.plPct != null && (
+        <span className={styles.pl} data-tone={g.plPct >= 0 ? "pos" : "neg"}>{signedPct(g.plPct)}</span>
+      ),
+    };
+  };
+
+  const footer = {
+    ticker: (
+      <Tooltip content={summary.excluded.length
+        ? `Converted into ${base}. Left out (FX unavailable): ${summary.excluded.join(", ")}`
+        : `All positions converted into ${base} at live rates`}>
+        <span tabIndex={0}>Total <span className={styles.cardBase}>{base}</span></span>
+      </Tooltip>
+    ),
+    day: hasTotals && total.dayKnown ? (
+      <span className={styles.pl} data-tone={total.day >= 0 ? "pos" : "neg"}>{fmtBaseSigned(total.day)}</span>
+    ) : "—",
+    value: hasTotals && total.value > 0 ? fmtBase(total.value) : "—",
+    pl: totalPl != null ? (
+      <span className={styles.pl} data-tone={totalPl >= 0 ? "pos" : "neg"}>{signedPct(totalPl)}</span>
+    ) : "—",
+  };
+
   return (
     <section className={styles.panel} id="portfolio">
       <header className={styles.head}>
@@ -437,245 +673,32 @@ export default function PortfolioPanel({
         </p>
       )}
 
-      {showEmpty ? (
-        <div className={styles.empty}>
-          <span className={styles.emptyIcon}><Icon name="wallet" size={24} /></span>
-          <p className={styles.emptyTitle}>No holdings yet</p>
-          <p className={styles.emptyText}>
-            Add a position above so suggestions can account for it. US symbols (AAPL) and
-            Tel Aviv listings (TEVA.TA) can sit side by side.
-          </p>
-        </div>
-      ) : (
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th className={styles.numCol}>Shares</th>
-                <th className={styles.numCol}>Avg Cost</th>
-                <th className={styles.numCol}>Price</th>
-                <th className={styles.numCol}>Day</th>
-                <th className={styles.numCol}>
-                  <Term tip="Shares × price, in the position's own currency. Group and total rows are in your base currency.">Mkt Value</Term>
-                </th>
-                <th className={styles.numCol}><Term term="pl_pct">P/L</Term></th>
-                <th>Advice</th>
-                <th className={styles.numCol}>Trend</th>
-                <th><span className={styles.srOnly}>Actions</span></th>
-              </tr>
-            </thead>
-            {groups.map((g) => (
-              <motion.tbody
-                key={g.cat}
-                variants={staggerContainer}
-                initial={reduced ? false : "hidden"}
-                animate="visible"
-              >
-                <tr className={styles.groupRow}>
-                  <td colSpan={5}><span className={styles.groupName}>{g.cat}</span></td>
-                  <td className={styles.numCol}>
-                    {g.value != null ? (
-                      <Tooltip content={g.mixed
-                        ? `Converted into ${base} — this group holds more than one currency${g.excluded.length ? ` (${g.excluded.join(", ")} left out: FX unavailable)` : ""}`
-                        : `In ${base}`}>
-                        <span tabIndex={0}>{compact(g.value, base)}</span>
-                      </Tooltip>
-                    ) : "—"}
-                  </td>
-                  <td className={styles.numCol}>
-                    {g.plPct != null && (
-                      <span className={styles.pl} data-tone={g.plPct >= 0 ? "pos" : "neg"}>{signedPct(g.plPct)}</span>
-                    )}
-                  </td>
-                  <td colSpan={3}></td>
-                </tr>
-                <AnimatePresence initial={false}>
-                  {g.rows.map((h) => {
-                    const pos = positions[h.ticker];
-                    const ccy = pos.currency;
-                    const q = quotes[h.ticker];
-                    const price = pos.price;
-                    const plPct = price != null && h.avg_cost > 0
-                      ? (price - h.avg_cost) / h.avg_cost * 100 : null;
-                    const dayPct = q && q.change_pct != null ? q.change_pct : null;
-                    const tone = plPct == null ? "flat" : plPct >= 0 ? "pos" : "neg";
-                    const dayTone = dayPct == null ? "flat" : dayPct >= 0 ? "pos" : "neg";
-                    const an = analysisByTicker[h.ticker];
-                    const isEditing = editing === h.ticker;
-                    return (
-                      <motion.tr
-                        key={h.ticker}
-                        className={styles.row}
-                        variants={staggerItem}
-                        exit={reduced ? { opacity: 0 } : { opacity: 0, x: -12 }}
-                        layout={!reduced}
-                      >
-                        <td data-col="ticker">
-                          <span className={styles.tickerLine}>
-                            <Tooltip content={`Analyze ${h.ticker} in a new tab`}>
-                              <button className={styles.symbolBtn} onClick={() => openTickerTab(h.ticker)}
-                                      aria-label={`Analyze ${h.ticker} in a new tab`}>
-                                <TickerLabel ticker={h.ticker} className={styles.symbol} />
-                              </button>
-                            </Tooltip>
-                            <Tooltip content={ccyTip(ccy, h.ticker)}>
-                              <span className={styles.ccyBadge} data-ccy={ccy} tabIndex={0}
-                                    aria-label={`Held in ${CURRENCY_NAMES[ccy] || ccy}`}>
-                                {currencySymbol(ccy).trim()} {ccy}
-                              </span>
-                            </Tooltip>
-                          </span>
-                          <CategoryCell
-                            ticker={h.ticker}
-                            category={h.category || "Other"}
-                            source={h.category_source}
-                            editing={isEditing}
-                            onSetCategory={onSetCategory}
-                          />
-                        </td>
-                        {isEditing ? (
-                          <>
-                            <td className={styles.numCol} data-col="shares">
-                              <input className={styles.editInput} type="number" min="0" step="any"
-                                     aria-label={`Shares of ${h.ticker}`}
-                                     value={editShares} onChange={(e) => setEditShares(e.target.value)} autoFocus />
-                            </td>
-                            <td className={styles.numCol} data-col="cost">
-                              <span className={styles.editCost}>
-                                <input className={styles.editInput} type="number" min="0" step="any"
-                                       aria-label={`Average cost of ${h.ticker} in ${editCcy}`}
-                                       value={editCost} onChange={(e) => setEditCost(e.target.value)}
-                                       onKeyDown={(e) => { if (e.key === "Escape") setEditing(null); if (e.key === "Enter") saveEdit(h); }} />
-                                <SelectMenu
-                                  label={`Currency of ${h.ticker}`}
-                                  value={editCcy}
-                                  options={HOLDING_CURRENCIES.map((c) => ({ value: c, label: c }))}
-                                  onChange={setEditCcy}
-                                  className={styles.editCcy}
-                                />
-                              </span>
-                            </td>
-                          </>
-                        ) : (
-                          <>
-                            <td className={styles.numCol} data-col="shares" data-label="Shares">{h.shares}</td>
-                            <td className={styles.numCol} data-col="cost" data-label="Avg cost">{formatMoney(h.avg_cost, ccy)}</td>
-                          </>
-                        )}
-                        <td className={styles.numCol} data-col="price" data-label="Price">
-                          {price != null ? (
-                            <span className={styles.priceCell}>
-                              <span key={price} className={styles.tick} data-tone={dayTone}>{formatMoney(price, ccy)}</span>
-                              <ExtHoursBadge quote={q} />
-                            </span>
-                          ) : pos.priceMismatch ? (
-                            <Tooltip content={`Quoted in ${quoteCcy(h.ticker)} but held in ${ccy}, and no ${quoteCcy(h.ticker)}→${ccy} rate is available right now.`}>
-                              <span className={styles.fxMissingCell} tabIndex={0}>FX unavailable</span>
-                            </Tooltip>
-                          ) : "—"}
-                        </td>
-                        <td className={styles.numCol} data-col="day" data-label="Day">
-                          <span className={styles.pl} data-tone={dayTone}>
-                            {dayPct != null ? signedPct(dayPct, 2) : "—"}
-                          </span>
-                        </td>
-                        <td className={styles.numCol} data-col="value">{pos.value != null ? compact(pos.value, ccy) : "—"}</td>
-                        <td className={styles.numCol} data-col="pl" data-label="P/L">
-                          <span className={styles.pl} data-tone={tone}>
-                            {plPct != null ? signedPct(plPct) : "—"}
-                          </span>
-                        </td>
-                        <td data-col="advice">
-                          {an ? (
-                            <span className={styles.advice} data-tone={DIRECTIVE_TONE[an.directive]}>
-                              {an.directive}
-                              <em className={styles.conv}>{an.conviction > 0 ? "+" : ""}{an.conviction}</em>
-                            </span>
-                          ) : (
-                            <span className={styles.advicePending}>analyzing…</span>
-                          )}
-                        </td>
-                        <td className={styles.numCol} data-col="trend">
-                          <Sparkline
-                            closes={sparks[h.ticker]?.closes}
-                            changePct={sparks[h.ticker]?.change_pct}
-                            error={sparks[h.ticker]?.error}
-                            loading={!sparks[h.ticker]}
-                            range={range}
-                            width={80}
-                          />
-                        </td>
-                        <td className={styles.actionsCol} data-col="actions">
-                          {isEditing ? (
-                            <span className={styles.editActions}>
-                              <Tooltip content={`Save ${h.ticker}`}>
-                                <button className={styles.iconAction} onClick={() => saveEdit(h)}
-                                        aria-label={`Save ${h.ticker}`}>✓</button>
-                              </Tooltip>
-                              <Tooltip content="Cancel edit">
-                                <button className={styles.iconAction} onClick={() => setEditing(null)}
-                                        aria-label="Cancel edit">×</button>
-                              </Tooltip>
-                            </span>
-                          ) : (
-                            <span className={styles.rowActions}>
-                              <Tooltip content={`Record a sale of ${h.ticker}`}>
-                                <button className={styles.textAction} onClick={() => setSelling(h)}
-                                        aria-label={`Sell ${h.ticker}`}>Sell</button>
-                              </Tooltip>
-                              <Tooltip content={`Exit rule for ${h.ticker}: stop, take-profit, trailing stop (alerts only)`}>
-                                <button className={styles.iconAction} onClick={() => setRuling(h.ticker)}
-                                        aria-label={`Exit rule for ${h.ticker}`}><Icon name="shield" size={14} /></button>
-                              </Tooltip>
-                              <Tooltip content={`Correct ${h.ticker} (recorded as an adjustment)`}>
-                                <button className={styles.iconAction} onClick={() => startEdit(h)}
-                                        aria-label={`Edit ${h.ticker}`}>✎</button>
-                              </Tooltip>
-                              <Tooltip content={`Remove ${h.ticker} without a sale (for a mistaken entry)`}>
-                                <button className={styles.remove} onClick={() => onRemove(h.ticker)}
-                                        aria-label={`Remove ${h.ticker}`}>×</button>
-                              </Tooltip>
-                            </span>
-                          )}
-                        </td>
-                      </motion.tr>
-                    );
-                  })}
-                </AnimatePresence>
-              </motion.tbody>
-            ))}
-            <tfoot>
-              <tr className={styles.totals}>
-                <td>
-                  <Tooltip content={summary.excluded.length
-                    ? `Converted into ${base}. Left out (FX unavailable): ${summary.excluded.join(", ")}`
-                    : `All positions converted into ${base} at live rates`}>
-                    <span tabIndex={0}>Total <span className={styles.cardBase}>{base}</span></span>
-                  </Tooltip>
-                </td>
-                <td className={styles.numCol}></td>
-                <td className={styles.numCol}></td>
-                <td className={styles.numCol}></td>
-                <td className={styles.numCol}>
-                  {hasTotals && total.dayKnown ? (
-                    <span className={styles.pl} data-tone={total.day >= 0 ? "pos" : "neg"}>{fmtBaseSigned(total.day)}</span>
-                  ) : "—"}
-                </td>
-                <td className={styles.numCol}>{hasTotals && total.value > 0 ? fmtBase(total.value) : "—"}</td>
-                <td className={styles.numCol}>
-                  {totalPl != null ? (
-                    <span className={styles.pl} data-tone={totalPl >= 0 ? "pos" : "neg"}>{signedPct(totalPl)}</span>
-                  ) : "—"}
-                </td>
-                <td></td>
-                <td></td>
-                <td></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
+      <DataTable
+        columns={columns}
+        rows={orderedRows}
+        rowKey={(h) => h.ticker}
+        rowLabel={(h) => h.ticker}
+        rowActions={rowActions}
+        expanded={(h) => editing === h.ticker}
+        groupBy={(h) => h.category || "Other"}
+        groupHeader={groupHeader}
+        footer={footer}
+        animate
+        classes={{
+          wrap: styles.tableWrap, table: styles.table, row: styles.row,
+          groupRow: styles.groupRow, groupLabel: styles.groupName, footRow: styles.totals,
+        }}
+        empty={(
+          <div className={styles.empty}>
+            <span className={styles.emptyIcon}><Icon name="wallet" size={24} /></span>
+            <p className={styles.emptyTitle}>No holdings yet</p>
+            <p className={styles.emptyText}>
+              Add a position above so suggestions can account for it. US symbols (AAPL) and
+              Tel Aviv listings (TEVA.TA) can sit side by side.
+            </p>
+          </div>
+        )}
+      />
       {selling && (
         <SellDialog
           holding={selling}
