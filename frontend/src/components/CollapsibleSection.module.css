@@ -55,7 +55,7 @@
 /* Phone: the section-header contract (index.css), a title row and then the
    right slot as a caption row. */
 @media (max-width: 640px) {
-  .section { scroll-margin-top: 64px; }
+  .section { scroll-margin-top: calc(64px + var(--section-index-top, 0px)); }
   .head { flex-wrap: wrap; row-gap: var(--s-1); }
   .right { flex-basis: 100%; justify-content: flex-start; text-align: left; }
 }

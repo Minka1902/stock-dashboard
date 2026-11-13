@@ -7,6 +7,7 @@ import ExitRuleDialog from "./ExitRuleDialog";
 import HeldBy13F from "./HeldBy13F";
 import PaperTradeButton from "./PaperTradeButton";
 import InsiderTrades from "./InsiderTrades";
+import MenuButton, { MenuItem } from "./MenuButton";
 import Skeleton from "./Skeleton";
 import StockAlerts from "./StockAlerts";
 import SuggestionHistoryStrip from "./SuggestionHistoryStrip";
@@ -19,6 +20,7 @@ import XPostCard from "./XPostCard";
 import { getAnalyze, analysisReportUrl } from "../api";
 import { currencyForSymbol, formatMoney, formatPrice } from "../lib/format";
 import { useCollapsedSections } from "../hooks/useCollapsedSections";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { useSettingsContext } from "../hooks/useSettingsContext";
 import styles from "./StockDetailPanel.module.css";
 
@@ -83,6 +85,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
   const [watchBusy, setWatchBusy] = useState(false);
   const [ruling, setRuling] = useState(false);
   const { settings } = useSettingsContext();
+  const phone = useMediaQuery(PHONE);
 
   useEffect(() => {
     let alive = true;
@@ -187,151 +190,217 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
       .finally(() => setWatchBusy(false));
   };
 
-  return (
-    <div className={styles.wrap}>
-      <div className={styles.topbar}>
-        <button className={styles.back} onClick={onBack}>
-          <Icon name="arrowRight" size={14} /> <span>Back</span>
-        </button>
-        {/* Ticker and price read as one unit: the name of the thing and what
-            it costs. They used to sit at opposite ends of the flex row. */}
-        <span className={styles.identity}>
-          <TickerLabel ticker={ticker} className={styles.ticker} as="h2" />
-          {refPrice != null && (
-            <span className={styles.priceGroup}>
-              <span className={styles.price}>{px(refPrice)}</span>
-              <Tooltip content={changePct == null
-                ? "Not enough daily history to compute a change"
-                : "Change vs the previous daily close"}>
-                <span
-                  className={styles.change}
-                  data-tone={changePct == null ? "flat" : changePct >= 0 ? "pos" : "neg"}
-                  tabIndex={0}
-                >
-                  {changePct == null
-                    ? "—"
-                    : `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%`}
-                </span>
-              </Tooltip>
+  const back = (
+    <button className={styles.back} onClick={onBack} aria-label={phone ? "Back" : undefined}>
+      <Icon name="arrowRight" size={14} />{!phone && <> <span>Back</span></>}
+    </button>
+  );
+  const taseChip = isTase && (
+    <span className={styles.marketChip}>
+      <Term term="tase">TASE · {ccy}</Term>
+    </span>
+  );
+  // Ticker and price read as one unit: the name of the thing and what it
+  // costs. They used to sit at opposite ends of the flex row.
+  const identity = (
+    <span className={styles.identity}>
+      <TickerLabel ticker={ticker} className={styles.ticker} as="h2" />
+      {refPrice != null && (
+        <span className={styles.priceGroup}>
+          <span className={styles.price}>{px(refPrice)}</span>
+          <Tooltip content={changePct == null
+            ? "Not enough daily history to compute a change"
+            : "Change vs the previous daily close"}>
+            <span
+              className={styles.change}
+              data-tone={changePct == null ? "flat" : changePct >= 0 ? "pos" : "neg"}
+              tabIndex={0}
+            >
+              {changePct == null
+                ? "—"
+                : `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%`}
             </span>
-          )}
-          {isTase && (
-            <span className={styles.marketChip}>
-              <Term term="tase">TASE · {ccy}</Term>
+          </Tooltip>
+        </span>
+      )}
+      {!phone && taseChip}
+    </span>
+  );
+  const verdict = (
+    <>
+      {a && a.recommendation && (
+        <Tooltip content="Buy / Sell / Hold — the headline call">
+          <span className={styles.directive} data-tone={RECO_TONE[a.recommendation]} tabIndex={0}>
+            {a.recommendation.toUpperCase()}
+          </span>
+        </Tooltip>
+      )}
+      {a && (
+        <Tooltip content={DIRECTIVE_TIP[a.directive] || "Finer-grained directive"}>
+          <span className={styles.directive} data-tone={DIRECTIVE_TONE[a.directive]} tabIndex={0}>
+            {a.directive}
+          </span>
+        </Tooltip>
+      )}
+      {a && (
+        <span className={styles.conviction}>
+          <span className={styles.convLabel}><Term term="analysis_conviction">conviction</Term></span>
+          <span className={styles.convTrack}>
+            <span className={styles.convFill} data-neg={a.conviction < 0 ? "yes" : "no"}
+                  style={{ width: `${Math.min(100, Math.abs(a.conviction))}%` }} />
+          </span>
+          <span className={styles.convNum} data-neg={a.conviction < 0 ? "yes" : "no"}>{a.conviction}</span>
+        </span>
+      )}
+    </>
+  );
+  const watch = (
+    <>
+      {canWatch && (
+        <Tooltip content="Track this stock: adds it to your watchlist so every signal source covers it">
+          <button
+            type="button"
+            className={styles.reportBtn}
+            onClick={addToWatchlist}
+            disabled={watchBusy}
+          >
+            <Icon name="star" size={13} /> {watchBusy ? "Adding…" : "Watch"}
+          </button>
+        </Tooltip>
+      )}
+      {watched && (
+        <Tooltip content={memberOf?.length
+          ? `On your ${memberOf.join(", ")} watchlist${memberOf.length > 1 ? "s" : ""}`
+          : "Already on your watchlist"}>
+        <span className={styles.watching} tabIndex={0}>
+          <Icon name="star" size={13} /> Watching
+          {memberOf?.length > 0 && (
+            <span className={styles.watchLists}>
+              {memberOf.map((name) => (
+                <span key={name} className={styles.watchList}>{name}</span>
+              ))}
             </span>
           )}
         </span>
-        {a && a.recommendation && (
-          <Tooltip content="Buy / Sell / Hold — the headline call">
-            <span className={styles.directive} data-tone={RECO_TONE[a.recommendation]} tabIndex={0}>
-              {a.recommendation.toUpperCase()}
-            </span>
-          </Tooltip>
-        )}
-        {a && (
-          <Tooltip content={DIRECTIVE_TIP[a.directive] || "Finer-grained directive"}>
-            <span className={styles.directive} data-tone={DIRECTIVE_TONE[a.directive]} tabIndex={0}>
-              {a.directive}
-            </span>
-          </Tooltip>
-        )}
-        {a && (
-          <span className={styles.conviction}>
-            <span className={styles.convLabel}><Term term="analysis_conviction">conviction</Term></span>
-            <span className={styles.convTrack}>
-              <span className={styles.convFill} data-neg={a.conviction < 0 ? "yes" : "no"}
-                    style={{ width: `${Math.min(100, Math.abs(a.conviction))}%` }} />
-            </span>
-            <span className={styles.convNum} data-neg={a.conviction < 0 ? "yes" : "no"}>{a.conviction}</span>
-          </span>
-        )}
-        <span className={styles.spacer} />
-        {sectionIds.length > 0 && (
-          <Tooltip content={allCollapsed
-            ? "Open every section on this page"
-            : "Fold every section down to its header — remembered across stocks"}>
-            <button
-              type="button"
-              className={styles.reportBtn}
-              onClick={toggleAll}
-            >
-              {allCollapsed ? "Expand all" : "Collapse all"}
-            </button>
-          </Tooltip>
-        )}
-        {canWatch && (
-          <Tooltip content="Track this stock: adds it to your watchlist so every signal source covers it">
-            <button
-              type="button"
-              className={styles.reportBtn}
-              onClick={addToWatchlist}
-              disabled={watchBusy}
-            >
-              <Icon name="star" size={13} /> {watchBusy ? "Adding…" : "Watch"}
-            </button>
-          </Tooltip>
-        )}
-        {watched && (
-          <Tooltip content={memberOf?.length
-            ? `On your ${memberOf.join(", ")} watchlist${memberOf.length > 1 ? "s" : ""}`
-            : "Already on your watchlist"}>
-          <span className={styles.watching} tabIndex={0}>
-            <Icon name="star" size={13} /> Watching
-            {memberOf?.length > 0 && (
-              <span className={styles.watchLists}>
-                {memberOf.map((name) => (
-                  <span key={name} className={styles.watchList}>{name}</span>
-                ))}
+        </Tooltip>
+      )}
+      <PaperTradeButton ticker={ticker} className={styles.reportBtn} />
+    </>
+  );
+  const marketNote = !loading && isTase && (
+    <div className={styles.marketNote} role="note">
+      <Icon name="info" size={14} />
+      <span>
+        Tel Aviv listing — prices in {CCY_NAMES[ccy] || ccy}, no pre-market or after-hours session.
+        {notApplicable.length > 0 && (
+          <>
+            {" "}Not applicable to TASE listings:{" "}
+            {notApplicable.map((na, i) => (
+              <span key={na.source}>
+                {i > 0 && ", "}
+                <Term tip={na.why}>{na.label}</Term>
               </span>
-            )}
-          </span>
-          </Tooltip>
+            ))}
+            {" "}— shown as not applicable rather than as missing data; the Boom Score is renormalized over the rest.
+          </>
         )}
-        <PaperTradeButton ticker={ticker} className={styles.reportBtn} />
-        {held && (
-          <Tooltip content="Stop, take-profit and trailing stop on your holding — alerts only">
-            <button type="button" className={styles.reportBtn} onClick={() => setRuling(true)}>
-              <Icon name="shield" size={13} /> Exit rule
-            </button>
-          </Tooltip>
-        )}
-        {a && (
-          <span className={styles.reportBtns}>
-            <Tooltip content="Download the full analysis as a standalone HTML report">
-              <a className={styles.reportBtn} href={analysisReportUrl(ticker)}>
-                <Icon name="news" size={13} /> Report
-              </a>
-            </Tooltip>
-            <Tooltip content="Open the report print-ready — use the browser dialog to save as PDF">
-              <a className={styles.reportBtn} href={analysisReportUrl(ticker, { print: true })}
-                 target="_blank" rel="noreferrer">
-                PDF
-              </a>
-            </Tooltip>
-          </span>
-        )}
-      </div>
+      </span>
+    </div>
+  );
 
-      {!loading && isTase && (
-        <div className={styles.marketNote} role="note">
-          <Icon name="info" size={14} />
-          <span>
-            Tel Aviv listing — prices in {CCY_NAMES[ccy] || ccy}, no pre-market or after-hours session.
-            {notApplicable.length > 0 && (
-              <>
-                {" "}Not applicable to TASE listings:{" "}
-                {notApplicable.map((na, i) => (
-                  <span key={na.source}>
-                    {i > 0 && ", "}
-                    <Term tip={na.why}>{na.label}</Term>
-                  </span>
-                ))}
-                {" "}— shown as not applicable rather than as missing data; the Boom Score is renormalized over the rest.
-              </>
+  return (
+    <div className={styles.wrap}>
+      {phone ? (
+        <>
+          {/* Phone: the identity row stays on screen; the verdict and the two
+              primary actions follow, everything else is in the ⋯ menu. */}
+          <header className={styles.phoneHead}>
+            {back}
+            {identity}
+            {(sectionIds.length > 0 || held || a) && (
+              <MenuButton label={`More for ${ticker}`}>
+                {(close) => (
+                  <>
+                    {sectionIds.length > 0 && (
+                      <MenuItem onSelect={() => { close(); toggleAll(); }}>
+                        {allCollapsed ? "Expand all sections" : "Collapse all sections"}
+                      </MenuItem>
+                    )}
+                    {held && (
+                      <MenuItem onSelect={() => { close(); setRuling(true); }}>
+                        <Icon name="shield" size={14} /> Exit rule
+                      </MenuItem>
+                    )}
+                    {a && (
+                      <MenuItem onSelect={() => { close(); window.location.assign(analysisReportUrl(ticker)); }}>
+                        <Icon name="news" size={14} /> Report
+                      </MenuItem>
+                    )}
+                    {a && (
+                      <MenuItem onSelect={() => {
+                        close();
+                        window.open(analysisReportUrl(ticker, { print: true }), "_blank", "noreferrer");
+                      }}>
+                        PDF (print-ready report)
+                      </MenuItem>
+                    )}
+                  </>
+                )}
+              </MenuButton>
             )}
-          </span>
+          </header>
+          <div className={styles.topbar}>
+            {taseChip}
+            {verdict}
+            <span className={styles.phoneActions}>{watch}</span>
+          </div>
+        </>
+      ) : (
+        <div className={styles.topbar}>
+          {back}
+          {identity}
+          {verdict}
+          <span className={styles.spacer} />
+          {sectionIds.length > 0 && (
+            <Tooltip content={allCollapsed
+              ? "Open every section on this page"
+              : "Fold every section down to its header — remembered across stocks"}>
+              <button
+                type="button"
+                className={styles.reportBtn}
+                onClick={toggleAll}
+              >
+                {allCollapsed ? "Expand all" : "Collapse all"}
+              </button>
+            </Tooltip>
+          )}
+          {watch}
+          {held && (
+            <Tooltip content="Stop, take-profit and trailing stop on your holding — alerts only">
+              <button type="button" className={styles.reportBtn} onClick={() => setRuling(true)}>
+                <Icon name="shield" size={13} /> Exit rule
+              </button>
+            </Tooltip>
+          )}
+          {a && (
+            <span className={styles.reportBtns}>
+              <Tooltip content="Download the full analysis as a standalone HTML report">
+                <a className={styles.reportBtn} href={analysisReportUrl(ticker)}>
+                  <Icon name="news" size={13} /> Report
+                </a>
+              </Tooltip>
+              <Tooltip content="Open the report print-ready — use the browser dialog to save as PDF">
+                <a className={styles.reportBtn} href={analysisReportUrl(ticker, { print: true })}
+                   target="_blank" rel="noreferrer">
+                  PDF
+                </a>
+              </Tooltip>
+            </span>
+          )}
         </div>
       )}
+
+      {!phone && marketNote}
 
       <SectionIndex
         sections={sectionIds.map((id) => ({ id, label: SECTION_LABELS[id] }))}
@@ -345,6 +414,7 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
           <Pane {...sec("chart")} caption="Chart">
             <ChartPro ticker={ticker} analysis={a} />
           </Pane>
+          {phone && marketNote}
 
           {/* Without the payload these panes would read "no filings", "nothing
               has tripped" — claims about data we never received. Only the

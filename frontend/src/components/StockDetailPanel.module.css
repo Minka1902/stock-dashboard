@@ -331,8 +331,30 @@
   font-weight: 500;
 }
 
-/* --- phones --- */
+/* --- phones ---
+   The identity row (Back, ticker, price, change, ⋯) sticks to the top of
+   the page, with the SectionIndex chips stuck under it; the verdict line and
+   Watch / Paper trade follow in the top bar, then the chart. */
 @media (max-width: 640px) {
+  .wrap { --stock-head-h: 52px; --section-index-top: var(--stock-head-h); gap: var(--s-2); }
+  .phoneHead {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-raised);
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    height: var(--stock-head-h);
+    padding: 0 var(--s-1);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+  }
+  .phoneHead .identity { flex: 1 1 auto; gap: var(--s-2); overflow: hidden; white-space: nowrap; }
+  .phoneHead .back { flex: none; width: var(--tap); height: var(--tap); justify-content: center; padding: 0; border: 0; background: none; }
+  .phoneHead .ticker { font-size: var(--fs-h3); }
+  .phoneHead .price { font-size: var(--fs-15); }
+  .phoneActions { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
   .topbar { padding: var(--s-2) var(--gutter); }
   .stats { grid-template-columns: repeat(2, 1fr); gap: var(--s-2); }
   /* R | price | feasibility on one line, the reason underneath. */

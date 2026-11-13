@@ -1,6 +1,7 @@
 .index {
   position: sticky;
-  top: 0;
+  /* A page with its own sticky header sets this to that header's height. */
+  top: var(--section-index-top, 0);
   z-index: var(--z-raised);
   background: var(--surface);
   border: 1px solid var(--border);
