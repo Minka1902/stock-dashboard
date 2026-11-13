@@ -17,6 +17,29 @@ const AUTH_SCREENS = [
   { id: "auth/totp-challenge", signIn: "main" },
 ];
 
+/**
+ * What each core view must show in its first screen at 390x844 (PRODUCT.md:
+ * one glance, one decision): `{ name, selector, whole? }` per view. The first
+ * visible match's top (its bottom too with `whole`) must sit within the
+ * page scroller's first viewport, above the tab bar.
+ */
+export const FIRST_SCREEN_WIDTH = 390;
+export const FIRST_SCREEN = {
+  sentiment: [
+    { name: "the read", selector: "#sentiment h2" },
+    { name: "the gauge", selector: '#sentiment svg[role="img"]', whole: true },
+  ],
+  suggestions: [{ name: "the first idea", selector: "#suggestions li" }],
+  portfolio: [
+    { name: "the equity total", selector: "#portfolio [data-card]" },
+    { name: "the first holding", selector: "#portfolio ul[aria-label] > li" },
+  ],
+  trades: [{ name: "the first trade", selector: "#trades li" }],
+  // The recorded fixture has no headlines (GDELT and X are blocked where it
+  // was recorded), so the empty state stands in for the first headline.
+  news: [{ name: "the first headline", selector: '#news li, #news [data-error="no"]' }],
+};
+
 function tradingBotTabs() {
   const block = /const TABS = \{([\s\S]*?)\n\};/.exec(readFileSync(TRADING_BOT_SOURCE, "utf8"));
   const keys = block ? [...block[1].matchAll(/^ {2}([\w-]+): \{/gm)].map((m) => m[1]) : [];

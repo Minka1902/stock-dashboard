@@ -3,8 +3,9 @@
  * every page (context.addInitScript), so it must not reference anything
  * outside itself. It installs `window.__shotsProbe` with:
  *
- * - `audit({ minHit })`: the phone gates (page overflow, clipped text, small
- *   hit boxes), the sideways scrollers and the page height in screens;
+ * - `audit({ minHit, firstScreen })`: the phone gates (page overflow, clipped
+ *   text, small hit boxes, what must be in the first screen), the sideways
+ *   scrollers and the page height in screens;
  * - `textNodes()`: every visible text node's font size and box, for the
  *   desktop baseline;
  * - `scroller()`: the element the page scrolls in (the app's inner `.scroll`
@@ -173,9 +174,23 @@ export function installProbe() {
     }];
   }
 
-  function audit({ minHit }) {
+  // The scroller pads its bottom by exactly the chrome over it (the tab bar),
+  // so the first screen ends that far above its bottom edge.
+  function firstScreen(root, checks) {
+    const top = root === document.scrollingElement ? 0 : root.getBoundingClientRect().top;
+    const fold = top + root.clientHeight - parseFloat(style(root).paddingBottom);
+    return checks.flatMap(({ name, selector, whole }) => {
+      const el = [...document.querySelectorAll(selector)].find(visible);
+      if (!el) return [{ gate: "first", element: name, sample: selector, px: 0 }];
+      const box = el.getBoundingClientRect();
+      const below = (whole ? box.bottom : box.top) - fold;
+      return below > 0 ? [{ gate: "first", element: name, sample: sample(el), px: round(below) }] : [];
+    });
+  }
+
+  function audit({ minHit, firstScreen: checks = [] }) {
     const root = scroller();
-    const violations = pageOverflow(root);
+    const violations = [...pageOverflow(root), ...firstScreen(root, checks)];
     const sideways = [];
     const targets = new Set(document.querySelectorAll(INTERACTIVE));
     for (const el of document.body.querySelectorAll("*")) {

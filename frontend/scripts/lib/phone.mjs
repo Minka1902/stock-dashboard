@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { runGestures } from "./gestures.mjs";
 import { captureFullHeight, newContext, openPage, visit } from "./page.mjs";
 import { errorViolations } from "./report.mjs";
-import { fileStem } from "./views.mjs";
+import { FIRST_SCREEN, FIRST_SCREEN_WIDTH, fileStem } from "./views.mjs";
 
 // Phone passes, one width at a time: the capture + gates pass and the touch
 // swipe pass. Heights are the common devices at each width (Galaxy S-class,
@@ -32,7 +32,8 @@ function failed(view, width, target, err) {
 
 async function shootView(target, run, view, width) {
   await visit(target, run.base, view, run.sessions.accounts);
-  const audit = await target.page.evaluate((o) => window.__shotsProbe.audit(o), { minHit: MIN_HIT });
+  const firstScreen = width === FIRST_SCREEN_WIDTH ? FIRST_SCREEN[view.id] || [] : [];
+  const audit = await target.page.evaluate((o) => window.__shotsProbe.audit(o), { minHit: MIN_HIT, firstScreen });
   const file = join(run.out, "phone", `${fileStem(view.id)}@${width}.png`);
   const capture = await captureFullHeight(target.page, file);
   return { view: view.id, width, ...audit, errors: [...target.state.errors], capture: { file, ...capture } };
