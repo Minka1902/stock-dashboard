@@ -3,8 +3,10 @@ import BotCard from "./BotCard";
 import Button from "./Button";
 import ConfirmDialog from "./ConfirmDialog";
 import Icon from "./Icon";
+import InfoTip from "./InfoTip";
 import NewBotDialog from "./NewBotDialog";
 import { useBots } from "../hooks/useBots";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { getWatchlists } from "../api";
 import { formatMoney, formatMoneySigned, formatPercentSigned } from "../lib/format";
 import styles from "./BotsTab.module.css";
@@ -29,6 +31,7 @@ function totalsByCurrency(bots) {
  * balances), onCashChanged (reload them after a bot takes or returns cash).
  */
 export default function BotsTab({ cash = [], onCashChanged }) {
+  const phone = useMediaQuery(PHONE);
   const { bots, strategies, costBps, loading, error, create, pause, resume, stop, stopAll } =
     useBots(onCashChanged);
   const [watchlists, setWatchlists] = useState([]);
@@ -45,6 +48,8 @@ export default function BotsTab({ cash = [], onCashChanged }) {
   const stopped = bots.filter((b) => b.status === "stopped");
   const totals = totalsByCurrency(running);
   const specOf = (key) => strategies.find((s) => s.key === key);
+  const demoNote = `Simulated fills at the live price${costBps != null ? ` ± ${costBps} bps` : ""}, only while the `
+    + "stock's market is open. No real orders are ever placed.";
 
   async function withBusy(bot, fn) {
     setBusyId(bot.id);
@@ -71,14 +76,23 @@ export default function BotsTab({ cash = [], onCashChanged }) {
   return (
     <div className={styles.root}>
       <div className={styles.bar}>
-        <p className={styles.demo} role="note">
-          <Icon name="info" size={14} />
-          <span>
-            <strong>DEMO</strong> — simulated fills at the live price
-            {costBps != null ? ` ± ${costBps} bps` : ""}, only while the stock's market is open.
-            No real orders are ever placed.
-          </span>
-        </p>
+        {phone ? (
+          <p className={styles.demo} role="note">
+            <span>
+              <strong>DEMO</strong> — no real orders{" "}
+              <InfoTip tip={{ label: "Demo bots", short: demoNote }} size={14} side="bottom" />
+            </span>
+          </p>
+        ) : (
+          <p className={styles.demo} role="note">
+            <Icon name="info" size={14} />
+            <span>
+              <strong>DEMO</strong> — simulated fills at the live price
+              {costBps != null ? ` ± ${costBps} bps` : ""}, only while the stock's market is open.
+              No real orders are ever placed.
+            </span>
+          </p>
+        )}
         <div className={styles.barActions}>
           {running.length > 0 && (
             <Button variant="danger" onClick={() => setStopping("all")}>Stop all</Button>
@@ -114,7 +128,7 @@ export default function BotsTab({ cash = [], onCashChanged }) {
       {loading ? (
         <p className={styles.placeholder}>Loading bots…</p>
       ) : running.length === 0 ? (
-        <div className={styles.empty}>
+        <div className={styles.empty} data-empty>
           <span className={styles.emptyIcon}><Icon name="bot" size={24} /></span>
           <p className={styles.emptyTitle}>No bots running</p>
           <p className={styles.emptyText}>

@@ -1,6 +1,7 @@
 import AuditTab from "./AuditTab";
 import BotsTab from "./BotsTab";
 import BrokerTab from "./BrokerTab";
+import InfoTip from "./InfoTip";
 import LotsTab from "./LotsTab";
 import KillSwitchButton from "./KillSwitchButton";
 import PaperTab from "./PaperTab";
@@ -9,11 +10,14 @@ import RiskTab from "./RiskTab";
 import RulesTab from "./RulesTab";
 import ScannerTab from "./ScannerTab";
 import Segmented from "./Segmented";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { useRoute } from "../hooks/useRoute";
 import { navigateTo } from "../lib/nav";
 import styles from "./TradingBotPanel.module.css";
 
 const VIEW = "trading-bot";
+const BLURB = "Demo bots, risk rules, paper trading and an Alpaca paper account. Signals read completed daily "
+  + "closes; stops and fills use live prices. No real money: live trading is off.";
 
 // Tab key -> { label, title, render(props) }. The key is the `?tab=` value, so
 // other pages can deep-link straight to one (e.g. /trading-bot?tab=risk).
@@ -41,6 +45,7 @@ const DEFAULT_TAB = TAB_OPTIONS[0].value;
  */
 export default function TradingBotPanel(props) {
   const route = useRoute();
+  const phone = useMediaQuery(PHONE);
 
   const tab = route.kind === "view" && TABS[route.tab] ? route.tab : DEFAULT_TAB;
 
@@ -48,13 +53,12 @@ export default function TradingBotPanel(props) {
 
   return (
     <section className={styles.panel} id="trading-bot">
-      <header className={styles.head}>
+      <header className={styles.head} data-head={phone ? "inline" : undefined}>
         <div>
-          <h2 className={styles.title}>Trading Bot</h2>
-          <p className={styles.subtitle}>
-            Demo bots, risk rules, paper trading and an Alpaca paper account. Signals read completed daily
-            closes; stops and fills use live prices. No real money: live trading is off.
-          </p>
+          <h2 className={styles.title}>
+            Trading Bot{phone && <> <InfoTip tip={{ label: "Trading Bot", short: BLURB }} size={14} side="bottom" /></>}
+          </h2>
+          {!phone && <p className={styles.subtitle}>{BLURB}</p>}
         </div>
         <KillSwitchButton />
       </header>

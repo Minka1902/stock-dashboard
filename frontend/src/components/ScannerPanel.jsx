@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import DataTable from "./DataTable";
-import ScrollHint from "./ScrollHint";
 import Segmented from "./Segmented";
 import { currencyForSymbol, formatPercentSigned, formatPrice, formatRelativeTime } from "../lib/format";
 import { openTickerTab } from "../lib/nav";
@@ -89,9 +88,7 @@ export default function ScannerPanel({
   return (
     <div className={styles.root}>
       <div className={styles.controls}>
-        <ScrollHint className={styles.filters}>
-          <Segmented options={options} value={filter} onChange={setFilter} ariaLabel="Filter by scan" />
-        </ScrollHint>
+        <Segmented options={options} value={filter} onChange={setFilter} ariaLabel="Filter by scan" overflow="scroll" />
         {earlier > 0 && (
           <label className={styles.check}>
             <input type="checkbox" checked={showEarlier} onChange={(e) => setShowEarlier(e.target.checked)} />

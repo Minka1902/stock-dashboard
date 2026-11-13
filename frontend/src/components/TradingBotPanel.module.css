@@ -30,3 +30,7 @@
   padding: var(--s-2) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
 }
+
+@media (max-width: 640px) {
+  .head { align-items: center; }
+}

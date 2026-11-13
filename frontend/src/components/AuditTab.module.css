@@ -25,3 +25,7 @@
   .row { grid-template-columns: 1fr auto; }
   .detail { grid-column: 1 / -1; }
 }
+
+@media (pointer: coarse) {
+  .csv { display: inline-flex; align-items: center; min-height: var(--tap); }
+}

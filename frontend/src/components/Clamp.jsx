@@ -4,8 +4,9 @@ import styles from "./Clamp.module.css";
 /**
  * Content cut to `lines` lines with a More / Less toggle, shown only when
  * something is actually cut. Inactive (`active={false}`), it is a plain
- * `<span className>` around the children, so a caller can clamp on a phone
- * and leave the wider layout untouched.
+ * `<span className>` around the children (just the children, without a
+ * className), so a caller can clamp on a phone and leave the wider layout
+ * untouched.
  */
 export default function Clamp({ active = true, lines = 2, className = "", label, children }) {
   const textRef = useRef(null);
@@ -22,7 +23,7 @@ export default function Clamp({ active = true, lines = 2, className = "", label,
     return () => observer.disconnect();
   }, [active, open]);
 
-  if (!active) return <span className={className}>{children}</span>;
+  if (!active) return className ? <span className={className}>{children}</span> : children;
   return (
     <span className={`${className} ${styles.clamp}`}>
       <span ref={textRef} className={styles.text} data-open={open ? "yes" : "no"} style={{ "--lines": lines }}>

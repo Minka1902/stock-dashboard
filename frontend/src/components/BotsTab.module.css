@@ -103,3 +103,7 @@
 @media (max-width: 640px) {
   .grid { grid-template-columns: 1fr; padding-block: var(--s-2); gap: var(--s-2); }
 }
+
+@media (max-width: 640px) {
+  .demo { flex: 1 1 auto; align-items: center; }
+}

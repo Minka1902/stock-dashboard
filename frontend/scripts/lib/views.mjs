@@ -39,6 +39,27 @@ export const FIRST_SCREEN = {
   // was recorded), so the empty state stands in for the first headline.
   news: [{ name: "the first headline", selector: '#news li, #news [data-error="no"]' }],
   watchlist: [{ name: "the first watch row", selector: "#watchlist ul > li" }],
+  // Trading Bot: each tab's primary content. The fixture's account has no
+  // bots, an unfunded paper account, no broker, no matches and no audit
+  // entries, so the empty states stand in where there are no rows.
+  "trading-bot": [
+    { name: "the first bot or New bot", selector: "#trading-bot article[data-card], #trading-bot [data-empty] button", whole: true },
+  ],
+  "trading-bot?tab=risk": [
+    { name: "the kill switch", selector: "#trading-bot [data-kill-switch]", whole: true },
+    { name: "the drawdown switch state", selector: '#trading-bot section[aria-labelledby="dd-title"] header', whole: true },
+  ],
+  "trading-bot?tab=paper": [{ name: "the account summary", selector: '#trading-bot section[aria-label="Paper account"]' }],
+  "trading-bot?tab=broker": [{ name: "the broker account", selector: '#trading-bot [role="tabpanel"] > :first-child' }],
+  "trading-bot?tab=performance": [{ name: "the metrics", selector: '#trading-bot section[aria-labelledby="perf-title"] dl' }],
+  "trading-bot?tab=rules": [{ name: "the saved rules", selector: '#trading-bot section[aria-labelledby="saved-rules"]' }],
+  "trading-bot?tab=lots": [{ name: "the first tax lot", selector: '#trading-bot section[aria-labelledby="lots-title"] li' }],
+  "trading-bot?tab=scanner": [
+    { name: "the first match", selector: '#trading-bot section[aria-label="Scanner matches"] :is(li, p)' },
+  ],
+  "trading-bot?tab=audit": [
+    { name: "the first log row", selector: '#trading-bot [role="tabpanel"] :is(ol > li, div > p:last-child)' },
+  ],
   ...Object.fromEntries(STOCKS.map((t) => [`stock/${t}`, [
     { name: "the chart", selector: '[data-anchor="chart"] canvas', whole: true },
   ]])),

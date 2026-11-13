@@ -1,6 +1,5 @@
 .root { display: flex; flex-direction: column; }
 .controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-2) var(--s-3); padding: var(--s-3) var(--gutter, var(--s-4)); }
-.filters { max-width: 100%; }
 .check { display: flex; align-items: center; gap: var(--s-2); font-size: var(--fs-12-5); color: var(--text-muted); }
 .empty { padding: var(--s-3) var(--gutter, var(--s-4)); font-size: var(--fs-12-5); color: var(--text-faint); }
 .wrap { overflow-x: auto; position: relative; }

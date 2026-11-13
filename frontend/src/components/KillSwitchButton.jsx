@@ -18,7 +18,7 @@ export default function KillSwitchButton() {
   const halted = data?.kill_switch?.halted_at;
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} data-kill-switch={halted ? "on" : "off"}>
       {halted ? (
         <>
           <span className={styles.halted} role="status">Trading halted {formatRelativeTime(halted)}</span>
