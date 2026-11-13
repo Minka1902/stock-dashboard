@@ -127,3 +127,8 @@
   /* Two rows of seven rather than fourteen unreadable slivers. */
   .strip { grid-template-columns: repeat(7, minmax(0, 1fr)); }
 }
+
+/* Phone: the strip follows the Economic Calendar instead of leading it. */
+@media (max-width: 640px) {
+  .wrap { margin: var(--s-4) 0 0; }
+}

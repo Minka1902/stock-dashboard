@@ -136,3 +136,21 @@
   cursor: pointer;
 }
 .emptyBtn:disabled { opacity: 0.6; cursor: default; }
+
+/* ---- phone: the blurb behind the title's info control, Refresh beside the
+   title, the account tabs in one scrolling row, one FeedRow per post. ---- */
+.row {
+  padding: var(--s-3) var(--gutter, var(--s-4));
+  border-top: 1px solid var(--grid);
+}
+.row:first-child { border-top: none; }
+
+@media (max-width: 640px) {
+  .subtitle { display: none; }
+  .head { align-items: center; }
+  .head > div:first-child { flex: 1 1 auto; }
+  .degraded { margin-inline: var(--gutter); }
+  .tabs { display: block; padding-inline: 0; }
+  .tabRow { padding-inline: var(--gutter); }
+  .feed { padding: 0; gap: 0; }
+}

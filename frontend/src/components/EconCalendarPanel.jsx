@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
 import DataTable from "./DataTable";
 import Icon from "./Icon";
+import PanelInfo from "./PanelInfo";
 import SuggestionHistoryPreview from "./SuggestionHistoryPreview";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { formatDate } from "../lib/format";
 import styles from "./EconCalendarPanel.module.css";
 import Tooltip from "./Tooltip";
 
+const BLURB = "Upcoming macro releases · CPI, FOMC, payrolls & more ·";
 const IMPORTANCE_LABEL = { high: "High impact", medium: "Medium impact", low: "Low impact" };
 
 // Rows arrive sorted by date then time; each date is a group.
@@ -35,6 +38,7 @@ const COLUMNS = [
 ];
 
 export default function EconCalendarPanel({ data = [], loading, busy, onRefresh, onNavigate }) {
+  const phone = useMediaQuery(PHONE);
   const [highOnly, setHighOnly] = useState(false);
 
   const filtered = useMemo(
@@ -44,25 +48,23 @@ export default function EconCalendarPanel({ data = [], loading, busy, onRefresh,
 
   // Impact ratings are uniform per fetch: official from FMP, or our curated read.
   const curated = data.length > 0 && data.every((e) => e.importance_source === "curated");
+  const impact = curated ? "impact estimated by SIGNAL from the event name" : "official impact ratings";
   const showEmpty = !loading && filtered.length === 0;
+  // What we suggested and how it turned out: above the macro schedule on a
+  // desktop (the calendar answers "what's coming", this "how did the last two
+  // weeks of calls actually go"), under it on a phone, where the schedule is
+  // the first screen's answer.
+  const preview = <SuggestionHistoryPreview onOpenFull={() => onNavigate?.("suggestion-history")} />;
 
   return (
     <>
-    {/* What we suggested and how it turned out, above the macro schedule: the
-        calendar answers "what's coming", this answers "how did the last two
-        weeks of calls actually go". */}
-    <SuggestionHistoryPreview onOpenFull={() => onNavigate?.("suggestion-history")} />
+    {!phone && preview}
 
     <section className={styles.panel} id="econ-calendar">
-      <header className={styles.head}>
+      <header className={styles.head} data-head="inline">
         <div>
-          <h2 className={styles.title}>Economic Calendar</h2>
-          <p className={styles.subtitle}>
-            Upcoming macro releases · CPI, FOMC, payrolls &amp; more ·{" "}
-            {curated
-              ? "impact estimated by SIGNAL from the event name"
-              : "official impact ratings"}
-          </p>
+          <h2 className={styles.title}>Economic Calendar<PanelInfo label="Economic Calendar" blurb={`${BLURB} ${impact}`} /></h2>
+          <p className={styles.subtitle}>{BLURB}{" "}{impact}</p>
         </div>
         <div className={styles.controls}>
           <label className={styles.toggle}>
@@ -101,6 +103,8 @@ export default function EconCalendarPanel({ data = [], loading, busy, onRefresh,
         />
       )}
     </section>
+
+    {phone && preview}
     </>
   );
 }

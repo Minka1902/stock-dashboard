@@ -196,8 +196,15 @@
   .outcome { margin-left: 0; }
 }
 
-/* Phone: the legend takes a row of its own under the month switcher. */
+/* Phone: the blurb is behind the title's info control; the month switcher
+   (short month name) and the legend share one row, the legend scrolling
+   sideways if a small phone runs out of width. */
 @media (max-width: 640px) {
-  .monthBar { flex-wrap: wrap; }
-  .legend { flex-basis: 100%; margin-left: 0; }
+  .subtitle { display: none; }
+  .tally { align-items: flex-start; }
+  .monthBar { gap: var(--s-2); }
+  .monthLabel { min-width: 0; flex: none; }
+  .legend { min-width: 0; gap: 4px; overflow-x: auto; white-space: nowrap; }
+  .legend .dot { margin-left: 4px; }
+  .legend > * { flex: none; }
 }

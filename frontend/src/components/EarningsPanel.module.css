@@ -155,3 +155,48 @@
 
 .empty { padding: var(--s-5) var(--gutter, var(--s-5)); color: var(--text-faint); font-size: var(--fs-12-5); line-height: 1.55; }
 .error { padding: var(--s-5) var(--gutter, var(--s-5)); display: flex; align-items: center; gap: 8px; color: var(--negative); font-size: var(--fs-13); }
+
+/* ---- phone: the blurb behind the title's info control, the scope beside
+   the title, the month switcher and legend in one row, and the month as a
+   list of the days that have reports; a day opens its reports in a sheet. */
+.agenda { list-style: none; margin: 0; padding: 0; }
+.agenda > li + li { border-top: 1px solid var(--grid); }
+.day {
+  appearance: none;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 4.5em minmax(0, 1fr);
+  gap: var(--s-3);
+  align-items: start;
+  padding: var(--s-2) var(--gutter, var(--s-5));
+  border: 0;
+  border-left: 2px solid transparent;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.day[data-today="yes"] { border-left-color: var(--accent); }
+.day[data-open="yes"] { background: var(--accent-weak); }
+.dayDate {
+  padding-top: 2px;
+  font-family: var(--mono);
+  font-size: var(--fs-11);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--caption-spacing);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.day .chipTicker { font-size: var(--fs-10-5); padding: 2px 6px; }
+
+@media (max-width: 640px) {
+  .subtitle { display: none; }
+  .head { align-items: center; }
+  .monthBar { flex-wrap: nowrap; gap: var(--s-2); }
+  .monthLabel { min-width: 0; flex: none; white-space: nowrap; }
+  .legend { flex-wrap: nowrap; min-width: 0; overflow-x: auto; white-space: nowrap; }
+  .legend > * { flex: none; }
+  .detailList { padding-bottom: var(--s-2); }
+}

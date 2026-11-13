@@ -189,3 +189,13 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* Phone: the blurb is behind the title's info control and the high-impact
+   toggle stays beside the title (data-head="inline"). */
+@media (max-width: 640px) {
+  .subtitle { display: none; }
+  .head { align-items: center; }
+}
+@media (pointer: coarse) {
+  .toggle { min-height: var(--tap); }
+}

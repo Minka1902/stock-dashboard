@@ -60,6 +60,12 @@ export const FIRST_SCREEN = {
   "trading-bot?tab=audit": [
     { name: "the first log row", selector: '#trading-bot [role="tabpanel"] :is(ol > li, div > p:last-child)' },
   ],
+  // Reference views. The fixture's econ calendar and X sources failed where
+  // it was recorded, so their empty states stand in for the first row.
+  "suggestion-history": [{ name: "the month calendar", selector: '#suggestion-history [role="grid"]' }],
+  "econ-calendar": [{ name: "the first event", selector: "#econ-calendar ul > li, #econ-calendar > header + div" }],
+  earnings: [{ name: "the first reporting day", selector: '#earnings ul[aria-label="Earnings by date"] > li' }],
+  x: [{ name: "the first post", selector: "#x > ul > li, #x > div:last-child" }],
   ...Object.fromEntries(STOCKS.map((t) => [`stock/${t}`, [
     { name: "the chart", selector: '[data-anchor="chart"] canvas', whole: true },
   ]])),

@@ -76,3 +76,10 @@
 
 .empty { font-size: var(--fs-12-5); color: var(--text-faint); line-height: 1.6; }
 .error { padding: var(--s-4) var(--gutter, var(--s-4)); color: var(--negative); font-size: var(--fs-13); }
+
+/* Phone: the pickers are one sideways-scrolling row (ScrollRow) with the
+   benchmark note under it. */
+@media (max-width: 640px) {
+  .controls { flex-direction: column; align-items: stretch; gap: var(--s-2); }
+  .benchmark { min-width: 0; }
+}

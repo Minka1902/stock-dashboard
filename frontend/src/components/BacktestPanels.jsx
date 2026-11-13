@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
+import Clamp from "./Clamp";
 import DataTable from "./DataTable";
 import HitRateCell from "./HitRateCell";
+import ScrollRow from "./ScrollRow";
 import Segmented from "./Segmented";
 import Skeleton from "./Skeleton";
 import VersionPicker from "./VersionPicker";
 import { getSignalReplay, getTrackRecord } from "../api";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import styles from "./BacktestPanels.module.css";
 import Term from "./Term";
 
@@ -46,6 +49,7 @@ function outcomeColumns(stats) {
 }
 
 function Coverage({ coverage, caveat }) {
+  const phone = useMediaQuery(PHONE);
   const days = coverage?.distinct_days ?? 0;
   return (
     <div className={styles.coverage}>
@@ -55,7 +59,7 @@ function Coverage({ coverage, caveat }) {
           : `${days} day${days === 1 ? "" : "s"} of history · ${coverage.first_date} → ${coverage.last_date}`}
       </span>
       {/* The caveat ships with the numbers rather than being implied by them. */}
-      <span className={styles.covNote}>{caveat}</span>
+      <Clamp active={phone} className={styles.covNote} label="the caveat">{caveat}</Clamp>
     </div>
   );
 }
@@ -104,27 +108,29 @@ function TrackRecord() {
       <Coverage coverage={data.coverage} caveat={data.caveat} />
 
       <div className={styles.controls}>
-        <VersionPicker versions={data.versions} value={data.model_version} onChange={setVersion} />
-        <Segmented
-          ariaLabel="Horizon"
-          value={String(horizon)}
-          onChange={(v) => setHorizon(Number(v))}
-          options={[
-            { value: "7", label: "7 days" },
-            { value: "30", label: "30 days" },
-          ]}
-        />
-        <Segmented ariaLabel="Gross or net of costs" value={basis} onChange={setBasis} options={BASIS_OPTIONS} />
-        <Segmented
-          ariaLabel="Group by"
-          value={groupBy}
-          onChange={setGroupBy}
-          options={[
-            { value: "action", label: "By action" },
-            { value: "kind", label: "By kind" },
-            { value: "ticker", label: "By stock" },
-          ]}
-        />
+        <ScrollRow>
+          <VersionPicker versions={data.versions} value={data.model_version} onChange={setVersion} />
+          <Segmented
+            ariaLabel="Horizon"
+            value={String(horizon)}
+            onChange={(v) => setHorizon(Number(v))}
+            options={[
+              { value: "7", label: "7 days" },
+              { value: "30", label: "30 days" },
+            ]}
+          />
+          <Segmented ariaLabel="Gross or net of costs" value={basis} onChange={setBasis} options={BASIS_OPTIONS} />
+          <Segmented
+            ariaLabel="Group by"
+            value={groupBy}
+            onChange={setGroupBy}
+            options={[
+              { value: "action", label: "By action" },
+              { value: "kind", label: "By kind" },
+              { value: "ticker", label: "By stock" },
+            ]}
+          />
+        </ScrollRow>
         <span className={styles.benchmark}>
           {data.benchmark?.available
             ? `SPY over the same window: ${data.benchmark.return_pct >= 0 ? "+" : ""}${data.benchmark.return_pct}%`
@@ -184,17 +190,19 @@ function SignalReplay() {
       <Coverage coverage={data.coverage} caveat={data.caveat} />
 
       <div className={styles.controls}>
-        <VersionPicker versions={data.versions} value={data.model_version} onChange={setVersion} />
-        <Segmented
-          ariaLabel="Forward window"
-          value={String(horizon)}
-          onChange={(v) => setHorizon(Number(v))}
-          options={[
-            { value: "7", label: "7 days" },
-            { value: "30", label: "30 days" },
-          ]}
-        />
-        <Segmented ariaLabel="Gross or net of costs" value={basis} onChange={setBasis} options={BASIS_OPTIONS} />
+        <ScrollRow>
+          <VersionPicker versions={data.versions} value={data.model_version} onChange={setVersion} />
+          <Segmented
+            ariaLabel="Forward window"
+            value={String(horizon)}
+            onChange={(v) => setHorizon(Number(v))}
+            options={[
+              { value: "7", label: "7 days" },
+              { value: "30", label: "30 days" },
+            ]}
+          />
+          <Segmented ariaLabel="Gross or net of costs" value={basis} onChange={setBasis} options={BASIS_OPTIONS} />
+        </ScrollRow>
         <span className={styles.benchmark}>
           Where does the boom score become useful? Each row is every upward
           crossing of that level, and what price did next.
@@ -218,7 +226,7 @@ export default function BacktestPanels() {
   const [tab, setTab] = useState("track");
   return (
     <section className={styles.panel} id="backtest">
-      <div className={styles.head}>
+      <div className={styles.head} data-head="inline">
         <span className="caption">Did it work?</span>
         <Segmented
           ariaLabel="Backtest view"
