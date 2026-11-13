@@ -1,9 +1,13 @@
 import { useCallback, useState } from "react";
 import { AnimatePresence, Reorder, useDragControls } from "motion/react";
+import Button from "./Button";
+import Dialog from "./Dialog";
 import DragHandle from "./DragHandle";
 import Icon from "./Icon";
 import ExtHoursBadge from "./ExtHoursBadge";
+import InfoTip from "./InfoTip";
 import MenuButton, { MenuDivider, MenuItem, MenuLabel } from "./MenuButton";
+import ScrollHint from "./ScrollHint";
 import Sparkline from "./Sparkline";
 import SparkRange from "./SparkRange";
 import TickerLabel from "./TickerLabel";
@@ -18,6 +22,7 @@ import styles from "./WatchlistPanel.module.css";
 import Tooltip from "./Tooltip";
 
 const itemId = (w) => w.ticker;
+const BLURB = "Group the tickers you want to keep an eye on";
 
 const MARKET_STATE_TIP = {
   LIVE: "Regular session open — the price is live.",
@@ -76,6 +81,7 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
   const [note, setNote] = useState("");
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [range, setRange] = useState("1m");
   const phone = useMediaQuery(PHONE);
 
@@ -114,6 +120,7 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
       setTicker("");
       setNote("");
       setError(null);
+      setAdding(false);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -144,12 +151,102 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
 
   const startNoteEdit = (w) => { setNoteDraft(w.note || ""); setNoteTicker(w.ticker); };
 
+  const tabs = (
+    <div className={styles.tabs} role="tablist" aria-label="Watchlists">
+      {lists.map((l) => (
+        renamingId === l.id ? (
+          <input
+            key={l.id}
+            className={styles.tabInput}
+            value={renameDraft}
+            autoFocus
+            maxLength={60}
+            onChange={(e) => setRenameDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setRenamingId(null); }}
+            onBlur={commitRename}
+          />
+        ) : (
+          <span key={l.id} className={styles.tabWrap} data-active={l.id === activeId ? "yes" : "no"}>
+            <button
+              className={styles.tab}
+              role="tab"
+              aria-selected={l.id === activeId}
+              onClick={() => selectList(l.id)}
+            >
+              {l.name}
+            </button>
+            {l.id === activeId && (
+              <MenuButton label={`Actions for ${l.name}`} className={styles.tabMenu}>
+                {(close) => (
+                  <>
+                    <MenuItem onSelect={() => { close(); setRenameDraft(l.name); setRenamingId(l.id); }}>
+                      <Icon name="edit" size={14} /> Rename
+                    </MenuItem>
+                    <MenuDivider />
+                    <MenuItem
+                      tone="danger"
+                      disabled={lists.length <= 1}
+                      onSelect={() => { close(); setConfirmDeleteId(l.id); }}
+                    >
+                      <Icon name="trash" size={14} />
+                      {lists.length <= 1 ? "Can't delete your only list" : "Delete list"}
+                    </MenuItem>
+                  </>
+                )}
+              </MenuButton>
+            )}
+          </span>
+        )
+      ))}
+      {creating ? (
+        <input
+          className={styles.tabInput}
+          value={newName}
+          autoFocus
+          maxLength={60}
+          placeholder="List name"
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") commitCreate(); if (e.key === "Escape") setCreating(false); }}
+          onBlur={commitCreate}
+        />
+      ) : (
+        <button className={styles.newTab} onClick={() => { setNewName(""); setCreating(true); }}>
+          + New list
+        </button>
+      )}
+    </div>
+  );
+  const addForm = (
+    <form className={styles.form} onSubmit={submit} data-tour={phone ? undefined : "add-form"}>
+      <input
+        className={styles.ticker}
+        placeholder="Ticker (e.g. LMT)"
+        value={ticker}
+        maxLength={12}
+        onChange={(e) => setTicker(e.target.value)}
+      />
+      <input
+        className={styles.note}
+        placeholder="Note (optional)"
+        value={note}
+        maxLength={120}
+        onChange={(e) => setNote(e.target.value)}
+      />
+      <button className={styles.add} disabled={pending || !ticker.trim()}>
+        {pending ? "Adding…" : "Add"}
+      </button>
+    </form>
+  );
+  const addError = error && <p className={styles.error}>{error}</p>;
+
   return (
     <section className={styles.panel} id="watchlist">
-      <header className={styles.head}>
+      <header className={styles.head} data-head={phone ? "inline" : undefined}>
         <div>
-          <h2 className={styles.title}>Watchlists</h2>
-          <p className={styles.subtitle}>Group the tickers you want to keep an eye on</p>
+          <h2 className={styles.title}>
+            Watchlists{phone && <> <InfoTip tip={{ label: "Watchlists", short: BLURB }} size={14} side="bottom" /></>}
+          </h2>
+          {!phone && <p className={styles.subtitle}>{BLURB}</p>}
         </div>
         <span className={styles.headerTools}>
           {isCustom && (
@@ -164,73 +261,13 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
             </Tooltip>
           )}
           {items.length > 0 && <SparkRange value={range} onChange={setRange} />}
+          {phone && (
+            <Button size="sm" data-tour="add-form" aria-label="Add ticker" onClick={() => setAdding(true)}>+ Add</Button>
+          )}
         </span>
       </header>
 
-      {/* list selector */}
-      <div className={styles.tabs} role="tablist" aria-label="Watchlists">
-        {lists.map((l) => (
-          renamingId === l.id ? (
-            <input
-              key={l.id}
-              className={styles.tabInput}
-              value={renameDraft}
-              autoFocus
-              maxLength={60}
-              onChange={(e) => setRenameDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setRenamingId(null); }}
-              onBlur={commitRename}
-            />
-          ) : (
-            <span key={l.id} className={styles.tabWrap} data-active={l.id === activeId ? "yes" : "no"}>
-              <button
-                className={styles.tab}
-                role="tab"
-                aria-selected={l.id === activeId}
-                onClick={() => selectList(l.id)}
-              >
-                {l.name}
-              </button>
-              {l.id === activeId && (
-                <MenuButton label={`Actions for ${l.name}`} className={styles.tabMenu}>
-                  {(close) => (
-                    <>
-                      <MenuItem onSelect={() => { close(); setRenameDraft(l.name); setRenamingId(l.id); }}>
-                        <Icon name="edit" size={14} /> Rename
-                      </MenuItem>
-                      <MenuDivider />
-                      <MenuItem
-                        tone="danger"
-                        disabled={lists.length <= 1}
-                        onSelect={() => { close(); setConfirmDeleteId(l.id); }}
-                      >
-                        <Icon name="trash" size={14} />
-                        {lists.length <= 1 ? "Can't delete your only list" : "Delete list"}
-                      </MenuItem>
-                    </>
-                  )}
-                </MenuButton>
-              )}
-            </span>
-          )
-        ))}
-        {creating ? (
-          <input
-            className={styles.tabInput}
-            value={newName}
-            autoFocus
-            maxLength={60}
-            placeholder="List name"
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") commitCreate(); if (e.key === "Escape") setCreating(false); }}
-            onBlur={commitCreate}
-          />
-        ) : (
-          <button className={styles.newTab} onClick={() => { setNewName(""); setCreating(true); }}>
-            + New list
-          </button>
-        )}
-      </div>
+      {phone ? <ScrollHint className={styles.tabScroller}>{tabs}</ScrollHint> : tabs}
 
       {confirmDeleteId != null && (() => {
         const doomed = lists.find((l) => l.id === confirmDeleteId);
@@ -259,26 +296,8 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
         );
       })()}
 
-      <form className={styles.form} onSubmit={submit} data-tour="add-form">
-        <input
-          className={styles.ticker}
-          placeholder="Ticker (e.g. LMT)"
-          value={ticker}
-          maxLength={12}
-          onChange={(e) => setTicker(e.target.value)}
-        />
-        <input
-          className={styles.note}
-          placeholder="Note (optional)"
-          value={note}
-          maxLength={120}
-          onChange={(e) => setNote(e.target.value)}
-        />
-        <button className={styles.add} disabled={pending || !ticker.trim()}>
-          {pending ? "Adding…" : "Add"}
-        </button>
-      </form>
-      {error && <p className={styles.error}>{error}</p>}
+      {!phone && addForm}
+      {!adding && addError}
 
       {items.length === 0 ? (
         <div className={styles.empty}>
@@ -424,6 +443,12 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
         </Reorder.Group>
       )}
       <p aria-live="polite" className={styles.srOnly}>{liveMessage}</p>
+      {phone && (
+        <Dialog open={adding} size="sm" caption="Watchlist" title="Add ticker" onClose={() => setAdding(false)}>
+          {addForm}
+          {addError}
+        </Dialog>
+      )}
     </section>
   );
 }

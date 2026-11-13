@@ -388,4 +388,17 @@
   .itemNote, .noteInput { order: 5; flex: 1 1 0; margin: 0; }
   .itemNote { padding: 2px 0; font-size: var(--fs-12-5); color: var(--text-muted); }
   .added { display: none; }
+
+  /* Title, range and + Add on one row; the list tabs one scrolling row. */
+  .head { align-items: center; padding-block: var(--s-3); }
+  .head > :first-child { flex: 1 1 auto; }
+  .headerTools { gap: var(--s-2); }
+  .tabScroller { overflow-x: auto; border-bottom: 1px solid var(--border); }
+  .tabs { flex-wrap: nowrap; width: max-content; padding: var(--s-2) var(--gutter); border-bottom: 0; }
+  .tabWrap, .newTab { flex: none; white-space: nowrap; }
+
+  /* The add form, in its sheet: one field per row. */
+  .form { padding: 0; border-bottom: 0; flex-direction: column; }
+  .ticker, .note { width: 100%; min-width: 0; }
+  .add { width: 100%; }
 }

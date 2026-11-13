@@ -38,6 +38,7 @@ export const FIRST_SCREEN = {
   // The recorded fixture has no headlines (GDELT and X are blocked where it
   // was recorded), so the empty state stands in for the first headline.
   news: [{ name: "the first headline", selector: '#news li, #news [data-error="no"]' }],
+  watchlist: [{ name: "the first watch row", selector: "#watchlist ul > li" }],
 };
 
 function tradingBotTabs() {
