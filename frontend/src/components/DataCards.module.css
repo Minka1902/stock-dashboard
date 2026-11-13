@@ -8,6 +8,7 @@
   padding: var(--s-2) var(--gutter, var(--s-3));
   border-bottom: 1px solid var(--grid);
 }
+.toolbar { flex: 1 1 auto; min-width: 0; margin-right: auto; }
 .sort { width: auto; max-width: 100%; }
 .sort > button { height: var(--control-h); font-size: var(--fs-12); }
 

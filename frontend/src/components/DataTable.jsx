@@ -64,15 +64,16 @@ function groupCells(columns, entries, title) {
  * `layout` ("auto" | "table" | "cards" | "scroll"), `cardsBelow` (px: with
  * "auto", cards whenever the table's own container is that narrow, e.g. a
  * table inside a card, instead of only on a phone), `animate` (rows
- * stagger in), and `classes` ({ wrap, table, row, groupRow, groupLabel,
+ * stagger in), `classes` ({ wrap, table, row, groupRow, groupLabel,
  * footRow }) to style the table with a module's own classes instead of the
- * defaults.
+ * defaults, and `toolbar` (controls such as filter chips, shown beside the
+ * cards' sort picker; the table keeps its own controls elsewhere).
  */
 export default function DataTable({
   columns, rows, rowKey, rowLabel, onRowClick, rowActions, rowProps, rowAfter, expanded,
   initialSort = null, limit, empty = null, loading = false, skeletonRows = 8,
   dense = false, stickyHeader = false, caption, label, groupBy, groupHeader, footer,
-  layout = "auto", cardsBelow, animate = false, classes = {},
+  layout = "auto", cardsBelow, animate = false, classes = {}, toolbar,
 }) {
   const phone = useMediaQuery(PHONE);
   const [measure, width] = useElementWidth();
@@ -97,7 +98,7 @@ export default function DataTable({
         rowActions={rowActions} rowProps={rowProps} rowAfter={rowAfter} expanded={expanded}
         sort={sort} onSort={setSort} unsorted={!initialSort} loading={loading} skeletonRows={skeletonRows}
         label={label ?? (typeof caption === "string" ? caption : undefined)}
-        groupBy={groupBy} groupHeader={groupHeader} footer={footer}
+        groupBy={groupBy} groupHeader={groupHeader} footer={footer} toolbar={toolbar}
       />,
     );
   }

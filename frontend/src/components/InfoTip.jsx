@@ -9,10 +9,11 @@ import styles from "./InfoTip.module.css";
  * pins it open, since this is an explicit "what does this mean?" control.
  *
  * Renders nothing for an unknown term, so a missing glossary entry can never
- * produce an empty bubble.
+ * produce an empty bubble. `tip` ({ label, short }) explains something that
+ * is not in the glossary, e.g. a panel's blurb folded away on a phone.
  */
-export default function InfoTip({ term, size = 16, side = "top" }) {
-  const entry = GLOSSARY[term];
+export default function InfoTip({ term, tip, size = 16, side = "top" }) {
+  const entry = tip || GLOSSARY[term];
   if (!entry) return null;
   return (
     <Tooltip
@@ -28,7 +29,7 @@ export default function InfoTip({ term, size = 16, side = "top" }) {
       <button
         type="button"
         className={styles.btn}
-        aria-label={`What is ${entry.label}?`}
+        aria-label={tip ? `About ${entry.label}` : `What is ${entry.label}?`}
         style={{ width: size, height: size }}
       >
         i

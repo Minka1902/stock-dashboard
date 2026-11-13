@@ -1,0 +1,65 @@
+.title {
+  font-family: var(--sans);
+  font-size: var(--fs-14);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+  text-decoration: none;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.title[href]:active { color: var(--accent-text); }
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--s-1);
+  font-family: var(--mono);
+  font-size: var(--fs-11);
+  color: var(--text-muted);
+}
+.sep { color: var(--text-faint); }
+
+/* Small glyph-sized controls; the touch rule's ::after gives them --tap. */
+.source,
+.ticker {
+  appearance: none;
+  min-height: 0;
+  min-width: 0;
+  font: inherit;
+  cursor: pointer;
+}
+.source {
+  border: none;
+  background: none;
+  padding: 0;
+  font-weight: 600;
+  color: var(--accent-text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* X accounts read as a distinct kind of source from a publisher domain. */
+.source[data-kind="x"] { font-style: italic; text-transform: none; }
+
+.tickers {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: auto;
+  flex: none;
+}
+.ticker {
+  padding: 1px 5px;
+  border: 1px solid var(--accent-weak);
+  border-radius: var(--r-xs);
+  background: none;
+  font-size: var(--fs-9-5);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--accent-text);
+}

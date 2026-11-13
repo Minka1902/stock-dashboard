@@ -364,3 +364,20 @@
   font-size: var(--fs-12-5);
   color: var(--text-faint);
 }
+
+/* ---- phone: one row per item (FeedRow), the topic tabs in one scrolling
+   row, the source filter in a sheet, the blurb behind the title's info. ---- */
+.row {
+  padding: var(--s-3) var(--gutter, var(--s-4));
+  border-top: 1px solid var(--grid);
+}
+.row:first-child { border-top: none; }
+
+@media (max-width: 640px) {
+  .head { align-items: center; }
+  .head > div:first-child { flex: 1 1 auto; }
+  .tabs { flex-wrap: nowrap; padding-top: var(--s-2); }
+  .tabs > :first-child { flex: 1 1 auto; min-width: 0; }
+  .sourceBar { align-items: center; flex-wrap: nowrap; }
+  .staleNote, .updateNote { margin-inline: var(--gutter); }
+}

@@ -174,3 +174,8 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* Phone: the blurb folds into the title's info control. */
+@media (max-width: 640px) {
+  .subtitle { display: none; }
+}

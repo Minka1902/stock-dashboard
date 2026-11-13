@@ -1,0 +1,30 @@
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.list > li + li { border-top: 1px solid var(--grid); }
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: var(--tap);
+  font-family: var(--mono);
+  font-size: var(--fs-12-5);
+  color: var(--text);
+  cursor: pointer;
+}
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* X accounts read as a distinct kind of source from a publisher domain. */
+.name[data-kind="x"] { font-style: italic; }
+.count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}

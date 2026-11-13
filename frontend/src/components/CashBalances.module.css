@@ -1,5 +1,5 @@
 .cash {
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
   display: flex;
   flex-direction: column;
@@ -11,6 +11,8 @@
   flex-wrap: wrap;
   gap: var(--s-3);
 }
+.cash[data-layout="sheet"] { padding: 0; border-bottom: 0; }
+.manage { margin-left: auto; }
 .total {
   font-family: var(--mono);
   font-size: var(--fs-15);

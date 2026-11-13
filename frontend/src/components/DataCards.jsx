@@ -23,25 +23,30 @@ function entryList(columns, entries, className) {
 }
 
 /**
- * DataTable's phone layout: a sort picker (when any column sorts), then each
+ * DataTable's phone layout: the `toolbar` (filters) and a sort picker (when
+ * any column sorts) in one bar, then each
  * group as a list of DataCards under a sticky group header, then the footer
  * as a totals block. Same rows, columns and props as the table.
  */
 export default function DataCards({
   columns, groups, rowKey, rowLabel, onRowClick, rowActions, rowProps, rowAfter, expanded,
-  sort, onSort, unsorted, loading, skeletonRows, label, groupBy, groupHeader, footer,
+  sort, onSort, unsorted, loading, skeletonRows, label, groupBy, groupHeader, footer, toolbar,
 }) {
   const options = sortOptions(columns, unsorted);
   const rowCount = groups.reduce((n, g) => n + g.rows.length, 0);
+  const sortable = options.length > 1 && rowCount > 1;
   const first = columns[0];
 
   return (
     <div className={styles.root}>
-      {options.length > 1 && rowCount > 1 && (
+      {(toolbar || sortable) && (
         <div className={styles.sortBar}>
-          <span className="caption" aria-hidden="true">Sort</span>
-          <SelectMenu label="Sort" value={sortValue(sort)} options={options}
-                      onChange={(v) => onSort(parseSort(v))} className={styles.sort} />
+          {toolbar && <div className={styles.toolbar}>{toolbar}</div>}
+          {sortable && !toolbar && <span className="caption" aria-hidden="true">Sort</span>}
+          {sortable && (
+            <SelectMenu label="Sort" value={sortValue(sort)} options={options}
+                        onChange={(v) => onSort(parseSort(v))} className={styles.sort} />
+          )}
         </div>
       )}
       {loading ? (

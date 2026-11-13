@@ -1,6 +1,10 @@
 import { useMemo, useState } from "react";
 import { motion } from "motion/react";
+import Button from "./Button";
+import FeedRow from "./FeedRow";
 import Icon from "./Icon";
+import InfoTip from "./InfoTip";
+import NewsSourceSheet from "./NewsSourceSheet";
 import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
@@ -12,6 +16,7 @@ import MenuButton, { MenuItem, MenuLabel } from "./MenuButton";
 import Tooltip from "./Tooltip";
 import { sourceStale } from "../lib/sources";
 import { SORT_COLUMNS, sourceCounts, unifyFeed } from "../lib/newsSources";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { useSortableRows } from "../hooks/useSortableRows";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import { formatRelativeTime } from "../lib/format";
@@ -24,6 +29,7 @@ const SOURCE_CHIP_LIMIT = 12;
 // Same problem one level up: every tagged ticker used to get its own tab, so a
 // busy news day produced a wall of chips. The rest move into an overflow menu.
 const TICKER_TAB_LIMIT = 8;
+const BLURB = "Your portfolio's tape plus macro headlines, from GDELT and the X accounts you follow";
 
 function SkeletonItems({ rows = 6 }) {
   return Array.from({ length: rows }).map((_, i) => (
@@ -93,6 +99,7 @@ function SortButton({ label, sortKey, sort, onSort }) {
 }
 
 export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sources = [], loading, busy, onRefresh, onUpdateNews, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
+  const phone = useMediaQuery(PHONE);
   const held = useMemo(() => new Set(portfolio.map((h) => h.ticker)), [portfolio]);
 
   // Articles and X posts as one list, so "source" means the same thing for both
@@ -119,8 +126,9 @@ export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sour
   const hasTagged = tickers.length > 0;
 
   const [filter, setFilter] = useState(null);   // topic; null = auto
-  const [source, setSource] = useState(null);   // null = every source
+  const [picked, setPicked] = useState([]);    // sources shown; none = every source
   const [allSources, setAllSources] = useState(false);
+  const [choosingSources, setChoosingSources] = useState(false);
   const active = filter ?? (hasTagged && held.size > 0 ? "portfolio" : "all");
 
   // Fixed segments, then the top-ranked tickers; the tail goes into a menu so
@@ -202,21 +210,17 @@ export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sour
   // clicking that source would actually show.
   const counts = useMemo(() => sourceCounts(byTopic), [byTopic]);
 
-  // Always keep the selected source visible, even when it's outside the top N.
+  // Always keep the selected sources visible, even when outside the top N.
   const shownSources = useMemo(() => {
     if (allSources || counts.length <= SOURCE_CHIP_LIMIT) return counts;
     const head = counts.slice(0, SOURCE_CHIP_LIMIT);
-    if (source && !head.some((s) => s.source === source)) {
-      const picked = counts.find((s) => s.source === source);
-      if (picked) return [...head, picked];
-    }
-    return head;
-  }, [counts, allSources, source]);
+    return [...head, ...counts.slice(SOURCE_CHIP_LIMIT).filter((s) => picked.includes(s.source))];
+  }, [counts, allSources, picked]);
   const hiddenSources = counts.length - Math.min(counts.length, SOURCE_CHIP_LIMIT);
 
   const filtered = useMemo(
-    () => (source ? byTopic.filter((i) => i.source === source) : byTopic),
-    [byTopic, source],
+    () => (picked.length ? byTopic.filter((i) => picked.includes(i.source)) : byTopic),
+    [byTopic, picked],
   );
 
   const { sorted, sort, sortProps } = useSortableRows(
@@ -226,17 +230,18 @@ export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sour
   const showEmpty = !loading && items.length === 0;
   const rows = compact ? sorted.slice(0, COMPACT_LIMIT) : sorted;
 
-  const pickSource = (s) => setSource((cur) => (cur === s ? null : s));
+  // A chip or a row's source shows only that source, or every source again.
+  const pickSource = (s) => setPicked((cur) => (cur.length === 1 && cur[0] === s ? [] : [s]));
 
   return (
     <section className={styles.panel} id="news">
-      <header className={styles.head}>
+      <header className={styles.head} data-head={phone ? "inline" : undefined}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="News" />}
         <div>
-          <h2 className={styles.title}>News</h2>
-          <p className={styles.subtitle}>
-            Your portfolio&apos;s tape plus macro headlines, from GDELT and the X accounts you follow
-          </p>
+          <h2 className={styles.title}>
+            News{phone && <> <InfoTip tip={{ label: "News", short: BLURB }} size={14} side="bottom" /></>}
+          </h2>
+          {!phone && <p className={styles.subtitle}>{BLURB}</p>}
         </div>
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
         {!compact && onUpdateNews && (
@@ -282,6 +287,7 @@ export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sour
               value={active}
               onChange={setFilter}
               options={segments}
+              overflow={phone ? "scroll" : "wrap"}
             />
             {overflowTickers.length > 0 && (
               <MenuButton label={`${overflowTickers.length} more tickers`} className={styles.moreBtn}>
@@ -300,46 +306,56 @@ export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sour
           </div>
 
           <div className={styles.sourceBar}>
-            <div className={styles.sources} role="group" aria-label="Filter by source">
-              <span className={styles.sourceLabel}>Source</span>
-              <button
-                type="button"
-                className={styles.sourceChip}
-                data-active={source === null ? "yes" : "no"}
-                onClick={() => setSource(null)}
-              >
-                All <span className={styles.count}>{byTopic.length}</span>
-              </button>
-              {shownSources.map((s) => (
-                <Tooltip key={s.source}
-                         content={`${s.kind === "x" ? `X account ${s.source}` : `Publisher ${s.source}`} — ${s.count} item${s.count === 1 ? "" : "s"}; click to show only these`}>
-                  <button
-                    type="button"
-                    className={styles.sourceChip}
-                    data-active={source === s.source ? "yes" : "no"}
-                    data-kind={s.kind}
-                    onClick={() => pickSource(s.source)}
-                  >
-                    {s.source} <span className={styles.count}>{s.count}</span>
-                  </button>
-                </Tooltip>
-              ))}
-              {hiddenSources > 0 && (
+            {phone ? (
+              <Button size="sm" aria-haspopup="dialog" onClick={() => setChoosingSources(true)}>
+                Sources: {picked.length || "all"}
+              </Button>
+            ) : (
+              <div className={styles.sources} role="group" aria-label="Filter by source">
+                <span className={styles.sourceLabel}>Source</span>
                 <button
                   type="button"
-                  className={styles.moreSources}
-                  onClick={() => setAllSources((v) => !v)}
+                  className={styles.sourceChip}
+                  data-active={picked.length ? "no" : "yes"}
+                  onClick={() => setPicked([])}
                 >
-                  {allSources ? "show fewer" : `+${hiddenSources} more`}
+                  All <span className={styles.count}>{byTopic.length}</span>
                 </button>
-              )}
-            </div>
+                {shownSources.map((s) => (
+                  <Tooltip key={s.source}
+                           content={`${s.kind === "x" ? `X account ${s.source}` : `Publisher ${s.source}`} — ${s.count} item${s.count === 1 ? "" : "s"}; click to show only these`}>
+                    <button
+                      type="button"
+                      className={styles.sourceChip}
+                      data-active={picked.includes(s.source) ? "yes" : "no"}
+                      data-kind={s.kind}
+                      onClick={() => pickSource(s.source)}
+                    >
+                      {s.source} <span className={styles.count}>{s.count}</span>
+                    </button>
+                  </Tooltip>
+                ))}
+                {hiddenSources > 0 && (
+                  <button
+                    type="button"
+                    className={styles.moreSources}
+                    onClick={() => setAllSources((v) => !v)}
+                  >
+                    {allSources ? "show fewer" : `+${hiddenSources} more`}
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className={styles.sortGroup} role="group" aria-label="Sort">
               <SortButton label="Source" sortKey="source" sort={sort} onSort={sortProps("source").onSort} />
               <SortButton label="Time" sortKey="when" sort={sort} onSort={sortProps("when").onSort} />
             </div>
           </div>
+          {phone && (
+            <NewsSourceSheet open={choosingSources} counts={counts} picked={picked}
+                             onChange={setPicked} onClose={() => setChoosingSources(false)} />
+          )}
         </>
       )}
 
@@ -362,14 +378,14 @@ export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sour
             rows.map((it) => (
               <motion.li
                 key={it.id}
-                className={it.kind === "x" ? styles.xItem : styles.item}
+                className={phone ? styles.row : it.kind === "x" ? styles.xItem : styles.item}
                 data-source={it.source}
                 data-kind={it.kind}
                 variants={staggerItem}
               >
-                {it.kind === "x"
-                  ? <XPostCard post={it.raw} compact />
-                  : <Article a={it.raw} onPickSource={pickSource} />}
+                {phone ? <FeedRow item={it} onPickSource={pickSource} />
+                  : it.kind === "x" ? <XPostCard post={it.raw} compact />
+                    : <Article a={it.raw} onPickSource={pickSource} />}
               </motion.li>
             ))
           )}

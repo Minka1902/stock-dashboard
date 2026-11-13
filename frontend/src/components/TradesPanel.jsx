@@ -1,7 +1,9 @@
+import { useState } from "react";
 import DataTable from "./DataTable";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import EmptyState from "./EmptyState";
+import Segmented from "./Segmented";
 import {
   formatCurrencyCompact,
   formatCurrencyFull,
@@ -15,6 +17,11 @@ import InfoTip from "./InfoTip";
 const COMPACT_LIMIT = 5;
 
 const TYPE_TONE = { Buy: "pos", Sell: "neg" };
+const SIDES = [
+  { value: "all", label: "All" },
+  { value: "Buy", label: "Buys" },
+  { value: "Sell", label: "Sells" },
+];
 
 const COLUMNS = [
   { key: "ticker", label: "Ticker", phone: "title", skeleton: "46px", sort: (t) => t.ticker,
@@ -55,7 +62,15 @@ function typeTone(type) {
 }
 
 export default function TradesPanel({ trades, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
+  const [side, setSide] = useState("all");
   const showEmpty = !loading && trades.length === 0;
+  // A side with no filings is left out (and stops filtering), so the list is
+  // never emptied by a filter.
+  const sides = SIDES.map((o) => ({
+    ...o, badge: o.value === "all" ? trades.length : trades.filter((t) => t.transaction_type === o.value).length,
+  })).filter((o) => o.badge);
+  const active = sides.some((o) => o.value === side) ? side : "all";
+  const rows = active === "all" ? trades : trades.filter((t) => t.transaction_type === active);
 
   return (
     <section className={styles.panel} id="trades">
@@ -75,12 +90,15 @@ export default function TradesPanel({ trades, loading, busy, onRefresh, compact 
       ) : (
         <DataTable
           columns={COLUMNS}
-          rows={trades}
+          rows={rows}
           rowKey={(t) => t.accession}
           limit={compact ? COMPACT_LIMIT : undefined}
           loading={loading}
           animate
           classes={{ wrap: styles.tableWrap, table: styles.table }}
+          toolbar={!compact && sides.length > 2 && (
+            <Segmented ariaLabel="Buys or sells" value={active} onChange={setSide} options={sides} overflow="scroll" />
+          )}
         />
       ))}
     </section>

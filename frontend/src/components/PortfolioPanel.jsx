@@ -2,8 +2,11 @@ import { useCallback, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
 import AnimatedNumber from "./AnimatedNumber";
+import Button from "./Button";
 import CashBalances from "./CashBalances";
 import DataTable from "./DataTable";
+import Dialog from "./Dialog";
+import EditHoldingDialog from "./EditHoldingDialog";
 import ExitRuleDialog from "./ExitRuleDialog";
 import ExtHoursBadge from "./ExtHoursBadge";
 import InfoTip from "./InfoTip";
@@ -17,6 +20,7 @@ import Term from "./Term";
 import TickerLabel from "./TickerLabel";
 import Tooltip from "./Tooltip";
 import { useFxRates } from "../hooks/useFxRates";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { useProfile } from "../hooks/useProfile";
 import { useSparklines } from "../hooks/useSparklines";
 import { navigateTo, openTickerTab, routeToPath } from "../lib/nav";
@@ -30,6 +34,9 @@ import styles from "./PortfolioPanel.module.css";
 const DIRECTIVE_TONE = { Accumulate: "buy", Hold: "hold", Reduce: "warn", Avoid: "sell" };
 const ANALYTICS_ROUTE = { kind: "view", view: "trading-bot", tab: "performance" };
 const LOTS_ROUTE = { kind: "view", view: "trading-bot", tab: "lots" };
+const BLURB = "Holdings the daily suggestions are tailored to. Each row is in its own currency; "
+  + "totals are converted into your base currency at live rates. P/L uses live quotes "
+  + "(incl. pre/post-market) when available, otherwise the latest signal price.";
 
 // Mirrors backend/app/themes.py THEMES (validated server-side too).
 const THEMES = [
@@ -67,6 +74,9 @@ export default function PortfolioPanel({
   portfolio, cash = [], signals, quotes = {}, analyses = [],
   onAdd, onEdit, onSetCategory, onRemove, onSell, onMoveCash, onSetCash,
 }) {
+  const phone = useMediaQuery(PHONE);
+  const [adding, setAdding] = useState(false);
+  const [cashOpen, setCashOpen] = useState(false);
   const [ticker, setTicker] = useState("");
   const [shares, setShares] = useState("");
   const [avgCost, setAvgCost] = useState("");
@@ -212,6 +222,7 @@ export default function PortfolioPanel({
       }
       setTicker(""); setShares(""); setAvgCost(""); setAddCcy("auto"); setPayCash(null);
       setError(null);
+      setAdding(false);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -238,6 +249,10 @@ export default function PortfolioPanel({
     setMergeNote(null);
     setNote(`Sold ${order.shares} ${h.ticker} — realized ${formatMoneySigned(out.realized_pnl, out.currency)}.`);
   }
+
+  // A desktop edits a holding in its row; a phone in a sheet (EditHoldingDialog).
+  const rowEditing = (h) => !phone && editing === h.ticker;
+  const editSheet = phone && editing ? portfolio.find((h) => h.ticker === editing) : null;
 
   const showEmpty = portfolio.length === 0;
   const reduced = prefersReducedMotion();
@@ -309,7 +324,7 @@ export default function PortfolioPanel({
               ticker={h.ticker}
               category={h.category || "Other"}
               source={h.category_source}
-              editing={editing === h.ticker}
+              editing={rowEditing(h)}
               onSetCategory={onSetCategory}
             />
           </>
@@ -318,12 +333,12 @@ export default function PortfolioPanel({
     },
     {
       key: "shares", label: "Shares", className: styles.numCol, phone: "subtitle",
-      render: (h) => (editing === h.ticker ? sharesInput(h) : h.shares),
-      phoneRender: (h) => (editing === h.ticker ? sharesInput(h) : `${h.shares} sh`),
+      render: (h) => (rowEditing(h) ? sharesInput(h) : h.shares),
+      phoneRender: (h) => `${h.shares} sh`,
     },
     {
       key: "cost", label: "Avg Cost", caption: "Avg cost", className: styles.numCol,
-      render: (h) => (editing === h.ticker ? (
+      render: (h) => (rowEditing(h) ? (
         <span className={styles.editCost}>
           <input className={styles.editInput} type="number" min="0" step="any"
                  aria-label={`Average cost of ${h.ticker} in ${editCcy}`}
@@ -410,7 +425,7 @@ export default function PortfolioPanel({
     },
     {
       key: "actions", label: "Actions", hideLabel: true, cellClassName: styles.actionsCol, phone: "actions",
-      render: (h) => (editing === h.ticker ? (
+      render: (h) => (rowEditing(h) ? (
         <span className={styles.editActions}>
           <Tooltip content={`Save ${h.ticker}`}>
             <button className={styles.iconAction} onClick={() => saveEdit(h)}
@@ -446,7 +461,7 @@ export default function PortfolioPanel({
 
   const rowActions = (h, close) => {
     const run = (fn) => () => { close(); fn(); };
-    if (editing === h.ticker) {
+    if (rowEditing(h)) {
       return (
         <>
           <MenuItem onSelect={run(() => saveEdit(h))}>Save {h.ticker}</MenuItem>
@@ -498,37 +513,91 @@ export default function PortfolioPanel({
     ) : "—",
   };
 
+  const cashProps = {
+    balances: cash, base, rates: fx.rates, currencies: HOLDING_CURRENCIES, onMove: onMoveCash, onSet: onSetCash,
+  };
+
+  const addForm = (
+    <form className={styles.form} onSubmit={submit} data-tour={phone ? undefined : "add-form"}>
+      <input className={styles.ticker} placeholder="Ticker" value={ticker} maxLength={12}
+             aria-label="Ticker (e.g. AAPL or TEVA.TA)"
+             onChange={(e) => setTicker(e.target.value.toUpperCase())} />
+      <input className={styles.num} placeholder="Shares" value={shares} type="number" min="0" step="any"
+             aria-label="Shares"
+             onChange={(e) => setShares(e.target.value)} />
+      <input className={styles.num}
+             placeholder={`Cost${(addCcy === "auto" ? detected : addCcy) ? ` ${currencySymbol(addCcy === "auto" ? detected : addCcy).trim()}` : ""}`}
+             aria-label="Average cost per share, in the position's currency"
+             value={avgCost} type="number" min="0" step="any"
+             onChange={(e) => setAvgCost(e.target.value)} />
+      <Tooltip content="The position's currency. Auto: .TA tickers are shekels, US symbols dollars, anything else is asked from Yahoo.">
+        <span className={styles.ccyPick}>
+          <SelectMenu label="Currency" value={addCcy} options={addCcyOptions} onChange={setAddCcy} />
+        </span>
+      </Tooltip>
+      <Tooltip content={tradeCcy
+        ? `Debit the cost (plus fees) from your ${tradeCcy} cash. Off: the money came from outside this portfolio.`
+        : "Pick or type a ticker first"}>
+        <label className={styles.payCash}>
+          <input type="checkbox" checked={payFromCash} disabled={!tradeCcy}
+                 onChange={(e) => setPayCash(e.target.checked)} />
+          Pay from cash
+        </label>
+      </Tooltip>
+      <button className={styles.add} disabled={pending || !ticker.trim()}>
+        {pending ? "Adding…" : "Add"}
+      </button>
+    </form>
+  );
+  const addError = error && <p className={styles.error}>{error}</p>;
+
   return (
     <section className={styles.panel} id="portfolio">
-      <header className={styles.head}>
+      <header className={styles.head} data-head={phone ? "inline" : undefined}>
         <div>
-          <h2 className={styles.title}>Portfolio</h2>
-          <p className={styles.subtitle}>
-            Holdings the daily suggestions are tailored to. Each row is in its own currency;
-            totals are converted into your base currency at live rates. P/L uses live quotes
-            (incl. pre/post-market) when available, otherwise the latest signal price.
-          </p>
+          <h2 className={styles.title}>
+            Portfolio{phone && <> <InfoTip tip={{ label: "Portfolio", short: BLURB }} size={14} side="bottom" /></>}
+          </h2>
+          {!phone && <p className={styles.subtitle}>{BLURB}</p>}
         </div>
+        {phone && (
+          <Button size="sm" data-tour="add-form" aria-label="Add holding" onClick={() => setAdding(true)}>+ Add</Button>
+        )}
+        {phone && !showEmpty && (
+          <MenuButton label="More portfolio views">
+            {(close) => (
+              <>
+                <MenuItem onSelect={() => { close(); navigateTo(ANALYTICS_ROUTE); }}>Analytics</MenuItem>
+                <MenuItem onSelect={() => { close(); navigateTo(LOTS_ROUTE); }}>Lots &amp; rebalance</MenuItem>
+              </>
+            )}
+          </MenuButton>
+        )}
         <div className={styles.headControls}>
-          <span className={styles.baseSwitch} data-tour="base-currency">
-            <span className={styles.baseLabel}>
-              Base <InfoTip term="base_currency" size={14} side="bottom" />
+          {phone ? (
+            <SelectMenu label="Base currency" value={base} onChange={changeBase} options={BASE_OPTIONS}
+                        className={styles.basePick} />
+          ) : (
+            <span className={styles.baseSwitch} data-tour="base-currency">
+              <span className={styles.baseLabel}>
+                Base <InfoTip term="base_currency" size={14} side="bottom" />
+              </span>
+              <Segmented
+                ariaLabel="Base currency for totals"
+                value={base}
+                onChange={changeBase}
+                options={BASE_OPTIONS}
+              />
             </span>
-            <Segmented
-              ariaLabel="Base currency for totals"
-              value={base}
-              onChange={changeBase}
-              options={BASE_OPTIONS}
-            />
-          </span>
+          )}
           {!showEmpty && <SparkRange value={range} onChange={setRange} />}
-          {!showEmpty && (
+          {!phone && !showEmpty && (
             <a className={styles.analyticsLink} href={routeToPath(ANALYTICS_ROUTE)}
                onClick={(e) => { e.preventDefault(); navigateTo(ANALYTICS_ROUTE); }}>
               Analytics →
             </a>
           )}
-          {!showEmpty && (
+          {!phone && !showEmpty && (
             <a className={styles.analyticsLink} href={routeToPath(LOTS_ROUTE)}
                onClick={(e) => { e.preventDefault(); navigateTo(LOTS_ROUTE); }}>
               Lots &amp; rebalance →
@@ -624,46 +693,9 @@ export default function PortfolioPanel({
         </>
       )}
 
-      <CashBalances
-        balances={cash}
-        base={base}
-        rates={fx.rates}
-        currencies={HOLDING_CURRENCIES}
-        onMove={onMoveCash}
-        onSet={onSetCash}
-      />
-
-      <form className={styles.form} onSubmit={submit} data-tour="add-form">
-        <input className={styles.ticker} placeholder="Ticker" value={ticker} maxLength={12}
-               aria-label="Ticker (e.g. AAPL or TEVA.TA)"
-               onChange={(e) => setTicker(e.target.value.toUpperCase())} />
-        <input className={styles.num} placeholder="Shares" value={shares} type="number" min="0" step="any"
-               aria-label="Shares"
-               onChange={(e) => setShares(e.target.value)} />
-        <input className={styles.num}
-               placeholder={`Cost${(addCcy === "auto" ? detected : addCcy) ? ` ${currencySymbol(addCcy === "auto" ? detected : addCcy).trim()}` : ""}`}
-               aria-label="Average cost per share, in the position's currency"
-               value={avgCost} type="number" min="0" step="any"
-               onChange={(e) => setAvgCost(e.target.value)} />
-        <Tooltip content="The position's currency. Auto: .TA tickers are shekels, US symbols dollars, anything else is asked from Yahoo.">
-          <span className={styles.ccyPick}>
-            <SelectMenu label="Currency" value={addCcy} options={addCcyOptions} onChange={setAddCcy} />
-          </span>
-        </Tooltip>
-        <Tooltip content={tradeCcy
-          ? `Debit the cost (plus fees) from your ${tradeCcy} cash. Off: the money came from outside this portfolio.`
-          : "Pick or type a ticker first"}>
-          <label className={styles.payCash}>
-            <input type="checkbox" checked={payFromCash} disabled={!tradeCcy}
-                   onChange={(e) => setPayCash(e.target.checked)} />
-            Pay from cash
-          </label>
-        </Tooltip>
-        <button className={styles.add} disabled={pending || !ticker.trim()}>
-          {pending ? "Adding…" : "Add"}
-        </button>
-      </form>
-      {error && <p className={styles.error}>{error}</p>}
+      {!phone && <CashBalances {...cashProps} />}
+      {!phone && addForm}
+      {!phone && addError}
       {/* Only while that holding is still here — removing it retires the note. */}
       {mergeNote && portfolio.some((h) => h.ticker === mergeNote.ticker) && (
         <p className={styles.mergeNote} role="status">
@@ -679,7 +711,7 @@ export default function PortfolioPanel({
         rowKey={(h) => h.ticker}
         rowLabel={(h) => h.ticker}
         rowActions={rowActions}
-        expanded={(h) => editing === h.ticker}
+        expanded={rowEditing}
         groupBy={(h) => h.category || "Other"}
         groupHeader={groupHeader}
         footer={footer}
@@ -699,6 +731,28 @@ export default function PortfolioPanel({
           </div>
         )}
       />
+      {phone && <CashBalances {...cashProps} layout="row" onManage={() => setCashOpen(true)} />}
+      {phone && (
+        <Dialog open={adding} size="sm" caption="Portfolio" title="Add holding" onClose={() => setAdding(false)}>
+          {addForm}
+          {addError}
+        </Dialog>
+      )}
+      {phone && (
+        <Dialog open={cashOpen} size="sm" caption="Portfolio" title="Cash" onClose={() => setCashOpen(false)}>
+          <CashBalances {...cashProps} layout="sheet" />
+        </Dialog>
+      )}
+      {editSheet && (
+        <EditHoldingDialog
+          holding={editSheet}
+          currencies={HOLDING_CURRENCIES}
+          themes={THEMES}
+          onSave={(sh, ac, ccy) => onEdit(editSheet.ticker, sh, ac, ccy)}
+          onSetCategory={onSetCategory}
+          onClose={() => setEditing(null)}
+        />
+      )}
       {selling && (
         <SellDialog
           holding={selling}

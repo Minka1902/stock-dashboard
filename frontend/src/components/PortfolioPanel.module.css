@@ -576,14 +576,24 @@
 .editCcy { width: 76px; }
 .editCcy > button { height: 28px; font-size: var(--fs-12); font-family: var(--mono); padding: 0 6px 0 8px; }
 
-/* --- phones (the holdings themselves are DataTable cards) --- */
+/* --- phones: totals, then the holdings (DataTable cards), then cash. Add,
+   cash and edit open as sheets, so the form only ever sits in one. --- */
 @media (max-width: 640px) {
-  .summary { grid-template-columns: 1fr 1fr; gap: var(--s-2); padding: var(--s-3) var(--gutter); }
-  .summary > :first-child { grid-column: 1 / -1; }
-  .card { padding-block: var(--s-2); }
-  .cardValue { font-size: var(--fs-lead); }
+  .head { align-items: center; }
+  .head > :first-child { flex: 1 1 auto; }
+  /* Base currency and sparkline range: one control row under the title. */
+  .headControls { flex: 1 1 100%; flex-wrap: nowrap; justify-content: space-between; gap: var(--s-2); }
+  .basePick { width: auto; }
+  .basePick > button { height: var(--control-h); font-size: var(--fs-12-5); }
 
-  .form { padding: var(--s-3) var(--gutter); }
+  .summary { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); padding: var(--s-3) var(--gutter); }
+  .card { padding-block: 0; gap: 2px; }
+  .cardLabel .cardBase { display: none; }
+  .cardValue { font-size: var(--fs-lead); flex-wrap: wrap; column-gap: var(--s-1); row-gap: 0; }
+  .cardPct { font-size: var(--fs-11); }
+  .cardSub { font-size: var(--fs-10); }
+
+  .form { padding: 0; border-bottom: 0; }
   .ticker, .num { flex: 1 1 calc(50% - var(--s-1)); width: auto; min-width: 0; }
   .ccyPick { flex: 1 1 calc(50% - var(--s-1)); }
   .payCash { flex: 1 1 calc(50% - var(--s-1)); }

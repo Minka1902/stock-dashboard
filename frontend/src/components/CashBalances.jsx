@@ -20,10 +20,12 @@ const MODES = [
  *
  * Props: balances [{currency, balance}], base, rates (into base), currencies
  * offered for a new balance, onMove(ccy, amount, side), onSet(ccy, balance),
- * readOnly (hide the controls).
+ * readOnly (hide the controls), layout: "full" (in a pane), "row" (the total
+ * and a Manage button calling `onManage`, the phone's cash row) or "sheet"
+ * (full, inside a Dialog that brings its own padding).
  */
 export default function CashBalances({
-  balances, base, rates, currencies, onMove, onSet, readOnly = false,
+  balances, base, rates, currencies, onMove, onSet, readOnly = false, layout = "full", onManage,
 }) {
   const [form, setForm] = useState(null); // { currency, mode, amount, fresh }
   const [error, setError] = useState(null);
@@ -32,6 +34,7 @@ export default function CashBalances({
   const shown = balances.filter((b) => b.balance);
   const { total, excluded } = convertCash(shown, base, rates);
   const unused = currencies.filter((c) => !shown.some((b) => b.currency === c));
+  const row = layout === "row";
 
   const open = (currency, mode, fresh = false) => {
     setForm({ currency, mode, amount: "", fresh });
@@ -59,7 +62,7 @@ export default function CashBalances({
   }
 
   return (
-    <div className={styles.cash}>
+    <div className={styles.cash} data-layout={layout}>
       <div className={styles.head}>
         <span className="caption">Cash</span>
         <span className={styles.total}>
@@ -71,14 +74,20 @@ export default function CashBalances({
             {excluded.join(", ")} left out of the total: FX unavailable
           </span>
         )}
-        {!readOnly && unused.length > 0 && !form?.fresh && (
+        {row && (
+          <Button size="sm" className={styles.manage} onClick={onManage}
+                  aria-label="Manage cash: deposit, withdraw or set a balance">
+            Manage
+          </Button>
+        )}
+        {!row && !readOnly && unused.length > 0 && !form?.fresh && (
           <Button size="sm" onClick={() => open(unused.includes(base) ? base : unused[0], "deposit", true)}>
             + Cash
           </Button>
         )}
       </div>
 
-      {shown.length > 0 && (
+      {!row && shown.length > 0 && (
         <ul className={styles.list}>
           {shown.map((b) => (
             <li key={b.currency} className={styles.row}>
@@ -100,7 +109,7 @@ export default function CashBalances({
         </ul>
       )}
 
-      {form && (
+      {!row && form && (
         <form className={styles.form} onSubmit={submit}>
           {form.fresh ? (
             <SelectMenu label="Cash currency" value={form.currency}
