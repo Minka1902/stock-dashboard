@@ -270,9 +270,15 @@
   color: var(--text-muted);
 }
 
-/* Phones: the drawing rail sits above the canvas (see ChartTools.module.css). */
-@media (max-width: 560px) {
-  .stage { flex-direction: column; }
+/* Phone: one toolbar row (timeframes scroll, Chart tools opens the sheet),
+   then the chart, then the OHLC readout as one sideways-scrolling line. */
+.phoneBar { display: flex; align-items: center; gap: var(--s-2); }
+.tfStrip { flex: 1 1 auto; min-width: 0; }
+.toolsBtn { flex: none; }
+@media (max-width: 640px) {
+  .legend { order: 1; flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; gap: var(--s-2); }
+  .legendTicker, .volExact { display: none; }
+  .key { order: 2; }
 }
 
 @media (pointer: coarse) {

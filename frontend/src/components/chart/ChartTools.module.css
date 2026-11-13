@@ -443,27 +443,29 @@
 }
 .toast[data-tone="error"] .toastBar { background: var(--negative); }
 
-/* Phones: a 36px vertical rail beside the plot left ~150px of chart once the
-   plan's price labels took their share. The rail becomes a wrapping row
-   above the canvas instead, and flyouts drop down from the rail's own left
-   edge so they stay on screen. */
-@media (max-width: 560px) {
-  .rail {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-self: stretch;
-  }
-  .railSep { width: 1px; height: 18px; margin: 0 3px; align-self: center; }
-  .flyout {
-    left: 0;
-    top: calc(100% + 6px);
-    max-width: calc(100vw - 32px);
-    transform-origin: left top;
-  }
-  /* A group near the right edge opens its flyout leftwards (DrawingRail
-     sets data-align when the default would run off screen). */
-  .flyout[data-align="end"] { left: auto; right: 0; transform-origin: right top; }
+/* ---- slim drawing row (phone, while drawing) ----
+   A vertical rail beside the plot would cost the phone chart a third of its
+   width, so it is one row that takes the toolbar's place instead. */
+.slimRail {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
 }
+.slimRail[data-disabled="yes"] .slimScroll { opacity: 0.55; }
+.slimScroll { overflow-x: auto; }
+.slimRail > :first-child { flex: 1 1 auto; min-width: 0; }
+.slimTools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: max-content;
+  padding: 2px;
+  border: 1px solid var(--grid);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.slimTools .railBtn { flex: none; }
+.slimTools .railSep { width: 1px; height: 18px; margin: 0 3px; flex: none; }
 
 @media (pointer: coarse) {
   .railBtn { width: var(--tap); height: var(--tap); }
