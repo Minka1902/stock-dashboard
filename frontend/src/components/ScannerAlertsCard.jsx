@@ -1,6 +1,8 @@
 import { useState } from "react";
 import Button from "./Button";
+import Clamp from "./Clamp";
 import Field from "./Field";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import styles from "./ScannerAlertsCard.module.css";
 
 /**
@@ -9,6 +11,7 @@ import styles from "./ScannerAlertsCard.module.css";
  * ({alerts_enabled, per_hour}), onSave(prefs) → saved prefs, maxPerHour (20).
  */
 export default function ScannerAlertsCard({ prefs, onSave, maxPerHour = 20 }) {
+  const phone = useMediaQuery(PHONE);
   const [enabled, setEnabled] = useState(prefs.alerts_enabled);
   const [perHour, setPerHour] = useState(String(prefs.per_hour));
   const [busy, setBusy] = useState(false);
@@ -35,8 +38,10 @@ export default function ScannerAlertsCard({ prefs, onSave, maxPerHour = 20 }) {
     <form className={styles.card} onSubmit={save} aria-labelledby="scanner-alerts-title">
       <h3 id="scanner-alerts-title" className={styles.title}>Scanner alerts</h3>
       <p className={styles.text}>
-        Off by default. When on, each ticker alerts you at most once a day, and no more than the number
-        below go out in an hour; anything over that waits for a single digest, at most one an hour.
+        <Clamp active={phone} label="how scanner alerts work">
+          Off by default. When on, each ticker alerts you at most once a day, and no more than the number
+          below go out in an hour; anything over that waits for a single digest, at most one an hour.
+        </Clamp>
       </p>
       <div className={styles.row}>
         <label className={styles.check}>
@@ -44,7 +49,7 @@ export default function ScannerAlertsCard({ prefs, onSave, maxPerHour = 20 }) {
           Alert me about scanner matches
         </label>
         <Field label="At most" suffix="an hour" error={error} inline>
-          {(a) => <input {...a} type="number" min={1} max={maxPerHour} step={1} size={4} value={perHour}
+          {(a) => <input {...a} type="number" min={1} max={maxPerHour} step={1} size={4} inputMode="numeric" value={perHour}
                          disabled={!enabled}
                          onChange={(e) => { setPerHour(e.target.value); setSaved(false); }} />}
         </Field>

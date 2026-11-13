@@ -2,11 +2,17 @@ import { useState } from "react";
 import Button from "./Button";
 import ConfirmDialog from "./ConfirmDialog";
 import Field from "./Field";
+import FormSheet from "./FormSheet";
+import InfoTip from "./InfoTip";
+import SheetActions from "./SheetActions";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { acknowledgeTrip, setMaxDrawdown, useRiskStatus } from "../hooks/useRiskStatus";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./DrawdownSwitch.module.css";
 
 const STATE_LABEL = { off: "Off", armed: "Armed", tripped: "Tripped" };
+const ABOUT = "Pauses new-buy suggestions and new bot entries once your portfolio falls this far below its high "
+  + "(time-weighted, so deposits and withdrawals don't count). Exits keep running and nothing is ever sold for you.";
 
 function stateOf(dd) {
   if (!dd || dd.max_pct == null) return "off";
@@ -17,18 +23,22 @@ function stateOf(dd) {
  * The drawdown kill switch: its limit, how far the portfolio is below its
  * high right now, and — once tripped — the acknowledge that re-enables new
  * entries. Reads the shared risk-status store, so the app banner updates too.
+ * On a phone the limit is set in a sheet.
  */
 export default function DrawdownSwitch() {
   const { data, error } = useRiskStatus();
+  const phone = useMediaQuery(PHONE);
   const [draft, setDraft] = useState(null);
   const [fieldError, setFieldError] = useState(null);
   const [pending, setPending] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const dd = data?.drawdown;
   const state = stateOf(dd);
   const value = draft ?? (dd?.max_pct != null ? String(dd.max_pct) : "");
   const [lo, hi] = dd?.range || [1, 90];
+  const formId = phone ? "drawdown-limit" : undefined;
 
   async function save(pct) {
     setPending(true);
@@ -36,6 +46,7 @@ export default function DrawdownSwitch() {
     try {
       await setMaxDrawdown(pct);
       setDraft(null);
+      setEditing(false);
     } catch (err) {
       setFieldError(err.fields?.max_drawdown_pct || err.message);
     } finally {
@@ -47,18 +58,27 @@ export default function DrawdownSwitch() {
     e.preventDefault();
     save(value === "" ? null : Number(value));
   };
+  const close = () => {
+    setEditing(false);
+    setDraft(null);
+    setFieldError(null);
+  };
 
   return (
     <section className={styles.card} data-state={state} aria-labelledby="dd-title">
-      <header className={styles.head}>
-        <h3 id="dd-title" className={styles.title}>Drawdown kill switch</h3>
+      <header className={styles.head} data-head={phone ? "inline" : undefined}>
+        <h3 id="dd-title" className={styles.title}>
+          Drawdown kill switch{phone && <> <InfoTip tip={{ label: "Drawdown kill switch", short: ABOUT }} size={14} side="bottom" /></>}
+        </h3>
         <span className={styles.pill} data-state={state}>{STATE_LABEL[state]}</span>
       </header>
-      <p className={styles.text}>
-        Pauses new-buy suggestions and new bot entries once your portfolio falls this far below
-        its high (time-weighted, so deposits and withdrawals don't count). Exits keep running and
-        nothing is ever sold for you.
-      </p>
+      {!phone && (
+        <p className={styles.text}>
+          Pauses new-buy suggestions and new bot entries once your portfolio falls this far below
+          its high (time-weighted, so deposits and withdrawals don't count). Exits keep running and
+          nothing is ever sold for you.
+        </p>
+      )}
       {error && <p className={styles.error} role="alert">{error}</p>}
 
       {dd?.current ? (
@@ -84,21 +104,30 @@ export default function DrawdownSwitch() {
         </div>
       )}
 
-      <form className={styles.form} onSubmit={submit}>
-        <Field label="Pause new entries at (% below the high)" suffix="%" error={fieldError}
-               hint={`${lo}–${hi}%. Leave empty to turn it off.`}>
-          {(a) => <input {...a} type="number" min={lo} max={hi} step="0.5" inputMode="decimal"
-                         value={value} placeholder="off" onChange={(e) => setDraft(e.target.value)} />}
-        </Field>
-        <div className={styles.actions}>
-          {dd?.max_pct != null && (
-            <Button variant="quiet" size="sm" disabled={pending} onClick={() => save(null)}>Turn off</Button>
-          )}
-          <Button variant="primary" size="sm" type="submit" disabled={pending || draft == null}>
-            {pending ? "Saving…" : "Save"}
-          </Button>
+      {phone && (
+        <div className={styles.limit}>
+          <span>{dd?.max_pct != null ? `Pauses at ${dd.max_pct}% below the high` : "No limit set"}</span>
+          <Button size="sm" onClick={() => setEditing(true)}>{dd?.max_pct != null ? "Edit" : "Set limit"}</Button>
         </div>
-      </form>
+      )}
+
+      <FormSheet sheet={phone} open={editing} onClose={close} caption="Risk" title="Drawdown kill switch">
+        <form id={formId} className={styles.form} onSubmit={submit}>
+          <Field label="Pause new entries at (% below the high)" suffix="%" error={fieldError}
+                 hint={`${lo}–${hi}%. Leave empty to turn it off.`}>
+            {(a) => <input {...a} type="number" min={lo} max={hi} step="0.5" inputMode="decimal"
+                           value={value} placeholder="off" onChange={(e) => setDraft(e.target.value)} />}
+          </Field>
+          <SheetActions className={styles.actions}>
+            {dd?.max_pct != null && (
+              <Button variant="quiet" size="sm" disabled={pending} onClick={() => save(null)}>Turn off</Button>
+            )}
+            <Button variant="primary" size="sm" type="submit" form={formId} disabled={pending || draft == null}>
+              {pending ? "Saving…" : "Save"}
+            </Button>
+          </SheetActions>
+        </form>
+      </FormSheet>
 
       <ConfirmDialog
         open={confirming}

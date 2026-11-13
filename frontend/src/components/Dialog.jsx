@@ -1,7 +1,9 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import ErrorBoundary from "./ErrorBoundary";
 import Sheet from "./Sheet";
 import Tooltip from "./Tooltip";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
+import { SheetFooterContext } from "../hooks/useSheetFooter";
 import styles from "./Dialog.module.css";
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -13,14 +15,21 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * `tone` tints the top rule ("caution" | "negative" | "accent") so a dialog
  * that changes something risky reads differently from a plain form.
  * `initialFocus` is a ref to focus on open (default: the first field).
+ * `form` marks a form sheet: on a phone it takes the full height, rows
+ * marked `data-fields` stack one field per row, and the footer (the
+ * `footer` prop, else whatever SheetActions puts there) is pinned at the
+ * bottom with its buttons sharing the width.
  */
 export default function Dialog({
   open, title, caption, onClose, children, footer, size = "md", tone,
-  initialFocus, closeOnBackdrop = true, className,
+  initialFocus, closeOnBackdrop = true, className, form = false,
 }) {
   const titleId = useId();
   const panelRef = useRef(null);
   const returnFocus = useRef(null);
+  const phone = useMediaQuery(PHONE);
+  const [slot, setSlot] = useState(null);
+  const sheetFooter = form && phone && !footer;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -61,6 +70,7 @@ export default function Dialog({
       className={`${styles.panel} ${className || ""}`}
       data-size={size}
       data-tone={tone}
+      data-form={form ? "" : undefined}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -78,10 +88,11 @@ export default function Dialog({
       </header>
       <div className={styles.body}>
         <ErrorBoundary compact label={typeof title === "string" ? title : undefined}>
-          {children}
+          <SheetFooterContext.Provider value={sheetFooter ? slot : null}>{children}</SheetFooterContext.Provider>
         </ErrorBoundary>
       </div>
       {footer && <footer className={styles.foot}>{footer}</footer>}
+      {sheetFooter && <footer ref={setSlot} className={styles.foot} />}
     </Sheet>
   );
 }

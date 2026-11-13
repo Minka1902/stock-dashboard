@@ -14,3 +14,15 @@
   font-size: var(--fs-12);
 }
 .error { flex-basis: 100%; color: var(--negative); font-size: var(--fs-12); }
+
+/* A phone builds rules in a sheet: one operand per row, the remove button
+   beside the first. */
+@media (max-width: 640px) {
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+  .row > * { grid-column: 1; }
+  .row > button { grid-column: 2; grid-row: 1; }
+  .error { grid-column: 1 / -1; }
+  .operand { display: flex; }
+  .select { flex: 1; min-width: 0; max-width: none; }
+  .num { height: var(--field-h); }
+}

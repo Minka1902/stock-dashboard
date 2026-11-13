@@ -6,10 +6,11 @@ import styles from "./ConfirmDialog.module.css";
 /**
  * "Are you sure?" built on Dialog. `onConfirm` may be async; its error is
  * shown in place and the dialog stays open. `tone` "negative" marks a
- * destructive action (red rule and button).
+ * destructive action (red rule and button). `form`: the body holds a field,
+ * so on a phone it opens as a full-height form sheet (Dialog `form`).
  */
 export default function ConfirmDialog({
-  open, title, caption, children, confirmLabel = "Confirm", tone, onConfirm, onClose,
+  open, title, caption, children, confirmLabel = "Confirm", tone, onConfirm, onClose, form = false,
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
@@ -31,7 +32,7 @@ export default function ConfirmDialog({
   }
 
   return (
-    <Dialog open={open} size="sm" title={title} caption={caption} tone={tone} onClose={close}
+    <Dialog open={open} size="sm" title={title} caption={caption} tone={tone} onClose={close} form={form}
             footer={(
               <>
                 <Button variant="quiet" onClick={close}>Cancel</Button>

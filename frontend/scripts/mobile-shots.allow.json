@@ -1,10 +1,10 @@
 {
   "summary": {
-    "recordedAt": "2026-11-13T22:28:06.166Z",
+    "recordedAt": "2026-11-13T22:50:22.304Z",
     "gates": {
       "overflow": {"360": 0, "390": 0, "430": 0},
       "clip": {"360": 0, "390": 0, "430": 0},
-      "hit": {"360": 56, "390": 56, "430": 56},
+      "hit": {"360": 53, "390": 53, "430": 53},
       "first": {"360": 0, "390": 0, "430": 0},
       "error": {"360": 0, "390": 0, "430": 0}
     },
@@ -36,12 +36,12 @@
       "info": {"360": 23.3, "390": 19.3, "430": 16.5},
       "settings": {"360": 9.4, "390": 7.6, "430": 6.6},
       "server": {"360": 22.2, "390": 17.6, "430": 14.4},
-      "trading-bot?tab=risk": {"360": 4.5, "390": 3.8, "430": 3.4},
+      "trading-bot?tab=risk": {"360": 2.9, "390": 2.4, "430": 2.2},
       "trading-bot?tab=paper": {"360": 1, "390": 1, "430": 1},
       "trading-bot?tab=broker": {"360": 1, "390": 1, "430": 1},
       "trading-bot?tab=performance": {"360": 2.3, "390": 1.9, "430": 1.7},
-      "trading-bot?tab=rules": {"360": 2.1, "390": 1.8, "430": 1.4},
-      "trading-bot?tab=lots": {"360": 2.2, "390": 1.8, "430": 1.6},
+      "trading-bot?tab=rules": {"360": 1, "390": 1, "430": 1},
+      "trading-bot?tab=lots": {"360": 1.6, "390": 1.3, "430": 1.1},
       "trading-bot?tab=scanner": {"360": 1.4, "390": 1.2, "430": 1.1},
       "trading-bot?tab=audit": {"360": 1, "390": 1, "430": 1},
       "stock/AAPL": {"360": 2.9, "390": 2.6, "430": 2.4},
@@ -98,30 +98,6 @@
         "size": "45x26",
         "widths": [360, 390, 430],
         "count": 81,
-        "reason": "pre-existing before the mobile redesign (baseline 2026-11-10)"
-      }
-    ],
-    "trading-bot?tab=risk": [
-      {
-        "gate": "hit",
-        "element": "form.form label.check input",
-        "sample": "",
-        "px": 8,
-        "size": "318x32",
-        "widths": [360, 390, 430],
-        "count": 6,
-        "reason": "pre-existing before the mobile redesign (baseline 2026-11-10)"
-      }
-    ],
-    "trading-bot?tab=scanner": [
-      {
-        "gate": "hit",
-        "element": "div.row label.check input",
-        "sample": "",
-        "px": 8,
-        "size": "261x32",
-        "widths": [360, 390, 430],
-        "count": 3,
         "reason": "pre-existing before the mobile redesign (baseline 2026-11-10)"
       }
     ]

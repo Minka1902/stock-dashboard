@@ -2,6 +2,7 @@ import { useState } from "react";
 import Button from "./Button";
 import Field from "./Field";
 import Segmented from "./Segmented";
+import SheetActions from "./SheetActions";
 import TimeMachineOdds from "./TimeMachineOdds";
 import { formatMoney } from "../lib/format";
 import styles from "./ExitRulesEditor.module.css";
@@ -129,7 +130,7 @@ export default function ExitRulesEditor({
                          placeholder="none" onChange={(e) => setStop(e.target.value)} />}
         </Field>
       </div>
-      <div className={styles.row}>
+      <div className={styles.row} data-fields>
         <Field label="Take-profit" error={errors.take_profit} suffix={currency}>
           {(a) => <input {...a} type="number" min="0" step="any" inputMode="decimal" value={takeProfit}
                          placeholder="none" onChange={(e) => setTakeProfit(e.target.value)} />}
@@ -171,16 +172,16 @@ export default function ExitRulesEditor({
       {!compact && <p className={styles.note}>Rules alert you; they never sell anything.</p>}
       {formError && <p className={styles.error} role="alert">{formError}</p>}
 
-      <div className={styles.actions}>
+      <SheetActions className={styles.actions}>
         {rule && onDelete && (
           <Button variant="danger" size="sm" disabled={pending} onClick={() => run(onDelete)}>Remove rule</Button>
         )}
         <span className={styles.spacer} />
         {onCancel && <Button variant="quiet" onClick={onCancel}>Cancel</Button>}
-        <Button variant="primary" type="submit" disabled={pending}>
+        <Button variant="primary" type="submit" form={formId} disabled={pending}>
           {pending ? "Saving…" : rule ? "Save rule" : "Add rule"}
         </Button>
-      </div>
+      </SheetActions>
     </form>
   );
 }

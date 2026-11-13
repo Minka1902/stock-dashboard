@@ -70,7 +70,7 @@ export default function RuleBuilder({ value, onChange, schema, errors = {} }) {
           + Exit conditions
         </Button>
       )}
-      <div className={styles.risk}>
+      <div className={styles.risk} data-fields>
         {RISK.map((r) => (
           <Field key={r.key} label={r.label} suffix={r.suffix} error={errors[r.key]}>
             {(a) => <input {...a} type="number" min="0" step="any" inputMode="decimal" value={value[r.key] ?? ""}

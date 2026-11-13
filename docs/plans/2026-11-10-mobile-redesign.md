@@ -277,7 +277,7 @@ Tick an item in the same commit that completes it.
 - [x] Phase 4 — STC-102 table migrations
 - [x] Phase 5 — Core views
 - [x] Phase 5 — Watchlist + stock page
-- [ ] Phase 5 — Trading Bot
+- [x] Phase 5 — Trading Bot
 - [ ] Phase 5 — Reference views
 - [ ] Phase 5 — Settings, Info, Server, AuthGate
 - [ ] Phase 6 — STC-104 touch pass

@@ -85,6 +85,7 @@ export default function NewBotDialog({ open, strategies, cash, watchlists, onCre
   return (
     <Dialog
       open={open}
+      form
       size="lg"
       tone="accent"
       caption="Demo bot · simulated fills"
@@ -112,7 +113,7 @@ export default function NewBotDialog({ open, strategies, cash, watchlists, onCre
         </fieldset>
         {errors.strategy && <p className={styles.error}>{errors.strategy}</p>}
 
-        <div className={styles.grid}>
+        <div className={styles.grid} data-fields>
           {spec.params.map((p) => (p.choices === "saved_rules" ? (
             <Field key={p.key} label={p.label} error={errors[`params.${p.key}`]}
                    hint={savedRules.length ? null : "Save a rule on the Rules tab first"}>
@@ -125,7 +126,7 @@ export default function NewBotDialog({ open, strategies, cash, watchlists, onCre
             </Field>
           ) : (
             <Field key={p.key} label={p.label} suffix={p.unit} error={errors[`params.${p.key}`]}>
-              {(a) => <input {...a} type="number" min={p.min} max={p.max} step={p.step}
+              {(a) => <input {...a} type="number" min={p.min} max={p.max} step={p.step} inputMode="decimal"
                              value={params[p.key] ?? ""}
                              onChange={(e) => setParams({ ...params, [p.key]: e.target.value })} />}
             </Field>
@@ -137,7 +138,7 @@ export default function NewBotDialog({ open, strategies, cash, watchlists, onCre
           <Segmented ariaLabel="What the bot trades" value={activeMode} options={modes} onChange={setMode} />
           {activeMode === "tickers" && (
             <Field label="Tickers" hint={`Comma-separated ${ccy} listings, e.g. AAPL, MSFT`} error={errors.tickers}>
-              {(a) => <input {...a} value={tickers} placeholder="AAPL, MSFT, NVDA"
+              {(a) => <input {...a} value={tickers} placeholder="AAPL, MSFT, NVDA" autoCapitalize="characters"
                              onChange={(e) => setTickers(e.target.value.toUpperCase())} />}
             </Field>
           )}
@@ -155,7 +156,7 @@ export default function NewBotDialog({ open, strategies, cash, watchlists, onCre
           )}
         </div>
 
-        <div className={styles.grid}>
+        <div className={styles.grid} data-fields>
           <div className={styles.money}>
             <span className="caption">From cash</span>
             {funded.length ? (
@@ -166,7 +167,7 @@ export default function NewBotDialog({ open, strategies, cash, watchlists, onCre
             {errors.currency && <p className={styles.error}>{errors.currency}</p>}
           </div>
           <Field label={`Amount (${ccy})`} hint={`${formatMoney(available, ccy)} available`} error={errors.amount}>
-            {(a) => <input {...a} type="number" min="0" step="any" value={amount}
+            {(a) => <input {...a} type="number" min="0" step="any" inputMode="decimal" value={amount}
                            onChange={(e) => setAmount(e.target.value)} />}
           </Field>
           <Field label="Name" hint="optional" error={errors.name}>

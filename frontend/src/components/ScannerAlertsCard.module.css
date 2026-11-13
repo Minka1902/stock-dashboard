@@ -4,3 +4,7 @@
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-4); }
 .check { display: flex; align-items: center; gap: var(--s-2); font-size: var(--fs-13); color: var(--text-muted); min-height: 32px; }
 .ok { color: var(--positive); font-size: var(--fs-12-5); }
+
+@media (pointer: coarse) {
+  .check { min-height: var(--tap); }
+}
