@@ -7,13 +7,11 @@ import Skeleton from "./Skeleton";
 import SortHeader from "./SortHeader";
 import Tooltip from "./Tooltip";
 import { useElementWidth } from "../hooks/useElementWidth";
-import { useMediaQuery } from "../hooks/useMediaQuery";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { useSortableRows } from "../hooks/useSortableRows";
 import { cellContent, cx, groupRows, phoneRole } from "../lib/dataTable";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import styles from "./DataTable.module.css";
-
-const PHONE = "(max-width: 640px)";
 
 const alignClass = (col) => (col.align === "end" ? styles.num : null);
 const staticClass = (col) => cx(alignClass(col), col.className) || undefined;

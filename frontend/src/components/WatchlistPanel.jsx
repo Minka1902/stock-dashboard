@@ -10,7 +10,7 @@ import TickerLabel from "./TickerLabel";
 import { useWatchlists } from "../hooks/useWatchlists";
 import { useLocalOrder } from "../hooks/useLocalOrder";
 import { useSparklines } from "../hooks/useSparklines";
-import { useMediaQuery } from "../hooks/useMediaQuery";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { openTickerTab } from "../lib/nav";
 import { prefersReducedMotion, staggerItem } from "../lib/motionConfig";
 import { currencyForSymbol, formatPrice, formatRelativeTime } from "../lib/format";
@@ -26,7 +26,6 @@ const MARKET_STATE_TIP = {
 };
 
 // On a phone each row is two lines, with a narrower sparkline.
-const PHONE = "(max-width: 640px)";
 const PHONE_SPARK_WIDTH = 64;
 
 function changeTone(pct) {

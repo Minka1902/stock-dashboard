@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
 import ScrollHint from "./ScrollHint";
-import { useMediaQuery } from "../hooks/useMediaQuery";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./SectionIndex.module.css";
-
-const PHONE = "(max-width: 640px)";
 
 const find = (id) => document.querySelector(`[data-anchor="${CSS.escape(id)}"]`);
 

@@ -180,7 +180,6 @@
   gap: var(--s-4);
 }
 @media (max-width: 1200px) { .grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
 
 .indicator { display: flex; flex-direction: column; }
 .valRow {
@@ -291,3 +290,34 @@
   cursor: pointer;
 }
 .emptyBtn:disabled { opacity: 0.6; cursor: default; }
+
+/* ---- phone: the read and the gauge in the first screen ---- */
+@media (max-width: 640px) {
+  .wrap { gap: var(--s-3); }
+  .paneHead { padding-block: var(--s-2); }
+
+  /* The word and the tally share a row; the sentence runs under both. */
+  .headline {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0 var(--s-3);
+    padding: var(--s-3) var(--gutter);
+  }
+  .headlineMain { display: contents; }
+  .headlineCap { grid-area: 1 / 1; }
+  .leanWord { grid-area: 2 / 1; margin: 0; }
+  .leanRead { grid-area: 3 / 1 / 4 / -1; margin-top: var(--s-1); }
+  .tally { grid-area: 1 / 2 / 3 / 3; gap: var(--s-3); }
+  .tallyNum { font-size: var(--fs-h2); }
+
+  /* Two indicators a row while each keeps ~170px; one on a small phone. */
+  .grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
+    gap: var(--s-2);
+  }
+  .grid > * { display: flex; }
+  .indicator { flex: 1; }
+  .val { font-size: var(--fs-h3); }
+  .staleBadge { margin-inline: var(--gutter); }
+}

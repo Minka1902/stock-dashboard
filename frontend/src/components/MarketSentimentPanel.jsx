@@ -73,7 +73,7 @@ function PositioningList({ rows, empty, columns }) {
 function Pane({ caption, right, className, children }) {
   return (
     <section className={`${styles.pane} ${className || ""}`}>
-      <div className={styles.paneHead}>
+      <div className={styles.paneHead} data-head="inline">
         <span className="caption">{caption}</span>
         {right}
       </div>

@@ -1,5 +1,8 @@
 import { useCallback, useSyncExternalStore } from "react";
 
+/** The phone layout (DESIGN.md breakpoints). */
+export const PHONE = "(max-width: 640px)";
+
 /** Live `window.matchMedia(query).matches`, re-rendering when it flips. */
 export function useMediaQuery(query) {
   const subscribe = useCallback((onChange) => {

@@ -300,3 +300,34 @@
 }
 .downgraded strong { font-family: var(--mono); color: var(--caution); }
 .downgraded a { color: var(--accent-text); }
+
+/* ---- phone: one flat ruled row per idea ----
+   Line 1: symbol, lists, call or P/L, and the row's action on the right;
+   line 2: what to do; line 3: why, cut to two lines (Clamp). */
+@media (max-width: 640px) {
+  .body { gap: var(--s-4); padding-block: var(--s-3); }
+  .list { gap: 0; }
+  .list > .alert {
+    column-gap: var(--s-2);
+    row-gap: var(--s-1);
+    padding-block: var(--s-3);
+    border-bottom: 1px solid var(--grid);
+  }
+  .list > .alert:last-child { border-bottom: 0; }
+  .symbol { min-width: 0; }
+  .watchBtn { order: 1; }
+  .action { order: 2; flex-basis: 100%; }
+  .reasons { order: 3; flex-basis: 100%; margin-left: 0; }
+
+  /* The evidence reads as one sentence, not a wall of boxes. */
+  .reasons .chip {
+    display: inline;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .reasons .chip::after { content: " · "; color: var(--text-faint); }
+  .reasons .chip:last-child::after { content: none; }
+}

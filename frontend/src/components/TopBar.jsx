@@ -5,7 +5,7 @@ import Popover from "./Popover";
 import UserMenu from "./UserMenu";
 import SourceHealth from "./SourceHealth";
 import Tooltip from "./Tooltip";
-import { useMediaQuery } from "../hooks/useMediaQuery";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { formatRelativeTime } from "../lib/format";
 import { LEAN_READ, leanLabel, leanTone } from "../lib/lean";
 import RegimeChip from "./RegimeChip";
@@ -13,7 +13,6 @@ import styles from "./TopBar.module.css";
 
 // On a phone the failing sources are one glyph and a count; wider, each gets
 // its own glyph, up to SOURCE_HEALTH_MAX and as many as the bar has room for.
-const PHONE = "(max-width: 640px)";
 const SOURCE_HEALTH_MAX = 6;
 
 // Theme switcher: a trigger button + motion popover of the available themes,

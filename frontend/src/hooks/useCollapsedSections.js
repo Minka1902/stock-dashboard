@@ -1,7 +1,5 @@
-import { useMediaQuery } from "./useMediaQuery";
+import { PHONE, useMediaQuery } from "./useMediaQuery";
 import { useSettingsContext } from "./useSettingsContext";
-
-const PHONE = "(max-width: 640px)";
 
 /**
  * Which of a page's CollapsibleSections are folded, kept in

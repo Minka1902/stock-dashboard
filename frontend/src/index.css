@@ -485,7 +485,9 @@ button {
    - A section header (its <header>, or a first-child <div> holding its
      heading or caption) is a title row, then a caption row: the title
      block takes the first row (beside a leading collapse toggle), and
-     everything after it follows below instead of squeezing it.
+     everything after it follows below instead of squeezing it. A header
+     marked data-head="inline" keeps its short controls or caption beside
+     the title, wrapping only when they do not fit.
    - Grid and flex children may shrink below their content, and a long word
      breaks instead of pushing its pane wider than the screen.
    - No nested containers (DESIGN.md): a card inside a pane ([data-card])
@@ -502,7 +504,7 @@ button {
     flex-wrap: wrap;
     row-gap: var(--s-2);
   }
-  main section > :is(header, div:first-child:has(> :is(h2, h3, .caption))) > :first-child:not(button) {
+  main section > :is(header, div:first-child:has(> :is(h2, h3, .caption))):not([data-head="inline"]) > :first-child:not(button) {
     flex-basis: 100%;
   }
   main section > header:has(> button:first-child) {

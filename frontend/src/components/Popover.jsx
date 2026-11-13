@@ -2,12 +2,11 @@ import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import Sheet from "./Sheet";
-import { useMediaQuery } from "../hooks/useMediaQuery";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import { dropdownStyle } from "../lib/floating";
 import styles from "./Popover.module.css";
 
-const PHONE = "(max-width: 640px)";
 // A phone shows every popup as a bottom sheet. Inline, so it wins over the
 // caller's own box (a menu's width, radius and border).
 const SHEET_STYLE = {
