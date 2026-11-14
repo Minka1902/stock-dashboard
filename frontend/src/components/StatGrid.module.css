@@ -72,8 +72,9 @@
   }
 }
 
-@media (max-width: 560px) {
-  .grid {
-    grid-template-columns: 1fr;
-  }
+/* Phone: two compact cards a row, so the four stay one short block. */
+@media (max-width: 640px) {
+  .grid { gap: var(--s-2); }
+  .card { min-height: 0; padding: var(--s-3) var(--gutter); gap: var(--s-2); }
+  .icon { width: 24px; height: 24px; }
 }

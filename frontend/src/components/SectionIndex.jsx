@@ -4,15 +4,15 @@ import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./SectionIndex.module.css";
 
-const find = (id) => document.querySelector(`[data-anchor="${CSS.escape(id)}"]`);
+const find = (id) => document.querySelector(`[data-anchor="${CSS.escape(id)}"]`) || document.getElementById(id);
 
 /**
  * A phone's table of contents for a page of CollapsibleSections: a sticky
  * row of chips, one per section, that scrolls sideways. A chip opens its
  * section (`onJump(id)`) and scrolls to it; the chip of the section at the
  * top of the screen is marked current. Renders nothing above 640px.
- * Props: sections [{ id, label }] (each CollapsibleSection has `anchor={id}`),
- * onJump(id), label.
+ * Props: sections [{ id, label }] (each CollapsibleSection has `anchor={id}`,
+ * or the section is the element with that id), onJump(id), label.
  */
 export default function SectionIndex({ sections, onJump, label = "Sections on this page" }) {
   const phone = useMediaQuery(PHONE);

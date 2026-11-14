@@ -5,19 +5,27 @@ import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import TickerLabel from "./TickerLabel";
 import HintTip from "./Tooltip";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
+import ShowAll from "./ShowAll";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
+import { usePhoneLimit } from "../hooks/usePhoneLimit";
 import { currencyForSymbol, formatPercentSigned, formatPrice } from "../lib/format";
 import styles from "./SeasonalityPanel.module.css";
 
 const COMPACT_LIMIT = 5;
+const PHONE_LIMIT = 8;
+// The blurb, around the lookback ("last 10 years").
+const BLURB_LEAD = "How each watchlist ticker historically moved around today's date · ";
+const BLURB_TAIL = " · green/red bars are individual years (configure in Settings)";
 
-// Display metadata for each window key the backend emits.
+// Display metadata for each window key the backend emits; `short` labels a
+// phone's narrower column.
 const WINDOW_META = {
-  fwd_day: { label: "Next Day", hint: "Return on the trading day around this date" },
-  fwd_week: { label: "Next Week", hint: "Return over the ~7 days following this date" },
-  fwd_month: { label: "Next Month", hint: "Return over the ~30 days following this date" },
-  cal_week: { label: "This Calendar Week", hint: "Return during the calendar week containing this date" },
-  cal_month: { label: "This Calendar Month", hint: "Return during this calendar month" },
+  fwd_day: { label: "Next Day", short: "Next day", hint: "Return on the trading day around this date" },
+  fwd_week: { label: "Next Week", short: "Next week", hint: "Return over the ~7 days following this date" },
+  fwd_month: { label: "Next Month", short: "Next month", hint: "Return over the ~30 days following this date" },
+  cal_week: { label: "This Calendar Week", short: "Cal. week", hint: "Return during the calendar week containing this date" },
+  cal_month: { label: "This Calendar Month", short: "Cal. month", hint: "Return during this calendar month" },
 };
 
 const WINDOW_ORDER = ["fwd_day", "fwd_week", "fwd_month", "cal_week", "cal_month"];
@@ -47,9 +55,10 @@ function summarize(perYear, lookback) {
   };
 }
 
-function YearBars({ series }) {
+// `fluid`: the bars share the cell's width (a phone) instead of 11px a year.
+function YearBars({ series, fluid }) {
   const data = series.map((e) => ({ year: e.year, pct: +(e.return * 100).toFixed(2) }));
-  const width = Math.max(72, data.length * 11);
+  const width = fluid ? "100%" : Math.max(72, data.length * 11);
   return (
     <div className={styles.bars} style={{ width }}>
       <ResponsiveContainer width="100%" height={34}>
@@ -79,13 +88,13 @@ function YearBars({ series }) {
   );
 }
 
-function WindowCell({ window, lookback }) {
-  const meta = WINDOW_META[window.key] || { label: window.key, hint: "" };
+function WindowCell({ window, lookback, phone }) {
+  const meta = WINDOW_META[window.key] || { label: window.key, short: window.key, hint: "" };
   const stats = summarize(window.per_year, lookback);
   return (
     <div className={styles.window}>
       <HintTip content={meta.hint}>
-        <div className={styles.wlabel} tabIndex={0}>{meta.label}</div>
+        <div className={styles.wlabel} tabIndex={0}>{phone ? meta.short : meta.label}</div>
       </HintTip>
       {stats ? (
         <>
@@ -103,7 +112,7 @@ function WindowCell({ window, lookback }) {
               <strong>{stats.ups}/{stats.n}</strong> up
             </span>
           </div>
-          <YearBars series={stats.series} />
+          <YearBars series={stats.series} fluid={phone} />
         </>
       ) : (
         <span className={styles.muted}>not enough history</span>
@@ -158,22 +167,24 @@ function SkeletonRows({ rows = 4 }) {
 }
 
 export default function SeasonalityPanel({ data, settings, quotes, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
+  const phone = useMediaQuery(PHONE);
+  const { limit, showAll } = usePhoneLimit(compact ? 0 : data.length, PHONE_LIMIT);
   const showEmpty = !loading && data.length === 0;
   const lookback = settings?.seasonalityLookback ?? 10;
   const activeKeys = settings?.seasonalityWindows ?? ["fwd_week", "fwd_month", "cal_month"];
   const lookbackLabel = lookback === "all" ? "all years" : `last ${lookback} years`;
-  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data;
+  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data.slice(0, limit);
 
   return (
     <section className={styles.panel} id="seasonality">
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Seasonality" />}
         <div>
-          <h2 className={styles.title}>Seasonality — This Time in Past Years <InfoTip term="seasonality" /></h2>
-          <p className={styles.subtitle}>
-            How each watchlist ticker historically moved around today's date · {lookbackLabel} ·
-            green/red bars are individual years (configure in Settings)
-          </p>
+          <h2 className={styles.title}>
+            Seasonality — This Time in Past Years <PanelInfo label="Seasonality" term="seasonality"
+                                                         blurb={`${BLURB_LEAD}${lookbackLabel}${BLURB_TAIL}`} />
+          </h2>
+          <p className={styles.subtitle}>{BLURB_LEAD}{lookbackLabel}{BLURB_TAIL}</p>
         </div>
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
@@ -187,41 +198,44 @@ export default function SeasonalityPanel({ data, settings, quotes, loading, busy
           </button>
         </div>
       ) : (
-        <ul className={styles.list}>
-          {loading ? (
-            <SkeletonRows />
-          ) : (
-            rows.map((s) => {
-              let windows = [];
-              try { windows = JSON.parse(s.windows_json); } catch { /* keep empty */ }
-              let anchors = [];
-              try { anchors = JSON.parse(s.anchors_json || "[]"); } catch { /* keep empty */ }
-              const byKey = Object.fromEntries(windows.map((w) => [w.key, w]));
-              const shown = WINDOW_ORDER.filter((k) => activeKeys.includes(k) && byKey[k]);
-              return (
-                <li key={s.ticker} className={styles.row}>
-                  <div className={styles.tickerCol}>
-                    <TickerLabel ticker={s.ticker} className={styles.ticker} />
-                    <span className={styles.meta}>{s.history_years} yrs</span>
-                  </div>
-                  <div className={styles.rowBody}>
-                    <div className={styles.windows}>
-                      {shown.length === 0 ? (
-                        <span className={styles.muted}>No windows selected — enable some in Settings</span>
-                      ) : (
-                        shown.map((k) => (
-                          <WindowCell key={k} window={byKey[k]} lookback={lookback} />
-                        ))
-                      )}
+        <>
+          <ul className={styles.list}>
+            {loading ? (
+              <SkeletonRows />
+            ) : (
+              rows.map((s) => {
+                let windows = [];
+                try { windows = JSON.parse(s.windows_json); } catch { /* keep empty */ }
+                let anchors = [];
+                try { anchors = JSON.parse(s.anchors_json || "[]"); } catch { /* keep empty */ }
+                const byKey = Object.fromEntries(windows.map((w) => [w.key, w]));
+                const shown = WINDOW_ORDER.filter((k) => activeKeys.includes(k) && byKey[k]);
+                return (
+                  <li key={s.ticker} className={styles.row}>
+                    <div className={styles.tickerCol}>
+                      <TickerLabel ticker={s.ticker} className={styles.ticker} />
+                      <span className={styles.meta}>{s.history_years} yrs</span>
                     </div>
-                    <AnchorStrip anchors={anchors} price={quotes?.[s.ticker]?.price}
-                                 currency={quotes?.[s.ticker]?.currency || currencyForSymbol(s.ticker)} />
-                  </div>
-                </li>
-              );
-            })
-          )}
-        </ul>
+                    <div className={styles.rowBody}>
+                      <div className={styles.windows}>
+                        {shown.length === 0 ? (
+                          <span className={styles.muted}>No windows selected — enable some in Settings</span>
+                        ) : (
+                          shown.map((k) => (
+                            <WindowCell key={k} window={byKey[k]} lookback={lookback} phone={phone} />
+                          ))
+                        )}
+                      </div>
+                      <AnchorStrip anchors={anchors} price={quotes?.[s.ticker]?.price}
+                                   currency={quotes?.[s.ticker]?.currency || currencyForSymbol(s.ticker)} />
+                    </div>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+          {showAll && <ShowAll {...showAll} noun="tickers" />}
+        </>
       ))}
     </section>
   );

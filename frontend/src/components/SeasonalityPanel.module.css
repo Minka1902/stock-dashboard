@@ -190,8 +190,17 @@
 .anchorChip b[data-tone="pos"] { color: var(--positive); font-weight: 600; }
 .anchorChip b[data-tone="neg"] { color: var(--negative); font-weight: 600; }
 
-/* Phone: the ticker heads its row, so the windows get the full width. */
+/* Phone: the blurb is behind the title's info control (PanelInfo); the
+   ticker heads its row, its windows are equal columns (short labels, the
+   year bars sharing the column's width), its anchors one sideways-scrolling
+   strip, and the list stops at eight tickers until Show all. */
 @media (max-width: 640px) {
-  .row { flex-direction: column; align-items: stretch; gap: var(--s-2); }
+  .subtitle { display: none; }
+  .row { flex-direction: column; align-items: stretch; gap: var(--s-2); padding-block: var(--s-3); }
   .tickerCol { flex-direction: row; align-items: baseline; gap: var(--s-2); }
+  .windows { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-3); }
+  .window { min-width: 0; }
+  .wstats { flex-wrap: wrap; column-gap: var(--s-1); }
+  .anchorStrip { flex-wrap: nowrap; overflow-x: auto; }
+  .anchorChip { flex: none; white-space: nowrap; }
 }

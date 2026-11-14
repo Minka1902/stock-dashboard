@@ -77,6 +77,15 @@ export const FIRST_SCREEN = {
   social: [{ name: "the first ticker", selector: "#social li, #social > header + div" }],
   analyst: [{ name: "the first ticker", selector: "#analyst li" }],
   fundamentals: [{ name: "the first ticker", selector: "#fundamentals li" }],
+  // Long pages, folded on a phone: the first row leads, the rest is behind
+  // Show all, a folded section or the Overview's section index.
+  seasonality: [{ name: "the first ticker", selector: "#seasonality li" }],
+  "boom-score": [{ name: "the first ticker", selector: "#boom-score li" }],
+  investors: [{ name: "the first move", selector: "#investors li" }],
+  overview: [
+    { name: "the section index", selector: 'nav[aria-label="Sections on this page"]', whole: true },
+    { name: "the first Boom Score", selector: "#boom-score li" },
+  ],
   ...Object.fromEntries(STOCKS.map((t) => [`stock/${t}`, [
     { name: "the chart", selector: '[data-anchor="chart"] canvas', whole: true },
   ]])),

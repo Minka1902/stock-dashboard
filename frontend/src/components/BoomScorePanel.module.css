@@ -211,7 +211,18 @@
   cursor: help;
 }
 
-/* Phone: the blurb is behind the title's info control (PanelInfo). */
+/* Phone: the blurb is behind the title's info control (PanelInfo). Two
+   lines a ticker: rank, ticker, bar and score, then tier, trend, and the
+   signal chips in one sideways-scrolling strip. The first ten, then Show all. */
 @media (max-width: 640px) {
   .subtitle { display: none; }
+  /* Rank, ticker, bar and score, a break (the empty line's two row gaps
+     make one 6px gap), then the rest. */
+  .row { gap: 3px var(--s-2); padding-block: 10px; }
+  .row::after { content: ""; flex-basis: 100%; order: 1; }
+  .tier, .sparkWrap, .mixedWarn, .chips { order: 2; }
+  .barWrap { flex: 1 1 0; max-width: none; min-width: 0; }
+  .tier { margin-left: 28px; }
+  .chips { flex: 1 1 0; min-width: 0; flex-wrap: nowrap; overflow-x: auto; }
+  .chip { flex: none; white-space: nowrap; }
 }

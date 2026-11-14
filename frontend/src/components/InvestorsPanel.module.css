@@ -18,7 +18,15 @@
 .filers li { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 .filerLink { font-weight: 600; color: var(--accent-text); }
 
-/* Phone: a fund's details wrap under its name instead of running off the pane. */
+/* Phone: the blurb behind the title's info control (PanelInfo), the funds as
+   their own folded section, flat inside the pane, each fund's details
+   wrapping under its name. */
 @media (max-width: 640px) {
+  .subtitle { display: none; }
   .filers .muted { white-space: normal; }
+  .funds { border: 0; border-top: 1px solid var(--border); border-radius: 0; }
+  .funds .filers { padding: 0; border-top: 0; gap: var(--s-1); }
+}
+@media (pointer: coarse) {
+  .filerLink { display: inline-flex; align-items: center; min-height: var(--tap); }
 }

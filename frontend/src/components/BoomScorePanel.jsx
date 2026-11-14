@@ -8,12 +8,15 @@ import AnimatedNumber from "./AnimatedNumber";
 import TickerLabel from "./TickerLabel";
 import Tooltip from "./Tooltip";
 import PanelInfo from "./PanelInfo";
+import ShowAll from "./ShowAll";
 import { getBoomScoreHistory } from "../api";
+import { usePhoneLimit } from "../hooks/usePhoneLimit";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import styles from "./BoomScorePanel.module.css";
 
 const BLURB = "Composite signal strength · bullish & bearish · ranked by conviction";
 const COMPACT_LIMIT = 5;
+const PHONE_LIMIT = 10;
 
 const CHIP_META = {
   // bullish
@@ -76,7 +79,8 @@ function ScoreSparkline({ ticker }) {
 
 export default function BoomScorePanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const showEmpty = !loading && data.length === 0;
-  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data;
+  const { limit, showAll } = usePhoneLimit(compact ? 0 : data.length, PHONE_LIMIT);
+  const rows = compact ? data.slice(0, COMPACT_LIMIT) : data.slice(0, limit);
 
   return (
     <section className={styles.panel} id="boom-score">
@@ -99,82 +103,85 @@ export default function BoomScorePanel({ data, loading, busy, onRefresh, compact
           </button>
         </div>
       ) : (
-        <motion.ul
-          className={styles.list}
-          variants={staggerContainer}
-          initial={prefersReducedMotion() ? false : "hidden"}
-          animate="visible"
-        >
-          {rows.map((s, idx) => {
-            const components = (() => {
-              try { return JSON.parse(s.components); } catch { return {}; }
-            })();
-            const firedKeys = Object.keys(components);
-            const tier = convictionTier(s.score);
-            const barWidth = Math.max(0, Math.min(100, s.score));
+        <>
+          <motion.ul
+            className={styles.list}
+            variants={staggerContainer}
+            initial={prefersReducedMotion() ? false : "hidden"}
+            animate="visible"
+          >
+            {rows.map((s, idx) => {
+              const components = (() => {
+                try { return JSON.parse(s.components); } catch { return {}; }
+              })();
+              const firedKeys = Object.keys(components);
+              const tier = convictionTier(s.score);
+              const barWidth = Math.max(0, Math.min(100, s.score));
 
-            return (
-              <motion.li key={s.ticker} className={styles.row} variants={staggerItem}>
-                <span className={styles.rank}>{idx + 1}</span>
+              return (
+                <motion.li key={s.ticker} className={styles.row} variants={staggerItem}>
+                  <span className={styles.rank}>{idx + 1}</span>
 
-                <span className={styles.ticker}>
-                  <TickerLabel ticker={s.ticker} />
-                  {s.earnings_soon && (
-                    <Tooltip content="Earnings within 7 days — high event risk">
-                      <span className={styles.earningsWarn} role="img" tabIndex={0}
-                            aria-label="Earnings within 7 days">⚠</span>
+                  <span className={styles.ticker}>
+                    <TickerLabel ticker={s.ticker} />
+                    {s.earnings_soon && (
+                      <Tooltip content="Earnings within 7 days — high event risk">
+                        <span className={styles.earningsWarn} role="img" tabIndex={0}
+                              aria-label="Earnings within 7 days">⚠</span>
+                      </Tooltip>
+                    )}
+                  </span>
+
+                  <div className={styles.barWrap}>
+                    <div className={styles.bar} data-tone={tier.tone} style={{ width: `${barWidth}%` }} />
+                  </div>
+
+                  <span className={styles.scoreBadge} data-tone={tier.tone}>
+                    <AnimatedNumber value={s.score} />
+                  </span>
+
+                  <Tooltip content={`Conviction tier for a Boom Score of ${TIER_RANGE[tier.tone]}. More independent signals agreeing = higher tier; it is not a forecast.`}>
+                    <span className={styles.tier} data-tone={tier.tone}>{tier.label}</span>
+                  </Tooltip>
+
+                  <ScoreSparkline ticker={s.ticker} />
+
+                  {s.mixed_signals && (
+                    <Tooltip content="Conflicting bullish and bearish signals — research further">
+                      <span className={styles.mixedWarn} role="img" tabIndex={0}
+                            aria-label="Mixed signals">⚡</span>
                     </Tooltip>
                   )}
-                </span>
 
-                <div className={styles.barWrap}>
-                  <div className={styles.bar} data-tone={tier.tone} style={{ width: `${barWidth}%` }} />
-                </div>
-
-                <span className={styles.scoreBadge} data-tone={tier.tone}>
-                  <AnimatedNumber value={s.score} />
-                </span>
-
-                <Tooltip content={`Conviction tier for a Boom Score of ${TIER_RANGE[tier.tone]}. More independent signals agreeing = higher tier; it is not a forecast.`}>
-                  <span className={styles.tier} data-tone={tier.tone}>{tier.label}</span>
-                </Tooltip>
-
-                <ScoreSparkline ticker={s.ticker} />
-
-                {s.mixed_signals && (
-                  <Tooltip content="Conflicting bullish and bearish signals — research further">
-                    <span className={styles.mixedWarn} role="img" tabIndex={0}
-                          aria-label="Mixed signals">⚡</span>
-                  </Tooltip>
-                )}
-
-                <div className={styles.chips}>
-                  {firedKeys.map((key) => {
-                    const meta = CHIP_META[key];
-                    if (!meta) return null;
-                    const tip = meta.tip + ` · ${HORIZON_TIP[meta.horizon]}`;
-                    return (
-                      <Tooltip key={key} content={tip}>
-                        <span className={styles.chip} data-tone={meta.tone}>
-                          {meta.label}
-                          <span className={styles.horizon}>{meta.horizon}</span>
+                  <div className={styles.chips}>
+                    {firedKeys.map((key) => {
+                      const meta = CHIP_META[key];
+                      if (!meta) return null;
+                      const tip = meta.tip + ` · ${HORIZON_TIP[meta.horizon]}`;
+                      return (
+                        <Tooltip key={key} content={tip}>
+                          <span className={styles.chip} data-tone={meta.tone}>
+                            {meta.label}
+                            <span className={styles.horizon}>{meta.horizon}</span>
+                          </span>
+                        </Tooltip>
+                      );
+                    })}
+                    {s.score_note && (
+                      <Tooltip content={s.score_note}>
+                        <span className={styles.chip} data-tone="neutral" tabIndex={0}
+                              aria-label={s.score_note}>
+                          TASE · renormalized
                         </span>
                       </Tooltip>
-                    );
-                  })}
-                  {s.score_note && (
-                    <Tooltip content={s.score_note}>
-                      <span className={styles.chip} data-tone="neutral" tabIndex={0}
-                            aria-label={s.score_note}>
-                        TASE · renormalized
-                      </span>
-                    </Tooltip>
-                  )}
-                </div>
-              </motion.li>
-            );
-          })}
-        </motion.ul>
+                    )}
+                  </div>
+                </motion.li>
+              );
+            })}
+          </motion.ul>
+          {showAll && <ShowAll {...showAll} noun="tickers" />}
+        </>
       ))}
     </section>
   );
