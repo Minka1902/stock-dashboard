@@ -139,7 +139,8 @@
   flex-direction: column;
   gap: var(--s-2);
 }
-.oauthBtn {
+.oauthBtn,
+.appLink {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -155,7 +156,9 @@
   text-decoration: none;
   cursor: pointer;
 }
-.oauthBtn:hover { border-color: var(--accent); color: var(--accent-text); }
+.oauthBtn:hover,
+.appLink:hover { border-color: var(--accent); color: var(--accent-text); }
+.appLink { margin-bottom: var(--s-3); }
 
 .linkBtn {
   display: block;
@@ -231,9 +234,34 @@
   user-select: all;
 }
 
+.key {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-bottom: var(--s-3);
+}
+.key > .hint { margin: 0; }
+.key > .secret { margin: 0; font-size: var(--fs-15); letter-spacing: 0.04em; }
+
 .foot {
   color: var(--text-faint);
   font-size: 0.8em;
   text-align: center;
   margin: var(--s-2) 0 0;
+}
+
+/* Phone: a narrower card, full-height (44px) fields and actions, the QR as
+   wide as the card allows. The code field may read larger than the 16px
+   every phone input gets (index.css): only smaller would zoom on focus. */
+@media (max-width: 640px) {
+  .wrap { padding: var(--s-4) var(--s-3); }
+  .card { padding: var(--s-5) var(--s-4); }
+  .input,
+  .primary,
+  .oauthBtn,
+  .appLink { min-height: var(--field-h); }
+  .input.code { font-size: max(16px, 1.5em) !important; }
+  .qr img { width: min(240px, 100%); height: auto; }
+  .codes { margin-bottom: var(--s-3); }
+  .primary + .hint { margin-top: var(--s-3); }
 }

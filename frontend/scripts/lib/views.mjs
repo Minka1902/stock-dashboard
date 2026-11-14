@@ -86,6 +86,11 @@ export const FIRST_SCREEN = {
     { name: "the section index", selector: 'nav[aria-label="Sections on this page"]', whole: true },
     { name: "the first Boom Score", selector: "#boom-score li" },
   ],
+  // Sign-in screens: the field the step asks for, whole.
+  "auth/login": [{ name: "the email field", selector: 'input[type="email"]', whole: true }],
+  "auth/register": [{ name: "the email field", selector: 'input[type="email"]', whole: true }],
+  "auth/totp-setup": [{ name: "the code field", selector: 'input[autocomplete="one-time-code"]', whole: true }],
+  "auth/totp-challenge": [{ name: "the code field", selector: 'input[autocomplete="one-time-code"]', whole: true }],
   ...Object.fromEntries(STOCKS.map((t) => [`stock/${t}`, [
     { name: "the chart", selector: '[data-anchor="chart"] canvas', whole: true },
   ]])),
