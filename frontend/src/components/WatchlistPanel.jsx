@@ -5,7 +5,7 @@ import Dialog from "./Dialog";
 import DragHandle from "./DragHandle";
 import Icon from "./Icon";
 import ExtHoursBadge from "./ExtHoursBadge";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
 import MenuButton, { MenuDivider, MenuItem, MenuLabel } from "./MenuButton";
 import ScrollHint from "./ScrollHint";
 import Sparkline from "./Sparkline";
@@ -244,7 +244,7 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
       <header className={styles.head} data-head={phone ? "inline" : undefined}>
         <div>
           <h2 className={styles.title}>
-            Watchlists{phone && <> <InfoTip tip={{ label: "Watchlists", short: BLURB }} size={14} side="bottom" /></>}
+            Watchlists<PanelInfo label="Watchlists" blurb={BLURB} />
           </h2>
           {!phone && <p className={styles.subtitle}>{BLURB}</p>}
         </div>

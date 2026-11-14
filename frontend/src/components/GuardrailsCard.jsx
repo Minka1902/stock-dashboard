@@ -2,7 +2,7 @@ import { useState } from "react";
 import Button from "./Button";
 import Field from "./Field";
 import FormSheet from "./FormSheet";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
 import SheetActions from "./SheetActions";
 import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { setGuardrails, useRiskStatus } from "../hooks/useRiskStatus";
@@ -82,7 +82,7 @@ export default function GuardrailsCard() {
   return (
     <section className={styles.card} aria-labelledby="guard-title">
       <h3 id="guard-title" className={styles.title}>
-        Order guardrails{phone && <> <InfoTip tip={{ label: "Order guardrails", short: ABOUT }} size={14} side="bottom" /></>}
+        Order guardrails<PanelInfo label="Order guardrails" blurb={ABOUT} />
       </h3>
       {phone ? (
         <>
@@ -105,11 +105,7 @@ export default function GuardrailsCard() {
           <Button size="sm" onClick={() => setEditing(true)}>Edit guardrails</Button>
         </>
       ) : (
-        <p className={styles.text}>
-          Checked on every new position before it's placed — your paper tickets and every bot fill. An order that
-          breaks one is refused with the reason, and the refusal goes in the audit log. Selling what you hold is
-          never blocked, not even by the kill switch.
-        </p>
+        <p className={styles.text}>{ABOUT}</p>
       )}
       <FormSheet sheet={phone} open={editing} onClose={close} caption="Risk" title="Order guardrails">
         <form id={formId} className={styles.form} onSubmit={save}>

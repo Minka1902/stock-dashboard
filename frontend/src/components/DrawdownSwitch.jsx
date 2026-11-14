@@ -3,7 +3,7 @@ import Button from "./Button";
 import ConfirmDialog from "./ConfirmDialog";
 import Field from "./Field";
 import FormSheet from "./FormSheet";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
 import SheetActions from "./SheetActions";
 import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { acknowledgeTrip, setMaxDrawdown, useRiskStatus } from "../hooks/useRiskStatus";
@@ -68,16 +68,12 @@ export default function DrawdownSwitch() {
     <section className={styles.card} data-state={state} aria-labelledby="dd-title">
       <header className={styles.head} data-head={phone ? "inline" : undefined}>
         <h3 id="dd-title" className={styles.title}>
-          Drawdown kill switch{phone && <> <InfoTip tip={{ label: "Drawdown kill switch", short: ABOUT }} size={14} side="bottom" /></>}
+          Drawdown kill switch<PanelInfo label="Drawdown kill switch" blurb={ABOUT} />
         </h3>
         <span className={styles.pill} data-state={state}>{STATE_LABEL[state]}</span>
       </header>
       {!phone && (
-        <p className={styles.text}>
-          Pauses new-buy suggestions and new bot entries once your portfolio falls this far below
-          its high (time-weighted, so deposits and withdrawals don't count). Exits keep running and
-          nothing is ever sold for you.
-        </p>
+        <p className={styles.text}>{ABOUT}</p>
       )}
       {error && <p className={styles.error} role="alert">{error}</p>}
 

@@ -3,7 +3,7 @@ import { motion } from "motion/react";
 import Button from "./Button";
 import FeedRow from "./FeedRow";
 import Icon from "./Icon";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
 import NewsSourceSheet from "./NewsSourceSheet";
 import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
@@ -239,7 +239,7 @@ export default function NewsPanel({ news = [], portfolio = [], xPosts = [], sour
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="News" />}
         <div>
           <h2 className={styles.title}>
-            News{phone && <> <InfoTip tip={{ label: "News", short: BLURB }} size={14} side="bottom" /></>}
+            News<PanelInfo label="News" blurb={BLURB} />
           </h2>
           {!phone && <p className={styles.subtitle}>{BLURB}</p>}
         </div>

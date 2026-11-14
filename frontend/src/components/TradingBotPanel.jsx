@@ -1,7 +1,7 @@
 import AuditTab from "./AuditTab";
 import BotsTab from "./BotsTab";
 import BrokerTab from "./BrokerTab";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
 import LotsTab from "./LotsTab";
 import KillSwitchButton from "./KillSwitchButton";
 import PaperTab from "./PaperTab";
@@ -56,7 +56,7 @@ export default function TradingBotPanel(props) {
       <header className={styles.head} data-head={phone ? "inline" : undefined}>
         <div>
           <h2 className={styles.title}>
-            Trading Bot{phone && <> <InfoTip tip={{ label: "Trading Bot", short: BLURB }} size={14} side="bottom" /></>}
+            Trading Bot<PanelInfo label="Trading Bot" blurb={BLURB} />
           </h2>
           {!phone && <p className={styles.subtitle}>{BLURB}</p>}
         </div>

@@ -3,7 +3,7 @@ import BotCard from "./BotCard";
 import Button from "./Button";
 import ConfirmDialog from "./ConfirmDialog";
 import Icon from "./Icon";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
 import NewBotDialog from "./NewBotDialog";
 import { useBots } from "../hooks/useBots";
 import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
@@ -79,8 +79,7 @@ export default function BotsTab({ cash = [], onCashChanged }) {
         {phone ? (
           <p className={styles.demo} role="note">
             <span>
-              <strong>DEMO</strong> — no real orders{" "}
-              <InfoTip tip={{ label: "Demo bots", short: demoNote }} size={14} side="bottom" />
+              <strong>DEMO</strong> — no real orders<PanelInfo label="Demo bots" blurb={demoNote} />
             </span>
           </p>
         ) : (

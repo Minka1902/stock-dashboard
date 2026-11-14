@@ -11,6 +11,7 @@ import ExitRuleDialog from "./ExitRuleDialog";
 import ExtHoursBadge from "./ExtHoursBadge";
 import InfoTip from "./InfoTip";
 import MenuButton, { MenuDivider, MenuItem, MenuLabel } from "./MenuButton";
+import PanelInfo from "./PanelInfo";
 import Segmented from "./Segmented";
 import SelectMenu from "./SelectMenu";
 import SellDialog from "./SellDialog";
@@ -556,7 +557,7 @@ export default function PortfolioPanel({
       <header className={styles.head} data-head={phone ? "inline" : undefined}>
         <div>
           <h2 className={styles.title}>
-            Portfolio{phone && <> <InfoTip tip={{ label: "Portfolio", short: BLURB }} size={14} side="bottom" /></>}
+            Portfolio<PanelInfo label="Portfolio" blurb={BLURB} />
           </h2>
           {!phone && <p className={styles.subtitle}>{BLURB}</p>}
         </div>

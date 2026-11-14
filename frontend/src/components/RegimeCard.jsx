@@ -1,5 +1,5 @@
 import { useState } from "react";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
 import Segmented from "./Segmented";
 import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { setRegimeGate, useRiskStatus } from "../hooks/useRiskStatus";
@@ -38,7 +38,7 @@ export default function RegimeCard() {
     <section className={styles.card} aria-labelledby="regime-title">
       <header className={styles.head} data-head={phone ? "inline" : undefined}>
         <h3 id="regime-title" className={styles.title}>
-          Market regime{phone && <> <InfoTip tip={{ label: "Market regime", short: explainer }} size={14} side="bottom" /></>}
+          Market regime<PanelInfo label="Market regime" blurb={explainer} />
         </h3>
         <span className={styles.pill} data-tone={REGIME_TONE[reg.label]}>{REGIME_LABEL[reg.label]}</span>
         {reg.label !== "unknown" && (
