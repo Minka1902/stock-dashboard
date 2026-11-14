@@ -149,7 +149,8 @@
   .subtitle { display: none; }
   .head { align-items: center; }
   .head > div:first-child { flex: 1 1 auto; }
-  .degraded { margin-inline: var(--gutter); }
+  .degraded { display: block; margin-inline: var(--gutter); }
+  .degraded > svg { vertical-align: -2px; margin-right: 4px; }
   .tabs { display: block; padding-inline: 0; }
   .tabRow { padding-inline: var(--gutter); }
   .feed { padding: 0; gap: 0; }

@@ -4,7 +4,9 @@ import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import styles from "./FundamentalsPanel.module.css";
 import Term from "./Term";
+import PanelInfo from "./PanelInfo";
 
+const BLURB = "Yahoo Finance · valuation & growth per watchlist ticker";
 const COMPACT_LIMIT = 5;
 
 const COLUMNS = [
@@ -68,8 +70,8 @@ export default function FundamentalsPanel({ data, loading, busy, onRefresh, comp
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Fundamentals" />}
         <div>
-          <h2 className={styles.title}>Fundamentals</h2>
-          <p className={styles.subtitle}>Yahoo Finance · valuation &amp; growth per watchlist ticker</p>
+          <h2 className={styles.title}>Fundamentals<PanelInfo label="Fundamentals" blurb={BLURB} /></h2>
+          <p className={styles.subtitle}>{BLURB}</p>
         </div>
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>

@@ -132,3 +132,14 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* Phone: the blurb is behind the title's info control (PanelInfo) and the
+   spread stays beside the title; the 2/10/30-year yields and the date are
+   one ruled row of four. */
+@media (max-width: 640px) {
+  .subtitle { display: none; }
+  .head { align-items: center; }
+  .chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s-2); }
+  .chip { min-width: 0; padding: 0; border: 0; background: none; }
+  .chipValue { font-size: var(--fs-12-5); }
+}

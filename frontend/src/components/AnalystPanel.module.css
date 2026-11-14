@@ -113,3 +113,8 @@
 .freshness[data-tone="fresh"] { color: var(--positive); }
 .freshness[data-tone="mid"]   { color: var(--caution); }
 .freshness[data-tone="stale"] { color: var(--negative); }
+
+/* Phone: the blurb is behind the title's info control (PanelInfo). */
+@media (max-width: 640px) {
+  .subtitle { display: none; }
+}

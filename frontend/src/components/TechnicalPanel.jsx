@@ -6,11 +6,13 @@ import CollapseToggle from "./CollapseToggle";
 import { currencyForSymbol, formatMoney, formatRelativeTime, freshnessTone } from "../lib/format";
 
 // Per-row prices in the ticker's own currency (₪ for Tel Aviv listings).
+const BLURB = "RSI · MACD · moving averages · volume · 52-week range · per watchlist ticker";
 const money = (v, t) => formatMoney(v, currencyForSymbol(t) || "USD", { compact: true });
 import styles from "./TechnicalPanel.module.css";
 import Tooltip from "./Tooltip";
 import Term from "./Term";
 import { freshnessTip } from "../lib/freshness";
+import PanelInfo from "./PanelInfo";
 
 const COMPACT_LIMIT = 5;
 const priceCol = (key, label, field) => ({
@@ -125,10 +127,8 @@ export default function TechnicalPanel({ data, loading, busy, onRefresh, compact
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Technical signals" />}
         <div>
-          <h2 className={styles.title}>Technical Signals</h2>
-          <p className={styles.subtitle}>
-            RSI · MACD · moving averages · volume · 52-week range · per watchlist ticker
-          </p>
+          <h2 className={styles.title}>Technical Signals<PanelInfo label="Technical Signals" blurb={BLURB} /></h2>
+          <p className={styles.subtitle}>{BLURB}</p>
         </div>
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>

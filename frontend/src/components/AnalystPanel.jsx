@@ -8,8 +8,9 @@ import styles from "./AnalystPanel.module.css";
 import { freshnessTip } from "../lib/freshness";
 import Tooltip from "./Tooltip";
 import Term from "./Term";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
 
+const BLURB = "Yahoo Finance · current consensus & recent upgrades/downgrades";
 const COMPACT_LIMIT = 5;
 
 const COLUMNS = [
@@ -64,8 +65,8 @@ export default function AnalystPanel({ data, loading, busy, onRefresh, compact =
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Analyst" />}
         <div>
-          <h2 className={styles.title}>Analyst Ratings <InfoTip term="analyst_rating" /></h2>
-          <p className={styles.subtitle}>Yahoo Finance · current consensus &amp; recent upgrades/downgrades</p>
+          <h2 className={styles.title}>Analyst Ratings <PanelInfo label="Analyst Ratings" blurb={BLURB} term="analyst_rating" /></h2>
+          <p className={styles.subtitle}>{BLURB}</p>
         </div>
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>

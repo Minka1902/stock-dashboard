@@ -7,11 +7,12 @@ import CollapseToggle from "./CollapseToggle";
 import AnimatedNumber from "./AnimatedNumber";
 import TickerLabel from "./TickerLabel";
 import Tooltip from "./Tooltip";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
 import { getBoomScoreHistory } from "../api";
 import { prefersReducedMotion, staggerContainer, staggerItem } from "../lib/motionConfig";
 import styles from "./BoomScorePanel.module.css";
 
+const BLURB = "Composite signal strength · bullish & bearish · ranked by conviction";
 const COMPACT_LIMIT = 5;
 
 const CHIP_META = {
@@ -82,10 +83,8 @@ export default function BoomScorePanel({ data, loading, busy, onRefresh, compact
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Boom Score" />}
         <div>
-          <h2 className={styles.title}>Boom Score <InfoTip term="boom_score" /></h2>
-          <p className={styles.subtitle}>
-            Composite signal strength · bullish &amp; bearish · ranked by conviction
-          </p>
+          <h2 className={styles.title}>Boom Score <PanelInfo label="Boom Score" blurb={BLURB} term="boom_score" /></h2>
+          <p className={styles.subtitle}>{BLURB}</p>
         </div>
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>

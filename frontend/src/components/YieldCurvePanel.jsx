@@ -12,8 +12,10 @@ import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import { CHART_CURSOR, CHART_TOOLTIP, useAxisTick } from "../lib/chartStyle";
 import styles from "./YieldCurvePanel.module.css";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
 import HintTip from "./Tooltip";
+
+const BLURB = "10yr − 2yr spread · negative = inverted · normalization often precedes a boom";
 
 export default function YieldCurvePanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
   const tick = useAxisTick();
@@ -27,13 +29,11 @@ export default function YieldCurvePanel({ data, loading, busy, onRefresh, compac
 
   return (
     <section className={styles.panel} id="yield-curve">
-      <header className={styles.head}>
+      <header className={styles.head} data-head="inline">
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Yield Curve" />}
         <div>
-          <h2 className={styles.title}>US Treasury Yield Curve <InfoTip term="yield_curve" /></h2>
-          <p className={styles.subtitle}>
-            10yr − 2yr spread · negative = inverted · normalization often precedes a boom
-          </p>
+          <h2 className={styles.title}>US Treasury Yield Curve <PanelInfo label="US Treasury Yield Curve" blurb={BLURB} term="yield_curve" /></h2>
+          <p className={styles.subtitle}>{BLURB}</p>
         </div>
         {latest && !loading && (
           <HintTip content={spread === null

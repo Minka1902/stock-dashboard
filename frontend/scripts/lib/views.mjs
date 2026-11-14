@@ -66,6 +66,17 @@ export const FIRST_SCREEN = {
   "econ-calendar": [{ name: "the first event", selector: "#econ-calendar ul > li, #econ-calendar > header + div" }],
   earnings: [{ name: "the first reporting day", selector: '#earnings ul[aria-label="Earnings by date"] > li' }],
   x: [{ name: "the first post", selector: "#x > ul > li, #x > div:last-child" }],
+  // Signal pages: the first row, or (contracts, yield curve, congress: no
+  // data where the fixture was recorded) the source's empty state.
+  contracts: [{ name: "the first contract", selector: "#contracts li, #contracts > header + div" }],
+  "yield-curve": [{ name: "the spread chart", selector: "#yield-curve > header + div", whole: true }],
+  signals: [{ name: "the first ticker", selector: "#signals li" }],
+  "fear-greed": [{ name: "the score and scale", selector: "#fear-greed > header + div", whole: true }],
+  congress: [{ name: "the first trade", selector: "#congress li, #congress > header + div" }],
+  short: [{ name: "the first ticker", selector: "#short-interest li" }],
+  social: [{ name: "the first ticker", selector: "#social li, #social > header + div" }],
+  analyst: [{ name: "the first ticker", selector: "#analyst li" }],
+  fundamentals: [{ name: "the first ticker", selector: "#fundamentals li" }],
   ...Object.fromEntries(STOCKS.map((t) => [`stock/${t}`, [
     { name: "the chart", selector: '[data-anchor="chart"] canvas', whole: true },
   ]])),

@@ -1,10 +1,18 @@
+/* The link's hit area reaches --tap even for a one-line headline (its
+   padding is taken back by the margin); the two-line cut is on the text
+   inside, so the padding never shows a third line. */
 .title {
+  display: block;
+  padding-block: 11px;
+  margin-block: -11px;
   font-family: var(--sans);
   font-size: var(--fs-14);
   font-weight: 600;
   line-height: 1.4;
   color: var(--text);
   text-decoration: none;
+}
+.text {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;

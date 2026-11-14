@@ -12,7 +12,9 @@ import CollapseToggle from "./CollapseToggle";
 import { CHART_CURSOR, CHART_TOOLTIP } from "../lib/chartStyle";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./FearGreedPanel.module.css";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
+
+const BLURB = "CNN composite sentiment · extreme fear (<25) marks historical boom entry points";
 
 function scoreTone(score) {
   if (score < 30) return "fear";
@@ -32,10 +34,8 @@ export default function FearGreedPanel({ data, loading, busy, onRefresh, compact
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Fear & Greed" />}
         <div>
-          <h2 className={styles.title}>Fear &amp; Greed Index <InfoTip term="fear_greed" /></h2>
-          <p className={styles.subtitle}>
-            CNN composite sentiment · extreme fear (&lt;25) marks historical boom entry points
-          </p>
+          <h2 className={styles.title}>Fear &amp; Greed Index <PanelInfo label="Fear & Greed Index" blurb={BLURB} term="fear_greed" /></h2>
+          <p className={styles.subtitle}>{BLURB}</p>
         </div>
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>

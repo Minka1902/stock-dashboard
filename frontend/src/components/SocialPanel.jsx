@@ -6,8 +6,9 @@ import TickerLabel from "./TickerLabel";
 import styles from "./SocialPanel.module.css";
 import Term from "./Term";
 import Tooltip from "./Tooltip";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
 
+const BLURB = "ApeWisdom · Reddit mentions & rank movement for watchlist tickers";
 const COMPACT_LIMIT = 5;
 
 const COLUMNS = [
@@ -51,8 +52,8 @@ export default function SocialPanel({ data, loading, busy, onRefresh, compact = 
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="WSB Sentiment" />}
         <div>
-          <h2 className={styles.title}>WSB Sentiment <InfoTip term="wsb_rank" /></h2>
-          <p className={styles.subtitle}>ApeWisdom · Reddit mentions &amp; rank movement for watchlist tickers</p>
+          <h2 className={styles.title}>WSB Sentiment <PanelInfo label="WSB Sentiment" blurb={BLURB} term="wsb_rank" /></h2>
+          <p className={styles.subtitle}>{BLURB}</p>
         </div>
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>

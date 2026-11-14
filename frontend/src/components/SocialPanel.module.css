@@ -83,3 +83,8 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* Phone: the blurb is behind the title's info control (PanelInfo). */
+@media (max-width: 640px) {
+  .subtitle { display: none; }
+}

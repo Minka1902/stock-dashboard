@@ -15,7 +15,7 @@ export default function FeedRow({ item, onPickSource }) {
   return (
     <>
       <a className={styles.title} href={raw.url || undefined} target="_blank" rel="noreferrer">
-        {post ? raw.text : raw.title}
+        <span className={styles.text}>{post ? raw.text : raw.title}</span>
       </a>
       <div className={styles.meta}>
         <button type="button" className={styles.source} data-kind={kind}

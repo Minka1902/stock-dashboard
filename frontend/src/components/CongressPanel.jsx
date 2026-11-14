@@ -5,8 +5,9 @@ import CollapseToggle from "./CollapseToggle";
 import { formatDate } from "../lib/format";
 import styles from "./CongressPanel.module.css";
 import Tooltip from "./Tooltip";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
 
+const BLURB = "STOCK Act disclosures · House & Senate · legislators trading ahead of policy booms";
 const COMPACT_LIMIT = 5;
 
 // Amount is a bucket string ("$1,001 - $15,000"); sort by its lower bound.
@@ -72,10 +73,8 @@ export default function CongressPanel({ data, loading, busy, onRefresh, compact 
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Congress" />}
         <div>
-          <h2 className={styles.title}>Congressional Trades <InfoTip term="congress_trade" /></h2>
-          <p className={styles.subtitle}>
-            STOCK Act disclosures · House &amp; Senate · legislators trading ahead of policy booms
-          </p>
+          <h2 className={styles.title}>Congressional Trades <PanelInfo label="Congressional Trades" blurb={BLURB} term="congress_trade" /></h2>
+          <p className={styles.subtitle}>{BLURB}</p>
         </div>
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>

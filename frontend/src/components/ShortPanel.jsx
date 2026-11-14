@@ -7,9 +7,10 @@ import { formatRelativeTime, freshnessTone } from "../lib/format";
 import styles from "./ShortPanel.module.css";
 import Tooltip from "./Tooltip";
 import Term from "./Term";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
 import { freshnessTip } from "../lib/freshness";
 
+const BLURB = "Yahoo Finance · shares short & days to cover per watchlist ticker";
 const COMPACT_LIMIT = 5;
 
 const COLUMNS = [
@@ -55,8 +56,8 @@ export default function ShortPanel({ data, loading, busy, onRefresh, compact = f
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Short Interest" />}
         <div>
-          <h2 className={styles.title}>Short Interest <InfoTip term="short_interest" /></h2>
-          <p className={styles.subtitle}>Yahoo Finance · shares short &amp; days to cover per watchlist ticker</p>
+          <h2 className={styles.title}>Short Interest <PanelInfo label="Short Interest" blurb={BLURB} term="short_interest" /></h2>
+          <p className={styles.subtitle}>{BLURB}</p>
         </div>
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>

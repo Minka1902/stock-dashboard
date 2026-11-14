@@ -9,7 +9,9 @@ import {
 } from "../lib/format";
 import styles from "./ContractsPanel.module.css";
 import Tooltip from "./Tooltip";
+import PanelInfo from "./PanelInfo";
 
+const BLURB = "Sourced live from USASpending.gov · sorted by award amount";
 const COMPACT_LIMIT = 5;
 
 const COLUMNS = [
@@ -38,10 +40,8 @@ export default function ContractsPanel({ contracts, loading, busy, onRefresh, co
       <header className={styles.head}>
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Contracts" />}
         <div>
-          <h2 className={styles.title}>Biggest recent federal contracts</h2>
-          <p className={styles.subtitle}>
-            Sourced live from USASpending.gov · sorted by award amount
-          </p>
+          <h2 className={styles.title}>Biggest recent federal contracts<PanelInfo label="Biggest recent federal contracts" blurb={BLURB} /></h2>
+          <p className={styles.subtitle}>{BLURB}</p>
         </div>
         {compact && onViewAll && <ViewAll onClick={onViewAll} />}
       </header>
