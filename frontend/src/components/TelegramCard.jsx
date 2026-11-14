@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import Button from "./Button";
+import Clamp from "./Clamp";
+import SettingsGroup from "./SettingsGroup";
 import { getTelegram, linkTelegram, setTelegramEnabled, unlinkTelegram } from "../api";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { formatDate, formatUntil } from "../lib/format";
 import styles from "./TelegramCard.module.css";
 
@@ -14,6 +17,7 @@ const POLL_MS = 3000;
  * Props: legend ("Telegram").
  */
 export default function TelegramCard({ legend = "Telegram" }) {
+  const phone = useMediaQuery(PHONE);
   const [info, setInfo] = useState(null);
   const [issued, setIssued] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -48,11 +52,12 @@ export default function TelegramCard({ legend = "Telegram" }) {
   const unlink = () => run(async () => { setInfo(await unlinkTelegram()); setIssued(null); });
 
   return (
-    <fieldset className={styles.group} data-card>
-      <legend className={styles.legend}>{legend}</legend>
+    <SettingsGroup id="telegram" legend={legend}>
       <p className={styles.hint}>
-        High-severity alerts (exit-rule hits, kill switches, recommendations turning buy or sell) and bot fills, sent to a private
-        Telegram chat. The bot also answers /status, /bots, /watchlist and /alerts — read-only, it never trades.
+        <Clamp active={phone} label={legend}>
+          High-severity alerts (exit-rule hits, kill switches, recommendations turning buy or sell) and bot fills, sent to a private
+          Telegram chat. The bot also answers /status, /bots, /watchlist and /alerts — read-only, it never trades.
+        </Clamp>
       </p>
       {!info ? <p className={styles.muted}>{error || "Loading…"}</p> : !info.configured ? (
         <p className={styles.muted}>
@@ -89,6 +94,6 @@ export default function TelegramCard({ legend = "Telegram" }) {
         <Button size="sm" variant="primary" onClick={connect} disabled={busy}>{busy ? "…" : "Connect Telegram"}</Button>
       )}
       {error && info && <p className={styles.err} role="alert">{error}</p>}
-    </fieldset>
+    </SettingsGroup>
   );
 }

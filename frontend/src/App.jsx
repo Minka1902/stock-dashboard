@@ -42,7 +42,7 @@ import OrderTicket from "./components/OrderTicket";
 import KillSwitchDialog from "./components/KillSwitchDialog";
 import TradingBotPanel from "./components/TradingBotPanel";
 import XPostsPanel from "./components/XPostsPanel";
-import InfoPanel from "./components/InfoPanel";
+import InfoPanel, { INFO_SECTIONS } from "./components/InfoPanel";
 import ServerPanel from "./components/ServerPanel";
 import StockDetailPanel from "./components/StockDetailPanel";
 import BackToTop from "./components/BackToTop";
@@ -54,6 +54,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { leaveStock, navigateTo, openTickerTab } from "./lib/nav";
 import { DEFAULT_VIEW, TITLES } from "./lib/routes";
 import { prefersReducedMotion } from "./lib/motionConfig";
+import { scrollToSection } from "./lib/sections";
 import styles from "./App.module.css";
 
 // The Overview's panels, for its phone SectionIndex: [view key, chip label,
@@ -191,21 +192,19 @@ export default function App({ auth }) {
   }, [route]);
 
   const navigate = useCallback((v) => navigateTo({ kind: "view", view: v }), []);
+  const infoSections = useCollapsedSections(INFO_SECTIONS);
 
   // Open the Info page scrolled to its data-sources section (from the top
-  // bar's SourceHealth). The panel mounts on navigate, so scroll on the next frame.
+  // bar's SourceHealth), unfolded on a phone. The panel mounts on navigate,
+  // so scroll on the next frame.
   const openSourceDetails = () => {
     if (auth?.user?.is_admin) {
       navigate("server");
       return;
     }
+    infoSections.setCollapsed(["info-sources"], false);
     navigate("info");
-    setTimeout(() => {
-      document.getElementById("info-sources")?.scrollIntoView({
-        behavior: prefersReducedMotion() ? "auto" : "smooth",
-        block: "start",
-      });
-    }, 80);
+    setTimeout(() => scrollToSection("info-sources"), 80);
   };
   // Guided tour: which view's tour is currently running (null = none).
   const [tourView, setTourView] = useState(null);

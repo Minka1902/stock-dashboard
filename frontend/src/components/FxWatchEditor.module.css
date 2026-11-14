@@ -1,20 +1,3 @@
-/* Shares the fieldset look of SettingsPanel's groups. */
-.group {
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: var(--s-4) var(--s-5) var(--s-5);
-  margin: 0;
-  min-width: 0;
-}
-.legend {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--fs-13);
-  font-weight: 700;
-  color: var(--text);
-  padding: 0 var(--s-2);
-}
 .hint {
   color: var(--text-muted);
   font-size: var(--fs-12-5);

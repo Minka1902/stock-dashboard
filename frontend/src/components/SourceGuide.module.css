@@ -182,3 +182,9 @@
     text-align: left;
   }
 }
+
+.icon {
+  flex: none;
+  align-self: center;
+  color: var(--text-muted);
+}

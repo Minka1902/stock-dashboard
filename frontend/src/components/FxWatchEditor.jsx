@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, Reorder, motion } from "motion/react";
+import Clamp from "./Clamp";
 import SelectMenu from "./SelectMenu";
+import SettingsGroup from "./SettingsGroup";
 import Icon from "./Icon";
 import Tooltip from "./Tooltip";
 import InfoTip from "./InfoTip";
 import { getFxWatch, saveFxWatch } from "../api";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./FxWatchEditor.module.css";
 
@@ -22,6 +25,7 @@ const pairLabel = (p) => `${p.slice(0, 3)}/${p.slice(3, 6)}`;
  * nudge the live-quotes hook to refetch, so the tape updates at once.
  */
 export default function FxWatchEditor() {
+  const phone = useMediaQuery(PHONE);
   const [pairs, setPairs] = useState([]);
   const [currencies, setCurrencies] = useState([]);
   const [from, setFrom] = useState("USD");
@@ -79,14 +83,18 @@ export default function FxWatchEditor() {
   const options = currencies.map((c) => ({ value: c, label: c }));
 
   return (
-    <fieldset className={styles.group} data-card data-tour="fx-watch">
-      <legend className={styles.legend}>
-        Currencies in the ticker tape <InfoTip term="fx_pair" size={14} />
-      </legend>
+    <SettingsGroup
+      id="fx"
+      caption="Currencies in the ticker tape"
+      legend={<>Currencies in the ticker tape <InfoTip term="fx_pair" size={14} /></>}
+    >
       <p className={styles.hint}>
-        Exchange rates shown in the scrolling tape, in this order. Live Yahoo quotes, just like the
-        stocks — a pair Yahoo can&apos;t price shows no quote rather than a made-up one. Drag to
-        reorder, or use the arrows.
+        <Clamp active={phone} label="Currencies in the ticker tape">
+          Exchange rates shown in the scrolling tape, in this order. Live Yahoo quotes, just like the
+          stocks — a pair Yahoo can&apos;t price shows no quote rather than a made-up one. Drag to
+          reorder, or use the arrows.
+        </Clamp>
+        {phone && <> <InfoTip term="fx_pair" size={14} /></>}
       </p>
 
       {state === "loading" ? (
@@ -154,6 +162,6 @@ export default function FxWatchEditor() {
         </div>
       )}
       {addError && from !== to && <motion.p className={styles.muted} layout>{addError}</motion.p>}
-    </fieldset>
+    </SettingsGroup>
   );
 }

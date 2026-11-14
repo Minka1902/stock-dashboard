@@ -251,6 +251,18 @@
   max-width: 78ch;
 }
 
+/* Phone: the page is its index and its folded sections, so the panel
+   around them steps back; the module cards tighten. */
+@media (max-width: 640px) {
+  .panel { background: none; border: 0; box-shadow: none; overflow: visible; }
+  .head { padding: 0 0 var(--s-3); border-bottom: 0; }
+  .body { padding: var(--s-2) 0 0; gap: var(--s-2); }
+  .section { gap: var(--s-4); }
+  .intro { padding: var(--s-3); }
+  .cards { gap: var(--s-2); }
+  .card { padding: var(--s-3); gap: 6px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card,
   .chip {

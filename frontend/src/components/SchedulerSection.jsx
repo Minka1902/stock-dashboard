@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import Button from "./Button";
+import FormSheet from "./FormSheet";
 import Icon from "./Icon";
+import MenuButton, { MenuItem } from "./MenuButton";
+import PhoneFold from "./PhoneFold";
+import SheetActions from "./SheetActions";
 import Tooltip from "./Tooltip";
 import { putServerSchedule, runScheduleNow } from "../api";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { formatUntil } from "../lib/format";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./SchedulerSection.module.css";
@@ -13,6 +19,7 @@ const DAYS = [
   ["sun", "S", "Sunday"],
 ];
 const UNIT_SECONDS = { m: 60, h: 3600, d: 86400 };
+const ABOUT = "each source on its own clock · one refresh thread · late runs queue, never drop";
 const UNIT_LABEL = { m: "min", h: "h", d: "d" };
 
 const TIMEZONES = (() => {
@@ -157,7 +164,19 @@ function TzEditor({ tz, onCommit, listId, source }) {
   );
 }
 
-function ScheduleRow({ row, error, note, onSave, onRunNow, reduced }) {
+/** The one-line summary a phone row and sheet show under the source name. */
+function describe(row) {
+  return `${row.members?.length ? `${row.members.join(" → ")} · ` : ""}${row.description}${
+    row.retry_seconds ? ` · retry ${humanSeconds(row.retry_seconds)}` : ""}`;
+}
+
+function nextText(row) {
+  if (!row.enabled) return "paused";
+  return row.next_run_at ? formatUntil(row.next_run_at) : "—";
+}
+
+/** One schedule's editing controls, for its desktop row and its phone sheet. */
+function scheduleControls(row, onSave, reduced) {
   const isTimes = row.mode === "times";
   const toggleDay = (d) => {
     const on = row.days.includes(d);
@@ -165,6 +184,69 @@ function ScheduleRow({ row, error, note, onSave, onRunNow, reduced }) {
     const days = on ? row.days.filter((x) => x !== d) : [...row.days, d];
     onSave({ days: DAYS.map(([k]) => k).filter((k) => days.includes(k)) });
   };
+  return {
+    mode: (
+      <span className={styles.seg} role="group" aria-label={`${row.source} schedule mode`}>
+        <button
+          type="button"
+          className={styles.segBtn}
+          aria-pressed={!isTimes}
+          onClick={() => isTimes && onSave({ mode: "interval", interval_seconds: row.interval_seconds || 3600 })}
+        >
+          Every N
+        </button>
+        <button
+          type="button"
+          className={styles.segBtn}
+          aria-pressed={isTimes}
+          onClick={() => !isTimes && onSave({ mode: "times", times: row.times?.length ? row.times : ["06:00"] })}
+        >
+          At times
+        </button>
+      </span>
+    ),
+    when: isTimes ? (
+      <TimesEditor times={row.times} onCommit={(times) => onSave({ times })} reduced={reduced} source={row.source} />
+    ) : (
+      <IntervalEditor
+        seconds={row.interval_seconds}
+        source={row.source}
+        onCommit={(interval_seconds) => onSave({ interval_seconds })}
+      />
+    ),
+    days: (
+      <span className={styles.days} role="group" aria-label={`${row.source} days`}>
+        {DAYS.map(([key, letter, full]) => (
+          <Tooltip key={key} content={`${full} — ${row.days.includes(key) ? "runs" : "skipped"}; click to toggle`}>
+            <button
+              type="button"
+              className={styles.day}
+              aria-pressed={row.days.includes(key)}
+              aria-label={full}
+              onClick={() => toggleDay(key)}
+            >
+              {letter}
+            </button>
+          </Tooltip>
+        ))}
+      </span>
+    ),
+    tz: <TzEditor tz={row.tz} listId="scheduler-tz-list" source={row.source} onCommit={(tz) => onSave({ tz })} />,
+    enabled: (
+      <label className={styles.switch}>
+        <input
+          type="checkbox"
+          checked={row.enabled}
+          onChange={(e) => onSave({ enabled: e.target.checked })}
+        />
+        <span>{row.enabled ? "On" : "Paused"}</span>
+      </label>
+    ),
+  };
+}
+
+function ScheduleRow({ row, error, note, onSave, onRunNow, reduced }) {
+  const c = scheduleControls(row, onSave, reduced);
 
   return (
     <motion.li
@@ -184,69 +266,19 @@ function ScheduleRow({ row, error, note, onSave, onRunNow, reduced }) {
         </Tooltip>
       </div>
 
-      <span className={styles.seg} role="group" aria-label={`${row.source} schedule mode`}>
-        <button
-          type="button"
-          className={styles.segBtn}
-          aria-pressed={!isTimes}
-          onClick={() => isTimes && onSave({ mode: "interval", interval_seconds: row.interval_seconds || 3600 })}
-        >
-          Every N
-        </button>
-        <button
-          type="button"
-          className={styles.segBtn}
-          aria-pressed={isTimes}
-          onClick={() => !isTimes && onSave({ mode: "times", times: row.times?.length ? row.times : ["06:00"] })}
-        >
-          At times
-        </button>
-      </span>
+      {c.mode}
 
-      <div className={styles.when}>
-        {isTimes ? (
-          <TimesEditor times={row.times} onCommit={(times) => onSave({ times })} reduced={reduced} source={row.source} />
-        ) : (
-          <IntervalEditor
-            seconds={row.interval_seconds}
-            source={row.source}
-            onCommit={(interval_seconds) => onSave({ interval_seconds })}
-          />
-        )}
-      </div>
+      <div className={styles.when}>{c.when}</div>
 
-      <span className={styles.days} role="group" aria-label={`${row.source} days`}>
-        {DAYS.map(([key, letter, full]) => (
-          <Tooltip key={key} content={`${full} — ${row.days.includes(key) ? "runs" : "skipped"}; click to toggle`}>
-            <button
-              type="button"
-              className={styles.day}
-              aria-pressed={row.days.includes(key)}
-              aria-label={full}
-              onClick={() => toggleDay(key)}
-            >
-              {letter}
-            </button>
-          </Tooltip>
-        ))}
-      </span>
+      {c.days}
 
-      <TzEditor tz={row.tz} listId="scheduler-tz-list" source={row.source} onCommit={(tz) => onSave({ tz })} />
+      {c.tz}
 
-      <label className={styles.switch}>
-        <input
-          type="checkbox"
-          checked={row.enabled}
-          onChange={(e) => onSave({ enabled: e.target.checked })}
-        />
-        <span>{row.enabled ? "On" : "Paused"}</span>
-      </label>
+      {c.enabled}
 
       <Tooltip disabled={!row.enabled || !row.next_run_at}
                content={row.next_run_at ? `Next run: ${new Date(row.next_run_at).toLocaleString()}` : null}>
-        <span className={styles.next}>
-          {!row.enabled ? "paused" : row.next_run_at ? formatUntil(row.next_run_at) : "—"}
-        </span>
+        <span className={styles.next}>{nextText(row)}</span>
       </Tooltip>
 
       <button type="button" className={styles.runBtn} onClick={onRunNow}>
@@ -273,12 +305,17 @@ function ScheduleRow({ row, error, note, onSave, onRunNow, reduced }) {
 /**
  * The scheduler: one row per source (plus the derived boom_score → alerts →
  * regime → automute → rules step). Edits apply optimistically and roll back with the server's reason
- * if they are rejected.
+ * if they are rejected. On a phone it is a folded section (`sections`) of
+ * short rows, each editing in a sheet; `editing` / `onEdit(source | null)`
+ * say which schedule's sheet is open, so the page's source rows can open
+ * it too.
  */
-export default function SchedulerSection({ schedules, setSchedules }) {
+export default function SchedulerSection({ schedules, setSchedules, sections, editing, onEdit }) {
+  const phone = useMediaQuery(PHONE);
   const [errors, setErrors] = useState({});
   const [notes, setNotes] = useState({});
   const reduced = prefersReducedMotion();
+  const editRow = schedules.find((s) => s.source === editing);
 
   const save = async (source, patch) => {
     const prev = schedules.find((s) => s.source === source);
@@ -305,20 +342,55 @@ export default function SchedulerSection({ schedules, setSchedules }) {
     }
     setTimeout(() => setNotes((n) => ({ ...n, [source]: null })), 4000);
   };
+  const sheet = editRow && scheduleControls(editRow, (patch) => save(editRow.source, patch), reduced);
 
   return (
-    <section className={styles.panel}>
-      <div className={styles.head}>
-        <span className="caption">Scheduler</span>
-        <span className={styles.headRight}>
-          each source on its own clock · one refresh thread · late runs queue, never drop
-        </span>
-      </div>
+    <PhoneFold
+      id="scheduler"
+      caption="Scheduler"
+      right={<span className={styles.headRight}>{ABOUT}</span>}
+      sections={sections}
+      frame={(body) => (
+        <section className={styles.panel}>
+          <div className={styles.head}>
+            <span className="caption">Scheduler</span>
+            <span className={styles.headRight}>{ABOUT}</span>
+          </div>
+          {body}
+        </section>
+      )}
+    >
       <datalist id="scheduler-tz-list">
         {TIMEZONES.map((z) => <option key={z} value={z} />)}
       </datalist>
       {schedules.length === 0 ? (
         <p className={styles.muted}>No schedules yet — they are created when the server starts.</p>
+      ) : phone ? (
+        <ul className={styles.phoneList} aria-label="Schedules">
+          {schedules.map((row) => (
+            <li key={row.source} className={styles.phoneRow} data-enabled={row.enabled ? "yes" : "no"}>
+              <div className={styles.name}>
+                <span className={styles.src}>{row.source}</span>
+                <span className={styles.desc}>{describe(row)}</span>
+              </div>
+              <span className={styles.next}>{notes[row.source] || nextText(row)}</span>
+              <MenuButton label={`Actions for ${row.source}`}>
+                {(close) => (
+                  <>
+                    <MenuItem onSelect={() => { close(); onEdit(row.source); }}>Edit schedule</MenuItem>
+                    <MenuItem onSelect={() => { close(); runNow(row.source); }}>Run now</MenuItem>
+                    <MenuItem onSelect={() => { close(); save(row.source, { enabled: !row.enabled }); }}>
+                      {row.enabled ? "Pause" : "Resume"}
+                    </MenuItem>
+                  </>
+                )}
+              </MenuButton>
+              {errors[row.source] && !editRow && (
+                <p role="alert" className={styles.err}>Not saved: {errors[row.source]}</p>
+              )}
+            </li>
+          ))}
+        </ul>
       ) : (
         <ul className={styles.list}>
           {schedules.map((row) => (
@@ -334,6 +406,41 @@ export default function SchedulerSection({ schedules, setSchedules }) {
           ))}
         </ul>
       )}
-    </section>
+      <FormSheet sheet open={Boolean(editRow)} onClose={() => onEdit(null)} caption="Schedule"
+                 title={editRow?.source ?? ""}>
+        {sheet && (
+          <div className={styles.sheet}>
+            <p className={styles.sheetDesc}>{describe(editRow)}</p>
+            <div className={styles.sheetRow}>
+              <span className="caption">Runs</span>
+              {sheet.mode}
+              {sheet.when}
+            </div>
+            <div className={styles.sheetRow}>
+              <span className="caption">Days</span>
+              {sheet.days}
+            </div>
+            <div className={styles.sheetRow}>
+              <span className="caption">Timezone</span>
+              {sheet.tz}
+            </div>
+            <div className={styles.sheetRow}>
+              <span className="caption">State</span>
+              {sheet.enabled}
+              <span className={styles.next}>next: {nextText(editRow)}</span>
+            </div>
+            {errors[editRow.source] && (
+              <p role="alert" className={styles.err}>Not saved: {errors[editRow.source]}</p>
+            )}
+            <SheetActions>
+              <Button onClick={() => runNow(editRow.source)}>
+                <Icon name="refresh" size={12} /> {notes[editRow.source] || "Run now"}
+              </Button>
+              <Button variant="primary" onClick={() => onEdit(null)}>Done</Button>
+            </SheetActions>
+          </div>
+        )}
+      </FormSheet>
+    </PhoneFold>
   );
 }

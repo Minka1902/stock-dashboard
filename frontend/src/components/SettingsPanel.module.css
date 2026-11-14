@@ -30,33 +30,6 @@
   gap: var(--s-6);
 }
 
-.group {
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: var(--s-4) var(--s-5) var(--s-5);
-  margin: 0;
-}
-
-/* Settings that only exist on a phone (text size). */
-.phoneOnly { display: none; }
-@media (max-width: 640px) {
-  .phoneOnly { display: block; }
-}
-
-.legend {
-  font-size: var(--fs-13);
-  font-weight: 700;
-  color: var(--text);
-  padding: 0 var(--s-2);
-}
-
-.groupHint {
-  color: var(--text-muted);
-  font-size: var(--fs-12-5);
-  margin-bottom: var(--s-4);
-  max-width: 64ch;
-}
-
 .checks {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
@@ -448,6 +421,34 @@
 .tagRemove:disabled,
 .ghostBtn:disabled { opacity: 0.55; cursor: not-allowed; }
 
+/* A phone's read-only view of a group whose form opens in a sheet. */
+.summary {
+  margin: 0 0 var(--s-3);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--mono);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+}
+.summary div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: 5px 0;
+  border-top: 1px solid var(--grid);
+}
+.summary dt { color: var(--text-muted); }
+.summary dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+
 @media (pointer: coarse) {
   .tagRemove { width: 32px; height: 32px; }
+  .miniSwitch { height: auto; min-height: var(--tap); }
+}
+
+/* Phone: the page is its index and its folded groups, each a section of
+   its own, so the panel around them steps back. */
+@media (max-width: 640px) {
+  .panel { background: none; border: 0; box-shadow: none; overflow: visible; }
+  .head { padding: 0 0 var(--s-3); border-bottom: 0; }
+  .body { padding: var(--s-2) 0 0; gap: var(--s-2); }
 }

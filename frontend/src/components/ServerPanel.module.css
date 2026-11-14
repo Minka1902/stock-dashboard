@@ -237,8 +237,18 @@ button.outcome:hover, button.outcome:focus-visible { border-color: currentColor;
 }
 
 .muted { font-family: var(--mono); font-size: var(--fs-12); color: var(--text-faint); }
+/* Phone: what a row menu's Run now or Import file did. */
+.notice { margin: 0 0 var(--s-2); font-family: var(--mono); font-size: var(--fs-11); color: var(--text-muted); }
 .error {
   margin: var(--s-4);
   display: flex; align-items: center; gap: 8px;
   color: var(--negative); font-size: var(--fs-13);
+}
+
+/* Phone: each section is a folded CollapsibleSection, whose body already
+   sits on the gutter. */
+@media (max-width: 640px) {
+  .body { padding: 0; }
+  /* A long status must leave the source's name its own line. */
+  .badge { max-width: 30vw; }
 }

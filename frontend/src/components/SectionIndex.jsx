@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
 import ScrollHint from "./ScrollHint";
 import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
-import { prefersReducedMotion } from "../lib/motionConfig";
+import { findSection, scrollToSection } from "../lib/sections";
 import styles from "./SectionIndex.module.css";
-
-const find = (id) => document.querySelector(`[data-anchor="${CSS.escape(id)}"]`) || document.getElementById(id);
 
 /**
  * A phone's table of contents for a page of CollapsibleSections: a sticky
@@ -21,7 +19,7 @@ export default function SectionIndex({ sections, onJump, label = "Sections on th
 
   useEffect(() => {
     if (!phone) return undefined;
-    const els = ids.split(" ").map(find).filter(Boolean);
+    const els = ids.split(" ").map(findSection).filter(Boolean);
     const observer = new IntersectionObserver((entries) => {
       const top = entries.filter((e) => e.isIntersecting)
         .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
@@ -35,9 +33,7 @@ export default function SectionIndex({ sections, onJump, label = "Sections on th
 
   const jump = (id) => {
     onJump(id);
-    requestAnimationFrame(() => {
-      find(id)?.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
-    });
+    requestAnimationFrame(() => scrollToSection(id));
   };
 
   return (

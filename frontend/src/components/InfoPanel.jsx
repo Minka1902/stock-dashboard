@@ -1,11 +1,26 @@
+import Clamp from "./Clamp";
 import Icon from "./Icon";
+import PanelInfo from "./PanelInfo";
+import PhoneFold from "./PhoneFold";
+import SectionIndex from "./SectionIndex";
+import ShowAll from "./ShowAll";
 import SourceGuide from "./SourceGuide";
 import UpdatesSection from "./UpdatesSection";
 import GLOSSARY from "../lib/glossary";
 import { MODULE_SOURCE, SOURCE_META, sourceState } from "../lib/sources";
-import { prefersReducedMotion } from "../lib/motionConfig";
+import { scrollToSection } from "../lib/sections";
+import { useCollapsedSections } from "../hooks/useCollapsedSections";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
+import { usePhoneLimit } from "../hooks/usePhoneLimit";
 import { isUpdateAvailable, useUpdateStatus } from "../hooks/useUpdateStatus";
 import styles from "./InfoPanel.module.css";
+
+// Where the Info page keeps which of its sections are folded (a phone).
+export const INFO_SECTIONS = "info:";
+const BLURB = "What each panel shows, where its data comes from, and the words behind the numbers. Signals, not "
+  + "predictions — every value on this dashboard shows its source and reasoning.";
+const GLOSSARY_TERMS = Object.values(GLOSSARY);
+const PHONE_TERMS = 12;
 
 // Resolves a module card's data source into a display line + live status dot state.
 function cardSource(key, statusByName) {
@@ -179,54 +194,67 @@ const SECTIONS = [
 /**
  * Consolidated Info page: the module guide, the live data-source directory
  * (with expandable error diagnostics), and the glossary — with a sticky
- * in-page section nav.
+ * in-page section nav. On a phone each part is a folded section under a
+ * SectionIndex, and the glossary shows its first terms until asked.
  */
 export default function InfoPanel({ onNavigate, sources }) {
+  const phone = useMediaQuery(PHONE);
+  const sections = useCollapsedSections(INFO_SECTIONS);
   const statusByName = new Map((sources || []).map((s) => [s.source, s]));
   const { data: updateData } = useUpdateStatus();
   const updateAvailable = isUpdateAvailable(updateData);
-
-  const jump = (id) => {
-    document.getElementById(id)?.scrollIntoView({
-      behavior: prefersReducedMotion() ? "auto" : "smooth",
-      block: "start",
-    });
-  };
+  const { limit, showAll } = usePhoneLimit(GLOSSARY_TERMS.length, PHONE_TERMS);
+  const updatesDot = updateAvailable && <span className={styles.chipDot} role="img" aria-label="update available" />;
+  const fold = (id, title) => ({
+    id,
+    caption: title,
+    sections,
+    bodyClassName: styles.section,
+    frame: (body) => (
+      <div id={id} className={styles.section}>
+        {title && <h3 className={styles.sectionTitle}>{title}</h3>}
+        {body}
+      </div>
+    ),
+  });
 
   return (
     <section className={styles.panel} id="info">
       <header className={styles.head}>
         <div>
-          <h2 className={styles.title}>Info</h2>
-          <p className={styles.subtitle}>
-            What each panel shows, where its data comes from, and the words behind the numbers.
-            Signals, not predictions — every value on this dashboard shows its source and reasoning.
-          </p>
+          <h2 className={styles.title}>Info<PanelInfo label="Info" blurb={BLURB} /></h2>
+          {!phone && <p className={styles.subtitle}>{BLURB}</p>}
         </div>
       </header>
 
-      <nav className={styles.sectionNav} aria-label="Info sections">
-        {SECTIONS.map((s) => (
-          <button key={s.id} type="button" className={styles.chip} onClick={() => jump(s.id)}>
-            {s.label}
-            {s.id === "info-updates" && updateAvailable && (
-              <span className={styles.chipDot} role="img" aria-label="update available" />
-            )}
-          </button>
-        ))}
-      </nav>
+      {!phone && (
+        <nav className={styles.sectionNav} aria-label="Info sections">
+          {SECTIONS.map((s) => (
+            <button key={s.id} type="button" className={styles.chip} onClick={() => scrollToSection(s.id)}>
+              {s.label}
+              {s.id === "info-updates" && updatesDot}
+            </button>
+          ))}
+        </nav>
+      )}
+      <SectionIndex
+        sections={SECTIONS.map((s) => (s.id === "info-updates" ? { ...s, label: <>{s.label}{updatesDot}</> } : s))}
+        onJump={(id) => sections.setCollapsed([id], false)}
+      />
 
       <div className={styles.body}>
         {/* ---- Modules ---- */}
-        <div id="info-modules" className={styles.section}>
+        <PhoneFold {...fold("info-modules")} caption="Modules">
           <div className={styles.intro}>
             <h3 className={styles.introTitle}>How this dashboard thinks</h3>
             <p className={styles.introText}>
-              Each module gathers one kind of <strong>public</strong> signal. The Boom Score simply adds
-              the bullish ones up and subtracts the bearish ones, so a high score means several
-              independent sources agree right now. Nothing here is a forecast — it's a fast way to spot
-              "something is happening here," with the receipts attached. If a source can't be reached it
-              shows an error rather than inventing data.
+              <Clamp active={phone} lines={3} label="How this dashboard thinks">
+                Each module gathers one kind of <strong>public</strong> signal. The Boom Score simply adds
+                the bullish ones up and subtracts the bearish ones, so a high score means several
+                independent sources agree right now. Nothing here is a forecast — it's a fast way to spot
+                "something is happening here," with the receipts attached. If a source can't be reached it
+                shows an error rather than inventing data.
+              </Clamp>
             </p>
           </div>
 
@@ -262,32 +290,30 @@ export default function InfoPanel({ onNavigate, sources }) {
               </div>
             </div>
           ))}
-        </div>
+        </PhoneFold>
 
         {/* ---- Data sources ---- */}
-        <div id="info-sources" className={styles.section}>
-          <h3 className={styles.sectionTitle}>Data sources</h3>
+        <PhoneFold {...fold("info-sources", "Data sources")}>
           <SourceGuide sources={sources} />
-        </div>
+        </PhoneFold>
 
         {/* ---- Glossary ---- */}
-        <div id="info-glossary" className={styles.section}>
-          <h3 className={styles.sectionTitle}>Glossary</h3>
+        <PhoneFold {...fold("info-glossary", "Glossary")}>
           <dl className={styles.glossary}>
-            {Object.values(GLOSSARY).map((g) => (
+            {GLOSSARY_TERMS.slice(0, limit).map((g) => (
               <div key={g.label} className={styles.term}>
                 <dt className={styles.termLabel}>{g.label}</dt>
                 <dd className={styles.termDef}>{g.long}</dd>
               </div>
             ))}
           </dl>
-        </div>
+          {showAll && <ShowAll {...showAll} noun="terms" />}
+        </PhoneFold>
 
         {/* ---- Updates ---- */}
-        <div id="info-updates" className={styles.section}>
-          <h3 className={styles.sectionTitle}>Updates</h3>
+        <PhoneFold {...fold("info-updates", "Updates")}>
           <UpdatesSection />
-        </div>
+        </PhoneFold>
       </div>
     </section>
   );

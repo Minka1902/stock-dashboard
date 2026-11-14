@@ -1,9 +1,17 @@
 import { useState } from "react";
+import Button from "./Button";
+import FormSheet from "./FormSheet";
 import Icon from "./Icon";
+import PanelInfo from "./PanelInfo";
+import SectionIndex from "./SectionIndex";
 import SelectMenu from "./SelectMenu";
+import SettingsGroup, { SETTINGS_SECTIONS } from "./SettingsGroup";
+import SheetActions from "./SheetActions";
 import TelegramCard from "./TelegramCard";
 import FxWatchEditor from "./FxWatchEditor";
 import Tooltip from "./Tooltip";
+import { useCollapsedSections } from "../hooks/useCollapsedSections";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { useProfile } from "../hooks/useProfile";
 import { TEXT_SCALES } from "../hooks/useSettings";
 import { initialsFor, gradientFor } from "../lib/avatar";
@@ -70,6 +78,28 @@ const QUOTE_INTERVALS = [
 // X handles: 1–15 letters, digits or underscore (Twitter's own rule).
 const X_HANDLE_RE = /^[A-Za-z0-9_]{1,15}$/;
 
+const BLURB = "Personalize the seasonality view and reading comfort. Changes apply instantly and are saved on "
+  + "this device.";
+
+// The phone's SectionIndex chips, in page order (Text size exists only there).
+const SECTIONS = [
+  { id: "account", label: "Account" },
+  { id: "schedule", label: "Schedule" },
+  { id: "x", label: "X Watch" },
+  { id: "learn", label: "Learn" },
+  { id: "risk", label: "Risk" },
+  { id: "fx", label: "FX tape" },
+  { id: "digest", label: "Digest" },
+  { id: "telegram", label: "Telegram" },
+  { id: "windows", label: "Seasonality" },
+  { id: "lookback", label: "Lookback" },
+  { id: "appearance", label: "Theme" },
+  { id: "text", label: "Text size" },
+  { id: "labels", label: "Labels" },
+  { id: "company", label: "Company" },
+  { id: "reading", label: "Reading" },
+];
+
 function formatNextRun(iso, tz) {
   if (!iso) return null;
   try {
@@ -80,6 +110,22 @@ function formatNextRun(iso, tz) {
   } catch {
     return iso;
   }
+}
+
+const optionLabel = (options, value) => options.find((o) => o.value === value)?.label ?? value;
+
+/** A phone's read-only view of a group whose form opens in a sheet. */
+function summaryList(rows) {
+  return (
+    <dl className={styles.summary}>
+      {rows.map(([label, value]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
 /** Settings' pill radios for a one-of-N preference. */
@@ -108,6 +154,10 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
   const lookback = settings.seasonalityLookback;
   const memberSince = formatMemberSince(user?.created_at);
 
+  const phone = useMediaQuery(PHONE);
+  const sections = useCollapsedSections(SETTINGS_SECTIONS);
+  // The group whose form is open as a sheet (phone): schedule | risk | contact.
+  const [editing, setEditing] = useState(null);
   const { profile, update, save } = useProfile();
   const base = profile.base_currency || "USD";
   // app_settings PUT is admin-only server-side; say so instead of letting a
@@ -164,6 +214,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
         quotes_refresh_seconds: appSettings.quotes_refresh_seconds,
       });
       setSchedState("saved");
+      setEditing(null);
     } catch (err) {
       setSchedState(err.message || "could not save");
     }
@@ -186,6 +237,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
     try {
       await save(profile);
       setSaveState("saved");
+      setEditing(null);
     } catch (err) {
       setSaveState(err.message || "could not save");
     }
@@ -201,23 +253,29 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
     }
   }
 
+  const closeSheet = () => setEditing(null);
+  const sendTestButton = (
+    <button type="button" className={styles.ghostBtn} onClick={sendTest} disabled={testState === "sending"}>
+      {testState === "sending" ? "Sending…" : "Send test now"}
+    </button>
+  );
+  const onOff = (on) => (on ? "on" : "off");
+
   return (
     <section className={styles.panel} id="settings">
       <header className={styles.head}>
         <div>
-          <h2 className={styles.title}>Settings</h2>
-          <p className={styles.subtitle}>
-            Personalize the seasonality view and reading comfort. Changes apply instantly and are
-            saved on this device.
-          </p>
+          <h2 className={styles.title}>Settings<PanelInfo label="Settings" blurb={BLURB} /></h2>
+          {!phone && <p className={styles.subtitle}>{BLURB}</p>}
         </div>
       </header>
+
+      <SectionIndex sections={SECTIONS} onJump={(id) => sections.setCollapsed([id], false)} />
 
       <div className={styles.body}>
         {/* Account: who's signed in */}
         {user && (
-          <fieldset className={styles.group} data-card>
-            <legend className={styles.legend}>Account</legend>
+          <SettingsGroup id="account" legend="Account">
             <div className={styles.account}>
               <span
                 className={styles.accountAvatar}
@@ -236,89 +294,110 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
                 )}
               </div>
             </div>
-          </fieldset>
+          </SettingsGroup>
         )}
 
         {/* Analysis schedule + data refresh (server-side; drives the cron job) */}
-        <fieldset className={styles.group} data-card>
-          <legend className={styles.legend}>Analysis schedule &amp; data refresh</legend>
-          <p className={styles.groupHint}>
-            Every weekday at this time, the dashboard force-refreshes all sources, recomputes every
-            holding&apos;s analysis and Boom Scores, and sends the daily digest. Live prices poll on
-            their own faster cadence.
-          </p>
-          <div className={styles.contact}>
-            <div className={styles.field}>
-              <label className={styles.fieldLabel} htmlFor="analysis-time">Daily analysis time</label>
-              <input
-                id="analysis-time"
-                className={styles.input}
-                type="time"
-                value={appSettings.analysis_time}
-                disabled={!isAdmin}
-                aria-describedby={isAdmin ? undefined : "admin-only-note"}
-                onChange={(e) => updateApp({ analysis_time: e.target.value })}
-              />
+        <SettingsGroup
+          id="schedule"
+          legend="Analysis schedule & data refresh"
+          hint={(
+            <>
+              Every weekday at this time, the dashboard force-refreshes all sources, recomputes every
+              holding&apos;s analysis and Boom Scores, and sends the daily digest. Live prices poll on
+              their own faster cadence.
+            </>
+          )}
+        >
+          {phone && summaryList([
+            ["Daily analysis time", appSettings.analysis_time || "—"],
+            ["Timezone", optionLabel(tzOptions, appSettings.analysis_tz)],
+            ["Live price refresh", optionLabel(QUOTE_INTERVALS, Number(appSettings.quotes_refresh_seconds))],
+          ])}
+          <FormSheet sheet={phone} open={editing === "schedule"} onClose={closeSheet} caption="Settings"
+                     title="Analysis schedule">
+            <div className={styles.contact} data-fields>
+              <div className={styles.field}>
+                <label className={styles.fieldLabel} htmlFor="analysis-time">Daily analysis time</label>
+                <input
+                  id="analysis-time"
+                  className={styles.input}
+                  type="time"
+                  value={appSettings.analysis_time}
+                  disabled={!isAdmin}
+                  aria-describedby={isAdmin ? undefined : "admin-only-note"}
+                  onChange={(e) => updateApp({ analysis_time: e.target.value })}
+                />
+              </div>
+              <div className={styles.field}>
+                {/* SelectMenu, not a native <select>: the native option list is
+                    OS chrome and ignores the app theme. */}
+                <span className={styles.fieldLabel} aria-hidden="true">Timezone</span>
+                <Tooltip content={adminTip}>
+                  <span className={styles.selectWrap} data-disabled={isAdmin ? "no" : "yes"}>
+                    <SelectMenu
+                      label="Timezone"
+                      value={appSettings.analysis_tz}
+                      options={tzOptions}
+                      onChange={(v) => isAdmin && updateApp({ analysis_tz: v })}
+                    />
+                  </span>
+                </Tooltip>
+              </div>
+              <div className={styles.field}>
+                <span className={styles.fieldLabel} aria-hidden="true">Live price refresh</span>
+                <Tooltip content={adminTip}>
+                  <span className={styles.selectWrap} data-disabled={isAdmin ? "no" : "yes"}>
+                    <SelectMenu
+                      label="Live price refresh"
+                      value={Number(appSettings.quotes_refresh_seconds)}
+                      options={QUOTE_INTERVALS}
+                      onChange={(v) => isAdmin && updateApp({ quotes_refresh_seconds: Number(v) })}
+                    />
+                  </span>
+                </Tooltip>
+              </div>
             </div>
-            <div className={styles.field}>
-              {/* SelectMenu, not a native <select>: the native option list is
-                  OS chrome and ignores the app theme. */}
-              <span className={styles.fieldLabel} aria-hidden="true">Timezone</span>
+            <SheetActions className={styles.actions}>
               <Tooltip content={adminTip}>
-                <span className={styles.selectWrap} data-disabled={isAdmin ? "no" : "yes"}>
-                  <SelectMenu
-                    label="Timezone"
-                    value={appSettings.analysis_tz}
-                    options={tzOptions}
-                    onChange={(v) => isAdmin && updateApp({ analysis_tz: v })}
-                  />
-                </span>
+                <button type="button" className={styles.primaryBtn} onClick={saveSchedule}
+                        disabled={!isAdmin || schedState === "saving"}>
+                  {schedState === "saving" ? "Saving…" : "Save schedule"}
+                </button>
               </Tooltip>
+              {!isAdmin && (
+                <span id="admin-only-note" className={styles.adminNote}>Only an admin can change the schedule.</span>
+              )}
+              {schedState === "saved" && <span className={styles.ok}>Saved ✓</span>}
+              {schedState && schedState !== "saving" && schedState !== "saved" && (
+                <span className={styles.err}>{schedState}</span>
+              )}
+            </SheetActions>
+          </FormSheet>
+          {phone && (isAdmin ? (
+            <div className={styles.actions}>
+              <Button size="sm" onClick={() => setEditing("schedule")}>Edit schedule</Button>
             </div>
-            <div className={styles.field}>
-              <span className={styles.fieldLabel} aria-hidden="true">Live price refresh</span>
-              <Tooltip content={adminTip}>
-                <span className={styles.selectWrap} data-disabled={isAdmin ? "no" : "yes"}>
-                  <SelectMenu
-                    label="Live price refresh"
-                    value={Number(appSettings.quotes_refresh_seconds)}
-                    options={QUOTE_INTERVALS}
-                    onChange={(v) => isAdmin && updateApp({ quotes_refresh_seconds: Number(v) })}
-                  />
-                </span>
-              </Tooltip>
-            </div>
-          </div>
-          <div className={styles.actions}>
-            <Tooltip content={adminTip}>
-              <button type="button" className={styles.primaryBtn} onClick={saveSchedule}
-                      disabled={!isAdmin || schedState === "saving"}>
-                {schedState === "saving" ? "Saving…" : "Save schedule"}
-              </button>
-            </Tooltip>
-            {!isAdmin && (
-              <span id="admin-only-note" className={styles.adminNote}>Only an admin can change the schedule.</span>
-            )}
-            {schedState === "saved" && <span className={styles.ok}>Saved ✓</span>}
-            {schedState && schedState !== "saving" && schedState !== "saved" && (
-              <span className={styles.err}>{schedState}</span>
-            )}
-          </div>
+          ) : <p className={styles.adminNote}>Only an admin can change the schedule.</p>)}
           {nextRun && (
             <p className={styles.note}>
               <Icon name="spark" size={14} />
               Next scheduled analysis run: <strong>{nextRun}</strong>
             </p>
           )}
-        </fieldset>
+        </SettingsGroup>
 
         {/* X Watch monitored accounts (server-side; drives the x_posts source) */}
-        <fieldset className={styles.group} data-card>
-          <legend className={styles.legend}>X Watch accounts</legend>
-          <p className={styles.groupHint}>
-            Handles the X Watch feed monitors for market-moving posts and cashtags. Applies on the
-            next refresh.{isAdmin ? "" : " Only an admin can change this list."}
-          </p>
+        <SettingsGroup
+          id="x"
+          legend="X Watch accounts"
+          hint={(
+            <>
+              Handles the X Watch feed monitors for market-moving posts and cashtags. Applies on the
+              next refresh.{isAdmin ? "" : " Only an admin can change this list."}
+            </>
+          )}
+        >
           <div className={styles.tagList}>
             {xAccounts.length === 0 && (
               <span className={styles.tagsEmpty}>No accounts yet — the feed will be empty.</span>
@@ -350,6 +429,9 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
                 placeholder="realDonaldTrump"
                 value={xInput}
                 disabled={!isAdmin}
+                autoCapitalize="none"
+                spellCheck={false}
+                enterKeyHint="done"
                 onChange={(e) => setXInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addXAccount(); } }}
               />
@@ -370,17 +452,21 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
               <span className={styles.err}>{xState}</span>
             )}
           </div>
-        </fieldset>
+        </SettingsGroup>
 
         {/* Onboarding: the in-app Info page + guided tours */}
-        <fieldset className={styles.group} data-card>
-          <legend className={styles.legend}>Learn the dashboard</legend>
-          <p className={styles.groupHint}>
-            New here? The <strong>Info</strong> page explains what every panel shows, how it feeds the
-            Boom Score, and lists every data source and whether it last responded. (Data sources have
-            moved to the Info page.) Each view also has a guided tour (the <strong>?</strong> button in
-            the top bar) that runs automatically on first visit.
-          </p>
+        <SettingsGroup
+          id="learn"
+          legend="Learn the dashboard"
+          hint={(
+            <>
+              New here? The <strong>Info</strong> page explains what every panel shows, how it feeds the
+              Boom Score, and lists every data source and whether it last responded. (Data sources have
+              moved to the Info page.) Each view also has a guided tour (the <strong>?</strong> button in
+              the top bar) that runs automatically on first visit.
+            </>
+          )}
+        >
           <button type="button" className={styles.primaryBtn} onClick={() => onNavigate?.("info")}>
             Open the Info page
           </button>{" "}
@@ -393,125 +479,162 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
               Replay all tours
             </button>
           </Tooltip>
-        </fieldset>
+        </SettingsGroup>
 
         {/* Trading & risk: position sizing for each holding's analysis */}
-        <fieldset className={styles.group} data-card>
-          <legend className={styles.legend}>Trading &amp; risk</legend>
-          <p className={styles.groupHint}>
-            Sizes positions in each holding's analysis: shares = (risk&nbsp;% × account) ÷ risk-per-share.
-            Risk is capped at 10% per trade. The account size is in your base currency ({base} —
-            switch it on the Portfolio page); for a stock in another currency it is converted at the
-            live exchange rate, and left unsized if no rate is available.
-          </p>
-          <div className={styles.contact}>
-            <div className={styles.field}>
-              <label className={styles.fieldLabel} htmlFor="acct-size">Account size ({currencySymbol(base).trim()} {base})</label>
-              <input
-                id="acct-size"
-                className={styles.input}
-                type="number"
-                min="0"
-                step="any"
-                placeholder="50000"
-                value={profile.account_size ?? ""}
-                onChange={(e) => update({ account_size: e.target.value === "" ? null : Number(e.target.value) })}
-              />
+        <SettingsGroup
+          id="risk"
+          legend="Trading & risk"
+          hint={(
+            <>
+              Sizes positions in each holding's analysis: shares = (risk&nbsp;% × account) ÷ risk-per-share.
+              Risk is capped at 10% per trade. The account size is in your base currency ({base} —
+              switch it on the Portfolio page); for a stock in another currency it is converted at the
+              live exchange rate, and left unsized if no rate is available.
+            </>
+          )}
+        >
+          {phone && summaryList([
+            [`Account size (${base})`, profile.account_size ? formatMoney(profile.account_size, base, { digits: 0 }) : "not set"],
+            ["Risk per trade", `${profile.risk_pct ?? 1}%`],
+            ["Risking per trade", profile.account_size
+              ? formatMoney((profile.account_size * (profile.risk_pct || 1)) / 100, base, { digits: 0 })
+              : "—"],
+          ])}
+          <FormSheet sheet={phone} open={editing === "risk"} onClose={closeSheet} caption="Settings"
+                     title="Trading & risk">
+            <div className={styles.contact} data-fields>
+              <div className={styles.field}>
+                <label className={styles.fieldLabel} htmlFor="acct-size">Account size ({currencySymbol(base).trim()} {base})</label>
+                <input
+                  id="acct-size"
+                  className={styles.input}
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  placeholder="50000"
+                  value={profile.account_size ?? ""}
+                  onChange={(e) => update({ account_size: e.target.value === "" ? null : Number(e.target.value) })}
+                />
+              </div>
+              <div className={styles.field}>
+                <label className={styles.fieldLabel} htmlFor="risk-pct">Risk per trade (%)</label>
+                <input
+                  id="risk-pct"
+                  className={styles.input}
+                  type="number"
+                  min="0.1"
+                  max="10"
+                  step="0.1"
+                  inputMode="decimal"
+                  value={profile.risk_pct ?? 1}
+                  onChange={(e) => update({ risk_pct: Number(e.target.value) })}
+                />
+              </div>
             </div>
-            <div className={styles.field}>
-              <label className={styles.fieldLabel} htmlFor="risk-pct">Risk per trade (%)</label>
-              <input
-                id="risk-pct"
-                className={styles.input}
-                type="number"
-                min="0.1"
-                max="10"
-                step="0.1"
-                value={profile.risk_pct ?? 1}
-                onChange={(e) => update({ risk_pct: Number(e.target.value) })}
-              />
+            <SheetActions className={styles.actions}>
+              <button type="button" className={styles.primaryBtn} onClick={saveProfile} disabled={saveState === "saving"}>
+                {saveState === "saving" ? "Saving…" : "Save trading settings"}
+              </button>
+              {profile.account_size ? (
+                <span className={styles.ok}>
+                  Risking {formatMoney((profile.account_size * (profile.risk_pct || 1)) / 100, base, { digits: 0 })} per trade
+                </span>
+              ) : null}
+            </SheetActions>
+          </FormSheet>
+          {phone && (
+            <div className={styles.actions}>
+              <Button size="sm" onClick={() => setEditing("risk")}>Edit sizing</Button>
             </div>
-          </div>
-          <div className={styles.actions}>
-            <button type="button" className={styles.primaryBtn} onClick={saveProfile} disabled={saveState === "saving"}>
-              {saveState === "saving" ? "Saving…" : "Save trading settings"}
-            </button>
-            {profile.account_size ? (
-              <span className={styles.ok}>
-                Risking {formatMoney((profile.account_size * (profile.risk_pct || 1)) / 100, base, { digits: 0 })} per trade
-              </span>
-            ) : null}
-          </div>
-        </fieldset>
+          )}
+        </SettingsGroup>
 
         {/* Currencies shown in the ticker tape (per user, server-side) */}
         <FxWatchEditor />
 
         {/* Notifications: email + phone for the daily suggestion digest */}
-        <fieldset className={styles.group} data-card>
-          <legend className={styles.legend}>Daily suggestions — email &amp; phone</legend>
-          <p className={styles.groupHint}>
-            Get a few tailored ideas for the next trading day, based on your portfolio and watchlist.
-            Sent pre-market on trading days. Delivery is off until you add SMTP/Twilio keys on the
-            server, but you can save your contact info and preview the digest now.
-          </p>
-
-          <div className={styles.contact}>
-            <div className={styles.field}>
-              <label className={styles.fieldLabel} htmlFor="notify-email">Email address</label>
-              <input
-                id="notify-email"
-                className={styles.input}
-                type="email"
-                placeholder="you@example.com"
-                value={profile.email}
-                onChange={(e) => update({ email: e.target.value })}
-              />
+        <SettingsGroup
+          id="digest"
+          legend="Daily suggestions — email & phone"
+          hint={(
+            <>
+              Get a few tailored ideas for the next trading day, based on your portfolio and watchlist.
+              Sent pre-market on trading days. Delivery is off until you add SMTP/Twilio keys on the
+              server, but you can save your contact info and preview the digest now.
+            </>
+          )}
+        >
+          {phone && summaryList([
+            ["Email", profile.email ? `${profile.email} · ${onOff(profile.email_enabled)}` : "not set"],
+            ["Phone", profile.phone ? `${profile.phone} · ${onOff(profile.sms_enabled)}` : "not set"],
+          ])}
+          <FormSheet sheet={phone} open={editing === "contact"} onClose={closeSheet} caption="Settings"
+                     title="Daily suggestions">
+            <div className={styles.contact} data-fields>
+              <div className={styles.field}>
+                <label className={styles.fieldLabel} htmlFor="notify-email">Email address</label>
+                <input
+                  id="notify-email"
+                  className={styles.input}
+                  type="email"
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  value={profile.email}
+                  onChange={(e) => update({ email: e.target.value })}
+                />
+              </div>
+              <label className={styles.miniSwitch}>
+                <input
+                  type="checkbox"
+                  checked={profile.email_enabled}
+                  onChange={(e) => update({ email_enabled: e.target.checked })}
+                />
+                Email me
+              </label>
             </div>
-            <label className={styles.miniSwitch}>
-              <input
-                type="checkbox"
-                checked={profile.email_enabled}
-                onChange={(e) => update({ email_enabled: e.target.checked })}
-              />
-              Email me
-            </label>
-          </div>
 
-          <div className={styles.contact}>
-            <div className={styles.field}>
-              <label className={styles.fieldLabel} htmlFor="notify-phone">Phone (E.164)</label>
-              <input
-                id="notify-phone"
-                className={styles.input}
-                type="tel"
-                placeholder="+14155551234"
-                value={profile.phone}
-                onChange={(e) => update({ phone: e.target.value })}
-              />
+            <div className={styles.contact} data-fields>
+              <div className={styles.field}>
+                <label className={styles.fieldLabel} htmlFor="notify-phone">Phone (E.164)</label>
+                <input
+                  id="notify-phone"
+                  className={styles.input}
+                  type="tel"
+                  placeholder="+14155551234"
+                  autoComplete="tel"
+                  value={profile.phone}
+                  onChange={(e) => update({ phone: e.target.value })}
+                />
+              </div>
+              <label className={styles.miniSwitch}>
+                <input
+                  type="checkbox"
+                  checked={profile.sms_enabled}
+                  onChange={(e) => update({ sms_enabled: e.target.checked })}
+                />
+                Text me
+              </label>
             </div>
-            <label className={styles.miniSwitch}>
-              <input
-                type="checkbox"
-                checked={profile.sms_enabled}
-                onChange={(e) => update({ sms_enabled: e.target.checked })}
-              />
-              Text me
-            </label>
-          </div>
 
-          <div className={styles.actions}>
-            <button type="button" className={styles.primaryBtn} onClick={saveProfile} disabled={saveState === "saving"}>
-              {saveState === "saving" ? "Saving…" : "Save contact info"}
-            </button>
-            <button type="button" className={styles.ghostBtn} onClick={sendTest} disabled={testState === "sending"}>
-              {testState === "sending" ? "Sending…" : "Send test now"}
-            </button>
-            {saveState === "saved" && <span className={styles.ok}>Saved ✓</span>}
-            {saveState && saveState !== "saving" && saveState !== "saved" && (
-              <span className={styles.err}>{saveState}</span>
-            )}
-          </div>
+            <SheetActions className={styles.actions}>
+              <button type="button" className={styles.primaryBtn} onClick={saveProfile} disabled={saveState === "saving"}>
+                {saveState === "saving" ? "Saving…" : "Save contact info"}
+              </button>
+              {!phone && sendTestButton}
+              {saveState === "saved" && <span className={styles.ok}>Saved ✓</span>}
+              {saveState && saveState !== "saving" && saveState !== "saved" && (
+                <span className={styles.err}>{saveState}</span>
+              )}
+            </SheetActions>
+          </FormSheet>
+          {phone && (
+            <div className={styles.actions}>
+              <Button size="sm" onClick={() => setEditing("contact")}>Edit contact info</Button>
+              {sendTestButton}
+            </div>
+          )}
 
           {Array.isArray(testState) && (
             <ul className={styles.testResults}>
@@ -536,15 +659,14 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
             </button>{" "}
             tab.
           </p>
-        </fieldset>
+        </SettingsGroup>
 
         {/* Telegram: alerts and bot fills to a linked chat, read-only commands */}
         <TelegramCard />
 
         {/* Seasonality windows */}
-        <fieldset className={styles.group} data-card>
-          <legend className={styles.legend}>Seasonality windows</legend>
-          <p className={styles.groupHint}>Which "this time of year" windows to show in the Seasonality panel.</p>
+        <SettingsGroup id="windows" legend="Seasonality windows"
+                       hint={'Which "this time of year" windows to show in the Seasonality panel.'}>
           <div className={styles.checks}>
             {WINDOW_OPTIONS.map((opt) => (
               <label key={opt.key} className={styles.check}>
@@ -560,12 +682,11 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
               </label>
             ))}
           </div>
-        </fieldset>
+        </SettingsGroup>
 
         {/* Lookback */}
-        <fieldset className={styles.group} data-card>
-          <legend className={styles.legend}>History lookback</legend>
-          <p className={styles.groupHint}>How many past years feed the averages and win-rate.</p>
+        <SettingsGroup id="lookback" legend="History lookback"
+                       hint="How many past years feed the averages and win-rate.">
           <div className={styles.segmented} role="group" aria-label="History lookback">
             {LOOKBACK_OPTIONS.map((opt) => (
               <button
@@ -580,15 +701,12 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
               </button>
             ))}
           </div>
-        </fieldset>
+        </SettingsGroup>
 
         {/* Appearance: color theme */}
         {onSetTheme && themes.length > 0 && (
-          <fieldset className={styles.group} data-card>
-            <legend className={styles.legend}>Appearance</legend>
-            <p className={styles.groupHint}>
-              Pick a color theme. Applies instantly and is saved on this device.
-            </p>
+          <SettingsGroup id="appearance" legend="Appearance"
+                         hint="Pick a color theme. Applies instantly and is saved on this device.">
             <div className={styles.themeGrid} role="radiogroup" aria-label="Color theme">
               {themes.map((t) => (
                 <button
@@ -610,45 +728,54 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
                 </button>
               ))}
             </div>
-          </fieldset>
+          </SettingsGroup>
         )}
 
-        <fieldset className={`${styles.group} ${styles.phoneOnly}`} data-card>
-          <legend className={styles.legend}>Text size</legend>
-          <p className={styles.groupHint}>
-            How large text reads on this phone. Applies instantly and is saved on this device;
-            the desktop layout keeps its own sizes.
-          </p>
-          {radioPills({
-            label: "Text size",
-            options: TEXT_SCALES,
-            value: settings.textScale,
-            onChange: (v) => setSetting("textScale", v),
-          })}
-        </fieldset>
+        {phone && (
+          <SettingsGroup
+            id="text"
+            legend="Text size"
+            hint="How large text reads on this phone. Applies instantly and is saved on this device; the desktop layout keeps its own sizes."
+          >
+            {radioPills({
+              label: "Text size",
+              options: TEXT_SCALES,
+              value: settings.textScale,
+              onChange: (v) => setSetting("textScale", v),
+            })}
+          </SettingsGroup>
+        )}
 
         {/* Reading & focus */}
-        <fieldset className={styles.group} data-card>
-          <legend className={styles.legend}>Ticker labels</legend>
-          <p className={styles.groupHint}>
-            How stocks are named across the dashboard. Company names come from the
-            fundamentals and SEC filing data already stored — a ticker with no
-            recorded name keeps showing its symbol.
-          </p>
+        <SettingsGroup
+          id="labels"
+          legend="Ticker labels"
+          hint={(
+            <>
+              How stocks are named across the dashboard. Company names come from the
+              fundamentals and SEC filing data already stored — a ticker with no
+              recorded name keeps showing its symbol.
+            </>
+          )}
+        >
           {radioPills({
             label: "Ticker labels",
             options: NAME_DISPLAY_OPTIONS,
             value: settings.nameDisplay,
             onChange: (v) => setSetting("nameDisplay", v),
           })}
-        </fieldset>
+        </SettingsGroup>
 
-        <fieldset className={styles.group} data-card>
-          <legend className={styles.legend}>Company information</legend>
-          <p className={styles.groupHint}>
-            Which sections the analysis page shows for a stock. Anything a data source
-            hasn&apos;t returned still reads as &ldquo;—&rdquo; rather than being filled in.
-          </p>
+        <SettingsGroup
+          id="company"
+          legend="Company information"
+          hint={(
+            <>
+              Which sections the analysis page shows for a stock. Anything a data source
+              hasn&apos;t returned still reads as &ldquo;—&rdquo; rather than being filled in.
+            </>
+          )}
+        >
           {COMPANY_SECTIONS.map((s) => {
             const on = settings.companyInfo?.[s.key] !== false;
             return (
@@ -674,10 +801,9 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
               </label>
             );
           })}
-        </fieldset>
+        </SettingsGroup>
 
-        <fieldset className={styles.group} data-card>
-          <legend className={styles.legend}>Reading &amp; focus</legend>
+        <SettingsGroup id="reading" legend="Reading & focus">
           <label className={styles.switchRow}>
             <span className={styles.switchText}>
               <span className={styles.checkLabel}>Dyslexia-friendly mode</span>
@@ -741,7 +867,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
             ADHD-friendly defaults — calm motion, clear focus outlines, generous spacing, and
             row striping — are always on for everyone.
           </p>
-        </fieldset>
+        </SettingsGroup>
       </div>
     </section>
   );

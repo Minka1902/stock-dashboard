@@ -279,6 +279,6 @@ Tick an item in the same commit that completes it.
 - [x] Phase 5 — Watchlist + stock page
 - [x] Phase 5 — Trading Bot
 - [x] Phase 5 — Reference views
-- [ ] Phase 5 — Settings, Info, Server, AuthGate
+- [x] Phase 5 — Settings, Info, Server, AuthGate
 - [ ] Phase 6 — STC-104 touch pass
 - [ ] Phase 7 — STC-105 QA + docs

@@ -160,3 +160,21 @@
 .outcome[data-outcome="error"] { color: var(--negative); border-color: var(--negative-weak); }
 .outcome[data-outcome="deferred"] { color: var(--caution); border-color: var(--caution-weak); }
 .outcome[data-outcome="skipped"] { color: var(--text-faint); }
+
+/* Phone: a full-height sheet from the bottom, clear of the status bar and
+   the home indicator. */
+@media (max-width: 640px) {
+  .layer { align-items: flex-end; }
+  .drawer {
+    width: 100%;
+    height: calc(100dvh - env(safe-area-inset-top, 0px) - var(--s-4));
+    border-left: 0;
+    border-top: 1px solid var(--border-strong);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+  .head { padding: var(--s-4) var(--gutter); }
+  .body { padding: var(--s-4) var(--gutter) calc(var(--s-4) + env(safe-area-inset-bottom, 0px)); }
+}
+@media (pointer: coarse) {
+  .close { min-width: var(--tap); min-height: var(--tap); display: grid; place-items: center; }
+}

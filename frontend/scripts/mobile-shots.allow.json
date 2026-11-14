@@ -1,10 +1,10 @@
 {
   "summary": {
-    "recordedAt": "2026-11-14T08:00:42.653Z",
+    "recordedAt": "2026-11-14T16:12:09.976Z",
     "gates": {
       "overflow": {"360": 0, "390": 0, "430": 0},
       "clip": {"360": 0, "390": 0, "430": 0},
-      "hit": {"360": 29, "390": 29, "430": 29},
+      "hit": {"360": 0, "390": 0, "430": 0},
       "first": {"360": 0, "390": 0, "430": 0},
       "error": {"360": 0, "390": 0, "430": 0}
     },
@@ -33,9 +33,9 @@
       "trading-bot": {"360": 1, "390": 1, "430": 1},
       "x": {"360": 1, "390": 1, "430": 1},
       "earnings": {"360": 1.2, "390": 1, "430": 1},
-      "info": {"360": 23.3, "390": 19.3, "430": 16.5},
-      "settings": {"360": 9.4, "390": 7.6, "430": 6.6},
-      "server": {"360": 22.2, "390": 17.6, "430": 14.4},
+      "info": {"360": 1, "390": 1, "430": 1},
+      "settings": {"360": 2, "390": 1.8, "430": 1.6},
+      "server": {"360": 1.6, "390": 1.4, "430": 1.3},
       "trading-bot?tab=risk": {"360": 2.9, "390": 2.4, "430": 2.2},
       "trading-bot?tab=paper": {"360": 1, "390": 1, "430": 1},
       "trading-bot?tab=broker": {"360": 1, "390": 1, "430": 1},
@@ -48,34 +48,9 @@
       "stock/TEVA.TA": {"360": 3, "390": 2.7, "430": 2.4},
       "auth/login": {"360": 1, "390": 1, "430": 1},
       "auth/register": {"360": 1, "390": 1, "430": 1},
-      "auth/totp-setup": {"360": 1.1, "390": 1, "430": 1},
+      "auth/totp-setup": {"360": 1.3, "390": 1.1, "430": 1},
       "auth/totp-challenge": {"360": 1, "390": 1, "430": 1}
     }
   },
-  "views": {
-    "settings": [
-      {
-        "gate": "hit",
-        "element": "fieldset.group div.contact label.miniSwitch",
-        "sample": "Email me",
-        "px": 2,
-        "size": "92x38",
-        "widths": [360, 390, 430],
-        "count": 6,
-        "reason": "pre-existing before the mobile redesign (baseline 2026-11-10)"
-      }
-    ],
-    "server": [
-      {
-        "gate": "hit",
-        "element": "ul.list li.row label.switch",
-        "sample": "On",
-        "px": 14,
-        "size": "45x26",
-        "widths": [360, 390, 430],
-        "count": 81,
-        "reason": "pre-existing before the mobile redesign (baseline 2026-11-10)"
-      }
-    ]
-  }
+  "views": {}
 }

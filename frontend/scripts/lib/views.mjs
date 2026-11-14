@@ -86,6 +86,10 @@ export const FIRST_SCREEN = {
     { name: "the section index", selector: 'nav[aria-label="Sections on this page"]', whole: true },
     { name: "the first Boom Score", selector: "#boom-score li" },
   ],
+  // App pages, folded on a phone: the section index leads.
+  settings: [{ name: "the section index", selector: 'nav[aria-label="Sections on this page"]', whole: true }],
+  info: [{ name: "the section index", selector: 'nav[aria-label="Sections on this page"]', whole: true }],
+  server: [{ name: "the process health", selector: 'main [data-anchor="process"]', whole: true }],
   // Sign-in screens: the field the step asks for, whole.
   "auth/login": [{ name: "the email field", selector: 'input[type="email"]', whole: true }],
   "auth/register": [{ name: "the email field", selector: 'input[type="email"]', whole: true }],
