@@ -4,9 +4,9 @@
 const STEP_MS = 12;
 const SETTLE_MS = 150;
 
-const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function swipe(cdp, { from, to, steps = 10, holdMs = 0 }) {
+export async function swipe(cdp, { from, to, steps = 10, holdMs = 0 }) {
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
   if (holdMs) await pause(holdMs);
   for (let i = 1; i <= steps; i++) {

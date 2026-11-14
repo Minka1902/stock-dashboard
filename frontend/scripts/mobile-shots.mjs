@@ -10,7 +10,10 @@
  * tour), seeds watchlists, holdings and cash, and remembers the account in
  * .mobile-shots/account.json for the next run.
  *
- *   npm run shots:mobile                     captures + gates at 360/390/430
+ *   npm run shots:mobile                     captures + gates at 360/390/430 (at 390
+ *                                            also the touch gates: every kind of
+ *                                            explainer opens on a tap and closes on a
+ *                                            tap outside, never on a scroll)
  *   npm run shots:mobile -- --gestures       touch swipes on every view (STC-107)
  *   npm run shots:mobile -- --baseline-known record today's violations as known
  *   npm run shots:desktop                    record text geometry at 1440x900

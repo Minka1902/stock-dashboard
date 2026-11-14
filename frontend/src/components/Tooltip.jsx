@@ -3,6 +3,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
+import Sheet from "./Sheet";
+import { NO_HOVER } from "../hooks/useMediaQuery";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import { placeFloating } from "../lib/floating";
 import styles from "./Tooltip.module.css";
@@ -25,7 +27,14 @@ import styles from "./Tooltip.module.css";
  *    dismissible). Esc is caught at window capture and stopped there, so it
  *    closes the tooltip only — not also the dialog or menu underneath. The
  *    listener only exists while a tooltip is open.
- *  - Touch: long-press shows it, a tap anywhere else hides it.
+ *  - Touch (`(hover: none)`): an explainer, i.e. a trigger that is not
+ *    itself a control or inside one (a Term, a status chip, a disabled
+ *    button's reason) or an `openOnClick` one, opens and closes on a tap. A
+ *    control's tooltip opens on a long-press instead, so its tap still acts.
+ *    Either closes on a tap anywhere else or Esc. A scroll never opens or
+ *    closes one: an outside press only counts once it lifts without moving.
+ *    Content longer than LONG_TIP_CHARS opened by touch is a bottom sheet
+ *    (Sheet) rather than a bubble.
  *  - Pressing the trigger hides it until the pointer leaves.
  *  - The trigger gets `aria-describedby` pointing at the tooltip. While the
  *    tooltip is closed a hidden copy carries the same id, so screen readers
@@ -64,6 +73,10 @@ const WARM_WINDOW_MS = 500;
 const CLOSE_GRACE_MS = 120;
 const LONG_PRESS_MS = 500;
 const GAP = 8;
+const TAP_SLOP = 10;
+const LONG_TIP_CHARS = 180;
+const CONTROL = 'button, a[href], input, select, textarea, label, summary, [role="button"], [role="link"], '
+  + '[role="tab"], [role="menuitem"], [role="option"], [role="switch"], [role="checkbox"], [role="radio"]';
 
 // Shared by every instance: which tooltip is open, and when the last closed.
 // Only touched through the functions below, from handlers and effects.
@@ -129,6 +142,20 @@ export function Keys({ combos, className = "" }) {
 
 const stop = (e) => e.stopPropagation();
 
+const touchScreen = () => window.matchMedia(NO_HOVER).matches;
+
+/** A trigger that is a control, or sits in one, acts on a tap; anything else explains. */
+function isControl(el) {
+  return !!el && (!!el.closest(CONTROL) || getComputedStyle(el).cursor === "pointer");
+}
+
+/** Characters of text in a React node: how long a tooltip's content reads. */
+function textLength(node) {
+  if (typeof node === "string" || typeof node === "number") return String(node).length;
+  if (Array.isArray(node)) return node.reduce((n, c) => n + textLength(c), 0);
+  return isValidElement(node) ? textLength(node.props.children) : 0;
+}
+
 function isClipped(el) {
   if (!el) return false;
   return el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
@@ -167,10 +194,11 @@ export default function Tooltip({
   const [present, setPresent] = useState(false);
   const [pos, setPos] = useState(null);
   const [clippedText, setClippedText] = useState(null);
+  const [asSheet, setAsSheet] = useState(false);
   const triggerRef = useRef(null);
   const tipRef = useRef(null);
   const timers = useRef({ open: 0, close: 0, press: 0 });
-  const mode = useRef(null); // how it was opened: hover | focus | touch | click
+  const mode = useRef(null); // how it was opened: hover | focus | touch | click | tap
   const suppressed = useRef(false);
 
   const child = isValidElement(children) ? children : <span>{children}</span>;
@@ -207,6 +235,7 @@ export default function Tooltip({
     clear("close");
     claimGroup(token, hide);
     mode.current = how;
+    setAsSheet((how === "tap" || how === "touch") && textLength(body) > LONG_TIP_CHARS);
     setOpen(true);
     setPresent(true);
   };
@@ -229,7 +258,7 @@ export default function Tooltip({
   // while it is showing, e.g. a toggle's on/off text). setPos bails out when
   // nothing moved, so this settles after one pass.
   useLayoutEffect(() => {
-    if (!shown) return undefined;
+    if (!shown || asSheet) return undefined;
     const place = () => {
       const t = triggerRef.current;
       const tip = tipRef.current;
@@ -253,26 +282,48 @@ export default function Tooltip({
   });
 
   // Dismissal while open: Esc (captured first, and stopped so it does not
-  // also close a parent dialog), and a press anywhere outside.
+  // also close a parent dialog), and a press anywhere outside: a mouse press
+  // at once, a finger only once it lifts without having moved (a tap, not
+  // the start of a scroll). A sheet's outside is its scrim, which closes it
+  // on its own click: closing it any earlier would hand that click to
+  // whatever lies under the scrim.
   useEffect(() => {
     if (!shown) return undefined;
+    let tap = null;
     const onKey = (e) => {
       if (e.key !== "Escape") return;
       e.stopPropagation();
       suppressed.current = true;
       hide();
     };
+    window.addEventListener("keydown", onKey, true);
+    if (asSheet) return () => window.removeEventListener("keydown", onKey, true);
     const onDown = (e) => {
       if (triggerRef.current?.contains(e.target) || tipRef.current?.contains(e.target)) return;
+      if (e.pointerType === "mouse") hide();
+      else tap = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    };
+    const onMove = (e) => {
+      if (tap?.id === e.pointerId && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > TAP_SLOP) tap = null;
+    };
+    const onCancel = () => { tap = null; };
+    const onUp = (e) => {
+      if (tap?.id !== e.pointerId) return;
+      tap = null;
       hide();
     };
-    window.addEventListener("keydown", onKey, true);
     document.addEventListener("pointerdown", onDown, true);
+    document.addEventListener("pointermove", onMove, true);
+    document.addEventListener("pointercancel", onCancel, true);
+    document.addEventListener("pointerup", onUp, true);
     return () => {
       window.removeEventListener("keydown", onKey, true);
       document.removeEventListener("pointerdown", onDown, true);
+      document.removeEventListener("pointermove", onMove, true);
+      document.removeEventListener("pointercancel", onCancel, true);
+      document.removeEventListener("pointerup", onUp, true);
     };
-  }, [shown, hide]);
+  }, [shown, asSheet, hide]);
 
   const setTrigger = useCallback((node) => {
     triggerRef.current = node;
@@ -286,6 +337,7 @@ export default function Tooltip({
   const inert = disabled || (!truncate && !hasContent);
   const childDisabled = !!child.props.disabled && !inert;
   const own = childDisabled ? {} : child.props;
+  const tapExplains = () => touchScreen() && (openOnClick || !isControl(triggerRef.current));
   const handlers = {
     onPointerEnter: (e) => {
       own.onPointerEnter?.(e);
@@ -309,7 +361,7 @@ export default function Tooltip({
       own.onPointerDown?.(e);
       if (e.pointerType === "touch") {
         clear("press");
-        timers.current.press = setTimeout(() => show("touch"), LONG_PRESS_MS);
+        if (!tapExplains()) timers.current.press = setTimeout(() => show("touch"), LONG_PRESS_MS);
         return;
       }
       if (openOnClick) return;
@@ -327,6 +379,11 @@ export default function Tooltip({
     },
     onClick: (e) => {
       own.onClick?.(e);
+      if (tapExplains()) {
+        if (open) hide();
+        else show("tap");
+        return;
+      }
       if (openOnClick) {
         if (open && mode.current === "click") hide();
         else show("click");
@@ -391,47 +448,65 @@ export default function Tooltip({
       {trigger}
       {createPortal(
         <>
-          <AnimatePresence onExitComplete={() => setPresent(false)}>
-            {shown && (
-              <motion.div
-                key="tip"
-                ref={tipRef}
-                id={id}
-                role="tooltip"
-                className={styles.tip}
-                data-side={placed}
-                style={{
-                  top: pos?.top ?? 0,
-                  left: pos?.left ?? 0,
-                  visibility: pos ? "visible" : "hidden",
-                  transformOrigin: ORIGIN[placed]?.(pos?.arrow ?? 0),
-                }}
-                initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.94 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
-                transition={{ duration: reduced ? 0 : 0.13, ease: [0.22, 1, 0.36, 1] }}
-                onPointerEnter={() => clear("close")}
-                onPointerLeave={() => { if (mode.current === "hover") scheduleClose(); }}
-                // React bubbles portal events through the component tree, so a
-                // click on the bubble would otherwise reach e.g. a clickable
-                // table row that contains the trigger.
-                onClick={stop}
-                onPointerDown={stop}
-                onMouseDown={stop}
-              >
-                {tipBody}
-                {arrow && pos && (
-                  <span
-                    className={styles.arrow}
-                    aria-hidden="true"
-                    style={placed === "top" || placed === "bottom"
-                      ? { left: pos.arrow }
-                      : { top: pos.arrow }}
-                  />
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {asSheet ? (
+            <Sheet
+              open={shown}
+              onDismiss={(e) => { stop(e); hide(); }}
+              onExitComplete={() => setPresent(false)}
+              panelRef={tipRef}
+              grabber
+              className={styles.sheet}
+              id={id}
+              role="tooltip"
+              onClick={stop}
+              onPointerDown={stop}
+              onMouseDown={stop}
+            >
+              {tipBody}
+            </Sheet>
+          ) : (
+            <AnimatePresence onExitComplete={() => setPresent(false)}>
+              {shown && (
+                <motion.div
+                  key="tip"
+                  ref={tipRef}
+                  id={id}
+                  role="tooltip"
+                  className={styles.tip}
+                  data-side={placed}
+                  style={{
+                    top: pos?.top ?? 0,
+                    left: pos?.left ?? 0,
+                    visibility: pos ? "visible" : "hidden",
+                    transformOrigin: ORIGIN[placed]?.(pos?.arrow ?? 0),
+                  }}
+                  initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.94 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
+                  transition={{ duration: reduced ? 0 : 0.13, ease: [0.22, 1, 0.36, 1] }}
+                  onPointerEnter={() => clear("close")}
+                  onPointerLeave={() => { if (mode.current === "hover") scheduleClose(); }}
+                  // React bubbles portal events through the component tree, so a
+                  // click on the bubble would otherwise reach e.g. a clickable
+                  // table row that contains the trigger.
+                  onClick={stop}
+                  onPointerDown={stop}
+                  onMouseDown={stop}
+                >
+                  {tipBody}
+                  {arrow && pos && (
+                    <span
+                      className={styles.arrow}
+                      aria-hidden="true"
+                      style={placed === "top" || placed === "bottom"
+                        ? { left: pos.arrow }
+                        : { top: pos.arrow }}
+                    />
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          )}
           {describe && !shown && !present && (
             <span id={id} hidden>
               {body}

@@ -9,7 +9,9 @@
  * - `textNodes()`: every visible text node's font size and box, for the
  *   desktop baseline;
  * - `scroller()`: the element the page scrolls in (the app's inner `.scroll`
- *   pane, or the document on the auth screens).
+ *   pane, or the document on the auth screens);
+ * - `explainers()`, `aim(i)`, `tipState(id)`, `neutralPoint(id)`: the touch
+ *   explainer gate's half (see explainers.mjs).
  *
  * Elements are named by a short selector: tag, id and up to two CSS-module
  * class names with the build hash and line number stripped (`_tab_x1y2z_40`
@@ -26,6 +28,14 @@ export function installProbe() {
   ].join(", ");
   const CONTROL_PARENT = "button, a[href], summary";
   const TAPE = '[aria-label="Live quotes"]';
+  // Tooltip triggers that open on a tap although they are buttons
+  // (`openOnClick`): InfoTip's "i" and the tape's session dots.
+  const OPENS_ON_TAP = `button[aria-label^="What is "], button[aria-label^="About "], ${TAPE} > button`;
+  // What acts on a tap; a tooltip trigger that is none of these, nor inside
+  // one, explains (Tooltip.jsx).
+  const CONTROL = 'button, a[href], input, select, textarea, label, summary, [role="button"], [role="link"], '
+    + '[role="tab"], [role="menuitem"], [role="option"], [role="switch"], [role="checkbox"], [role="radio"]';
+  const TAP_REACH = 16;
   const SCROLLS = /auto|scroll/;
   const CLIPS = /hidden|clip/;
 
@@ -251,5 +261,74 @@ export function installProbe() {
     return rows;
   }
 
-  window.__shotsProbe = { audit, textNodes, scroller };
+  // The Tooltip id a trigger is described by: the hidden copy (closed) or the
+  // tooltip itself, both portaled to <body>.
+  function tipId(el) {
+    return (el.getAttribute("aria-describedby") || "").split(/\s+/).find((id) => {
+      const ref = id && document.getElementById(id);
+      return ref && (ref.parentElement === document.body || ref.getAttribute("role") === "tooltip");
+    }) || null;
+  }
+
+  function explains(el) {
+    return el.matches(OPENS_ON_TAP) || (!el.closest(CONTROL) && style(el).cursor !== "pointer");
+  }
+
+  let explainerList = [];
+
+  /** One visible explainer trigger per kind (selector): `{ i, element, sample, id }`. */
+  function explainers() {
+    const kinds = new Set();
+    explainerList = [];
+    for (const el of document.querySelectorAll("[aria-describedby]")) {
+      const id = visible(el) && tipId(el);
+      const kind = id && explains(el) && selector(el);
+      if (!kind || kinds.has(kind)) continue;
+      kinds.add(kind);
+      explainerList.push({ el, id, element: kind, sample: sample(el) });
+    }
+    return explainerList.map(({ id, element, sample: text }, i) => ({ i, id, element, sample: text }));
+  }
+
+  /** Scroll explainer `i` to the middle and return where a finger lands on it, or what covers it. */
+  function aim(i) {
+    const { el } = explainerList[i] || {};
+    if (!el?.isConnected || !visible(el)) return { missing: true };
+    el.scrollIntoView({ block: "center", inline: "nearest" });
+    const r = el.getClientRects()[0] || el.getBoundingClientRect();
+    const x = Math.round(r.left + r.width / 2);
+    const y = Math.round(r.top + r.height / 2);
+    const hit = document.elementFromPoint(x, y);
+    return hit && (hit === el || el.contains(hit)) ? { x, y } : { covered: hit ? selector(hit) : "nothing" };
+  }
+
+  function tipState(id) {
+    const tip = document.getElementById(id);
+    const open = !!tip && !tip.hidden && tip.getAttribute("role") === "tooltip" && visible(tip);
+    return { open, sheet: open && tip.parentElement !== document.body };
+  }
+
+  /**
+   * A spot that does nothing when tapped: no control, trigger, tape, chart or
+   * tooltip `id` under it or within TAP_REACH of it (a browser snaps a tap to
+   * a control that close, as a phone does).
+   */
+  function neutralPoint(id) {
+    const tip = document.getElementById(id);
+    const inert = (x, y) => {
+      const hit = document.elementFromPoint(x, y);
+      if (!hit || hit === document.documentElement || hit === document.body || tip?.contains(hit)) return false;
+      if (hit.closest(`${CONTROL}, [aria-describedby], [tabindex]:not([tabindex="-1"]), canvas, ${TAPE}`)) return false;
+      return style(hit).cursor === "auto" || style(hit).cursor === "default";
+    };
+    const near = [-TAP_REACH, 0, TAP_REACH];
+    for (let y = 8 + TAP_REACH; y < innerHeight - 90; y += 24) {
+      for (let x = 16 + TAP_REACH; x < innerWidth - 16 - TAP_REACH; x += 24) {
+        if (near.every((dy) => near.every((dx) => inert(x + dx, y + dy)))) return { x, y };
+      }
+    }
+    return null;
+  }
+
+  window.__shotsProbe = { audit, textNodes, scroller, explainers, aim, tipState, neutralPoint };
 }

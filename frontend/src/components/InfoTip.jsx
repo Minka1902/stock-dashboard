@@ -4,9 +4,9 @@ import styles from "./InfoTip.module.css";
 
 /**
  * Small "i" affordance that reveals a plain-language glossary definition.
- * Built on Tooltip, so it behaves like every other tooltip (hover delay,
- * instant on keyboard focus, Esc, long-press on touch) — plus a click/tap
- * pins it open, since this is an explicit "what does this mean?" control.
+ * Built on Tooltip, so it behaves like every other explainer (hover delay,
+ * instant on keyboard focus, Esc, a tap on touch) — plus a click pins it
+ * open, since this is an explicit "what does this mean?" control.
  *
  * Renders nothing for an unknown term, so a missing glossary entry can never
  * produce an empty bubble. `tip` ({ label, short }) explains something that

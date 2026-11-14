@@ -8,13 +8,16 @@ import styles from "./Sheet.module.css";
  * and a raised panel, centred on a desktop and a bottom sheet at 640px and
  * below. Owns the layer, the surface and the motion; the caller sizes the
  * panel (`className`, `style`) and owns its content, focus and keys.
- * `onDismiss` runs on a tap on the scrim.
+ * `onDismiss` runs on a tap on the scrim, `onExitComplete` once it has
+ * gone. `grabber` adds the handle that says "this slides away".
  */
-export default function Sheet({ open, onDismiss, panelRef, className = "", children, ...rest }) {
+export default function Sheet({
+  open, onDismiss, onExitComplete, panelRef, grabber = false, className = "", children, ...rest
+}) {
   const reduced = prefersReducedMotion();
 
   return createPortal(
-    <AnimatePresence>
+    <AnimatePresence onExitComplete={onExitComplete}>
       {open && (
         <div className={styles.layer} key="sheet">
           <motion.div
@@ -34,6 +37,7 @@ export default function Sheet({ open, onDismiss, panelRef, className = "", child
             transition={reduced ? { duration: 0 } : { duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
             {...rest}
           >
+            {grabber && <span className={styles.grabber} aria-hidden="true" />}
             {children}
           </motion.div>
         </div>

@@ -5,7 +5,6 @@ import Sheet from "./Sheet";
 import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import { dropdownStyle } from "../lib/floating";
-import styles from "./Popover.module.css";
 
 // A phone shows every popup as a bottom sheet. Inline, so it wins over the
 // caller's own box (a menu's width, radius and border).
@@ -87,8 +86,7 @@ export default function Popover({
 
   if (phone) {
     return (
-      <Sheet open={open} onDismiss={onDismiss} panelRef={contentRef} className={className} style={SHEET_STYLE} {...rest}>
-        <span className={styles.grabber} aria-hidden="true" />
+      <Sheet open={open} onDismiss={onDismiss} panelRef={contentRef} grabber className={className} style={SHEET_STYLE} {...rest}>
         {children}
       </Sheet>
     );

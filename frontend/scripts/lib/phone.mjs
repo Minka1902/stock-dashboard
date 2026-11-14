@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { checkExplainers } from "./explainers.mjs";
 import { runGestures } from "./gestures.mjs";
 import { captureFullHeight, newContext, openPage, visit } from "./page.mjs";
 import { errorViolations } from "./report.mjs";
@@ -30,13 +31,26 @@ function failed(view, width, target, err) {
   };
 }
 
+// The touch gate (explainers) interacts with the page, so it runs after the
+// capture, at the first-screen width only: what it checks does not change
+// with the width.
+async function touchGates(target) {
+  const explainers = await checkExplainers(target.page);
+  return { violations: explainers.violations, explainers: explainers.tapped };
+}
+
 async function shootView(target, run, view, width) {
   await visit(target, run.base, view, run.sessions.accounts);
-  const firstScreen = width === FIRST_SCREEN_WIDTH ? FIRST_SCREEN[view.id] || [] : [];
+  const gated = width === FIRST_SCREEN_WIDTH;
+  const firstScreen = gated ? FIRST_SCREEN[view.id] || [] : [];
   const audit = await target.page.evaluate((o) => window.__shotsProbe.audit(o), { minHit: MIN_HIT, firstScreen });
   const file = join(run.out, "phone", `${fileStem(view.id)}@${width}.png`);
   const capture = await captureFullHeight(target.page, file);
-  return { view: view.id, width, ...audit, errors: [...target.state.errors], capture: { file, ...capture } };
+  const touch = gated ? await touchGates(target) : { violations: [], explainers: null };
+  return {
+    view: view.id, width, ...audit, violations: [...audit.violations, ...touch.violations],
+    explainers: touch.explainers, errors: [...target.state.errors], capture: { file, ...capture },
+  };
 }
 
 /** Captures and gates every view at one width. */
@@ -48,7 +62,8 @@ export async function shootPhone(browser, run, width) {
     const result = await shootView(target, run, view, width).catch((err) => failed(view, width, target, err));
     result.violations.push(...errorViolations(result));
     results.push(result);
-    run.log(`${width}  ${view.id}  ${result.screens ?? "-"} screens  ${result.violations.length} violations`);
+    const tapped = result.explainers == null ? "" : `  ${result.explainers} explainers tapped`;
+    run.log(`${width}  ${view.id}  ${result.screens ?? "-"} screens  ${result.violations.length} violations${tapped}`);
   }
   await targets.close();
   return results;

@@ -1,5 +1,5 @@
 /* One ruled two-line row. The card's button is stretched underneath; the
-   row's own links and buttons sit above it. */
+   row's own links, buttons and explainers (tooltip triggers) sit above it. */
 .card {
   position: relative;
   padding: var(--s-2) var(--gutter, var(--s-3));
@@ -18,7 +18,7 @@
   cursor: pointer;
 }
 .hit:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.card :is(a[href], button, input, select, textarea, label, [tabindex]):not(.hit) {
+.card :is(a[href], button, input, select, textarea, label, [tabindex], [aria-describedby]):not(.hit) {
   position: relative;
   z-index: 1;
 }
