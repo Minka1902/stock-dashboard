@@ -1,6 +1,10 @@
+/* The viewport is edge to edge (viewport-fit=cover): the shell keeps its
+   content clear of the notch and the rounded corners, and follows the
+   browser's own bars as they come and go (dvh). */
 .app {
   display: flex;
-  height: 100svh;
+  height: 100dvh;
+  padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
   overflow: hidden;
   background: var(--bg);
   background-image: var(--bg-grad);
@@ -12,7 +16,8 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  height: 100svh;
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 /* Fixed top band: status bar + ticker tape. Never scrolls. */
@@ -62,7 +67,7 @@
   border: 1px solid var(--negative);
   color: var(--text);
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 
 @media (max-width: 1000px) {
@@ -76,8 +81,11 @@
     padding: var(--s-3) var(--s-2) var(--s-6);
     gap: var(--s-3);
   }
-  /* Clear the fixed bottom tab bar (MobileNav). */
-  .app[data-detail="no"] .scroll {
-    padding-bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px));
-  }
+  /* What is fixed along the bottom of the screen: the tab bar (MobileNav)
+     and the home-indicator safe area on the views, only the safe area on
+     the stock page, which has no tab bar. The page scroller clears it, and
+     so does anything floating above it (BackToTop). */
+  .app[data-detail="no"] { --bottom-chrome: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0px)); }
+  .app[data-detail="yes"] { --bottom-chrome: env(safe-area-inset-bottom, 0px); }
+  .scroll { padding-bottom: var(--bottom-chrome); }
 }

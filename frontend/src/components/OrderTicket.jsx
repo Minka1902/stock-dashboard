@@ -5,7 +5,7 @@ import Field from "./Field";
 import Segmented from "./Segmented";
 import TimeMachineOdds from "./TimeMachineOdds";
 import { getTicketDefaults, placeBrokerOrder, placePaperOrder } from "../api";
-import { formatMoney } from "../lib/format";
+import { formatMoney, priceDigits } from "../lib/format";
 import styles from "./OrderTicket.module.css";
 
 const SIDES = [{ value: "BUY", label: "Buy" }, { value: "SELL", label: "Sell" }];
@@ -34,7 +34,7 @@ const ACCOUNTS = {
 };
 
 const num = (v) => (v === "" || v == null ? null : Number(v));
-const str = (v) => (v == null ? "" : String(+Number(v).toFixed(4)));
+const str = (v, digits = 4) => (v == null ? "" : String(+Number(v).toFixed(digits)));
 
 // The review step's numbers: what it costs, what it risks to the stop, and
 // the reward/risk to the target. null where an input is missing — never 0.
@@ -85,8 +85,8 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
         if (!live) return;
         setDefaults(d);
         setQty((q) => q || str(d.qty));
-        setPlanStop((v) => v || str(d.stop));
-        setPlanTarget((v) => v || str(d.target));
+        setPlanStop((v) => v || str(d.stop, priceDigits(ticker)));
+        setPlanTarget((v) => v || str(d.target, priceDigits(ticker)));
       }).catch(() => { if (live) setDefaults(null); });
     }, 250);
     return () => { live = false; clearTimeout(id); };
@@ -152,7 +152,7 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
   );
 
   return (
-    <Dialog open size="md" tone="caution" caption={meta.caption}
+    <Dialog open form size="md" tone="caution" caption={meta.caption}
             title={ticker ? `${side === "BUY" ? "Buy" : "Sell"} ${ticker}` : `New ${meta.label} order`}
             onClose={onClose} footer={footer}>
       <div className={styles.paper} role="note"><strong>{meta.badge}</strong> {meta.note}</div>
@@ -165,12 +165,12 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
                              onChange={(e) => setTicker(e.target.value.toUpperCase().trim())} />}
             </Field>
           )}
-          <div className={styles.row}>
+          <div className={styles.row} data-fields>
             <Segmented options={SIDES} value={side} onChange={setSide} ariaLabel="Side" />
             <Segmented options={TYPES} value={type} onChange={setType} ariaLabel="Order type" />
             <Segmented options={TIFS} value={tif} onChange={setTif} ariaLabel="Time in force" />
           </div>
-          <div className={styles.row}>
+          <div className={styles.row} data-fields>
             <Field label="Quantity" error={errors.qty}
                    hint={defaults?.qty != null && side === "BUY" ? `sized for ${defaults.risk_pct}% risk to the stop`
                      : defaults?.sizing_note || (side === "SELL" && defaults ? `${defaults.held} held` : null)}>
@@ -191,7 +191,7 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
             )}
           </div>
           {buying && (
-            <div className={styles.row}>
+            <div className={styles.row} data-fields>
               <Field label="Plan stop" suffix={ccy} error={errors.plan_stop}
                      hint={defaults?.stop != null ? "from your exit rule / the trade plan" : "optional; your limits may need one"}>
                 {(a) => <input {...a} type="number" min="0" step="any" inputMode="decimal" value={planStop}

@@ -10,19 +10,19 @@
   display: flex;
   align-items: flex-start;
   gap: var(--s-3);
-  padding: var(--s-5);
+  padding: var(--s-5) var(--gutter, var(--s-5));
   border-bottom: 1px solid var(--border);
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 600;
 }
 
 .subtitle {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 
 .list {
@@ -35,7 +35,7 @@
   display: flex;
   align-items: center;
   gap: var(--s-3);
-  padding: 14px var(--s-5);
+  padding: 14px var(--gutter, var(--s-5));
   border-top: 1px solid var(--border);
   flex-wrap: wrap;
 }
@@ -45,7 +45,7 @@
 }
 
 .rank {
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-weight: 600;
   color: var(--text-faint);
   min-width: 20px;
@@ -55,7 +55,7 @@
 .ticker {
   font-family: var(--mono);
   font-weight: 700;
-  font-size: 14px;
+  font-size: var(--fs-14);
   color: var(--accent-text);
   /* Fits a TASE symbol ("TEVA.TA") so the bars and chips stay in line. */
   min-width: 84px;
@@ -65,7 +65,7 @@
 }
 
 .earningsWarn {
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--caution);
   cursor: help;
 }
@@ -94,7 +94,7 @@
 
 .scoreBadge {
   font-weight: 700;
-  font-size: 14px;
+  font-size: var(--fs-14);
   min-width: 36px;
   text-align: right;
   color: var(--text-muted);
@@ -105,7 +105,7 @@
 .scoreBadge[data-tone="neg"]   { color: var(--negative); }
 
 .tier {
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
   padding: 2px 8px;
   border-radius: var(--r-pill);
@@ -124,7 +124,7 @@
 }
 
 .mixedWarn {
-  font-size: 13px;
+  font-size: var(--fs-13);
   cursor: help;
   color: var(--caution);
 }
@@ -141,7 +141,7 @@
   gap: 3px;
   padding: 2px 8px;
   border-radius: var(--r-pill);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
   background: var(--accent-weak);
   color: var(--accent-text);
@@ -153,7 +153,7 @@
 }
 
 .horizon {
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 700;
   opacity: 0.7;
   letter-spacing: 0.02em;
@@ -165,7 +165,7 @@
   align-items: center;
   text-align: center;
   gap: var(--s-2);
-  padding: 56px var(--s-5);
+  padding: 56px var(--gutter, var(--s-5));
 }
 
 .emptyIcon {
@@ -185,7 +185,7 @@
 
 .emptyHint {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 
 .emptyBtn {
@@ -209,4 +209,20 @@
   background: var(--info-weak);
   border-color: transparent;
   cursor: help;
+}
+
+/* Phone: the blurb is behind the title's info control (PanelInfo). Two
+   lines a ticker: rank, ticker, bar and score, then tier, trend, and the
+   signal chips in one sideways-scrolling strip. The first ten, then Show all. */
+@media (max-width: 640px) {
+  .subtitle { display: none; }
+  /* Rank, ticker, bar and score, a break (the empty line's two row gaps
+     make one 6px gap), then the rest. */
+  .row { gap: 3px var(--s-2); padding-block: 10px; }
+  .row::after { content: ""; flex-basis: 100%; order: 1; }
+  .tier, .sparkWrap, .mixedWarn, .chips { order: 2; }
+  .barWrap { flex: 1 1 0; max-width: none; min-width: 0; }
+  .tier { margin-left: 28px; }
+  .chips { flex: 1 1 0; min-width: 0; flex-wrap: nowrap; overflow-x: auto; }
+  .chip { flex: none; white-space: nowrap; }
 }

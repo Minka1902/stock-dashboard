@@ -19,7 +19,7 @@
   background: var(--bg);
   color: var(--text);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--fs-14);
   text-align: left;
 }
 .select > button:hover {

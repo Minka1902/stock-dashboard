@@ -150,6 +150,104 @@ const PATHS = {
       <path d="M20 20l-4.2-4.2" />
     </>
   ),
+  check: <path d="M5 12.5l4.5 4.5L19 7" />,
+  // A pushpin: pin a view to the phone tab bar.
+  pin: (
+    <>
+      <path d="M9 3h6l-1 6 3 3H7l3-3z" />
+      <path d="M12 12v9" />
+    </>
+  ),
+  // Data-source glyphs (lib/sources.js SOURCE_META[*].icon).
+  landmark: (
+    <>
+      <path d="M12 3L3 9h18z" />
+      <path d="M5 9v9M9.7 9v9M14.3 9v9M19 9v9M3 21h18" />
+    </>
+  ),
+  curve: (
+    <>
+      <path d="M4 4v16h16" />
+      <path d="M7 16c3-1 5-7 13-9" />
+    </>
+  ),
+  pulse: <path d="M3 12h4l3-8 4 16 3-8h4" />,
+  zigzag: <path d="M2 15l4-6 4 8 4-12 4 10 4-5" />,
+  users: (
+    <>
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+      <path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5" />
+    </>
+  ),
+  scale: (
+    <>
+      <path d="M12 4v16M8 20h8M5 7h14" />
+      <path d="M2 14l3-7 3 7a3 3 0 0 1-6 0zM16 14l3-7 3 7a3 3 0 0 1-6 0z" />
+    </>
+  ),
+  card: (
+    <>
+      <rect x="2.5" y="5" width="19" height="14" rx="2" />
+      <path d="M2.5 10h19M6 15h4" />
+    </>
+  ),
+  trendingDown: (
+    <>
+      <path d="M3 7l6 6 4-4 7 7" />
+      <path d="M17 16h4v-4" />
+    </>
+  ),
+  chat: <path d="M21 12a8.5 8.5 0 0 1-12.4 7.5L3.5 21l1.4-4.6A8.5 8.5 0 1 1 21 12z" />,
+  target: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="5" />
+      <circle cx="12" cy="12" r="1" />
+    </>
+  ),
+  pie: (
+    <>
+      <path d="M20 13.5A8.5 8.5 0 1 1 10.5 4v9.5z" />
+      <path d="M14 3a7.5 7.5 0 0 1 7 7h-7z" />
+    </>
+  ),
+  cycle: (
+    <>
+      <path d="M19.5 10A8 8 0 0 0 5.6 7M4.5 14a8 8 0 0 0 13.9 3" />
+      <path d="M5 3v4h4M19 21v-4h-4" />
+    </>
+  ),
+  briefcase: (
+    <>
+      <rect x="3" y="7" width="18" height="13" rx="2" />
+      <path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18" />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+    </>
+  ),
+  history: (
+    <>
+      <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5" />
+      <path d="M3.5 3.5v5h5M12 7.5V12l3 2" />
+    </>
+  ),
+  radar: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7a5 5 0 1 0 5 5M12 12l6.4-6.4" />
+    </>
+  ),
+  database: (
+    <>
+      <ellipse cx="12" cy="5.5" rx="8" ry="2.5" />
+      <path d="M4 5.5v13c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5v-13M4 12c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5" />
+    </>
+  ),
   // A robot head — the Trading Bot page.
   shield: (
     <>

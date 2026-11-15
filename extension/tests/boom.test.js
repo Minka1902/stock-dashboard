@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { convictionTier, activeChips, CHIP_META } from "../src/lib/boom.js";
 
-// These thresholds are copied from frontend/src/components/BoomScorePanel.jsx:42-48.
+// These thresholds are copied from convictionTier in frontend/src/components/BoomScorePanel.jsx.
 // Pinning the exact boundaries is what catches a silent drift between the two copies.
 test("conviction tiers break at 76 / 51 / 26 / 0", () => {
   assert.equal(convictionTier(100).label, "Strong Setup");

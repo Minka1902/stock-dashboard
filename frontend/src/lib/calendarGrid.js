@@ -1,6 +1,16 @@
-/** Calendar-grid helpers shared by the suggestion history views. */
+/** Calendar-grid helpers shared by the suggestion history and earnings views. */
 
 export const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+const MONTH_FMT = {
+  long: new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }),
+  short: new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric" }),
+};
+
+/** "November 2026", or "Nov 2026" with `short` (a phone's month switcher). */
+export function monthLabel(year, month, short = false) {
+  return MONTH_FMT[short ? "short" : "long"].format(new Date(year, month, 1));
+}
 
 /** Calendar cells for a month: leading blanks so day 1 lands on its weekday. */
 export function monthGrid(year, month) {

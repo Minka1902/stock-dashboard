@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "shots:mobile": "node scripts/mobile-shots.mjs",
+    "shots:desktop": "node scripts/mobile-shots.mjs --desktop"
   },
   "dependencies": {
     "animejs": "^4.5.0",

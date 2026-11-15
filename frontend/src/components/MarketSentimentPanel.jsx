@@ -22,7 +22,7 @@ const TOOLTIP_STYLE = {
   border: "1px solid var(--border-strong)",
   borderRadius: "var(--r-sm)",
   fontFamily: "var(--mono)",
-  fontSize: "11px",
+  fontSize: "var(--fs-11)",
   color: "var(--text)",
   padding: "5px 9px",
 };
@@ -73,7 +73,7 @@ function PositioningList({ rows, empty, columns }) {
 function Pane({ caption, right, className, children }) {
   return (
     <section className={`${styles.pane} ${className || ""}`}>
-      <div className={styles.paneHead}>
+      <div className={styles.paneHead} data-head="inline">
         <span className="caption">{caption}</span>
         {right}
       </div>

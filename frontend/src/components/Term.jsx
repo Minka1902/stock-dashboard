@@ -3,7 +3,8 @@ import Tooltip from "./Tooltip";
 import styles from "./Term.module.css";
 
 /**
- * An abbreviation or metric label that explains itself on hover/focus —
+ * An abbreviation or metric label that explains itself on hover/focus (a
+ * tap on touch) —
  * for table headers and inline labels where an "i" button would be clutter.
  *
  *   <th><Term term="rsi">RSI14</Term></th>

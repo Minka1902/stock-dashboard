@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import Icon from "./Icon";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
+import { copyText } from "../lib/clipboard";
 import { formatRelativeTime, formatCount } from "../lib/format";
 import { SOURCE_META, SOURCE_ORDER, STATE_TIP, sourceState, sourceNote } from "../lib/sources";
 import Tooltip from "./Tooltip";
@@ -8,8 +11,9 @@ import styles from "./SourceGuide.module.css";
 
 // One row: static SOURCE_META joined to live /api/sources status. Errored rows
 // gain a "details" disclosure with the full traceback (error_detail), the
-// last-attempt time, the record count, and a copy button.
-function SourceRow({ sourceKey, status }) {
+// last-attempt time, the record count, and a copy button. A phone leads the
+// name with the source's icon.
+function SourceRow({ sourceKey, status, phone }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const meta = SOURCE_META[sourceKey];
@@ -20,11 +24,9 @@ function SourceRow({ sourceKey, status }) {
   const detail = status?.error_detail || status?.status || "";
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(detail);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch { /* clipboard unavailable */ }
+    if (!(await copyText(detail))) return;
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
 
   return (
@@ -35,6 +37,7 @@ function SourceRow({ sourceKey, status }) {
         </Tooltip>
         <span className={styles.text}>
           <span className={styles.name}>
+            {phone && <Icon name={meta.icon} size={14} className={styles.icon} />}
             {meta.label}
             <span className={styles.provider}>{meta.provider}</span>
           </span>
@@ -88,11 +91,12 @@ function SourceRow({ sourceKey, status }) {
 // The source directory: every external feed the dashboard pulls, its upstream
 // provider, whether it last responded, and expandable diagnostics on failure.
 export default function SourceGuide({ sources }) {
+  const phone = useMediaQuery(PHONE);
   const byName = new Map((sources || []).map((s) => [s.source, s]));
   return (
     <ul className={styles.list}>
       {SOURCE_ORDER.map((key) => (
-        <SourceRow key={key} sourceKey={key} status={byName.get(key)} />
+        <SourceRow key={key} sourceKey={key} status={byName.get(key)} phone={phone} />
       ))}
     </ul>
   );

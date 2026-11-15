@@ -15,16 +15,23 @@ import { currencyForSymbol, currencySymbol } from "../lib/format";
 import { useDrawings } from "../lib/drawings/useDrawings";
 import { SessionPrimitive } from "../lib/drawings/SessionPrimitive";
 import { canvasToBlob, composeSnapshot, snapshotFileName } from "../lib/chartSnapshot";
-import { useThemeColors, withAlpha } from "../lib/themeColors";
+import { useThemeColors, useTypeSizes, withAlpha } from "../lib/themeColors";
+import { listenTaps } from "../lib/taps";
+import ChartToolsSheet from "./chart/ChartToolsSheet";
+import DrawIcon from "./chart/DrawIcons";
 import DrawingRail from "./chart/DrawingRail";
 import ShapeProperties from "./chart/ShapeProperties";
 import TextEditor from "./chart/TextEditor";
 import SnapshotMenu from "./chart/SnapshotMenu";
 import DraftsMenu from "./chart/DraftsMenu";
 import ChartToast from "./chart/ChartToast";
+import Button from "./Button";
+import Icon from "./Icon";
+import Segmented from "./Segmented";
 import Tooltip from "./Tooltip";
 import GLOSSARY from "../lib/glossary";
 import { useChartToast } from "./chart/useChartToast";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import styles from "./ChartPro.module.css";
 
 // lightweight-charts renders to canvas and cannot parse oklch(), so the chart
@@ -73,6 +80,9 @@ const SNAP_TOKENS = {
   border: "--border",
 };
 
+// The axis labels follow the type scale, so they shrink on a phone too.
+const CHART_FONT = { axis: "--fs-11" };
+
 // Tel Aviv (TASE) listings have no pre-market or after-hours session at all.
 const isTase = (t) => /\.TA$/i.test(String(t || ""));
 const CCY_NAMES = { USD: "US dollars", ILS: "Israeli shekels", EUR: "euros", GBP: "British pounds" };
@@ -86,8 +96,11 @@ const TIMEFRAMES = [
   { key: "1wk", label: "W", name: "Weekly bars" },
   { key: "1mo", label: "M", name: "Monthly bars" },
 ];
+const TIMEFRAME_OPTIONS = TIMEFRAMES.map((t) => ({ value: t.key, label: t.label, title: t.name }));
 const INTRADAY = new Set(["1m", "5m", "15m", "1h"]);
 const INTRADAY_REFRESH_MS = 30000;
+// On a phone the chart is the page's point: it takes this share of the screen.
+const PHONE_CHART_SHARE = 0.52;
 
 const CHART_TYPES = [
   { key: "candles", label: "Candles" },
@@ -178,6 +191,8 @@ const DEFAULT_PREFS = {
   overlays: true,
   // Extended hours are on by default for intraday timeframes (Task 3).
   prepost: true,
+  // Phone only: axis labels for every level, not just entry/stop/target/last.
+  levelLabels: false,
   v: 2,
 };
 
@@ -275,6 +290,11 @@ function rightScaleOf(pane) {
  * log scale, SPY comparison, crosshair OHLCV legend, and the analysis
  * overlays (S/R, entry/stop/target, pattern markers) on the daily view.
  * Preferences persist in localStorage.
+ *
+ * On a phone the chart comes first: one toolbar row (timeframes + Chart
+ * tools, a sheet holding every other control), the drawing rail only while
+ * drawing, and axis labels for entry, stop, target and the last price unless
+ * LABELS asks for all of them.
  */
 export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   const elRef = useRef(null);
@@ -282,8 +302,13 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   const colors = useThemeColors(CHART_TOKENS);
   const drawColors = useThemeColors(DRAW_TOKENS);
   const snapColors = useThemeColors(SNAP_TOKENS);
+  const font = useTypeSizes(CHART_FONT);
   const wrapRef = useRef(null);
   const flashRef = useRef(null);
+  const phone = useMediaQuery(PHONE);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  // Phone: the drawing rail replaces the toolbar row while this is on.
+  const [drawMode, setDrawMode] = useState(false);
   const barsRef = useRef([]);          // bars on screen, for drawing anchors
   const toast = useChartToast();
   // Session metadata from the last chart response ({has_extended, ...}).
@@ -329,6 +354,9 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   const wantKeyRef = useRef(null);
   const prevBarsRef = useRef(null);    // identity check: did the bar data actually change?
   const legendMapsRef = useRef({ bars: [], byTime: new Map(), idx: new Map() });
+  // The crosshair legend's update, for a crosshair set by code (a tap), which
+  // the chart does not report as a crosshair move.
+  const showLegendRef = useRef(null);
   // The price series drawings anchor to, plus a counter that changes whenever
   // it is rebuilt so the drawing primitive can re-attach.
   const mainSeriesRef = useRef(null);
@@ -352,6 +380,9 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   }, [updating]);
 
   const intraday = INTRADAY.has(prefs.tf);
+  // A phone labels only entry, stop, target and the last price on the axis by
+  // default; the other levels stay as unlabelled lines (Chart tools → LABELS).
+  const allLabels = !phone || prefs.levelLabels;
   // Extended hours exist for this listing unless it's on TASE or the last
   // chart response said the exchange reports none (FX, most non-US venues).
   const extSupported = !isTase(ticker) && session?.has_extended !== false;
@@ -437,15 +468,18 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       layout: {
         background: { color: "transparent" },
         fontFamily: monoFont(),
-        fontSize: 11,
         attributionLogo: false,
         panes: { enableResize: false },
       },
       timeScale: { rightOffset: 4, secondsVisible: false },
       crosshair: { mode: 0 },
+      // One finger pans time and two pinch-zoom it (the defaults); a vertical
+      // swipe is left to the page, so a chart half a phone tall never traps
+      // its scroll.
+      handleScroll: { vertTouchDrag: false },
     });
-    // Colours are applied by the theme effect below, which runs right after
-    // this one on mount and again on every theme change.
+    // Colours and the axis font size are applied by the effects below, which
+    // run right after this one on mount and again whenever they change.
     chartRef.current = chart;
 
     // The crosshair handler reads live maps/overlays from refs so it never has
@@ -473,6 +507,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       setLegend({ ...b, changePct, overlays });
     };
     chart.subscribeCrosshairMove(onMove);
+    showLegendRef.current = onMove;
 
     const ro = new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth }));
     ro.observe(el);
@@ -572,6 +607,11 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     }
   }, [colors]);
 
+  // ---- type scale changes (phone breakpoint, text size): resize the labels ----
+  useEffect(() => {
+    chartRef.current?.applyOptions({ layout: { fontSize: font.axis } });
+  }, [font]);
+
   // ---- height changes: just resize, never rebuild ----
   useEffect(() => {
     chartHeightRef.current = chartHeight;
@@ -587,6 +627,10 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     const measure = () => {
       const el = elRef.current;
       if (!el) return;
+      if (phone) {
+        setChartHeight(Math.round(window.innerHeight * PHONE_CHART_SHARE));
+        return;
+      }
       const top = el.getBoundingClientRect().top;
       const reserve = 48; // legend/key footer breathing room below the canvas
       const avail = window.innerHeight - top - reserve;
@@ -595,7 +639,48 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [height, hasData]);
+  }, [height, hasData, phone]);
+
+  // ---- touch: a tap pins the crosshair readout to that bar; a second tap,
+  // or one anywhere else, clears it. A press the drawing tools take stops at
+  // the chart element (useDrawings), so it never reaches the chart's own
+  // listener here.
+  useEffect(() => {
+    const el = elRef.current;
+    if (!el || !hasData) return undefined;
+    let pinned = false;
+    const clear = () => {
+      if (!pinned) return;
+      pinned = false;
+      chartRef.current?.clearCrosshairPosition();
+      showLegendRef.current?.({ seriesData: new Map() });
+    };
+    const toggle = (e) => {
+      const chart = chartRef.current;
+      const main = mainSeriesRef.current;
+      if (pinned || !chart || !main) { clear(); return; }
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const time = chart.timeScale().coordinateToTime(x);
+      if (time == null) return;
+      const { bars: lbars, idx } = legendMapsRef.current;
+      const price = y <= (chart.panes()[0]?.getHeight() ?? 0)
+        ? main.coordinateToPrice(y)
+        : lbars[idx.get(time)]?.close;
+      if (price == null) return;
+      chart.setCrosshairPosition(price, time, main);
+      const at = Math.round(chart.timeScale().coordinateToLogical(x));
+      showLegendRef.current?.({ time, seriesData: new Map(overlayRef.current.map((o) => [o.series, o.series.dataByIndex(at)])) });
+      pinned = true;
+    };
+    const stopChart = listenTaps(el, { onTap: toggle });
+    const stopOutside = listenTaps(document, { onTap: clear, accept: (e) => !el.contains(e.target), capture: true });
+    return () => {
+      stopChart();
+      stopOutside();
+    };
+  }, [hasData]);
 
   // ---- options-only changes: price-scale mode/margins + intraday time axis ----
   useEffect(() => {
@@ -809,14 +894,14 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       for (const l of (analysis.support || [])) {
         const round = l.source === "round";
         themedPriceLine(main, { price: l.price, lineWidth: 1,
-          lineStyle: round ? LineStyle.Dotted : LineStyle.Dashed, axisLabelVisible: true,
-          title: round ? `S ⌾ ${l.price}` : `S ${l.touches}x` }, round ? "muted" : "up");
+          lineStyle: round ? LineStyle.Dotted : LineStyle.Dashed, axisLabelVisible: allLabels,
+          title: !allLabels ? "" : round ? `S ⌾ ${l.price}` : `S ${l.touches}x` }, round ? "muted" : "up");
       }
       for (const l of (analysis.resistance || [])) {
         const round = l.source === "round";
         themedPriceLine(main, { price: l.price, lineWidth: 1,
-          lineStyle: round ? LineStyle.Dotted : LineStyle.Dashed, axisLabelVisible: true,
-          title: round ? `R ⌾ ${l.price}` : `R ${l.touches}x` }, round ? "muted" : "down");
+          lineStyle: round ? LineStyle.Dotted : LineStyle.Dashed, axisLabelVisible: allLabels,
+          title: !allLabels ? "" : round ? `R ⌾ ${l.price}` : `R ${l.touches}x` }, round ? "muted" : "down");
       }
       // Diagonal trendlines as two-point line series (dashed when broken).
       const lastBar = displayBars[displayBars.length - 1];
@@ -887,7 +972,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     // Tell the drawing layer to re-attach to the series we just built.
     setSeriesEpoch((n) => n + 1);
   }, [bars, displayBars, compareBars, analysis, prefs.type, prefs.overlays, prefs.compare,
-      prefs.tf, ticker, intraday, prepostOn, ma, ema, bb, vwap, vol, rsi, macd]);
+      prefs.tf, ticker, intraday, prepostOn, allLabels, ma, ema, bb, vwap, vol, rsi, macd]);
 
   // ---- D/W/M: dashed "Pre" / "After" price lines from the real extended print ----
   useEffect(() => {
@@ -899,8 +984,8 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       try {
         lines.push(main.createPriceLine({
           price: pt.price, color: colors[colorKey], lineWidth: 1,
-          lineStyle: LineStyle.Dashed, axisLabelVisible: true,
-          title: `${label} ${sym}${Number(pt.price).toFixed(2)}`,
+          lineStyle: LineStyle.Dashed, axisLabelVisible: allLabels,
+          title: allLabels ? `${label} ${sym}${Number(pt.price).toFixed(2)}` : "",
         }));
       } catch { /* series rebuilt underneath us */ }
     };
@@ -909,7 +994,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     return () => {
       for (const l of lines) { try { main.removePriceLine(l); } catch { /* series gone */ } }
     };
-  }, [extended, seriesEpoch, intraday, prefs.compare, colors, sym]);
+  }, [extended, seriesEpoch, intraday, prefs.compare, colors, sym, allLabels]);
 
   // User-drawn annotations: their own primitive layer, so they're independent
   // of indicator toggles and of the analysis overlays drawn from the payload.
@@ -982,129 +1067,189 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
 
   const toneOf = (b) => (b && b.close >= b.open ? "pos" : "neg");
 
+  const tfGroup = (
+    <div className={styles.group} role="group" aria-label="Timeframe">
+      {TIMEFRAMES.map((t) => (
+        <Tooltip key={t.key} side="bottom" content={t.name}>
+          <button className={styles.pill} data-active={prefs.tf === t.key ? "yes" : "no"}
+                  aria-pressed={prefs.tf === t.key}
+                  onClick={() => setPref({ tf: t.key })}>{t.label}</button>
+        </Tooltip>
+      ))}
+    </div>
+  );
+  const typeGroup = (
+    <div className={styles.segmented} role="group" aria-label="Chart type">
+      {CHART_TYPES.map((t) => {
+        const active = prefs.type === t.key;
+        return (
+          <Tooltip key={t.key} side="bottom" content={t.label}>
+          <button
+            type="button"
+            className={styles.segBtn}
+            data-active={active ? "yes" : "no"}
+            onClick={() => setPref({ type: t.key })}
+            aria-label={t.label}
+            aria-pressed={active}
+          >
+            {active && (
+              <motion.span
+                layoutId="chartTypeThumb"
+                className={styles.segThumb}
+                transition={prefersReducedMotion()
+                  ? { duration: 0 }
+                  : { type: "spring", stiffness: 520, damping: 40 }}
+                aria-hidden="true"
+              />
+            )}
+            <span className={styles.segGlyph}><TypeIcon type={t.key} /></span>
+          </button>
+          </Tooltip>
+        );
+      })}
+    </div>
+  );
+  const indGroup = (
+    <div className={styles.group} role="group" aria-label="Indicators">
+      {IND_DEFS.map((d) => {
+        const disabled = d.intradayOnly && !intraday;
+        const def = GLOSSARY[d.term]?.short;
+        return (
+          <Tooltip key={d.key} side="bottom" content={(
+            <>
+              <strong>{d.label}</strong>
+              {def && <p>{def}</p>}
+              {disabled && <p>Unavailable on this timeframe — switch to 1m, 5m, 15m or 1h to use it.</p>}
+            </>
+          )}>
+            <button
+              className={styles.pill}
+              data-active={prefs.inds[d.key] && !disabled ? "yes" : "no"}
+              aria-pressed={!!prefs.inds[d.key] && !disabled}
+              disabled={disabled}
+              onClick={() => setPref({ inds: { [d.key]: !prefs.inds[d.key] } })}
+            >
+              {d.key.toUpperCase()}
+            </button>
+          </Tooltip>
+        );
+      })}
+    </div>
+  );
+  const scaleGroup = (
+    <div className={styles.group} role="group" aria-label="Scale and overlays">
+      <Tooltip side="bottom" content={prefs.compare
+        ? "Logarithmic price scale — off while comparing with SPY, which uses a percent scale"
+        : "Logarithmic price scale: equal distances are equal percentage moves"}>
+        <button className={styles.pill} data-active={prefs.logScale && !prefs.compare ? "yes" : "no"}
+                aria-pressed={!!prefs.logScale && !prefs.compare}
+                disabled={prefs.compare}
+                onClick={() => setPref({ logScale: !prefs.logScale })}>LOG</button>
+      </Tooltip>
+      <Tooltip side="bottom" content="Compare with SPY (S&P 500 ETF) on a percent-change scale">
+        <button className={styles.pill} data-active={prefs.compare ? "yes" : "no"}
+                aria-pressed={!!prefs.compare}
+                onClick={() => setPref({ compare: !prefs.compare })}>vs SPY</button>
+      </Tooltip>
+      {intraday && extSupported && (
+        <Tooltip side="bottom" content={prefs.prepost
+          ? "Showing pre-market and after-hours bars (shaded) — click for the regular session only"
+          : "Regular session only — click to include pre-market and after-hours bars"}>
+          <button className={styles.pill} data-active={prefs.prepost ? "yes" : "no"}
+                  aria-pressed={prefs.prepost}
+                  onClick={() => setPref({ prepost: !prefs.prepost })}>EXT</button>
+        </Tooltip>
+      )}
+      {intraday && !extSupported && (
+        <Tooltip side="bottom" content={isTase(ticker)
+          ? "Tel Aviv Stock Exchange has no pre-market or after-hours session, so there are no extended-hours bars to show."
+          : "This market reports no pre-market or after-hours session, so there are no extended-hours bars to show."}>
+          <span className={styles.pillNote} tabIndex={0}>
+            REG ONLY
+          </span>
+        </Tooltip>
+      )}
+      {analysis && (
+        <Tooltip side="bottom" content="Analysis overlays: support/resistance, entry/stop/target, patterns (daily)">
+          <button className={styles.pill} data-active={prefs.overlays ? "yes" : "no"}
+                  aria-pressed={!!prefs.overlays}
+                  onClick={() => setPref({ overlays: !prefs.overlays })}>PLAN</button>
+        </Tooltip>
+      )}
+      {phone && (
+        <Tooltip side="bottom" content="Axis labels for every level. Off: only entry, stop, target and the last price are labelled; the other levels stay as lines">
+          <button className={styles.pill} data-active={prefs.levelLabels ? "yes" : "no"}
+                  aria-pressed={!!prefs.levelLabels}
+                  onClick={() => setPref({ levelLabels: !prefs.levelLabels })}>LABELS</button>
+        </Tooltip>
+      )}
+    </div>
+  );
+  const actions = (
+    <div className={styles.actions}>
+      {!drawing.synced && (
+        <Tooltip side="bottom" content="Drawings are saved on this device; the server copy will catch up on the next load.">
+          <span className={styles.offlineNote} tabIndex={0}>
+            local
+          </span>
+        </Tooltip>
+      )}
+      <DraftsMenu ticker={ticker} tf={prefs.tf} tfLabel={tfLabel} drawing={drawing}
+                  onToast={toast.show} onTimeframe={(tf) => setPref({ tf })} disabled={!hasData} />
+      <SnapshotMenu capture={captureSnapshot} onToast={toast.show} disabled={!hasData} />
+    </div>
+  );
+  const toolSections = [
+    { id: "type", label: "Chart type", content: typeGroup },
+    { id: "indicators", label: "Indicators", content: indGroup },
+    { id: "scale", label: "Scale & overlays", content: scaleGroup },
+    {
+      id: "draw",
+      label: "Drawing",
+      content: (
+        <>
+          <Button size="sm" disabled={!hasData} onClick={() => { setToolsOpen(false); setDrawMode(true); }}>
+            <DrawIcon name="trendline" size={15} /> Draw
+          </Button>
+          {actions}
+        </>
+      ),
+    },
+  ];
+  const endDrawing = () => {
+    if (drawing.tool) drawing.setTool(drawing.tool);
+    setSelectedId(null);
+    setDrawMode(false);
+  };
+
   return (
     <div className={styles.wrap} ref={wrapRef}>
-      <div className={styles.toolbar} role="toolbar" aria-label="Chart controls">
-        <div className={styles.group} role="group" aria-label="Timeframe">
-          {TIMEFRAMES.map((t) => (
-            <Tooltip key={t.key} side="bottom" content={t.name}>
-              <button className={styles.pill} data-active={prefs.tf === t.key ? "yes" : "no"}
-                      aria-pressed={prefs.tf === t.key}
-                      onClick={() => setPref({ tf: t.key })}>{t.label}</button>
-            </Tooltip>
-          ))}
+      {!phone ? (
+        <div className={styles.toolbar} role="toolbar" aria-label="Chart controls">
+          {tfGroup}
+          {typeGroup}
+          {indGroup}
+          {scaleGroup}
+          {actions}
         </div>
-
-        <div className={styles.segmented} role="group" aria-label="Chart type">
-          {CHART_TYPES.map((t) => {
-            const active = prefs.type === t.key;
-            return (
-              <Tooltip key={t.key} side="bottom" content={t.label}>
-              <button
-                type="button"
-                className={styles.segBtn}
-                data-active={active ? "yes" : "no"}
-                onClick={() => setPref({ type: t.key })}
-                aria-label={t.label}
-                aria-pressed={active}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="chartTypeThumb"
-                    className={styles.segThumb}
-                    transition={prefersReducedMotion()
-                      ? { duration: 0 }
-                      : { type: "spring", stiffness: 520, damping: 40 }}
-                    aria-hidden="true"
-                  />
-                )}
-                <span className={styles.segGlyph}><TypeIcon type={t.key} /></span>
-              </button>
-              </Tooltip>
-            );
-          })}
+      ) : drawMode ? (
+        <DrawingRail drawing={drawing} disabled={!hasData} onDone={endDrawing} />
+      ) : (
+        <div className={styles.phoneBar} role="toolbar" aria-label="Chart controls">
+          <div className={styles.tfStrip}>
+            <Segmented ariaLabel="Timeframe" className={styles.tfSeg} value={prefs.tf}
+                       options={TIMEFRAME_OPTIONS} onChange={(tf) => setPref({ tf })} />
+          </div>
+          <Button size="sm" className={styles.toolsBtn} aria-label="Chart tools" aria-haspopup="dialog"
+                  onClick={() => setToolsOpen(true)}>
+            <Icon name="settings" size={16} />
+          </Button>
         </div>
-
-        <div className={styles.group} role="group" aria-label="Indicators">
-          {IND_DEFS.map((d) => {
-            const disabled = d.intradayOnly && !intraday;
-            const def = GLOSSARY[d.term]?.short;
-            return (
-              <Tooltip key={d.key} side="bottom" content={(
-                <>
-                  <strong>{d.label}</strong>
-                  {def && <p>{def}</p>}
-                  {disabled && <p>Unavailable on this timeframe — switch to 1m, 5m, 15m or 1h to use it.</p>}
-                </>
-              )}>
-                <button
-                  className={styles.pill}
-                  data-active={prefs.inds[d.key] && !disabled ? "yes" : "no"}
-                  aria-pressed={!!prefs.inds[d.key] && !disabled}
-                  disabled={disabled}
-                  onClick={() => setPref({ inds: { [d.key]: !prefs.inds[d.key] } })}
-                >
-                  {d.key.toUpperCase()}
-                </button>
-              </Tooltip>
-            );
-          })}
-        </div>
-
-        <div className={styles.group} role="group" aria-label="Scale and overlays">
-          <Tooltip side="bottom" content={prefs.compare
-            ? "Logarithmic price scale — off while comparing with SPY, which uses a percent scale"
-            : "Logarithmic price scale: equal distances are equal percentage moves"}>
-            <button className={styles.pill} data-active={prefs.logScale && !prefs.compare ? "yes" : "no"}
-                    aria-pressed={!!prefs.logScale && !prefs.compare}
-                    disabled={prefs.compare}
-                    onClick={() => setPref({ logScale: !prefs.logScale })}>LOG</button>
-          </Tooltip>
-          <Tooltip side="bottom" content="Compare with SPY (S&P 500 ETF) on a percent-change scale">
-            <button className={styles.pill} data-active={prefs.compare ? "yes" : "no"}
-                    aria-pressed={!!prefs.compare}
-                    onClick={() => setPref({ compare: !prefs.compare })}>vs SPY</button>
-          </Tooltip>
-          {intraday && extSupported && (
-            <Tooltip side="bottom" content={prefs.prepost
-              ? "Showing pre-market and after-hours bars (shaded) — click for the regular session only"
-              : "Regular session only — click to include pre-market and after-hours bars"}>
-              <button className={styles.pill} data-active={prefs.prepost ? "yes" : "no"}
-                      aria-pressed={prefs.prepost}
-                      onClick={() => setPref({ prepost: !prefs.prepost })}>EXT</button>
-            </Tooltip>
-          )}
-          {intraday && !extSupported && (
-            <Tooltip side="bottom" content={isTase(ticker)
-              ? "Tel Aviv Stock Exchange has no pre-market or after-hours session, so there are no extended-hours bars to show."
-              : "This market reports no pre-market or after-hours session, so there are no extended-hours bars to show."}>
-              <span className={styles.pillNote} tabIndex={0}>
-                REG ONLY
-              </span>
-            </Tooltip>
-          )}
-          {analysis && (
-            <Tooltip side="bottom" content="Analysis overlays: support/resistance, entry/stop/target, patterns (daily)">
-              <button className={styles.pill} data-active={prefs.overlays ? "yes" : "no"}
-                      aria-pressed={!!prefs.overlays}
-                      onClick={() => setPref({ overlays: !prefs.overlays })}>PLAN</button>
-            </Tooltip>
-          )}
-        </div>
-
-        <div className={styles.actions}>
-          {!drawing.synced && (
-            <Tooltip side="bottom" content="Drawings are saved on this device; the server copy will catch up on the next load.">
-              <span className={styles.offlineNote} tabIndex={0}>
-                local
-              </span>
-            </Tooltip>
-          )}
-          <DraftsMenu ticker={ticker} tf={prefs.tf} tfLabel={tfLabel} drawing={drawing}
-                      onToast={toast.show} onTimeframe={(tf) => setPref({ tf })} disabled={!hasData} />
-          <SnapshotMenu capture={captureSnapshot} onToast={toast.show} disabled={!hasData} />
-        </div>
-      </div>
+      )}
+      {phone && (
+        <ChartToolsSheet open={toolsOpen} onClose={() => setToolsOpen(false)} caption={ticker}
+                         sections={toolSections} />
+      )}
 
       {legend && (
         <div className={styles.legend} aria-live="off">
@@ -1169,7 +1314,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       ) : null}
 
       <div className={styles.stage}>
-      <DrawingRail drawing={drawing} disabled={!hasData} />
+      {!phone && <DrawingRail drawing={drawing} disabled={!hasData} />}
       <div className={styles.canvasWrap} data-tool={drawing.tool ? "yes" : "no"}>
         <div ref={elRef} className={styles.canvas} style={{ width: "100%" }} />
         <ShapeProperties drawing={drawing} palette={drawColors} />

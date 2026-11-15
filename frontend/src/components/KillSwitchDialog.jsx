@@ -11,7 +11,7 @@ import { haltAll } from "../hooks/useRiskStatus";
 export default function KillSwitchDialog({ open, onClose }) {
   const [reason, setReason] = useState("");
   return (
-    <ConfirmDialog open={open} tone="negative" caption="Kill switch" title="Halt all trading?"
+    <ConfirmDialog open={open} form tone="negative" caption="Kill switch" title="Halt all trading?"
                    confirmLabel="Halt everything" onConfirm={() => haltAll(reason)} onClose={onClose}>
       <p>
         Open paper orders are cancelled and every bot is paused. Every new order — yours and the bots' — is

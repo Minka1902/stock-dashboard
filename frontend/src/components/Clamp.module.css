@@ -1,0 +1,31 @@
+.clamp {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--lines);
+  overflow: hidden;
+}
+.text[data-open="yes"] {
+  display: block;
+  -webkit-line-clamp: none;
+}
+
+.toggle {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent-text);
+  font-family: var(--mono);
+  font-size: var(--fs-10-5);
+  text-transform: uppercase;
+  letter-spacing: var(--caption-spacing, 0.08em);
+  cursor: pointer;
+}
+.toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

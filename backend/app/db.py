@@ -1131,6 +1131,11 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _try_add_column(conn, "orders", "filled_qty", "REAL NOT NULL DEFAULT 0")
     _migrate_ila_price_rows(conn)
     _migrate_econ_entities(conn)
+    # Insider rows stored before edgar._tag decoded entities ("Pres. &amp; CEO").
+    conn.execute(
+        "UPDATE insider_trades SET owner = replace(owner, '&amp;', '&'), "
+        "role = replace(role, '&amp;', '&'), company = replace(company, '&amp;', '&') "
+        "WHERE owner || role || company LIKE '%&amp;%'")
     _seed_ledger(conn)
     conn.commit()
 

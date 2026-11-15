@@ -65,15 +65,15 @@ export default function SellDialog({ holding, price, hasCash, onSubmit, onClose 
     >
       <form id="sell-form" className={styles.form} onSubmit={submit}>
         <Field label="Shares" hint={`of ${holding.shares} held`}>
-          {(a) => <input {...a} type="number" min="0" step="any" value={shares}
+          {(a) => <input {...a} type="number" min="0" step="any" inputMode="decimal" value={shares}
                          onChange={(e) => setShares(e.target.value)} />}
         </Field>
         <Field label={`Price (${ccy})`} hint={price == null ? "no live quote — enter your fill" : "live quote; change it to your fill"}>
-          {(a) => <input {...a} type="number" min="0" step="any" value={px}
+          {(a) => <input {...a} type="number" min="0" step="any" inputMode="decimal" value={px}
                          onChange={(e) => setPx(e.target.value)} />}
         </Field>
         <Field label={`Fees (${ccy})`}>
-          {(a) => <input {...a} type="number" min="0" step="any" value={fees} placeholder="0"
+          {(a) => <input {...a} type="number" min="0" step="any" inputMode="decimal" value={fees} placeholder="0"
                          onChange={(e) => setFees(e.target.value)} />}
         </Field>
         <label className={styles.check}>

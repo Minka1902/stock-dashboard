@@ -5,7 +5,7 @@
   padding: 1px 6px;
   border-radius: var(--r-pill);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   font-weight: 700;
   letter-spacing: 0.04em;
   vertical-align: middle;

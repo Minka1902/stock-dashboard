@@ -123,6 +123,10 @@ export default function CommandPalette({ items, onClose, onOpenTicker }) {
             value={query}
             onChange={(e) => { setQuery(e.target.value); setActive(0); }}
             onKeyDown={onInputKey}
+            autoCapitalize="none"
+            autoComplete="off"
+            spellCheck={false}
+            enterKeyHint="go"
             aria-label="Command and stock search"
           />
           <kbd className={styles.kbd}>esc</kbd>

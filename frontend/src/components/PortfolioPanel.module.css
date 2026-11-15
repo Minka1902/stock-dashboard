@@ -12,13 +12,13 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s-3);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
 }
 
 .title {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -28,14 +28,14 @@
   margin-top: 3px;
   color: var(--text-faint);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   max-width: 90ch;
 }
 
 .form {
   display: flex;
   gap: var(--s-2);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
   flex-wrap: wrap;
 }
@@ -49,7 +49,7 @@
   background: var(--bg);
   color: var(--text);
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 .ticker {
   width: 110px;
@@ -83,10 +83,10 @@
 }
 
 .error {
-  padding: 8px var(--s-4);
+  padding: 8px var(--gutter, var(--s-4));
   color: var(--negative);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 
 .tableWrap {
@@ -101,7 +101,7 @@
   width: 100%;
   border-collapse: collapse;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   font-variant-numeric: tabular-nums;
 }
 
@@ -110,26 +110,26 @@
 }
 .table thead th {
   text-align: left;
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-faint);
   background: var(--surface-2);
-  padding: 8px var(--s-4);
+  padding: 8px var(--gutter, var(--s-4));
   white-space: nowrap;
   border-bottom: 1px solid var(--border);
 }
 
 .table tbody td {
-  padding: 9px var(--s-4);
+  padding: 9px var(--gutter, var(--s-4));
   border-top: 1px solid var(--grid);
   vertical-align: middle;
 }
-.table tbody tr:nth-child(even) {
+.row:nth-child(even) {
   background: color-mix(in oklab, var(--surface-2) 40%, transparent);
 }
-.table tbody tr:hover {
+.row:hover {
   background: var(--surface-3);
 }
 
@@ -144,7 +144,7 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--s-3);
-  padding: var(--s-4);
+  padding: var(--s-4) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
 }
 .card {
@@ -158,7 +158,7 @@
 }
 .cardLabel {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -166,14 +166,14 @@
 }
 .cardValue {
   font-family: var(--mono);
-  font-size: 20px;
+  font-size: 20px; /* one use, no exact token; --fs-h3 (18px) would change desktop */
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   display: flex;
   align-items: baseline;
   gap: 8px;
 }
-.cardPct { font-style: normal; font-size: 13px; font-weight: 700; }
+.cardPct { font-style: normal; font-size: var(--fs-13); font-weight: 700; }
 .card[data-tone="pos"] .cardValue,
 .card[data-tone="pos"] .cardPct { color: var(--positive); }
 .card[data-tone="neg"] .cardValue,
@@ -190,10 +190,10 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px var(--s-4);
+  padding: 8px var(--gutter, var(--s-4));
   color: var(--accent-text);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 
 /* --- group headers --- */
@@ -203,11 +203,11 @@
   top: 0;
   background: var(--surface-2);
   border-top: 1px solid var(--border);
-  padding: 6px var(--s-4);
+  padding: 6px var(--gutter, var(--s-4));
 }
 .groupName {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -237,7 +237,7 @@
 .catMenu > button {
   display: inline-block;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -284,7 +284,7 @@
   background: var(--bg);
   color: var(--text);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
   text-align: right;
 }
 .editInput:focus { outline: none; box-shadow: 0 0 0 3px var(--accent-weak); }
@@ -298,7 +298,7 @@
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-13);
   line-height: 1;
   cursor: pointer;
 }
@@ -311,7 +311,7 @@
   background: transparent;
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   font-weight: 600;
   cursor: pointer;
 }
@@ -322,7 +322,7 @@
   align-items: center;
   gap: 6px;
   height: 36px;
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -332,7 +332,7 @@
   align-items: baseline;
   gap: 6px;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -341,12 +341,12 @@
   border: 1px solid var(--border);
   color: var(--text-muted);
 }
-.advice em { font-style: normal; font-size: 10px; }
+.advice em { font-style: normal; font-size: var(--fs-10); }
 .advice[data-tone="buy"] { color: var(--positive); background: var(--positive-weak); border-color: transparent; }
 .advice[data-tone="hold"] { color: var(--accent-text); background: var(--accent-weak); border-color: transparent; }
 .advice[data-tone="warn"] { color: var(--negative); border-color: var(--negative-weak); }
 .advice[data-tone="sell"] { color: var(--negative); background: var(--negative-weak); border-color: transparent; }
-.advicePending { font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); }
+.advicePending { font-family: var(--mono); font-size: var(--fs-10-5); color: var(--text-faint); }
 
 .symbol {
   font-family: var(--mono);
@@ -369,7 +369,7 @@
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-muted);
-  font-size: 16px;
+  font-size: var(--fs-16);
   line-height: 1;
   cursor: pointer;
 }
@@ -385,7 +385,7 @@
   align-items: center;
   text-align: center;
   gap: 6px;
-  padding: 48px var(--s-5);
+  padding: 48px var(--gutter, var(--s-5));
 }
 .emptyIcon {
   display: grid;
@@ -404,7 +404,7 @@
 }
 .emptyText {
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 
 /* Live-price flash: retriggered by keying the span on the price value. */
@@ -428,7 +428,7 @@
 }
 
 .totals td {
-  padding: 9px var(--s-4);
+  padding: 9px var(--gutter, var(--s-4));
   border-top: 1px solid var(--border-strong, var(--grid));
   font-family: var(--mono);
   font-weight: 700;
@@ -462,7 +462,7 @@
   align-items: center;
   gap: 4px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -474,7 +474,7 @@
   border: none;
   background: none;
   color: var(--text-muted);
-  font-size: 15px;
+  font-size: var(--fs-15);
   line-height: 1;
   cursor: pointer;
 }
@@ -484,7 +484,7 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--text-muted);
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   padding: 0 5px;
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
@@ -492,13 +492,13 @@
 }
 .cardSub {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   line-height: 1.5;
 }
 .subCcy {
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   font-weight: 700;
   letter-spacing: 0.05em;
   color: var(--text-faint);
@@ -511,10 +511,10 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--s-2) var(--s-4);
-  padding: var(--s-2) var(--s-4);
+  padding: var(--s-2) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -531,7 +531,7 @@
 }
 .fxMissingCell {
   color: var(--caution);
-  font-size: 11px;
+  font-size: var(--fs-11);
 }
 
 .tickerLine {
@@ -542,7 +542,7 @@
 .ccyBadge {
   display: inline-block;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-9-5);
   font-weight: 700;
   letter-spacing: 0.03em;
   padding: 0 5px;
@@ -563,7 +563,7 @@
   width: 140px;
 }
 .ccyPick > * { width: 100%; }
-.ccyPick button { height: 36px; font-size: 13px; font-family: var(--mono); }
+.ccyPick button { height: 36px; font-size: var(--fs-13); font-family: var(--mono); }
 
 /* Cost over currency, stacked: side by side they widened the row enough to
    push Save/Cancel out of the panel. */
@@ -574,88 +574,30 @@
   gap: 4px;
 }
 .editCcy { width: 76px; }
-.editCcy > button { height: 28px; font-size: 12px; font-family: var(--mono); padding: 0 6px 0 8px; }
+.editCcy > button { height: 28px; font-size: var(--fs-12); font-family: var(--mono); padding: 0 6px 0 8px; }
 
-/* --- phones: each position is a stacked card instead of a 10-column row --- */
+/* --- phones: totals, then the holdings (DataTable cards), then cash. Add,
+   cash and edit open as sheets, so the form only ever sits in one. --- */
 @media (max-width: 640px) {
-  .summary { grid-template-columns: 1fr 1fr; gap: var(--s-2); padding: var(--s-3); }
-  .summary > :first-child { grid-column: 1 / -1; }
-  .card { padding: var(--s-2) var(--s-3); }
-  .cardValue { font-size: 17px; }
+  .head { align-items: center; }
+  .head > :first-child { flex: 1 1 auto; }
+  /* Base currency and sparkline range: one control row under the title. */
+  .headControls { flex: 1 1 100%; flex-wrap: nowrap; justify-content: space-between; gap: var(--s-2); }
+  .basePick { width: auto; }
+  .basePick > button { height: var(--control-h); font-size: var(--fs-12-5); }
 
-  .form { padding: var(--s-3); }
+  .summary { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); padding: var(--s-3) var(--gutter); }
+  .card { padding-block: 0; gap: 2px; }
+  .cardLabel .cardBase { display: none; }
+  .cardValue { font-size: var(--fs-lead); flex-wrap: wrap; column-gap: var(--s-1); row-gap: 0; }
+  .cardPct { font-size: var(--fs-11); }
+  .cardSub { font-size: var(--fs-10); }
+
+  .form { padding: 0; border-bottom: 0; }
   .ticker, .num { flex: 1 1 calc(50% - var(--s-1)); width: auto; min-width: 0; }
   .ccyPick { flex: 1 1 calc(50% - var(--s-1)); }
   .payCash { flex: 1 1 calc(50% - var(--s-1)); }
   .add { flex: 1 1 100%; }
-
-  /* Nothing scrolls sideways any more, so the wrapper must not be a scroll
-     container either — that is what lets the group rows stick. */
-  .tableWrap { overflow: visible; }
-  .table, .table tbody, .table tfoot { display: block; }
-  .table thead { display: none; }
-
-  .groupRow {
-    position: sticky;
-    top: 0;
-    z-index: var(--z-sticky);
-    display: flex;
-    align-items: center;
-    gap: var(--s-3);
-    background: var(--surface-2);
-    border-top: 1px solid var(--border);
-  }
-  .groupRow td { position: static; border: none; padding: 6px var(--s-3); }
-  .groupRow td:first-child { flex: 1; }
-  .groupRow td:empty { display: none; }
-
-  .table tbody tr.row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "ticker value"
-      "ticker pl"
-      "shares price"
-      "cost   day"
-      "advice trend"
-      "actions actions";
-    column-gap: var(--s-3);
-    row-gap: 2px;
-    padding: var(--s-2) var(--s-3);
-    border-top: 1px solid var(--grid);
-  }
-  .table tbody tr.row td { padding: 0; border: none; text-align: left; }
-  .row td[data-col="ticker"] { grid-area: ticker; }
-  .row td[data-col="value"] { grid-area: value; text-align: right; font-size: 14px; font-weight: 700; }
-  .row td[data-col="pl"] { grid-area: pl; text-align: right; }
-  .row td[data-col="shares"] { grid-area: shares; }
-  .row td[data-col="cost"] { grid-area: cost; }
-  .row td[data-col="price"] { grid-area: price; text-align: right; }
-  .row td[data-col="day"] { grid-area: day; text-align: right; }
-  .row td[data-col="advice"] { grid-area: advice; align-self: center; padding-top: 4px; }
-  .row td[data-col="trend"] { grid-area: trend; text-align: right; padding-top: 4px; }
-  .row td[data-col="actions"] { grid-area: actions; padding-top: var(--s-2); }
-  .row td[data-label]::before {
-    content: attr(data-label) " ";
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-faint);
-  }
-  .row td[data-col="actions"] .rowActions,
-  .row td[data-col="actions"] .editActions { display: flex; justify-content: flex-end; }
-
-  .totals {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--s-2);
-    padding: var(--s-2) var(--s-3);
-    border-top: 1px solid var(--border-strong, var(--grid));
-  }
-  .totals td { padding: 0; border: none; }
-  .totals td:empty { display: none; }
 }
 
 @media (pointer: coarse) {
@@ -665,7 +607,7 @@
 
 .analyticsLink {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--accent-text);

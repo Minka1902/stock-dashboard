@@ -13,7 +13,7 @@
   align-items: center;
   gap: 5px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-10);
   letter-spacing: 0.05em;
   color: var(--text-faint);
   padding: 0 10px;
@@ -56,7 +56,7 @@
   align-items: baseline;
   gap: 8px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 
 .symbol {
@@ -76,16 +76,49 @@
 .change[data-tone="pos"] { color: var(--positive); }
 .change[data-tone="neg"] { color: var(--negative); }
 .change[data-tone="flat"] { color: var(--text-faint); }
-.arrow { font-size: 9px; }
+.arrow { font-size: var(--fs-9); }
 
 .badge {
-  font-size: 9px;
+  font-size: var(--fs-9);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--accent-text);
   border: 1px solid var(--accent-weak);
   border-radius: var(--r-xs);
   padding: 1px 4px;
+}
+
+/* Phone: the session stamps as one button of dots (LiveTicker.jsx), a
+   36px row and quotes at the UI size, so two whole quotes fit at 360px. */
+.sessions {
+  appearance: none;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px 0 12px;
+  margin-right: var(--s-2);
+  border: none;
+  border-right: 1px solid var(--grid);
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.sessions .dot { width: 7px; height: 7px; }
+.sessions .dot[data-state="LIVE"] { background: var(--positive); }
+.sessions .dot[data-state="PRE"],
+.sessions .dot[data-state="POST"] { background: var(--accent); }
+.sessions .dot[data-state="CLOSED"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-faint);
+}
+
+@media (max-width: 640px) {
+  .tape { height: 36px; padding: 0; }
+  .track { gap: var(--s-4); }
+  .item { gap: 6px; font-size: var(--fs-small); }
+  /* Clear of the edge fade, so the first quote reads whole. */
+  .trackWrap[data-static="yes"] .track { padding-left: var(--s-3); }
 }
 
 /* Reduce-motion is handled in JS (LiveTicker renders a static, natively

@@ -10,23 +10,15 @@ import Icon from "./Icon";
 import Skeleton from "./Skeleton";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
+import { CHART_CURSOR, CHART_TOOLTIP, useAxisTick } from "../lib/chartStyle";
 import styles from "./YieldCurvePanel.module.css";
-import InfoTip from "./InfoTip";
+import PanelInfo from "./PanelInfo";
 import HintTip from "./Tooltip";
 
-// Recharts draws its hover cursor in #ccc unless told otherwise.
-const CURSOR = { stroke: "var(--border-strong)" };
-
-const TOOLTIP_STYLE = {
-  background: "var(--surface-2)",
-  border: "1px solid var(--border)",
-  borderRadius: "var(--r-sm)",
-  fontSize: "12px",
-  color: "var(--text)",
-  padding: "6px 10px",
-};
+const BLURB = "10yr − 2yr spread · negative = inverted · normalization often precedes a boom";
 
 export default function YieldCurvePanel({ data, loading, busy, onRefresh, compact = false, onViewAll, collapsible = false, collapsed = false, onToggleCollapse }) {
+  const tick = useAxisTick();
   const showEmpty = !loading && data.length === 0;
   const latest = data.length > 0 ? data[data.length - 1] : null;
   const spread = latest?.spread ?? null;
@@ -37,13 +29,11 @@ export default function YieldCurvePanel({ data, loading, busy, onRefresh, compac
 
   return (
     <section className={styles.panel} id="yield-curve">
-      <header className={styles.head}>
+      <header className={styles.head} data-head="inline">
         {collapsible && <CollapseToggle collapsed={collapsed} onClick={onToggleCollapse} label="Yield Curve" />}
         <div>
-          <h2 className={styles.title}>US Treasury Yield Curve <InfoTip term="yield_curve" /></h2>
-          <p className={styles.subtitle}>
-            10yr − 2yr spread · negative = inverted · normalization often precedes a boom
-          </p>
+          <h2 className={styles.title}>US Treasury Yield Curve <PanelInfo label="US Treasury Yield Curve" blurb={BLURB} term="yield_curve" /></h2>
+          <p className={styles.subtitle}>{BLURB}</p>
         </div>
         {latest && !loading && (
           <HintTip content={spread === null
@@ -82,7 +72,7 @@ export default function YieldCurvePanel({ data, loading, busy, onRefresh, compac
                 <YAxis
                   width={42}
                   tickFormatter={(v) => `${v.toFixed(1)}%`}
-                  tick={{ fontSize: 10, fill: "var(--text-faint)" }}
+                  tick={tick}
                   axisLine={false}
                   tickLine={false}
                 />
@@ -101,8 +91,8 @@ export default function YieldCurvePanel({ data, loading, busy, onRefresh, compac
                   isAnimationActive={false}
                 />
                 <Tooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  cursor={CURSOR}
+                  contentStyle={CHART_TOOLTIP}
+                  cursor={CHART_CURSOR}
                   formatter={(v) => [`${v != null ? v.toFixed(2) : "—"}%`, "Spread"]}
                   labelFormatter={(l) => l}
                 />

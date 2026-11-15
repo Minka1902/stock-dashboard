@@ -6,6 +6,8 @@ import styles from "./Field.module.css";
  * `ApiError.fields` messages the backend returns). `children` is a render
  * function receiving the input's id and aria props, so any control fits:
  *   <Field label="Stop" error={errors.stop_price}>{(p) => <input {...p} />}</Field>
+ * The props also carry `enterKeyHint: "done"` (Enter submits the form), which
+ * a control can override after the spread.
  */
 export default function Field({ label, hint, error, suffix, inline = false, className, children }) {
   const id = useId();
@@ -16,7 +18,7 @@ export default function Field({ label, hint, error, suffix, inline = false, clas
       <label className={styles.label} htmlFor={id}>{label}</label>
       <span className={styles.control}>
         {children({ id, "aria-invalid": error ? true : undefined, "aria-describedby": describedBy,
-          className: styles.input })}
+          className: styles.input, enterKeyHint: "done" })}
         {suffix && <span className={styles.suffix}>{suffix}</span>}
       </span>
       {hint && !error && <span id={`${id}-hint`} className={styles.hint}>{hint}</span>}

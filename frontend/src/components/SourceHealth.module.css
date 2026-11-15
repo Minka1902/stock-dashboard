@@ -1,0 +1,117 @@
+.health {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+/* Takes the room its row leaves, never more: the glyphs are fitted to it. */
+.health[data-variant="inline"] { flex: 1 1 0; }
+
+.caption {
+  font-family: var(--mono);
+  font-size: var(--fs-10-5);
+  font-weight: 700;
+  letter-spacing: var(--caption-spacing);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--negative);
+}
+
+.chip {
+  appearance: none;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--negative-weak);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--negative);
+  font-family: var(--mono);
+  font-size: var(--fs-11);
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out-quart);
+}
+.chip:hover { border-color: var(--negative); }
+
+/* The size of the top bar's other buttons. */
+.compact {
+  height: 34px;
+  padding: 0 8px;
+  gap: 4px;
+}
+.count { font-size: var(--fs-12-5); }
+
+/* Opacity only, so the glyph never changes shape or size. */
+.pulse { animation: source-pulse 2.4s ease-in-out infinite; }
+.flag {
+  display: none;
+  font-size: var(--fs-9);
+  line-height: 1;
+}
+
+@keyframes source-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse { animation: none; }
+  .flag { display: inline; }
+}
+:global(html[data-reduced-motion="on"]) .pulse { animation: none; }
+:global(html[data-reduced-motion="on"]) .flag { display: inline; }
+
+@media (pointer: coarse) {
+  .compact { height: var(--tap); }
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s-3);
+  align-items: start;
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--grid);
+}
+.rowIcon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--negative-weak);
+  color: var(--negative);
+}
+.rowText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.rowName {
+  font-family: var(--mono);
+  font-size: var(--fs-13);
+  font-weight: 700;
+  color: var(--text);
+}
+.rowError {
+  font-family: var(--mono);
+  font-size: var(--fs-11-5);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.note {
+  font-size: var(--fs-12);
+  color: var(--text-faint);
+}

@@ -1,7 +1,10 @@
+import Clamp from "./Clamp";
 import PaperTradeButton from "./PaperTradeButton";
 import ScannerAlertsCard from "./ScannerAlertsCard";
 import ScannerPanel from "./ScannerPanel";
+import Tooltip from "./Tooltip";
 import WatchButton from "./WatchButton";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { useScanner } from "../hooks/useScanner";
 import { formatRelativeTime, formatUntil } from "../lib/format";
 import { sourceNote, sourceState } from "../lib/sources";
@@ -24,31 +27,37 @@ function statusText(s) {
  * The Scanner tab of the Trading Bot page: today's matches across the
  * configured universe, pushed live as each scan run finishes, plus the
  * opt-in alert settings and what each of the three scanner sources last did.
+ * On a phone the matches come before the alert settings.
  */
 export default function ScannerTab() {
   const { data, error, live, savePrefs } = useScanner();
+  const phone = useMediaQuery(PHONE);
 
   if (!data) return <p className={styles.placeholder}>{error || "Loading the scanner…"}</p>;
 
   const universes = data.universes.map((u) => (u.members == null
     ? `${u.name} (unknown — check STOCKS_SCANNER_UNIVERSES)`
     : `${u.label} (${u.members})`)).join(" + ");
+  const alerts = <ScannerAlertsCard prefs={data.prefs} onSave={savePrefs} />;
 
   return (
     <div className={styles.root}>
       <section className={styles.head} aria-labelledby="scanner-title">
         <div className={styles.titleRow}>
           <h3 id="scanner-title" className={styles.title}>Market scanner</h3>
-          <span className={styles.live} data-live={live ? "yes" : "no"}
-                title={live ? "Matches arrive as each scan finishes" : "Reconnecting; checking every minute meanwhile"}>
-            {live ? "Live" : "Polling"}
-          </span>
+          <Tooltip content={live ? "Matches arrive as each scan finishes" : "Reconnecting; checking every minute meanwhile"}>
+            <span className={styles.live} data-live={live ? "yes" : "no"}>
+              {live ? "Live" : "Polling"}
+            </span>
+          </Tooltip>
         </div>
         <p className={styles.text}>
+          <Clamp active={phone} label="scanner universe">
           {universes} → <strong>{data.tickers}</strong> tickers
           {data.tickers >= data.max_tickers && <> (capped at {data.max_tickers})</>}, {data.with_history} with daily history.
           Scans run every {Math.round(data.interval_seconds / 60)} min while a market is open, on completed daily
           bars plus today so far. A match is a signal to look, not a recommendation.
+          </Clamp>
         </p>
         <dl className={styles.sources}>
           {Object.entries(SOURCE_LABEL).map(([key, label]) => {
@@ -57,8 +66,10 @@ export default function ScannerTab() {
               <div key={key} className={styles.source} data-state={s ? sourceState(s.status) : "none"}>
                 <dt>{label}</dt>
                 <dd>
-                  {statusText(s)}
-                  {s?.last_refreshed_at && <span className={styles.faint}> · {formatRelativeTime(s.last_refreshed_at)}</span>}
+                  <Clamp active={phone} lines={1} label={label}>
+                    {statusText(s)}
+                    {s?.last_refreshed_at && <span className={styles.faint}> · {formatRelativeTime(s.last_refreshed_at)}</span>}
+                  </Clamp>
                 </dd>
               </div>
             );
@@ -66,7 +77,7 @@ export default function ScannerTab() {
         </dl>
       </section>
 
-      <ScannerAlertsCard prefs={data.prefs} onSave={savePrefs} />
+      {!phone && alerts}
 
       <section aria-label="Scanner matches">
         <ScannerPanel
@@ -81,6 +92,8 @@ export default function ScannerTab() {
           )}
         />
       </section>
+
+      {phone && alerts}
     </div>
   );
 }

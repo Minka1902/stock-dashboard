@@ -1,3 +1,4 @@
+import Tooltip from "./Tooltip";
 import styles from "./HitRateCell.module.css";
 
 /**
@@ -16,12 +17,13 @@ export default function HitRateCell({ stats }) {
   return (
     <span className={styles.cell}>
       <span className={styles.value} data-tone={stats.hit_rate >= 50 ? "pos" : "neg"}>{stats.hit_rate}%</span>
-      <span className={styles.track} role="img" aria-label={`95% interval ${lo}% to ${hi}%`}
-            title={`95% interval ${lo}–${hi}% over ${stats.n} outcomes`}>
-        <span className={styles.half} />
-        <span className={styles.band} style={{ left: `${lo}%`, width: `${hi - lo}%` }} />
-        <span className={styles.mark} style={{ left: `${stats.hit_rate}%` }} />
-      </span>
+      <Tooltip content={`95% interval ${lo}–${hi}% over ${stats.n} outcomes`}>
+        <span className={styles.track} role="img" aria-label={`95% interval ${lo}% to ${hi}%`}>
+          <span className={styles.half} />
+          <span className={styles.band} style={{ left: `${lo}%`, width: `${hi - lo}%` }} />
+          <span className={styles.mark} style={{ left: `${stats.hit_rate}%` }} />
+        </span>
+      </Tooltip>
     </span>
   );
 }

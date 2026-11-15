@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import Icon from "./Icon";
 import { getServerSourceRuns, runScheduleNow } from "../api";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
+import { copyText } from "../lib/clipboard";
 import { formatRelativeTime, formatUntil } from "../lib/format";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import { STATE_TIP, sourceState } from "../lib/sources";
@@ -58,9 +60,11 @@ function RunRow({ run }) {
 /**
  * Slide-over with everything about one source: status, the full traceback,
  * its last 10 runs, Copy error and Retry now. Replaces the old Errors section,
- * which listed tracebacks far from the row they belonged to.
+ * which listed tracebacks far from the row they belonged to. On a phone it is
+ * a full-height sheet rising from the bottom.
  */
 export default function SourceDrawer({ source, onClose }) {
+  const phone = useMediaQuery(PHONE);
   // Keyed by source name so switching sources never flashes the previous
   // source's runs or retry state (and needs no reset-in-effect).
   const [runsState, setRunsState] = useState({ name: null, runs: null, error: null });
@@ -105,13 +109,13 @@ export default function SourceDrawer({ source, onClose }) {
   const errorText = source?.error_detail || source?.status || "";
   const schedName = source?.schedule?.source || name;
 
+  // Without clipboard access the text stays selectable below.
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(errorText);
-      setCopiedFor(name);
-      setTimeout(() => setCopiedFor(null), 1500);
-    } catch { /* clipboard unavailable: the text is selectable below */ }
+    if (!(await copyText(errorText))) return;
+    setCopiedFor(name);
+    setTimeout(() => setCopiedFor(null), 1500);
   };
+  const offscreen = phone ? { y: "100%" } : { x: "100%" };
 
   const retryNow = async () => {
     setRetry("sending");
@@ -140,9 +144,9 @@ export default function SourceDrawer({ source, onClose }) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="source-drawer-title"
-            initial={reduced ? { opacity: 0 } : { x: "100%" }}
-            animate={reduced ? { opacity: 1 } : { x: 0 }}
-            exit={reduced ? { opacity: 0 } : { x: "100%" }}
+            initial={reduced ? { opacity: 0 } : offscreen}
+            animate={reduced ? { opacity: 1 } : { x: 0, y: 0 }}
+            exit={reduced ? { opacity: 0 } : offscreen}
             transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 40 }}
           >
             <header className={styles.head}>

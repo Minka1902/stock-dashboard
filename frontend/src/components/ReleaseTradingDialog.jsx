@@ -29,7 +29,7 @@ export default function ReleaseTradingDialog({ onClose }) {
   }
 
   return (
-    <Dialog open size="sm" tone="caution" caption="Kill switch" title="Re-enable trading" onClose={onClose}
+    <Dialog open form size="sm" tone="caution" caption="Kill switch" title="Re-enable trading" onClose={onClose}
             footer={(
               <>
                 <Button variant="quiet" onClick={onClose}>Cancel</Button>
@@ -41,7 +41,8 @@ export default function ReleaseTradingDialog({ onClose }) {
       <form id="release-trading" onSubmit={submit}>
         <Field label="Authenticator code" error={error}
                hint="Orders are accepted again. Paused bots stay paused until you resume them.">
-          {(a) => <input {...a} inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code}
+          {(a) => <input {...a} inputMode="numeric" autoComplete="one-time-code" enterKeyHint="go" pattern="[0-9]*"
+                         maxLength={6} value={code}
                          onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} />}
         </Field>
       </form>

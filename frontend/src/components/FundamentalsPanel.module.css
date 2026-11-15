@@ -10,59 +10,19 @@
   display: flex;
   align-items: flex-start;
   gap: var(--s-3);
-  padding: var(--s-5);
+  padding: var(--s-5) var(--gutter, var(--s-5));
   border-bottom: 1px solid var(--border);
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 600;
 }
 
 .subtitle {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 12.5px;
-}
-
-.tableWrap {
-  overflow-x: auto;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13.5px;
-}
-
-.table thead th.num {
-  text-align: right;
-}
-.table thead th {
-  position: sticky;
-  z-index: var(--z-sticky);
-  top: 0;
-  text-align: left;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--text-faint);
-  background: var(--surface-2);
-  padding: 10px var(--s-5);
-  white-space: nowrap;
-}
-
-.table tbody td {
-  padding: 11px var(--s-5);
-  border-top: 1px solid var(--border);
-  vertical-align: middle;
-}
-
-.table tbody tr:nth-child(even) {
-  background: color-mix(in oklch, var(--surface-2) 45%, transparent);
-}
-.table tbody tr:hover {
-  background: var(--surface-hover);
+  font-size: var(--fs-12-5);
 }
 
 .ticker {
@@ -73,16 +33,10 @@
 
 .sector {
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   max-width: 130px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -95,7 +49,7 @@
   align-items: center;
   text-align: center;
   gap: var(--s-2);
-  padding: 56px var(--s-5);
+  padding: 56px var(--gutter, var(--s-5));
 }
 
 .emptyIcon {
@@ -126,4 +80,9 @@
 .emptyBtn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* Phone: the blurb is behind the title's info control (PanelInfo). */
+@media (max-width: 640px) {
+  .subtitle { display: none; }
 }

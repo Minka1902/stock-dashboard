@@ -1,20 +1,29 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import FeedRow from "./FeedRow";
 import Icon from "./Icon";
+import PanelInfo from "./PanelInfo";
+import ScrollRow from "./ScrollRow";
 import XPostCard from "./XPostCard";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { sourceState, sourceNote } from "../lib/sources";
+import { unifyFeed } from "../lib/newsSources";
 import { formatRelativeTime } from "../lib/format";
 import { staggerContainer, staggerItem, prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./XPostsPanel.module.css";
 import Tooltip from "./Tooltip";
 
+const BLURB = "Recent posts from monitored accounts, with detected cashtags. Signals, not predictions.";
+
 /**
  * X (Twitter) watch feed. Renders stored posts from the monitored accounts with
  * clickable cashtags. When no official X API key is configured the source is
  * flagged as an unofficial mirror (its status is stamped as an error upstream),
- * which we surface as a caveat tag without hiding the real data.
+ * which we surface as a caveat tag without hiding the real data. On a phone
+ * each post is a FeedRow, the row the News view uses.
  */
 export default function XPostsPanel({ data = [], sources = [], loading, busy, onRefresh }) {
+  const phone = useMediaQuery(PHONE);
   const [account, setAccount] = useState("all");
 
   const status = sources.find((s) => s.source === "x_posts");
@@ -34,15 +43,17 @@ export default function XPostsPanel({ data = [], sources = [], loading, busy, on
     );
   }, [data, account]);
   const showEmpty = !loading && data.length === 0;
+  const pickSource = (source) => {
+    const handle = source.replace(/^@/, "");
+    setAccount((cur) => (cur === handle ? "all" : handle));
+  };
 
   return (
     <section className={styles.panel} id="x">
-      <header className={styles.head}>
+      <header className={styles.head} data-head="inline">
         <div>
-          <h2 className={styles.title}>X Watch</h2>
-          <p className={styles.subtitle}>
-            Recent posts from monitored accounts, with detected cashtags. Signals, not predictions.
-          </p>
+          <h2 className={styles.title}>X Watch<PanelInfo label="X Watch" blurb={BLURB} /></h2>
+          <p className={styles.subtitle}>{BLURB}</p>
           <p className={styles.cadence}>
             Checked hourly{status?.last_refreshed_at ? ` · updated ${formatRelativeTime(status.last_refreshed_at)}` : ""}
           </p>
@@ -65,20 +76,22 @@ export default function XPostsPanel({ data = [], sources = [], loading, busy, on
 
       {accounts.length > 1 && (
         <div className={styles.tabs} role="tablist" aria-label="Filter by account">
-          <button
-            className={styles.tab} data-active={account === "all" ? "yes" : "no"}
-            role="tab" aria-selected={account === "all"} onClick={() => setAccount("all")}
-          >
-            All
-          </button>
-          {accounts.map((a) => (
+          <ScrollRow className={styles.tabRow}>
             <button
-              key={a} className={styles.tab} data-active={account === a ? "yes" : "no"}
-              role="tab" aria-selected={account === a} onClick={() => setAccount(a)}
+              className={styles.tab} data-active={account === "all" ? "yes" : "no"}
+              role="tab" aria-selected={account === "all"} onClick={() => setAccount("all")}
             >
-              @{a}
+              All
             </button>
-          ))}
+            {accounts.map((a) => (
+              <button
+                key={a} className={styles.tab} data-active={account === a ? "yes" : "no"}
+                role="tab" aria-selected={account === a} onClick={() => setAccount(a)}
+              >
+                @{a}
+              </button>
+            ))}
+          </ScrollRow>
         </div>
       )}
 
@@ -101,10 +114,11 @@ export default function XPostsPanel({ data = [], sources = [], loading, busy, on
             {posts.map((p) => (
               <motion.li
                 key={`${p.account}:${p.post_id}`}
+                className={phone ? styles.row : undefined}
                 variants={staggerItem}
                 layout={!prefersReducedMotion()}
               >
-                <XPostCard post={p} />
+                {phone ? <FeedRow item={unifyFeed([], [p])[0]} onPickSource={pickSource} /> : <XPostCard post={p} />}
               </motion.li>
             ))}
           </AnimatePresence>

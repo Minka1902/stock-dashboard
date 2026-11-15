@@ -9,13 +9,13 @@
   display: flex;
   align-items: flex-start;
   gap: var(--s-3);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
 }
 
 .title {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -25,7 +25,7 @@
   margin-top: 3px;
   color: var(--text-faint);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
 }
 
 .tableWrap {
@@ -36,7 +36,7 @@
   width: 100%;
   border-collapse: collapse;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   font-variant-numeric: tabular-nums;
 }
 
@@ -48,19 +48,19 @@
   z-index: var(--z-sticky);
   top: 0;
   text-align: left;
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-faint);
   background: var(--surface-2);
-  padding: 8px var(--s-4);
+  padding: 8px var(--gutter, var(--s-4));
   white-space: nowrap;
   border-bottom: 1px solid var(--border);
 }
 
 .table tbody td {
-  padding: 8px var(--s-4);
+  padding: 8px var(--gutter, var(--s-4));
   border-top: 1px solid var(--grid);
   vertical-align: middle;
 }
@@ -92,7 +92,7 @@
   padding: 2px 8px;
   border-radius: var(--r-xs);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -125,7 +125,7 @@
   white-space: nowrap;
 }
 .role {
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--text-faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -143,7 +143,7 @@
   align-items: center;
   text-align: center;
   gap: var(--s-2);
-  padding: 56px var(--s-5);
+  padding: 56px var(--gutter, var(--s-5));
 }
 .emptyIcon {
   display: grid;
@@ -173,4 +173,9 @@
 .emptyBtn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* Phone: the blurb folds into the title's info control. */
+@media (max-width: 640px) {
+  .subtitle { display: none; }
 }

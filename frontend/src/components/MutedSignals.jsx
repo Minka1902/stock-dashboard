@@ -1,6 +1,8 @@
 import { useState } from "react";
+import Clamp from "./Clamp";
 import Segmented from "./Segmented";
 import { useAutomute } from "../hooks/useAutomute";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import styles from "./MutedSignals.module.css";
 
 const OVERRIDES = [
@@ -23,6 +25,7 @@ function statusOf(i) {
  */
 export default function MutedSignals() {
   const { data, error, override } = useAutomute();
+  const phone = useMediaQuery(PHONE);
   const [busy, setBusy] = useState(null);
   const [actionError, setActionError] = useState(null);
 
@@ -65,9 +68,11 @@ export default function MutedSignals() {
         <h3 id="automute-title" className={styles.title}>Signal auto-mute</h3>
       </header>
       <p className={styles.text}>
-        Each Boom Score signal is scored on its own firings over the last {r.window_days} days ({r.horizon_days}-day
-        move, net of costs, in the signal's direction). Below {r.mute_below}% on at least {r.min_n} outcomes it stops
-        counting; it counts again only at {r.unmute_at}%+. Your override applies to your suggestions and bots.
+        <Clamp active={phone} label="how auto-mute works">
+          Each Boom Score signal is scored on its own firings over the last {r.window_days} days ({r.horizon_days}-day
+          move, net of costs, in the signal's direction). Below {r.mute_below}% on at least {r.min_n} outcomes it stops
+          counting; it counts again only at {r.unmute_at}%+. Your override applies to your suggestions and bots.
+        </Clamp>
       </p>
       {actionError && <p className={styles.error} role="alert">{actionError}</p>}
       {measured.length > 0

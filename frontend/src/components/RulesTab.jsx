@@ -3,7 +3,10 @@ import BacktestResult from "./BacktestResult";
 import Button from "./Button";
 import ConfirmDialog from "./ConfirmDialog";
 import Field from "./Field";
+import FormSheet from "./FormSheet";
 import RuleBuilder from "./RuleBuilder";
+import SheetActions from "./SheetActions";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { backtestRule, deleteRule, getRuleSchema, getSavedRules, saveRule } from "../api";
 import { blankRule } from "../lib/ruleSpec";
 import styles from "./RulesTab.module.css";
@@ -13,9 +16,11 @@ import styles from "./RulesTab.module.css";
  * conditions, backtest it on a ticker's full history (with the in-sample /
  * out-of-sample split and the variants-tested count), and save it. Saved
  * rules run daily as signals on your watched and held tickers and can drive
- * a "Custom rule" bot.
+ * a "Custom rule" bot. On a phone a rule is built and backtested in a sheet.
  */
 export default function RulesTab() {
+  const phone = useMediaQuery(PHONE);
+  const [building, setBuilding] = useState(false);
   const [schema, setSchema] = useState(null);
   const [saved, setSaved] = useState([]);
   const [spec, setSpec] = useState(blankRule);
@@ -63,6 +68,7 @@ export default function RulesTab() {
     setResult(null);
     setErrors({});
     setMessage(null);
+    setBuilding(true);
   }
 
   function startNew() {
@@ -70,6 +76,7 @@ export default function RulesTab() {
     setEditingId(null);
     setActive(true);
     setResult(null);
+    setBuilding(true);
   }
 
   async function remove() {
@@ -80,6 +87,31 @@ export default function RulesTab() {
 
   if (!schema) return <p className={styles.placeholder}>{message || "Loading the rule builder…"}</p>;
 
+  const buildTitle = editingId ? "Edit rule" : "New rule";
+  const builder = (
+    <>
+      <RuleBuilder value={spec} onChange={setSpec} schema={schema} errors={errors} />
+      <label className={styles.check}>
+        <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+        Signal daily on my watched and held tickers (alerts, suggestions; usable by a Custom rule bot)
+      </label>
+      <div className={styles.actions}>
+        <Field label="Backtest on" inline={!phone}>
+          {(a) => <input {...a} value={ticker} size={10} autoCapitalize="characters"
+                         onChange={(e) => setTicker(e.target.value.toUpperCase().trim())} />}
+        </Field>
+        <SheetActions>
+          <Button onClick={runBacktest} disabled={busy != null || !ticker}>{busy === "test" ? "Testing…" : "Backtest"}</Button>
+          <Button variant="primary" onClick={save} disabled={busy != null}>
+            {busy === "save" ? "Saving…" : editingId ? "Save changes" : "Save rule"}
+          </Button>
+        </SheetActions>
+      </div>
+      {message && <p className={Object.keys(errors).length || !message.startsWith("Saved") ? styles.error : styles.ok}
+                     role="status">{message}</p>}
+    </>
+  );
+
   return (
     <div className={styles.root}>
       <section className={styles.section} aria-labelledby="saved-rules">
@@ -88,7 +120,9 @@ export default function RulesTab() {
           <Button size="sm" variant="quiet" onClick={startNew}>+ New rule</Button>
         </div>
         {saved.length === 0 ? (
-          <p className={styles.text}>None yet. Build one below, backtest it, then save it to get its signals daily.</p>
+          <p className={styles.text}>
+            {`None yet. Build one ${phone ? "with + New rule" : "below"}, backtest it, then save it to get its signals daily.`}
+          </p>
         ) : (
           <ul className={styles.list}>
             {saved.map((r) => (
@@ -104,30 +138,24 @@ export default function RulesTab() {
         )}
       </section>
 
-      <section className={styles.section} aria-labelledby="rule-build">
-        <h3 id="rule-build" className={styles.title}>{editingId ? "Edit rule" : "New rule"}</h3>
-        <RuleBuilder value={spec} onChange={setSpec} schema={schema} errors={errors} />
-        <label className={styles.check}>
-          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
-          Signal daily on my watched and held tickers (alerts, suggestions; usable by a Custom rule bot)
-        </label>
-        <div className={styles.actions}>
-          <Field label="Backtest on" inline>
-            {(a) => <input {...a} value={ticker} size={10} onChange={(e) => setTicker(e.target.value.toUpperCase().trim())} />}
-          </Field>
-          <Button onClick={runBacktest} disabled={busy != null || !ticker}>{busy === "test" ? "Testing…" : "Backtest"}</Button>
-          <Button variant="primary" onClick={save} disabled={busy != null}>
-            {busy === "save" ? "Saving…" : editingId ? "Save changes" : "Save rule"}
-          </Button>
-        </div>
-        {message && <p className={Object.keys(errors).length || !message.startsWith("Saved") ? styles.error : styles.ok}
-                       role="status">{message}</p>}
-      </section>
+      {phone ? (
+        <FormSheet sheet open={building} onClose={() => setBuilding(false)} caption="Rules" title={buildTitle}>
+          {builder}
+          {result && <BacktestResult result={result} />}
+        </FormSheet>
+      ) : (
+        <>
+          <section className={styles.section} aria-labelledby="rule-build">
+            <h3 id="rule-build" className={styles.title}>{buildTitle}</h3>
+            {builder}
+          </section>
 
-      {result && (
-        <section className={styles.section} aria-label="Backtest result">
-          <BacktestResult result={result} />
-        </section>
+          {result && (
+            <section className={styles.section} aria-label="Backtest result">
+              <BacktestResult result={result} />
+            </section>
+          )}
+        </>
       )}
 
       <ConfirmDialog open={deleting != null} tone="negative" caption="Saved rule" title={`Delete "${deleting?.name}"?`}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Clamp from "./Clamp";
 import ViewAll from "./ViewAll";
 import CollapseToggle from "./CollapseToggle";
 import EmptyState from "./EmptyState";
@@ -6,6 +7,7 @@ import PaperTradeButton from "./PaperTradeButton";
 import TickerLabel from "./TickerLabel";
 import { navigateTo, openTickerTab, routeToPath } from "../lib/nav";
 import { getSuggestionLog } from "../api";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { formatRelativeTime } from "../lib/format";
 import { RISK_TAB_ROUTE } from "../lib/regime";
 import styles from "./SuggestionsPanel.module.css";
@@ -81,11 +83,17 @@ function Lists({ lists }) {
   );
 }
 
+/** Why: the evidence chips, cut to two lines on a phone. */
+function Reasons({ ticker, children }) {
+  const phone = useMediaQuery(PHONE);
+  return <Clamp active={phone} className={styles.reasons} label={`why ${ticker}`}>{children}</Clamp>;
+}
+
 function AlertRow({ a }) {
   const tone = a.pl_pct == null ? "flat" : a.pl_pct >= 0 ? "pos" : "neg";
   const risky = /trim|watch|earnings|hedg/i.test(a.action);
   return (
-    <li className={styles.alert}>
+    <li className={styles.alert} data-card>
       <Symbol ticker={a.ticker} /><Lists lists={a.lists} />
       {a.pl_pct != null && (
         <span className={styles.pl} data-tone={tone}>
@@ -94,9 +102,9 @@ function AlertRow({ a }) {
       )}
       <span className={styles.action} data-risk={risky ? "yes" : "no"}>{a.action}</span>
       {a.reasons.length > 0 && (
-        <span className={styles.reasons}>
+        <Reasons ticker={a.ticker}>
           {a.reasons.map((r) => <span key={r} className={styles.chip}>{r}</span>)}
-        </span>
+        </Reasons>
       )}
     </li>
   );
@@ -111,12 +119,12 @@ function OpportunityBody({ o }) {
       <>
         <Symbol ticker={o.ticker} /><Lists lists={o.lists} />
         <span className={styles.score}><Term term="boom_score">Boom {o.score}</Term></span>
-        <span className={styles.reasons}>
+        <Reasons ticker={o.ticker}>
           {o.signals.map((s) => <span key={s} className={styles.chip} data-tone="bull">{s}</span>)}
           <Tooltip content="Technical analysis for this ticker hasn't been computed yet, so this row shows its Boom Score signals instead.">
             <span className={styles.chip} data-tone="muted" tabIndex={0}>TA pending</span>
           </Tooltip>
-        </span>
+        </Reasons>
       </>
     );
   }
@@ -130,19 +138,19 @@ function OpportunityBody({ o }) {
         {o.rr != null && <> · <Term term="r_multiple">R/R {o.rr}</Term></>}
         {o.entry != null ? ` · entry ${o.entry} / stop ${o.stop}` : ""}
       </span>
-      <span className={styles.reasons}>
+      <Reasons ticker={o.ticker}>
         {(o.evidence || []).map((e) => <span key={e} className={styles.chip}>{e}</span>)}
         {o.score != null && (
           <Term term="boom_score"><span className={styles.chip} data-tone="muted">Boom {o.score}</span></Term>
         )}
-      </span>
+      </Reasons>
     </>
   );
 }
 
 function OpportunityRow({ o, forDate }) {
   return (
-    <li className={styles.alert}>
+    <li className={styles.alert} data-card>
       <OpportunityBody o={o} />
       {!o.ta_pending && <PaperTradeButton ticker={o.ticker} suggestionForDate={forDate} className={styles.watchBtn} />}
     </li>
@@ -161,7 +169,7 @@ function NewIdeaRow({ o, onWatch }) {
       .finally(() => setAdding(false));
   };
   return (
-    <li className={styles.alert}>
+    <li className={styles.alert} data-card>
       <OpportunityBody o={o} />
       {onWatch && (
         <Tooltip content={added
@@ -271,7 +279,7 @@ export default function SuggestionsPanel({ data, loading, busy, onRefresh, onAdd
               <h3 className={styles.sectionTitle}>Seasonal edge (this time of year)</h3>
               <ul className={styles.list}>
                 {data.seasonality.map((s) => (
-                  <li key={s.ticker} className={styles.alert}>
+                  <li key={s.ticker} className={styles.alert} data-card>
                     <Symbol ticker={s.ticker} /><Lists lists={s.lists} />
                     <span className={styles.action} data-risk={s.kind === "headwind" ? "yes" : "no"}>
                       {s.window_label}: avg {s.avg_pct >= 0 ? "+" : ""}{s.avg_pct}%, win {Math.round(s.win_rate * 100)}% / {s.n}y

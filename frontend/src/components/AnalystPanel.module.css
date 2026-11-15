@@ -10,71 +10,25 @@
   display: flex;
   align-items: flex-start;
   gap: var(--s-3);
-  padding: var(--s-5);
+  padding: var(--s-5) var(--gutter, var(--s-5));
   border-bottom: 1px solid var(--border);
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 600;
 }
 
 .subtitle {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 12.5px;
-}
-
-.tableWrap {
-  overflow-x: auto;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13.5px;
-}
-
-.table thead th.num {
-  text-align: right;
-}
-.table thead th {
-  position: sticky;
-  z-index: var(--z-sticky);
-  top: 0;
-  text-align: left;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--text-faint);
-  background: var(--surface-2);
-  padding: 10px var(--s-5);
-  white-space: nowrap;
-}
-
-.table tbody td {
-  padding: 11px var(--s-5);
-  border-top: 1px solid var(--border);
-  vertical-align: middle;
-}
-
-.table tbody tr:nth-child(even) {
-  background: color-mix(in oklch, var(--surface-2) 45%, transparent);
-}
-.table tbody tr:hover {
-  background: var(--surface-hover);
+  font-size: var(--fs-12-5);
 }
 
 .ticker {
   font-family: var(--mono);
   font-weight: 700;
   color: var(--accent-text);
-}
-
-.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 .muted {
@@ -84,7 +38,7 @@
 
 .firm {
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -95,7 +49,7 @@
   display: inline-block;
   padding: 3px 10px;
   border-radius: var(--r-pill);
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   font-weight: 600;
   border: 1px solid var(--border);
   color: var(--text-muted);
@@ -118,7 +72,7 @@
   align-items: center;
   text-align: center;
   gap: var(--s-2);
-  padding: 56px var(--s-5);
+  padding: 56px var(--gutter, var(--s-5));
 }
 
 .emptyIcon {
@@ -152,10 +106,15 @@
 }
 
 .freshness {
-  font-size: 11px;
+  font-size: var(--fs-11);
   white-space: nowrap;
   color: var(--text-faint);
 }
 .freshness[data-tone="fresh"] { color: var(--positive); }
 .freshness[data-tone="mid"]   { color: var(--caution); }
 .freshness[data-tone="stale"] { color: var(--negative); }
+
+/* Phone: the blurb is behind the title's info control (PanelInfo). */
+@media (max-width: 640px) {
+  .subtitle { display: none; }
+}

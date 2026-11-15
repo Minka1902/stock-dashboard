@@ -4,6 +4,7 @@ import { useRoute } from "./hooks/useRoute";
 import { useLiveQuotes } from "./hooks/useLiveQuotes";
 import { useTheme } from "./hooks/useTheme";
 import { useSettingsContext } from "./hooks/useSettingsContext";
+import { useCollapsedSections } from "./hooks/useCollapsedSections";
 import { useAppSettings } from "./hooks/useAppSettings";
 import { useDocumentTitle } from "./hooks/useDocumentTitle";
 import Sidebar from "./components/Sidebar";
@@ -13,7 +14,7 @@ import LiveTicker from "./components/LiveTicker";
 import CommandPalette from "./components/CommandPalette";
 import Icon from "./components/Icon";
 import StatGrid from "./components/StatGrid";
-import SourceStatus from "./components/SourceStatus";
+import SectionIndex from "./components/SectionIndex";
 import ContractsPanel from "./components/ContractsPanel";
 import TradesPanel from "./components/TradesPanel";
 import NewsPanel from "./components/NewsPanel";
@@ -41,10 +42,11 @@ import OrderTicket from "./components/OrderTicket";
 import KillSwitchDialog from "./components/KillSwitchDialog";
 import TradingBotPanel from "./components/TradingBotPanel";
 import XPostsPanel from "./components/XPostsPanel";
-import InfoPanel from "./components/InfoPanel";
+import InfoPanel, { INFO_SECTIONS } from "./components/InfoPanel";
 import ServerPanel from "./components/ServerPanel";
 import StockDetailPanel from "./components/StockDetailPanel";
 import BackToTop from "./components/BackToTop";
+import ErrorBoundary from "./components/ErrorBoundary";
 import Tour from "./components/Tour";
 import { TOURS } from "./lib/tours";
 import { alertRoute } from "./lib/alertMeta";
@@ -52,7 +54,17 @@ import { AnimatePresence, motion } from "motion/react";
 import { leaveStock, navigateTo, openTickerTab } from "./lib/nav";
 import { DEFAULT_VIEW, TITLES } from "./lib/routes";
 import { prefersReducedMotion } from "./lib/motionConfig";
+import { scrollToSection } from "./lib/sections";
 import styles from "./App.module.css";
+
+// The Overview's panels, for its phone SectionIndex: [view key, chip label,
+// the panel's element id where it differs from the key].
+const OVERVIEW_SECTIONS = [
+  ["boom-score", "Boom Score"], ["suggestions", "Ideas"], ["contracts", "Contracts"], ["signals", "Signals"],
+  ["seasonality", "Seasonality"], ["fear-greed", "Fear & Greed"], ["yield-curve", "Yield curve"],
+  ["social", "WSB"], ["congress", "Congress"], ["investors", "13F"], ["short", "Short", "short-interest"],
+  ["analyst", "Analysts"], ["fundamentals", "Fundamentals"],
+].map(([key, label, id = key]) => ({ key, label, id }));
 
 /**
  * view key -> renderer. Replaces a 25-branch `{view === "x" && <Panel/>}` chain.
@@ -120,6 +132,10 @@ const VIEWS = {
   // Retained but no longer in navigation (reachable by URL or from code).
   overview: (p) => (
     <>
+      <SectionIndex
+        sections={OVERVIEW_SECTIONS}
+        onJump={(id) => p.openSection(OVERVIEW_SECTIONS.find((s) => s.id === id).key)}
+      />
       <BoomScorePanel data={p.boomScores} loading={p.loading} busy={p.busy} onRefresh={p.refresh} compact onViewAll={() => p.navigate("boom-score")} collapsible collapsed={p.isCollapsed("boom-score")} onToggleCollapse={() => p.toggleCollapsed("boom-score")} />
       <SuggestionsPanel data={p.suggestions} loading={p.loading} busy={p.busy} onRefresh={p.refresh} onAddWatch={p.addWatch} compact onViewAll={() => p.navigate("suggestions")} collapsible collapsed={p.isCollapsed("suggestions")} onToggleCollapse={() => p.toggleCollapsed("suggestions")} />
       <StatGrid contracts={p.contracts} sources={p.sources} loading={p.loading} />
@@ -176,21 +192,19 @@ export default function App({ auth }) {
   }, [route]);
 
   const navigate = useCallback((v) => navigateTo({ kind: "view", view: v }), []);
+  const infoSections = useCollapsedSections(INFO_SECTIONS);
 
-  // Open the Info page scrolled to its data-sources section (from the failed-
-  // source strip). The panel mounts on navigate, so scroll on the next frame.
+  // Open the Info page scrolled to its data-sources section (from the top
+  // bar's SourceHealth), unfolded on a phone. The panel mounts on navigate,
+  // so scroll on the next frame.
   const openSourceDetails = () => {
     if (auth?.user?.is_admin) {
       navigate("server");
       return;
     }
+    infoSections.setCollapsed(["info-sources"], false);
     navigate("info");
-    setTimeout(() => {
-      document.getElementById("info-sources")?.scrollIntoView({
-        behavior: prefersReducedMotion() ? "auto" : "smooth",
-        block: "start",
-      });
-    }, 80);
+    setTimeout(() => scrollToSection("info-sources"), 80);
   };
   // Guided tour: which view's tour is currently running (null = none).
   const [tourView, setTourView] = useState(null);
@@ -215,16 +229,21 @@ export default function App({ auth }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Overview collapse/focus plumbing (Overview is no longer in nav but kept in code).
+  // Overview collapse/focus plumbing (Overview is no longer in nav but kept in
+  // code). On a phone a panel never toggled starts folded, Boom Score aside.
   const [focusKey, setFocusKey] = useState("boom-score");
+  const overviewSections = useCollapsedSections("", ["boom-score"], "collapsed");
   const isCollapsed = (key) =>
-    settings.focusMode ? key !== focusKey : !!settings.collapsed[key];
+    settings.focusMode ? key !== focusKey : overviewSections.isCollapsed(key);
   const toggleCollapsed = (key) => {
     if (settings.focusMode) {
       setFocusKey((prev) => (prev === key ? null : key));
     } else {
-      setSetting("collapsed", { ...settings.collapsed, [key]: !settings.collapsed[key] });
+      overviewSections.setCollapsed([key], !isCollapsed(key));
     }
+  };
+  const openSection = (key) => {
+    if (isCollapsed(key)) toggleCollapsed(key);
   };
 
   // Only what App itself renders (chrome, banners, the detail overlay). Panel
@@ -292,7 +311,7 @@ export default function App({ auth }) {
     quotesByTicker, marketStatus,
     settings, setSetting, navigate, appSettingsApi,
     user: auth?.user, theme, setTheme, themes,
-    isCollapsed, toggleCollapsed,
+    isCollapsed, toggleCollapsed, openSection,
   };
 
   const commandItems = [
@@ -355,6 +374,7 @@ export default function App({ auth }) {
             onNavigate={navigate}
             hasTour={Boolean(TOURS[view]) && !detailTicker}
             onStartTour={() => setTourView(view)}
+            onOpenSourceDetails={openSourceDetails}
           />
           <LiveTicker quotes={quotes} asOf={asOf} marketStatus={marketStatus} marketStatuses={marketStatuses} />
         </div>
@@ -369,7 +389,6 @@ export default function App({ auth }) {
             )}
 
             {!detailTicker && <RiskBanner />}
-            {!detailTicker && <SourceStatus sources={sources} onOpenDetails={openSourceDetails} />}
 
             <AnimatePresence mode="wait" initial={false}>
             {detailTicker ? (
@@ -380,15 +399,17 @@ export default function App({ auth }) {
                 exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, y: 10 }}
                 transition={prefersReducedMotion() ? { duration: 0 } : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
               >
-                <StockDetailPanel
-                  ticker={detailTicker}
-                  onBack={closeDetail}
-                  watchlist={watchlist}
-                  onAddWatch={addWatch}
-                  held={Boolean(portfolio?.some((h) => h.ticker === detailTicker))}
-                  // From /stock/X?alert=<dedup_key>: which alert brought you here.
-                  focusAlertKey={route.kind === "stock" ? route.alertKey : null}
-                />
+                <ErrorBoundary label={`${detailTicker} analysis`} resetKeys={[detailTicker]}>
+                  <StockDetailPanel
+                    ticker={detailTicker}
+                    onBack={closeDetail}
+                    watchlist={watchlist}
+                    onAddWatch={addWatch}
+                    held={Boolean(portfolio?.some((h) => h.ticker === detailTicker))}
+                    // From /stock/X?alert=<dedup_key>: which alert brought you here.
+                    focusAlertKey={route.kind === "stock" ? route.alertKey : null}
+                  />
+                </ErrorBoundary>
               </motion.div>
             ) : (
               <motion.div
@@ -398,7 +419,9 @@ export default function App({ auth }) {
                 exit={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, y: 10 }}
                 transition={prefersReducedMotion() ? { duration: 0 } : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
               >
-            {(VIEWS[view] || VIEWS[DEFAULT_VIEW])(viewProps)}
+            <ErrorBoundary label={TITLES[view]} resetKeys={[view]}>
+              {(VIEWS[view] || VIEWS[DEFAULT_VIEW])(viewProps)}
+            </ErrorBoundary>
               </motion.div>
             )}
             </AnimatePresence>

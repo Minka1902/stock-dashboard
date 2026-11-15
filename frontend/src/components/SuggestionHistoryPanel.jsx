@@ -3,16 +3,18 @@ import { animate } from "animejs";
 import { AnimatePresence, motion } from "motion/react";
 import BacktestPanels from "./BacktestPanels";
 import EmptyState from "./EmptyState";
+import PanelInfo from "./PanelInfo";
 import TickerLabel from "./TickerLabel";
 import { getSuggestionHistory } from "../api";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { openTickerTab } from "../lib/nav";
-import { DAY_NAMES, monthGrid } from "../lib/calendarGrid";
+import { DAY_NAMES, monthGrid, monthLabel } from "../lib/calendarGrid";
 import { outcomeTone, pctLabel } from "../lib/suggestionHistory";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./SuggestionHistoryPanel.module.css";
 import Tooltip from "./Tooltip";
 
-const MONTH_FMT = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
+const BLURB = "What was suggested for your watched and held stocks, and what the stock did afterwards.";
 
 /** A number that counts up to its value — animejs, reduced-motion aware. */
 function Tally({ value, className }) {
@@ -34,6 +36,7 @@ function Tally({ value, className }) {
 }
 
 export default function SuggestionHistoryPanel({ compact = false, ticker = null }) {
+  const phone = useMediaQuery(PHONE);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [cursor, setCursor] = useState(() => {
@@ -69,7 +72,7 @@ export default function SuggestionHistoryPanel({ compact = false, ticker = null 
   }, [entries]);
 
   const cells = monthGrid(cursor.year, cursor.month);
-  const monthLabel = MONTH_FMT.format(new Date(cursor.year, cursor.month, 1));
+  const month = monthLabel(cursor.year, cursor.month);
   const step = (delta) => setCursor((c) => {
     const d = new Date(c.year, c.month + delta, 1);
     return { year: d.getFullYear(), month: d.getMonth() };
@@ -91,11 +94,8 @@ export default function SuggestionHistoryPanel({ compact = false, ticker = null 
       {!compact && (
         <header className={styles.head}>
           <div>
-            <h2 className={styles.title}>Suggestion history</h2>
-            <p className={styles.subtitle}>
-              What was suggested for your watched and held stocks, and what the
-              stock did afterwards.
-            </p>
+            <h2 className={styles.title}>Suggestion history<PanelInfo label="Suggestion history" blurb={BLURB} /></h2>
+            <p className={styles.subtitle}>{BLURB}</p>
           </div>
           {entries.length > 0 && (
             <div className={styles.tallies}>
@@ -130,7 +130,7 @@ export default function SuggestionHistoryPanel({ compact = false, ticker = null 
         <>
           <div className={styles.monthBar}>
             <Tooltip content="Previous month"><button className={styles.navBtn} onClick={() => step(-1)} aria-label="Previous month">‹</button></Tooltip>
-            <span className={styles.monthLabel}>{monthLabel}</span>
+            <span className={styles.monthLabel}>{monthLabel(cursor.year, cursor.month, phone)}</span>
             <Tooltip content="Next month"><button className={styles.navBtn} onClick={() => step(1)} aria-label="Next month">›</button></Tooltip>
             <span className={styles.legend}>
               <span className={styles.dot} data-tone="up" /> up
@@ -140,7 +140,7 @@ export default function SuggestionHistoryPanel({ compact = false, ticker = null 
             </span>
           </div>
 
-          <div className={styles.grid} role="grid" aria-label={`Suggestions in ${monthLabel}`}>
+          <div className={styles.grid} role="grid" aria-label={`Suggestions in ${month}`}>
             {DAY_NAMES.map((d) => (
               <span key={d} className={styles.dayName}>{d}</span>
             ))}

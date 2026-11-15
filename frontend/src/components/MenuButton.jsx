@@ -24,7 +24,21 @@ export default function MenuButton({
   const menuRef = useRef(null);
   const menuId = useId();
 
-  const close = useCallback(() => setOpen(false), []);
+  const [closes, setCloses] = useState(0);
+
+  const close = useCallback(() => {
+    setOpen(false);
+    setCloses((n) => n + 1);
+  }, []);
+
+  // Closing from an item drops focus with the item; hand it back to the
+  // trigger (as Escape does), so a keyboard or screen-reader user lands where
+  // they were and hears the trigger's new name (a picker's new value). Not
+  // when the item moved focus on purpose (a dialog it opened).
+  useEffect(() => {
+    const active = document.activeElement;
+    if (closes && (!active || active === document.body)) wrapRef.current?.querySelector("button")?.focus();
+  }, [closes]);
 
   useEffect(() => {
     if (!open) return undefined;

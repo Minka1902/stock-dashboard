@@ -1,7 +1,7 @@
 import { useState } from "react";
 import Button from "./Button";
+import DataTable from "./DataTable";
 import OrderTicket from "./OrderTicket";
-import ScrollHint from "./ScrollHint";
 import { useBroker } from "../hooks/useBroker";
 import { formatMoney, formatRelativeTime } from "../lib/format";
 import styles from "./BrokerTab.module.css";
@@ -86,17 +86,19 @@ export default function BrokerTab() {
       <section className={styles.section} aria-labelledby="broker-positions">
         <h3 id="broker-positions" className={styles.title}>Positions</h3>
         {data.positions.length === 0 ? <p className={styles.faint}>None.</p> : (
-          <ScrollHint className={styles.wrap}>
-            <table className={styles.table}>
-              <thead><tr><th>Ticker</th><th className={styles.num}>Shares</th><th className={styles.num}>Avg cost</th><th className={styles.num}>Price</th></tr></thead>
-              <tbody>
-                {data.positions.map((p) => (
-                  <tr key={p.ticker}><td className={styles.ticker}>{p.ticker}</td><td className={styles.num}>{+p.shares.toFixed(4)}</td>
-                    <td className={styles.num}>{m(p.avg_cost)}</td><td className={styles.num}>{p.price == null ? "—" : m(p.price)}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </ScrollHint>
+          <DataTable
+            dense
+            rows={data.positions}
+            rowKey={(p) => p.ticker}
+            columns={[
+              { key: "ticker", label: "Ticker", cellClassName: styles.ticker, phone: "title", render: (p) => p.ticker },
+              { key: "shares", label: "Shares", className: styles.num, phone: "subtitle",
+                render: (p) => +p.shares.toFixed(4), phoneRender: (p) => `${+p.shares.toFixed(4)} sh` },
+              { key: "cost", label: "Avg cost", className: styles.num, render: (p) => m(p.avg_cost) },
+              { key: "price", label: "Price", className: styles.num, phone: "value",
+                render: (p) => (p.price == null ? "—" : m(p.price)) },
+            ]}
+          />
         )}
       </section>
 

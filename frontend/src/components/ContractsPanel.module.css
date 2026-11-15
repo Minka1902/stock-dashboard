@@ -11,19 +11,19 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s-3);
-  padding: var(--s-5);
+  padding: var(--s-5) var(--gutter, var(--s-5));
   border-bottom: 1px solid var(--border);
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 600;
 }
 
 .subtitle {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 
 .tableWrap {
@@ -33,7 +33,7 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: var(--fs-13-5);
 }
 
 .table thead th.amountCell {
@@ -44,17 +44,17 @@
   z-index: var(--z-sticky);
   top: 0;
   text-align: left;
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--text-faint);
   background: var(--surface-2);
-  padding: 10px var(--s-5);
+  padding: 10px var(--gutter, var(--s-5));
   white-space: nowrap;
 }
 
 .table tbody td {
-  padding: 12px var(--s-5);
+  padding: 12px var(--gutter, var(--s-5));
   border-top: 1px solid var(--border);
   vertical-align: middle;
 }
@@ -87,7 +87,7 @@
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-12);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -111,7 +111,7 @@
 
 .award {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-faint);
   max-width: 200px;
   overflow: hidden;
@@ -126,7 +126,7 @@
   align-items: center;
   text-align: center;
   gap: 6px;
-  padding: 56px var(--s-5);
+  padding: 56px var(--gutter, var(--s-5));
 }
 
 .emptyIcon {
@@ -143,12 +143,12 @@
 .emptyTitle {
   font-weight: 600;
   color: var(--text);
-  font-size: 15px;
+  font-size: var(--fs-15);
 }
 
 .emptyText {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 
 .emptyBtn {
@@ -164,4 +164,9 @@
 .emptyBtn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* Phone: the blurb is behind the title's info control (PanelInfo). */
+@media (max-width: 640px) {
+  .subtitle { display: none; }
 }

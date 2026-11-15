@@ -1,9 +1,9 @@
 .body {
-  font-size: 13.5px;
+  font-size: var(--fs-13-5);
   line-height: 1.55;
   color: var(--text-muted);
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
 }
-.error { color: var(--negative); font-size: 12.5px; }
+.error { color: var(--negative); font-size: var(--fs-12-5); }

@@ -196,11 +196,19 @@ These are set by the installer and must **not** be duplicated in `service.env`:
 
 ## Headless browser (margin debt)
 
-FINRA's Cloudflare front refuses plain HTTP clients (the Query API answers 401,
-the statistics page 403), so the `margin_debt` source's last tier loads the page
-in a real headless Chromium via Playwright and downloads the workbook through
-the same browser context. It runs weekly, so it costs one Chromium launch a
-week, about 15 seconds.
+FINRA's Cloudflare front answers plain HTTP clients with a 403 challenge (the
+statistics page and the workbook alike), so the `margin_debt` source's last tier
+loads the page in a real headless Chromium via Playwright and fetches the
+workbook from inside that page. It only goes out when FINRA can have published
+something new (a month's figure appears in the third week of the next month);
+the rest of the time the run is `deferred: up to date through YYYY-MM`. So it
+costs one or two Chromium launches a month, a few seconds each.
+
+If every tier fails anyway, download `margin-statistics.xlsx` from FINRA's
+margin statistics page in your own browser and use **Import file** on the
+`margin_debt` row of the Server page. The import sticks: the next scheduled run
+defers instead of failing, until the next release is due. **Run now** on the
+Scheduler, or `?force=1` on a refresh, always asks FINRA.
 
 Playwright's default browser cache is `%LOCALAPPDATA%\ms-playwright` of
 whoever ran `playwright install`, and **LocalSystem never looks there**. So
@@ -361,9 +369,9 @@ nssm set SignalDashboard ObjectName "NT AUTHORITY\LocalService"
 icacls C:\ProgramData\SignalDashboard /grant "NT AUTHORITY\LocalService:(OI)(CI)M"
 ```
 
-The margin-debt tier adds to this. Once a week it runs a headless Chromium that
-executes finra.org's JavaScript under the service account, and Playwright launches
-Chromium without its sandbox by default. That's one more reason to prefer
+The margin-debt tier adds to this. A few times a month it runs a headless Chromium
+that executes finra.org's JavaScript under the service account, and Playwright
+launches Chromium without its sandbox by default. That's one more reason to prefer
 `LocalService`. The browser directory is under the same data root, so the grant
 above already covers it.
 

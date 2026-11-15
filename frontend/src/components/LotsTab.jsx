@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Button from "./Button";
 import Field from "./Field";
 import HarvestList from "./HarvestList";
 import RebalancePlanner from "./RebalancePlanner";
@@ -6,6 +7,7 @@ import SaleCheck from "./SaleCheck";
 import Segmented from "./Segmented";
 import TaxLotsTable from "./TaxLotsTable";
 import { useLots } from "../hooks/useLots";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { formatMoney } from "../lib/format";
 import styles from "./LotsTab.module.css";
 
@@ -17,15 +19,22 @@ const ACCOUNTS = [
 /**
  * The Lots & rebalance tab of the Trading Bot page: an account's tax lots,
  * realized gains this year, tax-loss candidates, a sale check, and the plan
- * back to its target weights. Not tax advice.
+ * back to its target weights. Not tax advice. On a phone the sale check
+ * and the rebalance targets open as sheets.
  */
 export default function LotsTab() {
+  const phone = useMediaQuery(PHONE);
   const [account, setAccount] = useState("manual");
   const [minLoss, setMinLoss] = useState(100);
   const [preset, setPreset] = useState(null);
+  const [saleOpen, setSaleOpen] = useState(false);
   const { data, error, reload } = useLots(account, minLoss);
 
   const currencyOf = (t) => data?.positions.find((p) => p.ticker === t)?.currency || "USD";
+  const checkSale = (p) => {
+    setPreset(p);
+    setSaleOpen(true);
+  };
 
   return (
     <div className={styles.root}>
@@ -54,23 +63,27 @@ export default function LotsTab() {
             <div className={styles.head}>
               <h3 id="harvest-title" className={styles.title}>Tax-loss candidates</h3>
               <Field label="Losses from" suffix="ccy" inline>
-                {(a) => <input {...a} type="number" min="0" step="10" size={6} value={minLoss}
+                {(a) => <input {...a} type="number" min="0" step="10" size={6} inputMode="decimal" value={minLoss}
                                onChange={(e) => setMinLoss(Number(e.target.value) || 0)} />}
               </Field>
             </div>
             <p className={styles.faint}>Wash sales are checked across {data.wash_scope}.</p>
-            <HarvestList candidates={data.harvest} currencyOf={currencyOf} minLoss={minLoss} onCheck={setPreset} />
+            <HarvestList candidates={data.harvest} currencyOf={currencyOf} minLoss={minLoss} onCheck={checkSale} />
           </section>
           <section className={styles.section} aria-labelledby="sale-title">
             <h3 id="sale-title" className={styles.title}>What would a sale realize?</h3>
-            <SaleCheck key={`${account}-${preset?.ticker}-${preset?.qty}`} account={account} positions={data.positions} preset={preset} />
+            {phone && data.positions.length > 0 && (
+              <Button size="sm" className={styles.open} onClick={() => checkSale(null)}>Check a sale</Button>
+            )}
+            <SaleCheck key={`${account}-${preset?.ticker}-${preset?.qty}`} account={account} positions={data.positions}
+                       preset={preset} sheet={phone} open={saleOpen} onClose={() => setSaleOpen(false)} />
           </section>
           <p className={styles.faint}>{data.note}</p>
         </>
       )}
       <section className={styles.section} aria-labelledby="rebalance-title">
         <h3 id="rebalance-title" className={styles.title}>Rebalance to targets</h3>
-        <RebalancePlanner account={account} onPlaced={reload} />
+        <RebalancePlanner account={account} onPlaced={reload} sheet={phone} />
       </section>
     </div>
   );

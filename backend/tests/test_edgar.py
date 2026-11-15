@@ -1,3 +1,4 @@
+from app import db
 from app.sources import edgar
 
 ATOM = """<?xml version="1.0"?>
@@ -72,6 +73,26 @@ def test_parse_form4_xml_aggregates_transaction():
     assert t.shares == 4728.0
     assert round(t.value) == round(4728 * 48.058)
     assert t.transaction_date == "2026-06-18"
+
+
+def test_parse_form4_xml_decodes_entities_once():
+    xml = (FORM4_XML.replace("Grody Howard B.", "O&apos;Neil &amp; Co")
+           .replace("Exec VP-Leasing", "Chairman, Pres. &amp; CEO &amp;amp; more"))
+    t = edgar.parse_form4_xml(xml, "ACC-1", "https://sec.gov/x-index.htm", "2026-06-22T09:11:58-04:00")
+    assert t.company == "CBL & ASSOCIATES PROPERTIES INC"
+    assert t.owner == "O'Neil & Co"
+    assert t.role == "Chairman, Pres. & CEO &amp; more"
+
+
+def test_init_schema_decodes_insider_rows_stored_before_the_fix(conn):
+    conn.execute(
+        "INSERT INTO insider_trades VALUES ('A1', 'PHIO', 'F&amp;M BANK', 'Bitterman Robert J', "
+        "'Chairman, Pres. &amp; CEO', '2026-11-09', 'Buy', 1, 1, 'u', 't')")
+    conn.commit()
+    db.init_schema(conn)
+    db.init_schema(conn)
+    row = conn.execute("SELECT company, owner, role FROM insider_trades WHERE accession = 'A1'").fetchone()
+    assert tuple(row) == ("F&M BANK", "Bitterman Robert J", "Chairman, Pres. & CEO")
 
 
 def test_parse_form4_xml_returns_none_without_transactions():

@@ -1,0 +1,88 @@
+/* The default table: sentence-case captions, roomy rows, zebra striping.
+   `dense` is the terminal variant: uppercase mono captions, tight rows. A
+   table that passes `classes` keeps its own module's look instead. */
+.tableWrap { overflow-x: auto; }
+.wrap { overflow-x: auto; }
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-13-5);
+}
+.table thead th {
+  text-align: left;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-faint);
+  background: var(--surface-2);
+  padding: 10px var(--gutter, var(--s-5));
+  white-space: nowrap;
+}
+.table thead th.num { text-align: right; }
+.table[data-sticky="yes"] thead th {
+  position: sticky;
+  z-index: var(--z-sticky);
+  top: 0;
+}
+.table tbody td {
+  padding: 11px var(--gutter, var(--s-5));
+  border-top: 1px solid var(--border);
+  vertical-align: middle;
+}
+.table tbody tr:nth-child(even) {
+  background: color-mix(in oklch, var(--surface-2) 45%, transparent);
+}
+.table tbody tr:hover { background: var(--surface-hover); }
+.table tr[data-clickable="yes"] { cursor: pointer; }
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.table[data-dense="yes"] {
+  font-family: var(--mono);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+}
+.table[data-dense="yes"] thead th {
+  font-size: var(--fs-10);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 6px var(--s-3);
+}
+.table[data-dense="yes"] tbody td {
+  padding: 7px var(--s-3);
+  border-top-color: var(--grid);
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+.table[data-dense="yes"] tbody tr:nth-child(even),
+.table[data-dense="yes"] tbody tr:hover { background: none; }
+
+.groupRow td {
+  background: var(--surface-2);
+  padding-block: 6px;
+}
+.groupLabel {
+  font-family: var(--mono);
+  font-size: var(--fs-10-5);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.menuCell { text-align: right; width: 1%; }
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

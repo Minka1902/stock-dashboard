@@ -1,6 +1,7 @@
-import { useId, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { motion } from "motion/react";
 import { prefersReducedMotion } from "../lib/motionConfig";
+import ScrollHint from "./ScrollHint";
 import Tooltip from "./Tooltip";
 import styles from "./Segmented.module.css";
 
@@ -15,13 +16,30 @@ import styles from "./Segmented.module.css";
  * The indicator is one element shared across tabs via layoutId, so Motion
  * animates it between positions instead of cross-fading a per-tab background.
  *
+ * `overflow="scroll"`: on a phone (640px and below) the strip stays one row
+ * that scrolls sideways behind a ScrollHint fade, with the selected option
+ * kept in view; wider, it wraps as usual.
+ *
  * @param options [{ value, label, title?, badge? }]
  */
 export default function Segmented({
-  options, value, onChange, ariaLabel, className = "",
+  options, value, onChange, ariaLabel, className = "", overflow = "wrap",
 }) {
   const groupId = useId();
   const ref = useRef(null);
+  const scrolls = overflow === "scroll";
+
+  useEffect(() => {
+    const strip = ref.current;
+    const scroller = strip?.parentElement;
+    const tab = strip?.querySelector('[aria-selected="true"]');
+    if (!scrolls || !scroller || !tab || scroller.scrollWidth <= scroller.clientWidth) return;
+    const s = scroller.getBoundingClientRect();
+    const t = tab.getBoundingClientRect();
+    const pad = 24;
+    if (t.left < s.left + pad) scroller.scrollLeft -= s.left + pad - t.left;
+    else if (t.right > s.right - pad) scroller.scrollLeft += t.right - (s.right - pad);
+  }, [scrolls, value]);
 
   const move = (delta) => {
     const idx = options.findIndex((o) => o.value === value);
@@ -42,12 +60,13 @@ export default function Segmented({
     if (e.key === "End") { e.preventDefault(); onChange(options[options.length - 1].value); }
   };
 
-  return (
+  const strip = (
     <div
       ref={ref}
       role="tablist"
       aria-label={ariaLabel}
       className={`${styles.group} ${className}`}
+      data-overflow={overflow}
       onKeyDown={onKeyDown}
     >
       {options.map((o) => {
@@ -81,4 +100,5 @@ export default function Segmented({
       })}
     </div>
   );
+  return scrolls ? <ScrollHint className={styles.scroller}>{strip}</ScrollHint> : strip;
 }

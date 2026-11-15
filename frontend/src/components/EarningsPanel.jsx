@@ -1,15 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
+import Dialog from "./Dialog";
 import Icon from "./Icon";
+import PanelInfo from "./PanelInfo";
 import Skeleton from "./Skeleton";
 import TickerLabel from "./TickerLabel";
 import { getEarnings } from "../api";
-import { DAY_NAMES, monthGrid } from "../lib/calendarGrid";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
+import { DAY_NAMES, monthGrid, monthLabel } from "../lib/calendarGrid";
 import { openTickerTab } from "../lib/nav";
 import styles from "./EarningsPanel.module.css";
 import Tooltip from "./Tooltip";
 import Term from "./Term";
 
-const MONTH_FMT = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
+const BLURB = "Who reports and when — your holdings and watchlist, plus the large caps that move the market.";
+const CELL_TICKERS = 4;
+const KIND_LABEL = { held: "held", watched: "watched", major: "large cap" };
 const TIMING_LABEL = { bmo: "before open", amc: "after close", intraday: "during hours" };
 
 function iso(d) {
@@ -23,7 +28,32 @@ function rank(e) {
   return 2;
 }
 
+function kindOf(e) {
+  if (e.held) return "held";
+  return e.watched ? "watched" : "major";
+}
+
+/** A day's reporters as chips, the first `max` of them and a "+N" for the rest. */
+function tickerChips(list, max = list.length) {
+  return (
+    <span className={styles.cellTickers}>
+      {list.slice(0, max).map((e) => (
+        <span
+          key={e.ticker}
+          className={styles.chipTicker}
+          data-kind={kindOf(e)}
+          data-estimate={e.is_estimate ? "yes" : "no"}
+        >
+          {e.ticker}
+        </span>
+      ))}
+      {list.length > max && <span className={styles.more}>+{list.length - max}</span>}
+    </span>
+  );
+}
+
 export default function EarningsPanel() {
+  const phone = useMediaQuery(PHONE);
   const [cursor, setCursor] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
@@ -68,6 +98,37 @@ export default function EarningsPanel() {
   const today = iso(new Date());
   const dayRows = openDay ? byDay.get(openDay) || [] : [];
   const estimatedCount = (rows || []).filter((e) => e.is_estimate).length;
+  // A phone lists the days that have reports (weekday from the grid column)
+  // instead of a seven-column month.
+  const agenda = cells
+    .map((cell, i) => cell && { ...cell, weekday: DAY_NAMES[i % 7], list: byDay.get(cell.iso) || [] })
+    .filter((d) => d?.list.length);
+  const closeDay = () => setOpenDay(null);
+  const detailList = (
+    <ul className={styles.detailList}>
+      {dayRows.map((e) => (
+        <li key={e.ticker} className={styles.detailRow}>
+          <Tooltip content={`Open ${e.ticker} analysis in a new tab`}>
+            <button
+              type="button"
+              className={styles.symbolBtn}
+              onClick={() => openTickerTab(e.ticker)}
+            >
+              <TickerLabel ticker={e.ticker} className={styles.symbol} />
+            </button>
+          </Tooltip>
+          <span className={styles.kind} data-kind={kindOf(e)}>{KIND_LABEL[kindOf(e)]}</span>
+          <span className={styles.timing}>{TIMING_LABEL[e.timing] || "time not given"}</span>
+          <span className={styles.est} data-estimate={e.is_estimate ? "yes" : "no"}>
+            {e.is_estimate ? "date estimated" : "date confirmed"}
+          </span>
+          <span className={styles.eps}>
+            {e.eps_estimate != null && <Term term="eps">est. EPS {e.eps_estimate.toFixed(2)}</Term>}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
 
   if (error) {
     return (
@@ -79,13 +140,10 @@ export default function EarningsPanel() {
 
   return (
     <section className={styles.panel} id="earnings">
-      <header className={styles.head}>
+      <header className={styles.head} data-head="inline">
         <div>
-          <h2 className={styles.title}>Earnings</h2>
-          <p className={styles.subtitle}>
-            Who reports and when — your holdings and watchlist, plus the large caps
-            that move the market.
-          </p>
+          <h2 className={styles.title}>Earnings<PanelInfo label="Earnings" blurb={BLURB} /></h2>
+          <p className={styles.subtitle}>{BLURB}</p>
         </div>
         <div className={styles.scope} role="group" aria-label="Scope">
           {[["all", "Everyone"], ["mine", "Mine only"]].map(([v, label]) => (
@@ -104,24 +162,46 @@ export default function EarningsPanel() {
 
       <div className={styles.monthBar}>
         <Tooltip content="Previous month"><button className={styles.navBtn} onClick={() => step(-1)} aria-label="Previous month">‹</button></Tooltip>
-        <span className={styles.monthLabel}>{MONTH_FMT.format(new Date(cursor.year, cursor.month, 1))}</span>
+        <span className={styles.monthLabel}>{monthLabel(cursor.year, cursor.month, phone)}</span>
         <Tooltip content="Next month"><button className={styles.navBtn} onClick={() => step(1)} aria-label="Next month">›</button></Tooltip>
         <span className={styles.legend}>
           <span className={styles.chip} data-kind="held" /> held
           <span className={styles.chip} data-kind="watched" /> watched
           <span className={styles.chip} data-kind="major" /> large cap
           {/* Said out loud: a projected date is not a confirmed one. */}
-          {estimatedCount > 0 && (
+          {estimatedCount > 0 && (phone ? (
+            <span className={styles.estNote}>· {estimatedCount} estimated (dashed)</span>
+          ) : (
             <span className={styles.estNote}>
               · {estimatedCount} date{estimatedCount === 1 ? "" : "s"} estimated by the data
               provider, not confirmed by the company (shown dashed)
             </span>
-          )}
+          ))}
         </span>
       </div>
 
       {rows === null ? (
         <div className={styles.gridPad}><Skeleton w="100%" h="320px" /></div>
+      ) : phone ? (
+        agenda.length > 0 && (
+          <ul className={styles.agenda} aria-label="Earnings by date">
+            {agenda.map((d) => (
+              <li key={d.iso}>
+                <button
+                  type="button"
+                  className={styles.day}
+                  data-today={d.iso === today ? "yes" : "no"}
+                  data-open={openDay === d.iso ? "yes" : "no"}
+                  onClick={() => setOpenDay(d.iso)}
+                  aria-label={`${d.iso}: ${d.list.length} report${d.list.length === 1 ? "" : "s"}`}
+                >
+                  <span className={styles.dayDate}>{d.weekday} {d.day}</span>
+                  {tickerChips(d.list)}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
       ) : (
         <div className={styles.grid} role="grid" aria-label="Earnings calendar">
           {DAY_NAMES.map((d) => <span key={d} className={styles.dayName}>{d}</span>)}
@@ -140,55 +220,22 @@ export default function EarningsPanel() {
                 aria-label={`${cell.iso}: ${list.length} report${list.length === 1 ? "" : "s"}`}
               >
                 <span className={styles.cellDay}>{cell.day}</span>
-                <span className={styles.cellTickers}>
-                  {list.slice(0, 4).map((e) => (
-                    <span
-                      key={e.ticker}
-                      className={styles.chipTicker}
-                      data-kind={e.held ? "held" : e.watched ? "watched" : "major"}
-                      data-estimate={e.is_estimate ? "yes" : "no"}
-                    >
-                      {e.ticker}
-                    </span>
-                  ))}
-                  {list.length > 4 && <span className={styles.more}>+{list.length - 4}</span>}
-                </span>
+                {tickerChips(list, CELL_TICKERS)}
               </button>
             );
           })}
         </div>
       )}
 
-      {openDay && dayRows.length > 0 && (
+      {!phone && openDay && dayRows.length > 0 && (
         <div className={styles.detail}>
           <div className={styles.detailHead}>{openDay} · {dayRows.length} reporting</div>
-          <ul className={styles.detailList}>
-            {dayRows.map((e) => (
-              <li key={e.ticker} className={styles.detailRow}>
-                <Tooltip content={`Open ${e.ticker} analysis in a new tab`}>
-                  <button
-                    type="button"
-                    className={styles.symbolBtn}
-                    onClick={() => openTickerTab(e.ticker)}
-                  >
-                    <TickerLabel ticker={e.ticker} className={styles.symbol} />
-                  </button>
-                </Tooltip>
-                <span className={styles.kind} data-kind={e.held ? "held" : e.watched ? "watched" : "major"}>
-                  {e.held ? "held" : e.watched ? "watched" : "large cap"}
-                </span>
-                <span className={styles.timing}>{TIMING_LABEL[e.timing] || "time not given"}</span>
-                <span className={styles.est} data-estimate={e.is_estimate ? "yes" : "no"}>
-                  {e.is_estimate ? "date estimated" : "date confirmed"}
-                </span>
-                <span className={styles.eps}>
-                  {e.eps_estimate != null && <Term term="eps">est. EPS {e.eps_estimate.toFixed(2)}</Term>}
-                </span>
-              </li>
-            ))}
-          </ul>
+          {detailList}
         </div>
       )}
+      <Dialog open={phone && dayRows.length > 0} title={`${openDay} · ${dayRows.length} reporting`} onClose={closeDay}>
+        {detailList}
+      </Dialog>
 
       {rows !== null && rows.length === 0 && (
         <p className={styles.empty}>

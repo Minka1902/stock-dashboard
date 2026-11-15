@@ -26,10 +26,12 @@ function OperandPicker({ value, onChange, schema, allowValue, label }) {
     <span className={styles.operand}>
       <SelectMenu label={label} value={current} options={options} onChange={pick} className={styles.select} />
       {value.kind === "value" ? (
-        <input className={styles.num} type="number" step="any" aria-label={`${label} value`} value={value.value ?? ""}
+        <input className={styles.num} type="number" step="any" inputMode="decimal" enterKeyHint="done"
+               aria-label={`${label} value`} value={value.value ?? ""}
                onChange={(e) => onChange({ ...value, value: e.target.value === "" ? null : Number(e.target.value) })} />
       ) : ind?.bounds ? (
         <input className={styles.num} type="number" min={ind.bounds[0]} max={ind.bounds[1]} step="1"
+               inputMode="numeric" enterKeyHint="done"
                aria-label={`${label} period`} title="period (bars)" value={value.period ?? ""}
                onChange={(e) => onChange({ ...value, period: e.target.value === "" ? null : Number(e.target.value) })} />
       ) : null}

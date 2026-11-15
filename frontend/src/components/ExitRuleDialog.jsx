@@ -37,7 +37,7 @@ export default function ExitRuleDialog({ ticker, account = "manual", item = null
   }
 
   return (
-    <Dialog open size="md" caption="Exit rule · alerts only" title={`${ticker} exit rule`} onClose={onClose}>
+    <Dialog open form size="md" caption="Exit rule · alerts only" title={`${ticker} exit rule`} onClose={onClose}>
       {error ? (
         <p role="alert">{error}</p>
       ) : !loaded ? (

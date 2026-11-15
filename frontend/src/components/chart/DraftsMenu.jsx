@@ -77,7 +77,7 @@ function DraftDialog({ ticker, tfLabel, shapesCount, draft, onClose, onSubmit })
         </p>
         <label className={styles.field}>
           <span>Title <em aria-hidden="true">*</em></span>
-          <input ref={inputRef} value={title} maxLength={TITLE_MAX} required
+          <input ref={inputRef} value={title} maxLength={TITLE_MAX} required enterKeyHint="done"
                  onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Flag breakout plan" />
           <small>{trimmed.length}/{TITLE_MAX}</small>
         </label>

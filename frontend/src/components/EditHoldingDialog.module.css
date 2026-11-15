@@ -1,0 +1,12 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.pickers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+.pickers > * { width: 100%; }
+.error { color: var(--negative); font-size: var(--fs-12-5); }

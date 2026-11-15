@@ -9,5 +9,5 @@
   height: 30px;
   color: var(--text-faint);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
 }

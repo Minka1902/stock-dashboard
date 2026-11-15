@@ -108,6 +108,11 @@ export function marketForSymbol(ticker) {
   return "US";
 }
 
+/** Decimals a symbol's price is quoted in: 4 for a currency pair, else 2 (formatPrice's default). */
+export function priceDigits(ticker) {
+  return marketForSymbol(ticker) === "FX" ? 4 : 2;
+}
+
 // 1,234
 export function formatCount(n) {
   if (n == null || Number.isNaN(n)) return "—";

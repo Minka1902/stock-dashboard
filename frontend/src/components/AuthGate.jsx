@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from "react";
+import CopyButton from "./CopyButton";
 import { totpSetup, getOAuthProviders, getRegistrationMode, oauthStartUrl } from "../api";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import styles from "./AuthGate.module.css";
 
 const PROVIDER_LABEL = { github: "GitHub", google: "Google", facebook: "Facebook" };
+const SETUP_HINT = "Scan with Google or Microsoft Authenticator, then enter the 6-digit code it shows.";
+// On the phone the authenticator is usually on the same device, so the
+// otpauth link comes first and the QR is for a second screen.
+const SETUP_HINT_PHONE = "Add this account to Google or Microsoft Authenticator, then enter the 6-digit code it shows.";
 
 // Compact monochrome brand glyphs (currentColor).
 const PROVIDER_ICON = {
@@ -41,7 +47,9 @@ function CodeInput({ value, onChange, autoFocus }) {
       value={value}
       onChange={(e) => onChange(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
       inputMode="numeric"
+      pattern="[0-9]*"
       autoComplete="one-time-code"
+      enterKeyHint="go"
       placeholder="000000"
       aria-label="6-digit authenticator code"
       autoFocus={autoFocus}
@@ -96,18 +104,22 @@ function LoginRegister({ auth, busy, run }) {
         ))}
       </div>
       <Field label="Email" type="email" value={email} required autoComplete="email"
+             autoCapitalize="none" spellCheck={false} enterKeyHint="next"
              onChange={(e) => setEmail(e.target.value)} />
       <Field label="Password" type="password" value={password} required
              minLength={8} maxLength={128}
              autoComplete={mode === "login" ? "current-password" : "new-password"}
+             enterKeyHint={mode === "login" ? "go" : "next"}
              onChange={(e) => setPassword(e.target.value)} />
       {mode === "register" && (
         <Field label="Confirm password" type="password" value={confirm} required
-               autoComplete="new-password" onChange={(e) => setConfirm(e.target.value)} />
+               autoComplete="new-password" enterKeyHint={signup === "invite" ? "next" : "go"}
+               onChange={(e) => setConfirm(e.target.value)} />
       )}
       {mode === "register" && signup === "invite" && (
         <Field label="Invite code" type="text" value={inviteCode} required
-               autoComplete="off" onChange={(e) => setInviteCode(e.target.value)} />
+               autoComplete="off" autoCapitalize="none" spellCheck={false} enterKeyHint="go"
+               onChange={(e) => setInviteCode(e.target.value)} />
       )}
       <button className={styles.primary} disabled={busy}>
         {mode === "login" ? "Continue" : "Create account"}
@@ -155,7 +167,8 @@ function TotpChallenge({ auth, busy, run }) {
       <h2 className={styles.step}>Two-factor check</h2>
       {useRecovery ? (
         <Field label="Recovery code" value={recoveryCode} placeholder="xxxx-xxxx-xxxx"
-               required onChange={(e) => setRecoveryCode(e.target.value)} autoFocus />
+               required autoComplete="off" autoCapitalize="none" spellCheck={false} enterKeyHint="go"
+               onChange={(e) => setRecoveryCode(e.target.value)} autoFocus />
       ) : (
         <>
           <p className={styles.hint}>Enter the 6-digit code from your authenticator app.</p>
@@ -177,6 +190,9 @@ function TotpChallenge({ auth, busy, run }) {
 }
 
 function TotpSetup({ auth, busy, run }) {
+  const phone = useMediaQuery(PHONE);
+  const secretRef = useRef(null);
+  const codesRef = useRef(null);
   const [setup, setSetup] = useState(null);
   const [error, setError] = useState("");
   const [code, setCode] = useState("");
@@ -198,9 +214,10 @@ function TotpSetup({ auth, busy, run }) {
           Each code signs you in once if you lose your authenticator. They are
           shown only now — store them somewhere safe.
         </p>
-        <ul className={styles.codes}>
+        <ul ref={codesRef} className={styles.codes}>
           {recoveryCodes.map((c) => <li key={c}>{c}</li>)}
         </ul>
+        {phone && <CopyButton text={recoveryCodes.join("\n")} target={codesRef} label="Copy codes" />}
         <button className={styles.primary} onClick={auth.finishSetup}>
           I saved them — open the dashboard
         </button>
@@ -223,18 +240,24 @@ function TotpSetup({ auth, busy, run }) {
       {!setup && !error && <p className={styles.hint}>Preparing your QR code…</p>}
       {setup && (
         <>
-          <p className={styles.hint}>
-            Scan with Google or Microsoft Authenticator, then enter the 6-digit
-            code it shows.
-          </p>
+          <p className={styles.hint}>{phone ? SETUP_HINT_PHONE : SETUP_HINT}</p>
+          {phone && <a className={styles.appLink} href={setup.otpauth_uri}>Open in authenticator app</a>}
           {/* PNG comes from our own backend (segno-generated), not user content. */}
           <div className={styles.qr}>
             <img src={setup.qr_png} width={220} height={220} alt="Two-factor setup QR code" />
           </div>
-          <details className={styles.manual}>
-            <summary>Can't scan? Enter the key manually</summary>
-            <code className={styles.secret}>{setup.secret}</code>
-          </details>
+          {phone ? (
+            <div className={styles.key}>
+              <p className={styles.hint}>Or scan the code above from another screen, or type in this key:</p>
+              <code ref={secretRef} className={styles.secret}>{setup.secret.match(/.{1,4}/g).join(" ")}</code>
+              <CopyButton text={setup.secret} target={secretRef} label="Copy key" />
+            </div>
+          ) : (
+            <details className={styles.manual}>
+              <summary>Can't scan? Enter the key manually</summary>
+              <code className={styles.secret}>{setup.secret}</code>
+            </details>
+          )}
           <CodeInput value={code} onChange={setCode} />
           <button className={styles.primary} disabled={busy || code.length !== 6}>
             Activate

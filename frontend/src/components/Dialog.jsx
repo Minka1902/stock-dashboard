@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef } from "react";
-import { createPortal } from "react-dom";
-import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useId, useRef, useState } from "react";
+import ErrorBoundary from "./ErrorBoundary";
+import Sheet from "./Sheet";
 import Tooltip from "./Tooltip";
-import { prefersReducedMotion } from "../lib/motionConfig";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
+import { SheetFooterContext } from "../hooks/useSheetFooter";
 import styles from "./Dialog.module.css";
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -14,14 +15,21 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * `tone` tints the top rule ("caution" | "negative" | "accent") so a dialog
  * that changes something risky reads differently from a plain form.
  * `initialFocus` is a ref to focus on open (default: the first field).
+ * `form` marks a form sheet: on a phone it takes the full height, rows
+ * marked `data-fields` stack one field per row, and the footer (the
+ * `footer` prop, else whatever SheetActions puts there) is pinned at the
+ * bottom with its buttons sharing the width.
  */
 export default function Dialog({
   open, title, caption, onClose, children, footer, size = "md", tone,
-  initialFocus, closeOnBackdrop = true, className,
+  initialFocus, closeOnBackdrop = true, className, form = false,
 }) {
   const titleId = useId();
   const panelRef = useRef(null);
   const returnFocus = useRef(null);
+  const phone = useMediaQuery(PHONE);
+  const [slot, setSlot] = useState(null);
+  const sheetFooter = form && phone && !footer;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -54,50 +62,37 @@ export default function Dialog({
     };
   }, [open, onClose, initialFocus]);
 
-  const reduced = prefersReducedMotion();
-
-  return createPortal(
-    <AnimatePresence>
-      {open && (
-        <div className={styles.layer} key="dialog">
-          <motion.div
-            className={styles.backdrop}
-            onClick={closeOnBackdrop ? onClose : undefined}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: reduced ? 0 : 0.18 }}
-          />
-          <motion.div
-            ref={panelRef}
-            className={`${styles.panel} ${className || ""}`}
-            data-size={size}
-            data-tone={tone}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-            initial={reduced ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={reduced ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.98 }}
-            transition={reduced ? { duration: 0 } : { duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <header className={styles.head}>
-              <div>
-                {caption && <span className="caption">{caption}</span>}
-                <h2 id={titleId} className={styles.title}>{title}</h2>
-              </div>
-              <Tooltip side="left" content="Close" shortcut={["Esc"]}>
-                <button type="button" className={styles.close} onClick={onClose} aria-label="Close">
-                  ×
-                </button>
-              </Tooltip>
-            </header>
-            <div className={styles.body}>{children}</div>
-            {footer && <footer className={styles.foot}>{footer}</footer>}
-          </motion.div>
+  return (
+    <Sheet
+      open={open}
+      onDismiss={closeOnBackdrop ? onClose : undefined}
+      panelRef={panelRef}
+      className={`${styles.panel} ${className || ""}`}
+      data-size={size}
+      data-tone={tone}
+      data-form={form ? "" : undefined}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+    >
+      <header className={styles.head}>
+        <div>
+          {caption && <span className="caption">{caption}</span>}
+          <h2 id={titleId} className={styles.title}>{title}</h2>
         </div>
-      )}
-    </AnimatePresence>,
-    document.body,
+        <Tooltip side="left" content="Close" shortcut={["Esc"]}>
+          <button type="button" className={styles.close} onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </Tooltip>
+      </header>
+      <div className={styles.body}>
+        <ErrorBoundary compact label={typeof title === "string" ? title : undefined}>
+          <SheetFooterContext.Provider value={sheetFooter ? slot : null}>{children}</SheetFooterContext.Provider>
+        </ErrorBoundary>
+      </div>
+      {footer && <footer className={styles.foot}>{footer}</footer>}
+      {sheetFooter && <footer ref={setSlot} className={styles.foot} />}
+    </Sheet>
   );
 }

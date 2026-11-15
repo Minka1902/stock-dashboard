@@ -11,7 +11,7 @@
 }
 .label {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 600;
   letter-spacing: var(--caption-spacing);
   text-transform: uppercase;
@@ -33,22 +33,22 @@
   background: var(--surface-2);
   color: var(--text);
   font-family: var(--mono);
-  font-size: 13.5px;
+  font-size: var(--fs-13-5);
   font-variant-numeric: tabular-nums;
 }
 .input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-weak); }
 .field[data-invalid="yes"] .input { border-color: var(--negative); }
 .suffix {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-faint);
   white-space: nowrap;
 }
 .hint {
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-faint);
 }
 .error {
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--negative);
 }

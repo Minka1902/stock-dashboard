@@ -47,6 +47,7 @@ export default function StockAlerts({ alerts = [], ticker, focusKey = null }) {
             key={a.dedup_key}
             ref={focused ? focusRef : null}
             className={styles.item}
+            data-card
             data-read={a.read ? "yes" : "no"}
             data-focused={focused ? "yes" : undefined}
           >

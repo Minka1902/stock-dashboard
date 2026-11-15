@@ -7,7 +7,7 @@
 }
 
 .head {
-  padding: var(--s-5);
+  padding: var(--s-5) var(--gutter, var(--s-5));
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: flex-start;
@@ -16,14 +16,14 @@
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 600;
 }
 
 .subtitle {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 
 .spreadBadge {
@@ -31,7 +31,7 @@
   display: inline-block;
   padding: 4px 12px;
   border-radius: var(--r-pill);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   border: 1px solid var(--border);
@@ -51,13 +51,13 @@
 }
 
 .chartWrap {
-  padding: var(--s-4) var(--s-4) 0;
+  padding: var(--s-4) var(--gutter, var(--s-4)) 0;
 }
 
 .chips {
   display: flex;
   gap: var(--s-3);
-  padding: var(--s-4) var(--s-5);
+  padding: var(--s-4) var(--gutter, var(--s-5));
   flex-wrap: wrap;
 }
 
@@ -73,7 +73,7 @@
 }
 
 .chipLabel {
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -81,14 +81,14 @@
 }
 
 .chipValue {
-  font-size: 14px;
+  font-size: var(--fs-14);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
 .loadWrap {
-  padding: var(--s-4) var(--s-5);
+  padding: var(--s-4) var(--gutter, var(--s-5));
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
@@ -100,7 +100,7 @@
   align-items: center;
   text-align: center;
   gap: var(--s-2);
-  padding: 56px var(--s-5);
+  padding: 56px var(--gutter, var(--s-5));
 }
 
 .emptyIcon {
@@ -131,4 +131,15 @@
 .emptyBtn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* Phone: the blurb is behind the title's info control (PanelInfo) and the
+   spread stays beside the title; the 2/10/30-year yields and the date are
+   one ruled row of four. */
+@media (max-width: 640px) {
+  .subtitle { display: none; }
+  .head { align-items: center; }
+  .chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s-2); }
+  .chip { min-width: 0; padding: 0; border: 0; background: none; }
+  .chipValue { font-size: var(--fs-12-5); }
 }

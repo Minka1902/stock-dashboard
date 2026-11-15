@@ -26,9 +26,10 @@
   outline-offset: 3px;
 }
 
+/* Above the phone's bottom chrome (the tab bar, set in App.module.css), not on it. */
 @media (max-width: 640px) {
   .btn {
     right: var(--s-4);
-    bottom: var(--s-4);
+    bottom: calc(var(--bottom-chrome, 0px) + var(--s-4));
   }
 }

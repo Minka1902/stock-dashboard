@@ -12,11 +12,66 @@
  * active studies and the "signals, not predictions" line).
  */
 
-const HEADER_CSS_PX = 58;
 const PAD_CSS_PX = 14;
+// Header rows: the first baseline, the step to each next one, the space
+// under the last, and the least gap between a row's left and right texts.
+const FIRST_LINE_CSS_PX = 24;
+const LINE_STEP_CSS_PX = 20;
+const BELOW_CSS_PX = 14;
+const GAP_CSS_PX = 12;
 
 function font(weight, px, ratio, family) {
   return `${weight} ${Math.round(px * ratio)}px ${family}`;
+}
+
+/**
+ * The header as rows of `{ left: runs, right: run | null }`. A wide chart
+ * gets two rows, the title with the product line and the meta with the note;
+ * a narrow one (a phone) wraps the meta and moves each right-hand text that
+ * would collide onto a row of its own.
+ */
+function headerRows(ctx, info, ratio, avail) {
+  const c = info.colors;
+  const mono = info.monoFamily || "monospace";
+  const sans = info.fontFamily || "system-ui, sans-serif";
+  const run = (text, weight, px, family, color, after = 0) => ({
+    text, font: font(weight, px, ratio, family), color, after: Math.round(after * ratio),
+  });
+  const width = (runs) => runs.reduce((w, r) => {
+    ctx.font = r.font;
+    return w + ctx.measureText(r.text).width + r.after;
+  }, 0);
+  const fits = (left, right) => width(left) + (right ? Math.round(GAP_CSS_PX * ratio) + width([right]) : 0) <= avail;
+
+  const title = [run(info.ticker, 700, 17, sans, c.text, 10), run(info.timeframe, 600, 12, mono, c.accent, 12)];
+  if (info.price != null) {
+    // With its currency symbol ("₪120.50" for a TASE listing).
+    title.push(run(`${info.currencySymbol || ""}${Number(info.price).toFixed(2)}`, 600, 14, mono, c.text, 8));
+    if (info.changePct != null) {
+      title.push(run(`${info.changePct >= 0 ? "+" : ""}${info.changePct.toFixed(2)}%`, 600, 12, mono,
+        info.changePct >= 0 ? c.up : c.down));
+    }
+  }
+  const brand = run("Signals, not predictions", 600, 11, sans, c.faint);
+  const note = info.note ? run(info.note, 400, 10.5, mono, c.faint) : null;
+
+  const meta = [[]];
+  for (const part of [info.stamp, ...(info.studies || [])].filter(Boolean)) {
+    const line = meta[meta.length - 1];
+    const next = run(line.length ? `  ·  ${part}` : part, 400, 11, mono, c.muted);
+    if (!line.length || fits([...line, next])) line.push(next);
+    else meta.push([run(part, 400, 11, mono, c.muted)]);
+  }
+
+  const brandFits = fits(title, brand);
+  const noteFits = !note || fits(meta[0], note);
+  return [
+    { left: title, right: brandFits ? brand : null },
+    { left: meta[0], right: noteFits ? note : null },
+    ...meta.slice(1).map((left) => ({ left, right: null })),
+    ...(noteFits ? [] : [{ left: [], right: note }]),
+    ...(brandFits ? [] : [{ left: [], right: brand }]),
+  ];
 }
 
 /**
@@ -27,9 +82,11 @@ function font(weight, px, ratio, family) {
  */
 export function composeSnapshot(shot, info) {
   const ratio = info.cssWidth ? shot.width / info.cssWidth : (window.devicePixelRatio || 1);
-  const header = Math.round(HEADER_CSS_PX * ratio);
   const pad = Math.round(PAD_CSS_PX * ratio);
   const out = document.createElement("canvas");
+  const rows = headerRows(out.getContext("2d"), info, ratio, shot.width - pad * 2);
+  const baseline = (i) => Math.round((FIRST_LINE_CSS_PX + i * LINE_STEP_CSS_PX) * ratio);
+  const header = baseline(rows.length - 1) + Math.round(BELOW_CSS_PX * ratio);
   out.width = shot.width;
   out.height = shot.height + header + pad;
   const ctx = out.getContext("2d");
@@ -38,52 +95,22 @@ export function composeSnapshot(shot, info) {
   ctx.fillStyle = c.bg;
   ctx.fillRect(0, 0, out.width, out.height);
 
-  // header strip
-  const mono = info.monoFamily || "monospace";
-  const sans = info.fontFamily || "system-ui, sans-serif";
-  let x = pad;
-  const line1 = Math.round(24 * ratio);
-  const line2 = Math.round(44 * ratio);
   ctx.textBaseline = "alphabetic";
-  ctx.fillStyle = c.text;
-  ctx.font = font(700, 17, ratio, sans);
-  ctx.fillText(info.ticker, x, line1);
-  x += ctx.measureText(info.ticker).width + Math.round(10 * ratio);
-
-  ctx.font = font(600, 12, ratio, mono);
-  ctx.fillStyle = c.accent;
-  const tf = info.timeframe;
-  ctx.fillText(tf, x, line1);
-  x += ctx.measureText(tf).width + Math.round(12 * ratio);
-
-  if (info.price != null) {
-    ctx.fillStyle = c.text;
-    ctx.font = font(600, 14, ratio, mono);
-    // With its currency symbol ("₪120.50" for a TASE listing).
-    const p = `${info.currencySymbol || ""}${Number(info.price).toFixed(2)}`;
-    ctx.fillText(p, x, line1);
-    x += ctx.measureText(p).width + Math.round(8 * ratio);
-    if (info.changePct != null) {
-      ctx.fillStyle = info.changePct >= 0 ? c.up : c.down;
-      ctx.font = font(600, 12, ratio, mono);
-      ctx.fillText(`${info.changePct >= 0 ? "+" : ""}${info.changePct.toFixed(2)}%`, x, line1);
+  rows.forEach(({ left, right }, i) => {
+    let x = pad;
+    ctx.textAlign = "left";
+    for (const r of left) {
+      ctx.font = r.font;
+      ctx.fillStyle = r.color;
+      ctx.fillText(r.text, x, baseline(i));
+      x += ctx.measureText(r.text).width + r.after;
     }
-  }
-
-  ctx.fillStyle = c.muted;
-  ctx.font = font(400, 11, ratio, mono);
-  const meta = [info.stamp, ...(info.studies || [])].filter(Boolean).join("  ·  ");
-  ctx.fillText(meta, pad, line2);
-
-  // right-aligned product line
-  ctx.textAlign = "right";
-  ctx.fillStyle = c.faint;
-  ctx.font = font(600, 11, ratio, sans);
-  ctx.fillText("Signals, not predictions", out.width - pad, line1);
-  if (info.note) {
-    ctx.font = font(400, 10.5, ratio, mono);
-    ctx.fillText(info.note, out.width - pad, line2);
-  }
+    if (!right) return;
+    ctx.textAlign = "right";
+    ctx.font = right.font;
+    ctx.fillStyle = right.color;
+    ctx.fillText(right.text, out.width - pad, baseline(i));
+  });
   ctx.textAlign = "left";
 
   // divider

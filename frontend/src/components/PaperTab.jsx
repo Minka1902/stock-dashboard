@@ -7,6 +7,7 @@ import MetricTiles from "./MetricTiles";
 import OrderTicket from "./OrderTicket";
 import PaperModeBar from "./PaperModeBar";
 import SelectMenu from "./SelectMenu";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { usePaper } from "../hooks/usePaper";
 import { openTickerTab } from "../lib/nav";
 import { formatMoney, formatRelativeTime } from "../lib/format";
@@ -24,6 +25,7 @@ const orderLevel = (o) => (o.type === "limit" ? ` @ ${o.limit_price}` : o.type =
  */
 export default function PaperTab() {
   const { data, error, reload, reset, cancel } = usePaper();
+  const phone = useMediaQuery(PHONE);
   const [ticket, setTicket] = useState(false);
   const [amount, setAmount] = useState(null);
   const [ccy, setCcy] = useState(null);
@@ -55,8 +57,8 @@ export default function PaperTab() {
 
   const fundForm = (
     <div className={styles.fund}>
-      <Field label="Amount" inline>
-        {(a) => <input {...a} type="number" min="1" step="any" value={fundAmount}
+      <Field label="Amount" inline={!phone}>
+        {(a) => <input {...a} type="number" min="1" step="any" inputMode="decimal" value={fundAmount}
                        onChange={(e) => setAmount(e.target.value)} />}
       </Field>
       <SelectMenu label="Currency" value={fundCcy} options={CURRENCIES} onChange={setCcy} className={styles.ccy} />
@@ -72,7 +74,7 @@ export default function PaperTab() {
       <PaperModeBar modes={data.modes} />
 
       {!data.funded ? (
-        <section className={styles.section}>
+        <section className={styles.section} aria-label="Paper account">
           <p className={styles.text}>
             Practise with simulated cash: tickets fill at live quotes moved {data.cost_bps_per_side} bps against
             you, only while the market is open. Your real portfolio is never touched.
@@ -81,7 +83,7 @@ export default function PaperTab() {
         </section>
       ) : (
         <>
-          <section className={styles.section}>
+          <section className={styles.section} aria-label="Paper account">
             <div className={styles.head}>
               <MetricTiles items={[
                 ...data.cash.map((c) => ({ key: `cash-${c.currency}`, label: `Cash ${c.currency}`, value: formatMoney(c.balance, c.currency) })),

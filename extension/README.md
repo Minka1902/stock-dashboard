@@ -114,7 +114,7 @@ Modules resolution. **Keep these in sync:**
 
 | Extension file | Source |
 |---|---|
-| `src/lib/boom.js` | `CHIP_META` / `HORIZON_TIP` / `convictionTier` from `frontend/src/components/BoomScorePanel.jsx:15-48` (module-local there, not exported) |
+| `src/lib/boom.js` | `CHIP_META` / `HORIZON_TIP` / `convictionTier` from `frontend/src/components/BoomScorePanel.jsx` (module-local there, not exported) |
 | `src/styles/tokens.css` | `frontend/src/index.css:40-205`, minus the `@font-face` rules (absolute `/fonts/*.woff2` paths 404 inside an extension) and minus the retro/warm themes |
 | `src/lib/format.js` | subset of `frontend/src/lib/format.js` |
 | `src/popup/panels/ExtHoursBadge.jsx` | `frontend/src/components/ExtHoursBadge.jsx` |

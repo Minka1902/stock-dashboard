@@ -2,20 +2,43 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { animate } from "animejs";
 import { AnimatePresence, motion } from "motion/react";
 import AuditChainCheck from "./AuditChainCheck";
+import DataTable from "./DataTable";
 import Icon from "./Icon";
+import { MenuItem } from "./MenuButton";
+import PhoneFold from "./PhoneFold";
+import SectionIndex from "./SectionIndex";
+import ShowAll from "./ShowAll";
 import Skeleton from "./Skeleton";
 import SchedulerSection from "./SchedulerSection";
 import SourceDrawer from "./SourceDrawer";
+import SourceImport from "./SourceImport";
+import { runScheduleNow } from "../api";
+import { useCollapsedSections } from "../hooks/useCollapsedSections";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
+import { usePhoneLimit } from "../hooks/usePhoneLimit";
 import { useServerStatus } from "../hooks/useServerStatus";
+import { useSourceImport } from "../hooks/useSourceImport";
 import { formatRelativeTime, formatUntil } from "../lib/format";
 import { prefersReducedMotion } from "../lib/motionConfig";
-import { STATE_TIP, sourceState } from "../lib/sources";
+import { scrollToSection } from "../lib/sections";
+import { SOURCE_META, STATE_TIP, sourceState } from "../lib/sources";
 import Tooltip from "./Tooltip";
 import styles from "./ServerPanel.module.css";
 import Term from "./Term";
-import ScrollHint from "./ScrollHint";
 
 const TONE = { ok: "pos", error: "neg", deferred: "caution", never: "faint" };
+// On a phone every section folds (the process health stays open) under an
+// index; the activity log shows its newest rows until asked.
+const SECTIONS = [
+  { id: "process", label: "Process" },
+  { id: "now", label: "Right now" },
+  { id: "sources", label: "Sources" },
+  { id: "scheduler", label: "Scheduler" },
+  { id: "audit", label: "Audit" },
+  { id: "activity", label: "Activity" },
+];
+const OPEN_ON_PHONE = ["process"];
+const PHONE_EVENTS = 15;
 
 function stateOf(s) {
   return s.never_run || !s.status ? "never" : sourceState(s.status);
@@ -94,6 +117,19 @@ function Meter({ value, label }) {
   );
 }
 
+/** A section's desktop pane: its caption, the `right` side of its header, then the body. */
+function panelFrame(caption, right, tone) {
+  return (body) => (
+    <section className={styles.panel}>
+      <div className={styles.head}>
+        <span className="caption">{caption}</span>
+        {right && <span className={styles.headRight} data-tone={tone}>{right}</span>}
+      </div>
+      {body}
+    </section>
+  );
+}
+
 function Stat({ label, value, tone }) {
   return (
     <div className={styles.stat}>
@@ -104,11 +140,17 @@ function Stat({ label, value, tone }) {
 }
 
 export default function ServerPanel() {
+  const phone = useMediaQuery(PHONE);
+  const sections = useCollapsedSections("server:", OPEN_ON_PHONE);
   const [filter, setFilter] = useState(readFilter);
   const [drawerName, setDrawerName] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [notice, setNotice] = useState(null);
   const {
     overview, sources, events, schedules, setSchedules, error, loading, refresh,
   } = useServerStatus(true, filter?.kind ?? null, filter?.id ?? null);
+  const importer = useSourceImport(refresh);
+  const { limit, showAll } = usePhoneLimit(events.length, PHONE_EVENTS);
 
   const applyFilter = useCallback((next) => {
     writeFilter(next);
@@ -140,22 +182,193 @@ export default function ServerPanel() {
   const drawerRow = drawerName ? sources.find((s) => s.source === drawerName) || null : null;
   const sourceNames = new Set(sources.map((s) => s.source));
   const reduced = prefersReducedMotion();
+  const classes = { wrap: styles.tableWrap, table: styles.table };
+  const importNote = importer.source && (importer.busy ? `${importer.source}: importing…`
+    : importer.error ? `${importer.source}: ${importer.error}` : `${importer.source}: ${importer.result}`);
+
+  const showSimilar = (next) => {
+    applyFilter(next);
+    sections.setCollapsed(["activity"], false);
+    requestAnimationFrame(() => scrollToSection("activity"));
+  };
+  const runNow = async (name) => {
+    setNotice(`${name}: queuing…`);
+    try {
+      await runScheduleNow(name);
+      setNotice(`${name}: queued on the refresh thread — runs late, not dropped`);
+    } catch (e) {
+      setNotice(`${name}: ${e.message || "run failed"}`);
+    }
+  };
+
+  // A phone's row menus: what the desktop does from a row's own buttons.
+  const sourceActions = (s, close) => {
+    const sched = s.schedule?.source;
+    const meta = SOURCE_META[s.source];
+    const act = (fn) => () => { close(); fn(); };
+    return (
+      <>
+        <MenuItem onSelect={act(() => openDrawer(s.source))}>Details</MenuItem>
+        {sched && <MenuItem onSelect={act(() => runNow(sched))}>Run now</MenuItem>}
+        {sched && <MenuItem onSelect={act(() => setEditing(sched))}>Edit schedule</MenuItem>}
+        {s.importable && <MenuItem onSelect={act(() => importer.pick(s.source))}>Import file…</MenuItem>}
+        {s.importable && meta?.url && (
+          <MenuItem onSelect={act(() => window.open(meta.url, "_blank", "noreferrer"))}>{meta.provider} page ↗</MenuItem>
+        )}
+        <MenuItem onSelect={act(() => showSimilar({ kind: "source", id: s.source }))}>Show similar</MenuItem>
+      </>
+    );
+  };
+  const eventActions = (e, close) => {
+    const current = filter && filter.kind === e.kind && filter.id === e.id;
+    return (
+      <>
+        {e.kind === "source" && sourceNames.has(e.id) && (
+          <MenuItem onSelect={() => { close(); openDrawer(e.id); }}>Details</MenuItem>
+        )}
+        {current
+          ? <MenuItem onSelect={() => { close(); applyFilter(null); }}>Show all activity</MenuItem>
+          : <MenuItem onSelect={() => { close(); applyFilter({ kind: e.kind, id: e.id }); }}>Show similar</MenuItem>}
+      </>
+    );
+  };
+
+  const sourceColumns = [
+    { key: "source", label: "Source", cellClassName: styles.srcName, phone: "title",
+      render: (s) => (
+        <>
+          {s.running_for_seconds != null && <span className={styles.pulse} />}
+          {s.source}
+          {s.importable && !phone && <SourceImport source={s.source} onImported={refresh} />}
+        </>
+      ) },
+    { key: "status", label: "Status", cellClassName: styles.status, phone: "value",
+      render: (s) => {
+        const state = stateOf(s);
+        return (
+          <Tooltip content={(
+            <>
+              <strong>{s.never_run ? "never run" : s.status}</strong>
+              <p>{STATE_TIP[state]}</p>
+              <p>Click for run history and details.</p>
+            </>
+          )}>
+            <button type="button" className={styles.badge} data-tone={TONE[state]}
+                    onClick={(e) => { e.stopPropagation(); openDrawer(s.source); }}>
+              {s.never_run ? "never run" : s.status}
+            </button>
+          </Tooltip>
+        );
+      } },
+    { key: "success", label: "Last success",
+      render: (s) => (s.last_success_at ? formatRelativeTime(s.last_success_at) : <em className={styles.never}>never</em>) },
+    { key: "try", label: "Last try", render: (s) => (s.last_refreshed_at ? formatRelativeTime(s.last_refreshed_at) : "—") },
+    { key: "last", label: "Last", className: styles.num, render: (s) => ms(s.last_duration_ms) },
+    { key: "avg", label: "Avg", className: styles.num, render: (s) => ms(s.avg_duration_ms) },
+    { key: "runs", caption: "Runs ok/err/def", className: styles.num,
+      label: <Term tip="Count of runs that ended ok / in error / deferred (waiting on a rate limit)">ok/err/def</Term>,
+      render: (s) => <>{s.runs_ok ?? 0}/{s.runs_error ?? 0}/{s.runs_deferred ?? 0}</> },
+    { key: "schedule", label: "Schedule", cellClassName: styles.sched,
+      render: (s) => (s.schedule
+        ? `${s.schedule.source !== s.source ? `${s.schedule.source}: ` : ""}${s.schedule.description}`
+        : "—") },
+    { key: "next", label: "Next run", cellClassName: styles.nextCell, phone: "subtitle", render: nextRunLabel },
+  ];
+
+  const eventColumns = [
+    { key: "when", label: "When", cellClassName: styles.evTime, phone: "subtitle",
+      render: (e) => (
+        <Tooltip content={new Date(e.at).toLocaleString()}>
+          <span>{formatRelativeTime(e.at)}</span>
+        </Tooltip>
+      ) },
+    { key: "kind", label: "Kind", cellClassName: styles.evKind, phone: "subtitle",
+      cellProps: (e) => ({ "data-kind": e.kind }), render: (e) => e.kind },
+    { key: "name", label: "Name", cellClassName: styles.srcName, phone: "title", render: (e) => e.id },
+    { key: "outcome", label: "Outcome", phone: "value",
+      render: (e) => (e.kind === "source" && sourceNames.has(e.id) ? (
+        <Tooltip content="Open this source's details">
+          <button type="button" className={styles.outcome} data-outcome={e.outcome} onClick={() => openDrawer(e.id)}>
+            {e.outcome}
+          </button>
+        </Tooltip>
+      ) : (
+        <span className={styles.outcome} data-outcome={e.outcome}>{e.outcome}</span>
+      )) },
+    { key: "duration", label: "Duration", className: styles.num, render: (e) => ms(e.duration_ms) },
+    { key: "records", label: "Records", className: styles.num, render: (e) => e.record_count ?? "" },
+    { key: "detail", label: "Detail", cellClassName: styles.evDetail, truncate: true,
+      render: (e) => (
+        <>{e.detail || ""}{e.next_attempt_at ? ` · next attempt ${formatUntil(e.next_attempt_at)}` : ""}</>
+      ) },
+    { key: "actions", label: <span className={styles.srOnly}>Actions</span>, caption: "Actions", cellClassName: styles.evAct,
+      phone: "actions",
+      render: (e) => !(filter && filter.kind === e.kind && filter.id === e.id) && (
+        <Tooltip content={`Show only ${e.kind} ${e.id}`}>
+          <button type="button" className={styles.similar} onClick={() => applyFilter({ kind: e.kind, id: e.id })}>
+            Show similar
+          </button>
+        </Tooltip>
+      ) },
+  ];
+
+  const processRight = (
+    <>
+      v{overview.version} · python {overview.python}
+      <Tooltip content="Refresh now">
+        <button type="button" className={styles.refresh} onClick={refresh} aria-label="Refresh now">
+          <Icon name="refresh" size={12} />
+        </button>
+      </Tooltip>
+    </>
+  );
+  const nowRight = <>{scheduledCount} scheduled · one refresh thread</>;
+  const sourcesTone = failing.length ? "neg" : deferred.length ? "caution" : "pos";
+  const sourcesRight = (
+    <>
+      {failing.length ? `${failing.length} failing` : "none failing"}
+      {deferred.length ? ` · ${deferred.length} deferred` : ""}
+    </>
+  );
+  const activityRight = (
+    <AnimatePresence initial={false} mode="popLayout">
+      {filter ? (
+        <motion.span
+          key={`${filter.kind}:${filter.id}`}
+          className={styles.filterChip}
+          initial={reduced ? false : { opacity: 0, scale: 0.85 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.85 }}
+          transition={{ duration: reduced ? 0 : 0.16 }}
+        >
+          {filter.kind} · {filter.id}
+          <Tooltip content="Clear filter — show all activity">
+            <button
+              type="button"
+              className={styles.chipX}
+              onClick={() => applyFilter(null)}
+              aria-label="Clear filter: show all activity"
+            >
+              ×
+            </button>
+          </Tooltip>
+        </motion.span>
+      ) : (
+        <motion.span key="all" initial={false} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          source runs &amp; scheduler jobs
+        </motion.span>
+      )}
+    </AnimatePresence>
+  );
+  const phoneRight = (right, tone) => <span className={styles.headRight} data-tone={tone}>{right}</span>;
 
   return (
     <div className={styles.wrap}>
+      <SectionIndex sections={SECTIONS} onJump={(id) => sections.setCollapsed([id], false)} />
+
       {/* ---- what the process is right now ---- */}
-      <section className={styles.panel}>
-        <div className={styles.head}>
-          <span className="caption">Process</span>
-          <span className={styles.headRight}>
-            v{overview.version} · python {overview.python}
-            <Tooltip content="Refresh now">
-              <button type="button" className={styles.refresh} onClick={refresh} aria-label="Refresh now">
-                <Icon name="refresh" size={12} />
-              </button>
-            </Tooltip>
-          </span>
-        </div>
+      <PhoneFold id="process" caption="Process" right={phoneRight(processRight)} sections={sections}
+                 frame={panelFrame("Process", processRight)}>
         <div className={styles.body}>
           <div className={styles.stats}>
             <Stat label="Uptime" value={duration(overview.uptime_seconds)} />
@@ -198,16 +411,11 @@ export default function ServerPanel() {
             </div>
           )}
         </div>
-      </section>
+      </PhoneFold>
 
       {/* ---- what it's doing this second, and what is waiting its turn ---- */}
-      <section className={styles.panel}>
-        <div className={styles.head}>
-          <span className="caption">Right now</span>
-          <span className={styles.headRight}>
-            {scheduledCount} scheduled · one refresh thread
-          </span>
-        </div>
+      <PhoneFold id="now" caption="Right now" right={phoneRight(nowRight)} sections={sections}
+                 frame={panelFrame("Right now", nowRight)}>
         <div className={styles.body}>
           {running.length === 0 && queued.length === 0 ? (
             <p className={styles.muted}>Idle — nothing fetching, nothing waiting.</p>
@@ -242,200 +450,65 @@ export default function ServerPanel() {
             ))}
           </div>
         </div>
-      </section>
+      </PhoneFold>
 
       {/* ---- per-source health; a click opens the drawer with the full story ---- */}
-      <section className={styles.panel}>
-        <div className={styles.head}>
-          <span className="caption">Sources</span>
-          <span className={styles.headRight} data-tone={failing.length ? "neg" : deferred.length ? "caution" : "pos"}>
-            {failing.length ? `${failing.length} failing` : "none failing"}
-            {deferred.length ? ` · ${deferred.length} deferred` : ""}
-          </span>
-        </div>
-        <ScrollHint className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th scope="col">Source</th><th scope="col">Status</th><th scope="col">Last success</th>
-                <th scope="col">Last try</th><th scope="col" className={styles.num}>Last</th>
-                <th scope="col" className={styles.num}>Avg</th>
-                <th scope="col" className={styles.num}>
-                  <Term tip="Count of runs that ended ok / in error / deferred (waiting on a rate limit)">ok/err/def</Term>
-                </th>
-                <th scope="col">Schedule</th><th scope="col">Next run</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sources.map((s) => {
-                const state = stateOf(s);
-                const clickable = state === "error" || state === "deferred";
-                return (
-                  <tr
-                    key={s.source}
-                    data-state={state}
-                    data-clickable={clickable ? "yes" : "no"}
-                    onClick={clickable ? (e) => {
-                      // A row isn't focusable; hand focus to its status button
-                      // so closing the drawer returns there, not to <body>.
-                      e.currentTarget.querySelector("button")?.focus();
-                      openDrawer(s.source);
-                    } : undefined}
-                  >
-                    <td className={styles.srcName}>
-                      {s.running_for_seconds != null && <span className={styles.pulse} />}
-                      {s.source}
-                    </td>
-                    <td className={styles.status}>
-                      <Tooltip content={(
-                        <>
-                          <strong>{s.never_run ? "never run" : s.status}</strong>
-                          <p>{STATE_TIP[state]}</p>
-                          <p>Click for run history and details.</p>
-                        </>
-                      )}>
-                        <button
-                          type="button"
-                          className={styles.badge}
-                          data-tone={TONE[state]}
-                          onClick={(e) => { e.stopPropagation(); openDrawer(s.source); }}
-                        >
-                          {s.never_run ? "never run" : s.status}
-                        </button>
-                      </Tooltip>
-                    </td>
-                    <td>{s.last_success_at ? formatRelativeTime(s.last_success_at) : <em className={styles.never}>never</em>}</td>
-                    <td>{s.last_refreshed_at ? formatRelativeTime(s.last_refreshed_at) : "—"}</td>
-                    <td className={styles.num}>{ms(s.last_duration_ms)}</td>
-                    <td className={styles.num}>{ms(s.avg_duration_ms)}</td>
-                    <td className={styles.num}>
-                      {(s.runs_ok ?? 0)}/{(s.runs_error ?? 0)}/{(s.runs_deferred ?? 0)}
-                    </td>
-                    <td className={styles.sched}>
-                      {s.schedule
-                        ? `${s.schedule.source !== s.source ? `${s.schedule.source}: ` : ""}${s.schedule.description}`
-                        : "—"}
-                    </td>
-                    <td className={styles.nextCell}>{nextRunLabel(s)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </ScrollHint>
-      </section>
+      <PhoneFold id="sources" caption="Sources" right={phoneRight(sourcesRight, sourcesTone)} sections={sections}
+                 frame={panelFrame("Sources", sourcesRight, sourcesTone)}>
+        {phone && <input {...importer.inputProps} />}
+        {phone && (notice || importNote) && (
+          <p className={styles.notice} role="status">{importNote || notice}</p>
+        )}
+        <DataTable
+          columns={sourceColumns}
+          rows={sources}
+          rowKey={(s) => s.source}
+          rowActions={phone ? sourceActions : undefined}
+          rowProps={(s) => {
+            const state = stateOf(s);
+            const clickable = state === "error" || state === "deferred";
+            return {
+              "data-state": state,
+              "data-clickable": clickable ? "yes" : "no",
+              // A row isn't focusable; hand focus to its status button so
+              // closing the drawer returns there, not to <body>.
+              onClick: clickable ? (e) => {
+                e.currentTarget.querySelector("button")?.focus();
+                openDrawer(s.source);
+              } : undefined,
+            };
+          }}
+          classes={classes}
+        />
+      </PhoneFold>
 
-      <SchedulerSection schedules={schedules} setSchedules={setSchedules} />
+      <SchedulerSection schedules={schedules} setSchedules={setSchedules} sections={sections}
+                        editing={editing} onEdit={setEditing} />
 
-      <section className={styles.panel}>
-        <div className={styles.head}><span className="caption">Audit log integrity</span></div>
+      <PhoneFold id="audit" caption="Audit log integrity" sections={sections}
+                 frame={panelFrame("Audit log integrity")}>
         <AuditChainCheck />
-      </section>
+      </PhoneFold>
 
       {/* ---- the timeline: every run, deferral and job event ---- */}
-      <section className={styles.panel}>
-        <div className={styles.head}>
-          <span className="caption">Recent activity</span>
-          <span className={styles.headRight}>
-            <AnimatePresence initial={false} mode="popLayout">
-              {filter ? (
-                <motion.span
-                  key={`${filter.kind}:${filter.id}`}
-                  className={styles.filterChip}
-                  initial={reduced ? false : { opacity: 0, scale: 0.85 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.85 }}
-                  transition={{ duration: reduced ? 0 : 0.16 }}
-                >
-                  {filter.kind} · {filter.id}
-                  <Tooltip content="Clear filter — show all activity">
-                    <button
-                      type="button"
-                      className={styles.chipX}
-                      onClick={() => applyFilter(null)}
-                      aria-label="Clear filter: show all activity"
-                    >
-                      ×
-                    </button>
-                  </Tooltip>
-                </motion.span>
-              ) : (
-                <motion.span key="all" initial={false} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  source runs &amp; scheduler jobs
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </span>
-        </div>
-        <ScrollHint className={styles.tableWrap}>
-          {events.length === 0 ? (
+      <PhoneFold id="activity" caption="Recent activity" right={phoneRight(activityRight)} sections={sections}
+                 frame={panelFrame("Recent activity", activityRight)}>
+        <DataTable
+          columns={eventColumns}
+          rows={events}
+          rowKey={(e) => e.key}
+          rowLabel={(e) => `${e.kind} ${e.id}`}
+          rowActions={phone ? eventActions : undefined}
+          limit={limit}
+          empty={(
             <p className={styles.muted}>
               {filter ? `Nothing recorded for ${filter.kind} ${filter.id}.` : "Nothing recorded yet."}
             </p>
-          ) : (
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th scope="col">When</th><th scope="col">Kind</th><th scope="col">Name</th>
-                  <th scope="col">Outcome</th><th scope="col" className={styles.num}>Duration</th>
-                  <th scope="col" className={styles.num}>Records</th><th scope="col">Detail</th>
-                  <th scope="col"><span className={styles.srOnly}>Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {events.map((e) => (
-                  <tr key={e.key}>
-                    <td className={styles.evTime}>
-                      <Tooltip content={new Date(e.at).toLocaleString()}>
-                        <span>{formatRelativeTime(e.at)}</span>
-                      </Tooltip>
-                    </td>
-                    <td className={styles.evKind} data-kind={e.kind}>{e.kind}</td>
-                    <td className={styles.srcName}>{e.id}</td>
-                    <td>
-                      {e.kind === "source" && sourceNames.has(e.id) ? (
-                        <Tooltip content="Open this source's details">
-                          <button
-                            type="button"
-                            className={styles.outcome}
-                            data-outcome={e.outcome}
-                            onClick={() => openDrawer(e.id)}
-                          >
-                            {e.outcome}
-                          </button>
-                        </Tooltip>
-                      ) : (
-                        <span className={styles.outcome} data-outcome={e.outcome}>{e.outcome}</span>
-                      )}
-                    </td>
-                    <td className={styles.num}>{ms(e.duration_ms)}</td>
-                    <td className={styles.num}>{e.record_count ?? ""}</td>
-                    <Tooltip truncate>
-                      <td className={styles.evDetail}>
-                        {e.detail || ""}
-                        {e.next_attempt_at ? ` · next attempt ${formatUntil(e.next_attempt_at)}` : ""}
-                      </td>
-                    </Tooltip>
-                    <td className={styles.evAct}>
-                      {!(filter && filter.kind === e.kind && filter.id === e.id) && (
-                        <Tooltip content={`Show only ${e.kind} ${e.id}`}>
-                          <button
-                            type="button"
-                            className={styles.similar}
-                            onClick={() => applyFilter({ kind: e.kind, id: e.id })}
-                          >
-                            Show similar
-                          </button>
-                        </Tooltip>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           )}
-        </ScrollHint>
-      </section>
+          classes={classes}
+        />
+        {showAll && <ShowAll {...showAll} noun="events" />}
+      </PhoneFold>
 
       <SourceDrawer source={drawerRow} onClose={closeDrawer} />
     </div>

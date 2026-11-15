@@ -1,30 +1,48 @@
 import { useCallback, useState } from "react";
 import { AnimatePresence, Reorder, useDragControls } from "motion/react";
+import Button from "./Button";
+import Dialog from "./Dialog";
+import DragHandle from "./DragHandle";
 import Icon from "./Icon";
 import ExtHoursBadge from "./ExtHoursBadge";
+import PanelInfo from "./PanelInfo";
 import MenuButton, { MenuDivider, MenuItem, MenuLabel } from "./MenuButton";
+import ScrollHint from "./ScrollHint";
 import Sparkline from "./Sparkline";
 import SparkRange from "./SparkRange";
 import TickerLabel from "./TickerLabel";
 import { useWatchlists } from "../hooks/useWatchlists";
 import { useLocalOrder } from "../hooks/useLocalOrder";
 import { useSparklines } from "../hooks/useSparklines";
+import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { openTickerTab } from "../lib/nav";
 import { prefersReducedMotion, staggerItem } from "../lib/motionConfig";
 import { currencyForSymbol, formatPrice, formatRelativeTime } from "../lib/format";
 import styles from "./WatchlistPanel.module.css";
 import Tooltip from "./Tooltip";
 
+const itemId = (w) => w.ticker;
+const BLURB = "Group the tickers you want to keep an eye on";
+
+const MARKET_STATE_TIP = {
+  LIVE: "Regular session open — the price is live.",
+  REGULAR: "Regular session open — the price is live.",
+  CLOSED: "Market closed — showing the last traded price.",
+};
+
+// On a phone each row is two lines, with a narrower sparkline.
+const PHONE_SPARK_WIDTH = 64;
+
 function changeTone(pct) {
   if (pct == null) return "flat";
   return pct >= 0 ? "pos" : "neg";
 }
 
-const itemId = (w) => w.ticker;
-
 /**
  * One reorderable row. useDragControls has to live in a component per row —
- * hooks can't be called inside the map in the parent.
+ * hooks can't be called inside the map in the parent. dragListener={false}
+ * confines dragging to the DragHandle, which keeps the row's inline note
+ * editor and kebab menu clickable instead of swallowing every press as a drag.
  */
 function WatchRow({ item, position, total, onMove, children }) {
   const controls = useDragControls();
@@ -44,52 +62,12 @@ function WatchRow({ item, position, total, onMove, children }) {
     >
       <DragHandle
         controls={controls}
-        ticker={item.ticker}
+        className={styles.handle}
+        label={`Reorder ${item.ticker}. Position ${position} of ${total}. Use arrow up and down to move.`}
         onMove={onMove}
-        position={position}
-        total={total}
       />
       {children}
     </Reorder.Item>
-  );
-}
-
-/**
- * A drag handle that also works from the keyboard.
- *
- * Reorder.Item is pointer-only, so on its own it would make reordering
- * mouse-exclusive. dragListener={false} + dragControls confines dragging to
- * this handle, which also keeps the row's inline note editor and kebab menu
- * clickable instead of swallowing every press as a drag.
- */
-const MARKET_STATE_TIP = {
-  LIVE: "Regular session open — the price is live.",
-  REGULAR: "Regular session open — the price is live.",
-  CLOSED: "Market closed — showing the last traded price.",
-};
-
-function DragHandle({ controls, ticker, onMove, position, total }) {
-  return (
-    <Tooltip content="Drag to reorder — or focus it and use the arrow keys" shortcut={[["↑"], ["↓"]]}>
-    <button
-      type="button"
-      className={styles.handle}
-      aria-label={`Reorder ${ticker}. Position ${position} of ${total}. Use arrow up and down to move.`}
-      onPointerDown={(e) => {
-        e.preventDefault(); // don't start a text selection while dragging
-        // preventDefault on pointerdown also suppresses the browser's default
-        // focus step, which would silently break the keyboard path below.
-        e.currentTarget.focus();
-        controls.start(e);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "ArrowUp") { e.preventDefault(); onMove(-1); }
-        if (e.key === "ArrowDown") { e.preventDefault(); onMove(1); }
-      }}
-    >
-      <Icon name="grip" size={14} />
-    </button>
-    </Tooltip>
   );
 }
 
@@ -103,7 +81,9 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
   const [note, setNote] = useState("");
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [range, setRange] = useState("1m");
+  const phone = useMediaQuery(PHONE);
 
   // Manual ordering, remembered locally per list. Server-side ordering would
   // need a schema column; local is enough while this is a single-device
@@ -140,6 +120,7 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
       setTicker("");
       setNote("");
       setError(null);
+      setAdding(false);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -170,12 +151,109 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
 
   const startNoteEdit = (w) => { setNoteDraft(w.note || ""); setNoteTicker(w.ticker); };
 
+  const tabs = (
+    <div className={styles.tabs} role="tablist" aria-label="Watchlists">
+      {lists.map((l) => (
+        renamingId === l.id ? (
+          <input
+            key={l.id}
+            className={styles.tabInput}
+            value={renameDraft}
+            autoFocus
+            maxLength={60}
+            enterKeyHint="done"
+            onChange={(e) => setRenameDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setRenamingId(null); }}
+            onBlur={commitRename}
+          />
+        ) : (
+          <span key={l.id} className={styles.tabWrap} data-active={l.id === activeId ? "yes" : "no"}>
+            <button
+              className={styles.tab}
+              role="tab"
+              aria-selected={l.id === activeId}
+              onClick={() => selectList(l.id)}
+            >
+              {l.name}
+            </button>
+            {l.id === activeId && (
+              <MenuButton label={`Actions for ${l.name}`} className={styles.tabMenu}>
+                {(close) => (
+                  <>
+                    <MenuItem onSelect={() => { close(); setRenameDraft(l.name); setRenamingId(l.id); }}>
+                      <Icon name="edit" size={14} /> Rename
+                    </MenuItem>
+                    <MenuDivider />
+                    <MenuItem
+                      tone="danger"
+                      disabled={lists.length <= 1}
+                      onSelect={() => { close(); setConfirmDeleteId(l.id); }}
+                    >
+                      <Icon name="trash" size={14} />
+                      {lists.length <= 1 ? "Can't delete your only list" : "Delete list"}
+                    </MenuItem>
+                  </>
+                )}
+              </MenuButton>
+            )}
+          </span>
+        )
+      ))}
+      {creating ? (
+        <input
+          className={styles.tabInput}
+          value={newName}
+          autoFocus
+          maxLength={60}
+          enterKeyHint="done"
+          placeholder="List name"
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") commitCreate(); if (e.key === "Escape") setCreating(false); }}
+          onBlur={commitCreate}
+        />
+      ) : (
+        <button className={styles.newTab} onClick={() => { setNewName(""); setCreating(true); }}>
+          + New list
+        </button>
+      )}
+    </div>
+  );
+  const addForm = (
+    <form className={styles.form} onSubmit={submit} data-tour={phone ? undefined : "add-form"}>
+      <input
+        className={styles.ticker}
+        placeholder="Ticker (e.g. LMT)"
+        value={ticker}
+        maxLength={12}
+        autoCapitalize="characters"
+        autoComplete="off"
+        spellCheck={false}
+        enterKeyHint="done"
+        onChange={(e) => setTicker(e.target.value)}
+      />
+      <input
+        className={styles.note}
+        placeholder="Note (optional)"
+        value={note}
+        maxLength={120}
+        enterKeyHint="done"
+        onChange={(e) => setNote(e.target.value)}
+      />
+      <button className={styles.add} disabled={pending || !ticker.trim()}>
+        {pending ? "Adding…" : "Add"}
+      </button>
+    </form>
+  );
+  const addError = error && <p className={styles.error}>{error}</p>;
+
   return (
     <section className={styles.panel} id="watchlist">
-      <header className={styles.head}>
+      <header className={styles.head} data-head={phone ? "inline" : undefined}>
         <div>
-          <h2 className={styles.title}>Watchlists</h2>
-          <p className={styles.subtitle}>Group the tickers you want to keep an eye on</p>
+          <h2 className={styles.title}>
+            Watchlists<PanelInfo label="Watchlists" blurb={BLURB} />
+          </h2>
+          {!phone && <p className={styles.subtitle}>{BLURB}</p>}
         </div>
         <span className={styles.headerTools}>
           {isCustom && (
@@ -190,73 +268,13 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
             </Tooltip>
           )}
           {items.length > 0 && <SparkRange value={range} onChange={setRange} />}
+          {phone && (
+            <Button size="sm" data-tour="add-form" aria-label="Add ticker" onClick={() => setAdding(true)}>+ Add</Button>
+          )}
         </span>
       </header>
 
-      {/* list selector */}
-      <div className={styles.tabs} role="tablist" aria-label="Watchlists">
-        {lists.map((l) => (
-          renamingId === l.id ? (
-            <input
-              key={l.id}
-              className={styles.tabInput}
-              value={renameDraft}
-              autoFocus
-              maxLength={60}
-              onChange={(e) => setRenameDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setRenamingId(null); }}
-              onBlur={commitRename}
-            />
-          ) : (
-            <span key={l.id} className={styles.tabWrap} data-active={l.id === activeId ? "yes" : "no"}>
-              <button
-                className={styles.tab}
-                role="tab"
-                aria-selected={l.id === activeId}
-                onClick={() => selectList(l.id)}
-              >
-                {l.name}
-              </button>
-              {l.id === activeId && (
-                <MenuButton label={`Actions for ${l.name}`} className={styles.tabMenu}>
-                  {(close) => (
-                    <>
-                      <MenuItem onSelect={() => { close(); setRenameDraft(l.name); setRenamingId(l.id); }}>
-                        <Icon name="edit" size={14} /> Rename
-                      </MenuItem>
-                      <MenuDivider />
-                      <MenuItem
-                        tone="danger"
-                        disabled={lists.length <= 1}
-                        onSelect={() => { close(); setConfirmDeleteId(l.id); }}
-                      >
-                        <Icon name="trash" size={14} />
-                        {lists.length <= 1 ? "Can't delete your only list" : "Delete list"}
-                      </MenuItem>
-                    </>
-                  )}
-                </MenuButton>
-              )}
-            </span>
-          )
-        ))}
-        {creating ? (
-          <input
-            className={styles.tabInput}
-            value={newName}
-            autoFocus
-            maxLength={60}
-            placeholder="List name"
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") commitCreate(); if (e.key === "Escape") setCreating(false); }}
-            onBlur={commitCreate}
-          />
-        ) : (
-          <button className={styles.newTab} onClick={() => { setNewName(""); setCreating(true); }}>
-            + New list
-          </button>
-        )}
-      </div>
+      {phone ? <ScrollHint className={styles.tabScroller}>{tabs}</ScrollHint> : tabs}
 
       {confirmDeleteId != null && (() => {
         const doomed = lists.find((l) => l.id === confirmDeleteId);
@@ -285,26 +303,8 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
         );
       })()}
 
-      <form className={styles.form} onSubmit={submit} data-tour="add-form">
-        <input
-          className={styles.ticker}
-          placeholder="Ticker (e.g. LMT)"
-          value={ticker}
-          maxLength={12}
-          onChange={(e) => setTicker(e.target.value)}
-        />
-        <input
-          className={styles.note}
-          placeholder="Note (optional)"
-          value={note}
-          maxLength={120}
-          onChange={(e) => setNote(e.target.value)}
-        />
-        <button className={styles.add} disabled={pending || !ticker.trim()}>
-          {pending ? "Adding…" : "Add"}
-        </button>
-      </form>
-      {error && <p className={styles.error}>{error}</p>}
+      {!phone && addForm}
+      {!adding && addError}
 
       {items.length === 0 ? (
         <div className={styles.empty}>
@@ -363,6 +363,7 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
                 error={sparks[w.ticker]?.error}
                 loading={!sparks[w.ticker]}
                 range={range}
+                width={phone ? PHONE_SPARK_WIDTH : undefined}
               />
               {noteTicker === w.ticker ? (
                 <input
@@ -370,6 +371,7 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
                   value={noteDraft}
                   autoFocus
                   maxLength={120}
+                  enterKeyHint="done"
                   placeholder="Note"
                   aria-label={`Note for ${w.ticker}`}
                   onChange={(e) => setNoteDraft(e.target.value)}
@@ -449,6 +451,12 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
         </Reorder.Group>
       )}
       <p aria-live="polite" className={styles.srOnly}>{liveMessage}</p>
+      {phone && (
+        <Dialog open={adding} size="sm" caption="Watchlist" title="Add ticker" onClose={() => setAdding(false)}>
+          {addForm}
+          {addError}
+        </Dialog>
+      )}
     </section>
   );
 }

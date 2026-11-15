@@ -23,16 +23,18 @@ function detailMessage(detail) {
   return detail?.message || null;
 }
 
+// A Blob/File body is sent as-is (a file upload); anything else as JSON.
 async function request(path, { method = "GET", body } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const json = body !== undefined && !(body instanceof Blob);
   let res;
   try {
     res = await fetch(`${BASE}${path}`, {
       method,
       credentials: "include", // session cookie
-      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      headers: json ? { "Content-Type": "application/json" } : undefined,
+      body: json ? JSON.stringify(body) : body,
       signal: controller.signal,
     });
   } catch (e) {
@@ -79,6 +81,11 @@ export const putServerSchedule = (source, patch) =>
   request(`/api/server/schedules/${encodeURIComponent(source)}`, { method: "PUT", body: patch });
 export const runScheduleNow = (source) =>
   request(`/api/server/schedules/${encodeURIComponent(source)}/run-now`, { method: "POST" });
+// A file downloaded from the provider by hand. 200 = stored ({ status }),
+// 202 = parsed and queued behind the running job; a 422 carries the reason on
+// ApiError.fields.file.
+export const importSourceFile = (source, file) =>
+  request(`/api/server/sources/${encodeURIComponent(source)}/import`, { method: "POST", body: file });
 export const getNews = () => getJSON("/api/news");
 export const getTrades = () => getJSON("/api/trades");
 export const getWatchlist = (listId) =>

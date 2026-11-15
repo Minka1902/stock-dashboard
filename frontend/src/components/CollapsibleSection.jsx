@@ -1,6 +1,7 @@
 import { useId, useLayoutEffect, useRef } from "react";
 import { motion } from "motion/react";
 import CollapseToggle from "./CollapseToggle";
+import ErrorBoundary from "./ErrorBoundary";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import styles from "./CollapsibleSection.module.css";
 
@@ -20,8 +21,10 @@ const EASE = [0.22, 1, 0.36, 1];
  *   and panes that fetch on mount don't refetch on every expand.
  * - Height animates in/out of "auto" with motion; under reduced motion (app
  *   setting or OS preference) the transition is instant.
+ * - `anchor` marks the section (data-anchor) for SectionIndex to jump to.
  */
 export default function CollapsibleSection({
+  anchor,
   caption,
   right = null,
   collapsed = false,
@@ -54,6 +57,7 @@ export default function CollapsibleSection({
   return (
     <section
       ref={sectionRef}
+      data-anchor={anchor}
       className={`${styles.section} ${className}`}
       data-collapsed={collapsed ? "yes" : "no"}
     >
@@ -84,7 +88,11 @@ export default function CollapsibleSection({
           : { height: "auto", visibility: "visible" }}
         transition={transition}
       >
-        <div className={`${styles.body} ${bodyClassName}`}>{children}</div>
+        <div className={`${styles.body} ${bodyClassName}`}>
+          <ErrorBoundary compact label={typeof caption === "string" ? caption : undefined}>
+            {children}
+          </ErrorBoundary>
+        </div>
       </motion.div>
     </section>
   );

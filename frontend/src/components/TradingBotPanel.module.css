@@ -9,12 +9,12 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s-3);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
 }
 .title {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -23,14 +23,14 @@
   margin-top: 3px;
   color: var(--text-faint);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   max-width: 90ch;
 }
 .tabs {
-  padding: var(--s-2) var(--s-4);
+  padding: var(--s-2) var(--gutter, var(--s-4));
   border-bottom: 1px solid var(--grid);
 }
 
 @media (max-width: 640px) {
-  .head, .tabs { padding-inline: var(--s-3); }
+  .head { align-items: center; }
 }

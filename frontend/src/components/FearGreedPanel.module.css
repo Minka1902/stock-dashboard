@@ -10,23 +10,23 @@
   display: flex;
   align-items: flex-start;
   gap: var(--s-3);
-  padding: var(--s-5);
+  padding: var(--s-5) var(--gutter, var(--s-5));
   border-bottom: 1px solid var(--border);
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 600;
 }
 
 .subtitle {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 
 .body {
-  padding: var(--s-4) var(--s-5);
+  padding: var(--s-4) var(--gutter, var(--s-5));
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
@@ -39,7 +39,7 @@
 }
 
 .score {
-  font-size: 38px;
+  font-size: 38px; /* one use, no exact token; --fs-hero (34px) would change desktop */
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -55,7 +55,7 @@
 }
 
 .rating {
-  font-size: 16px;
+  font-size: var(--fs-16);
   font-weight: 700;
   color: var(--text);
 }
@@ -63,7 +63,7 @@
 .rating[data-tone="greed"] { color: var(--positive); }
 
 .scoreSub {
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-muted);
 }
 
@@ -111,7 +111,7 @@
 }
 
 .scaleLabel {
-  font-size: 10px;
+  font-size: var(--fs-10);
   color: var(--text-faint);
   white-space: nowrap;
 }
@@ -122,7 +122,7 @@
 }
 
 .loadWrap {
-  padding: var(--s-4) var(--s-5);
+  padding: var(--s-4) var(--gutter, var(--s-5));
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
@@ -134,7 +134,7 @@
   align-items: center;
   text-align: center;
   gap: var(--s-2);
-  padding: 56px var(--s-5);
+  padding: 56px var(--gutter, var(--s-5));
 }
 
 .emptyIcon {
@@ -165,4 +165,9 @@
 .emptyBtn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* Phone: the blurb is behind the title's info control (PanelInfo). */
+@media (max-width: 640px) {
+  .subtitle { display: none; }
 }
