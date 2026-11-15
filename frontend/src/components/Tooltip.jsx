@@ -7,6 +7,7 @@ import Sheet from "./Sheet";
 import { NO_HOVER } from "../hooks/useMediaQuery";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import { placeFloating } from "../lib/floating";
+import { listenTaps } from "../lib/taps";
 import styles from "./Tooltip.module.css";
 
 /**
@@ -73,7 +74,6 @@ const WARM_WINDOW_MS = 500;
 const CLOSE_GRACE_MS = 120;
 const LONG_PRESS_MS = 500;
 const GAP = 8;
-const TAP_SLOP = 10;
 const LONG_TIP_CHARS = 180;
 const CONTROL = 'button, a[href], input, select, textarea, label, summary, [role="button"], [role="link"], '
   + '[role="tab"], [role="menuitem"], [role="option"], [role="switch"], [role="checkbox"], [role="radio"]';
@@ -289,7 +289,6 @@ export default function Tooltip({
   // whatever lies under the scrim.
   useEffect(() => {
     if (!shown) return undefined;
-    let tap = null;
     const onKey = (e) => {
       if (e.key !== "Escape") return;
       e.stopPropagation();
@@ -298,30 +297,16 @@ export default function Tooltip({
     };
     window.addEventListener("keydown", onKey, true);
     if (asSheet) return () => window.removeEventListener("keydown", onKey, true);
-    const onDown = (e) => {
-      if (triggerRef.current?.contains(e.target) || tipRef.current?.contains(e.target)) return;
-      if (e.pointerType === "mouse") hide();
-      else tap = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    const outside = (e) => !triggerRef.current?.contains(e.target) && !tipRef.current?.contains(e.target);
+    const onMouseDown = (e) => {
+      if (e.pointerType === "mouse" && outside(e)) hide();
     };
-    const onMove = (e) => {
-      if (tap?.id === e.pointerId && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > TAP_SLOP) tap = null;
-    };
-    const onCancel = () => { tap = null; };
-    const onUp = (e) => {
-      if (tap?.id !== e.pointerId) return;
-      tap = null;
-      hide();
-    };
-    document.addEventListener("pointerdown", onDown, true);
-    document.addEventListener("pointermove", onMove, true);
-    document.addEventListener("pointercancel", onCancel, true);
-    document.addEventListener("pointerup", onUp, true);
+    document.addEventListener("pointerdown", onMouseDown, true);
+    const stopTaps = listenTaps(document, { onTap: hide, accept: outside, capture: true });
     return () => {
       window.removeEventListener("keydown", onKey, true);
-      document.removeEventListener("pointerdown", onDown, true);
-      document.removeEventListener("pointermove", onMove, true);
-      document.removeEventListener("pointercancel", onCancel, true);
-      document.removeEventListener("pointerup", onUp, true);
+      document.removeEventListener("pointerdown", onMouseDown, true);
+      stopTaps();
     };
   }, [shown, asSheet, hide]);
 

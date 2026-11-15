@@ -16,6 +16,7 @@ import { useDrawings } from "../lib/drawings/useDrawings";
 import { SessionPrimitive } from "../lib/drawings/SessionPrimitive";
 import { canvasToBlob, composeSnapshot, snapshotFileName } from "../lib/chartSnapshot";
 import { useThemeColors, useTypeSizes, withAlpha } from "../lib/themeColors";
+import { listenTaps } from "../lib/taps";
 import ChartToolsSheet from "./chart/ChartToolsSheet";
 import DrawIcon from "./chart/DrawIcons";
 import DrawingRail from "./chart/DrawingRail";
@@ -353,6 +354,9 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
   const wantKeyRef = useRef(null);
   const prevBarsRef = useRef(null);    // identity check: did the bar data actually change?
   const legendMapsRef = useRef({ bars: [], byTime: new Map(), idx: new Map() });
+  // The crosshair legend's update, for a crosshair set by code (a tap), which
+  // the chart does not report as a crosshair move.
+  const showLegendRef = useRef(null);
   // The price series drawings anchor to, plus a counter that changes whenever
   // it is rebuilt so the drawing primitive can re-attach.
   const mainSeriesRef = useRef(null);
@@ -469,6 +473,10 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       },
       timeScale: { rightOffset: 4, secondsVisible: false },
       crosshair: { mode: 0 },
+      // One finger pans time and two pinch-zoom it (the defaults); a vertical
+      // swipe is left to the page, so a chart half a phone tall never traps
+      // its scroll.
+      handleScroll: { vertTouchDrag: false },
     });
     // Colours and the axis font size are applied by the effects below, which
     // run right after this one on mount and again whenever they change.
@@ -499,6 +507,7 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       setLegend({ ...b, changePct, overlays });
     };
     chart.subscribeCrosshairMove(onMove);
+    showLegendRef.current = onMove;
 
     const ro = new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth }));
     ro.observe(el);
@@ -631,6 +640,47 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, [height, hasData, phone]);
+
+  // ---- touch: a tap pins the crosshair readout to that bar; a second tap,
+  // or one anywhere else, clears it. A press the drawing tools take stops at
+  // the chart element (useDrawings), so it never reaches the chart's own
+  // listener here.
+  useEffect(() => {
+    const el = elRef.current;
+    if (!el || !hasData) return undefined;
+    let pinned = false;
+    const clear = () => {
+      if (!pinned) return;
+      pinned = false;
+      chartRef.current?.clearCrosshairPosition();
+      showLegendRef.current?.({ seriesData: new Map() });
+    };
+    const toggle = (e) => {
+      const chart = chartRef.current;
+      const main = mainSeriesRef.current;
+      if (pinned || !chart || !main) { clear(); return; }
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const time = chart.timeScale().coordinateToTime(x);
+      if (time == null) return;
+      const { bars: lbars, idx } = legendMapsRef.current;
+      const price = y <= (chart.panes()[0]?.getHeight() ?? 0)
+        ? main.coordinateToPrice(y)
+        : lbars[idx.get(time)]?.close;
+      if (price == null) return;
+      chart.setCrosshairPosition(price, time, main);
+      const at = Math.round(chart.timeScale().coordinateToLogical(x));
+      showLegendRef.current?.({ time, seriesData: new Map(overlayRef.current.map((o) => [o.series, o.series.dataByIndex(at)])) });
+      pinned = true;
+    };
+    const stopChart = listenTaps(el, { onTap: toggle });
+    const stopOutside = listenTaps(document, { onTap: clear, accept: (e) => !el.contains(e.target), capture: true });
+    return () => {
+      stopChart();
+      stopOutside();
+    };
+  }, [hasData]);
 
   // ---- options-only changes: price-scale mode/margins + intraday time axis ----
   useEffect(() => {
