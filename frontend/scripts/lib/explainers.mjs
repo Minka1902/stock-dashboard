@@ -55,10 +55,16 @@ async function check(page, cdp, trigger) {
   const spot = await probe(page, "neutralPoint", trigger.id);
   if (!spot) return fail(trigger, "no spot outside it to tap");
   if (!state.sheet) {
+    // Up, then down from the same point, so the page returns to where `spot`
+    // was found inert.
     await swipeStill(page, cdp, { from: spot, to: { x: spot.x, y: spot.y - 60 } });
+    await swipeStill(page, cdp, { from: spot, to: { x: spot.x, y: spot.y + 60 } });
     if (!(await isOpen(page, trigger.id))) return fail(trigger, "closed by a scroll");
   }
-  await tap(page, (await probe(page, "neutralPoint", trigger.id)) || spot);
+  // Only a spot inert as the page stands now: a stale one may have scrolled under a control.
+  const outside = await probe(page, "neutralPoint", trigger.id);
+  if (!outside) return fail(trigger, "no spot outside it to tap after a scroll");
+  await tap(page, outside);
   if (await isOpen(page, trigger.id)) return fail(trigger, `did not close on a tap outside${state.sheet ? " the sheet" : ""}`);
   return null;
 }
