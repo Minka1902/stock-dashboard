@@ -3,6 +3,7 @@ import { checkExplainers } from "./explainers.mjs";
 import { checkNumberFields } from "./forms.mjs";
 import { runGestures } from "./gestures.mjs";
 import { captureFullHeight, newContext, openPage, visit } from "./page.mjs";
+import { withVariant } from "./prefs.mjs";
 import { errorViolations } from "./report.mjs";
 import { FIRST_SCREEN, FIRST_SCREEN_WIDTH, fileStem } from "./views.mjs";
 
@@ -15,8 +16,9 @@ const MIN_HIT = 40;
 async function phoneTargets(browser, run, width, motion) {
   const viewport = { width, height: PHONE_HEIGHTS[width] || 844 };
   const options = { viewport, mobile: true, fixture: run.fixture, motion };
-  const authed = await openPage(await newContext(browser, { ...options, storageState: run.sessions.authed }));
-  const anon = await openPage(await newContext(browser, options));
+  const storageState = (state) => withVariant(state, run.base, run.variant);
+  const authed = await openPage(await newContext(browser, { ...options, storageState: storageState(run.sessions.authed) }));
+  const anon = await openPage(await newContext(browser, { ...options, storageState: storageState(undefined) }));
   return {
     viewport,
     pick: (view) => (view.anon ? anon : authed),
@@ -46,7 +48,7 @@ async function shootView(target, run, view, width) {
   const gated = width === FIRST_SCREEN_WIDTH;
   const firstScreen = gated ? FIRST_SCREEN[view.id] || [] : [];
   const audit = await target.page.evaluate((o) => window.__shotsProbe.audit(o), { minHit: MIN_HIT, firstScreen });
-  const file = join(run.out, "phone", `${fileStem(view.id)}@${width}.png`);
+  const file = join(run.out, `phone${run.suffix}`, `${fileStem(view.id)}@${width}.png`);
   const capture = await captureFullHeight(target.page, file);
   const touch = gated ? await touchGates(target, run, view) : { violations: [], explainers: null };
   return {
@@ -91,7 +93,7 @@ export async function swipePhone(browser, run, width) {
       .catch((err) => failed(view, width, target, err));
     result.ok = !result.blank && !result.errors.length;
     if (!result.ok) {
-      result.capture = join(run.out, "gestures", `${fileStem(view.id)}@${width}.png`);
+      result.capture = join(run.out, `gestures${run.suffix}`, `${fileStem(view.id)}@${width}.png`);
       await target.page.screenshot({ path: result.capture }).catch(() => {});
     }
     results.push(result);

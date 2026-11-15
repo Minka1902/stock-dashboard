@@ -18,6 +18,12 @@
  *                                            forms FORMS opens, has an inputmode)
  *   npm run shots:mobile -- --gestures       touch swipes on every view (STC-107)
  *   npm run shots:mobile -- --baseline-known record today's violations as known
+ *   npm run shots:mobile -- --theme light    the same in a display variant: --theme,
+ *                                            --dyslexia, --reduced-motion (the in-app
+ *                                            setting), --text-scale; the run starts
+ *                                            with them in localStorage, its output is
+ *                                            suffixed with the variant (phone-light/,
+ *                                            report-light.json)
  *   npm run shots:desktop                    record text geometry at 1440x900
  *   npm run shots:desktop -- --check         diff against desktop-baseline.json
  *   npm run shots:desktop -- --update        rewrite desktop-baseline.json
@@ -40,6 +46,7 @@ import { readJson, writeJson, writeRows } from "./lib/files.mjs";
 import { openFixture } from "./lib/fixture.mjs";
 import { PHONE_HEIGHTS, shootPhone, swipePhone } from "./lib/phone.mjs";
 import { launchChromium, loadPlaywright } from "./lib/playwright.mjs";
+import { displayVariant, TEXT_SCALE_VALUES, THEME_KEYS } from "./lib/prefs.mjs";
 import { countSummary, flatten, printSummary, worstOffenders } from "./lib/report.mjs";
 import { seed } from "./lib/seed.mjs";
 import { diffBaseline } from "./lib/textDiff.mjs";
@@ -59,6 +66,10 @@ const OPTIONS = {
   live: { type: "boolean" },
   motion: { type: "boolean" },
   "seed-only": { type: "boolean" },
+  theme: { type: "string" },
+  dyslexia: { type: "boolean" },
+  "reduced-motion": { type: "boolean" },
+  "text-scale": { type: "string" },
   widths: { type: "string" },
   views: { type: "string" },
   base: { type: "string", default: "http://127.0.0.1:8000" },
@@ -79,13 +90,22 @@ const USAGE = `usage: node scripts/mobile-shots.mjs [options]
   --motion           full motion (default: reduced, so nothing is captured mid-transition)
   --seed-only        create and seed the harness account, then exit
 
+Display variant (phone runs; output suffixed, e.g. phone-light/, report-light.json):
+  --theme KEY        ${THEME_KEYS.join(" | ")}
+  --dyslexia         dyslexia-friendly mode on
+  --reduced-motion   the in-app reduce-motion setting on
+  --text-scale S     ${TEXT_SCALE_VALUES.join(" | ")}
+
 Output: frontend/.mobile-shots/ (gitignored): phone/, desktop/, gestures/,
 report.json, gestures.json, desktop-current.json, desktop-diff.json.
 Exit codes: 0 clean, 1 new violations / differences / gesture failures, 2 setup problem.`;
 
 function parseOptions() {
   const { values } = parseArgs({ options: OPTIONS });
+  const variant = displayVariant(values);
   const misuse = [
+    variant.misuse,
+    values.desktop && variant.label && "--theme/--dyslexia/--reduced-motion/--text-scale are phone options",
     (values.check || values.update) && !values.desktop && "--check/--update need --desktop",
     values.desktop && (values.gestures || values["baseline-known"]) && "--gestures/--baseline-known are phone options",
     values.check && values.update && "--check and --update are exclusive",
@@ -101,7 +121,7 @@ function parseOptions() {
     console.error(`unknown width ${unknown.join(", ")}; known: ${PHONE_WIDTHS.join(", ")}`);
     process.exit(2);
   }
-  return { ...values, widths };
+  return { ...values, widths, variant };
 }
 
 function selectViews(filter) {
@@ -141,8 +161,9 @@ async function phoneRun(browser, run, opts) {
   const stale = opts["baseline-known"] ? [] : staleEntries(allow, results);
   const summary = countSummary(results, isNew);
   const worst = worstOffenders(results);
-  writeJson(`${OUT}report.json`, {
+  writeJson(`${OUT}report${run.suffix}.json`, {
     generatedAt: new Date().toISOString(), base: run.base, fixture: run.mode, motion: run.motion,
+    variant: run.variant.label || "default",
     summary, worst, newViolations: fresh, staleAllowances: stale, results,
   });
   if (opts["baseline-known"]) {
@@ -153,7 +174,8 @@ async function phoneRun(browser, run, opts) {
   printSummary({
     summary, worst, fresh, stale,
     header: `phone: ${run.views.length} views x ${opts.widths.join("/")} (${run.mode}, `
-      + `${run.motion ? "full" : "reduced"} motion) -> ${OUT}report.json`
+      + `${run.motion ? "full" : "reduced"} motion${run.variant.label ? `, ${run.variant.label}` : ""})`
+      + ` -> ${OUT}report${run.suffix}.json`
       + (opts["baseline-known"] ? `\nknown violations written to ${ALLOWLIST}` : ""),
   });
   return fresh.length ? 1 : 0;
@@ -162,8 +184,8 @@ async function phoneRun(browser, run, opts) {
 async function gestureRun(browser, run, opts) {
   const results = (await Promise.all(opts.widths.map((w) => swipePhone(browser, run, w)))).flat();
   const failures = results.filter((r) => !r.ok);
-  writeJson(`${OUT}gestures.json`, { generatedAt: new Date().toISOString(), base: run.base, failures, results });
-  console.log(`\ngestures: ${results.length} view/width runs, ${failures.length} failed -> ${OUT}gestures.json`);
+  writeJson(`${OUT}gestures${run.suffix}.json`, { generatedAt: new Date().toISOString(), base: run.base, failures, results });
+  console.log(`\ngestures: ${results.length} view/width runs, ${failures.length} failed -> ${OUT}gestures${run.suffix}.json`);
   for (const f of failures) {
     console.log(`  ${f.view} @${f.width}: ${f.blank ? "blank #root; " : ""}${f.errors.join(" | ")}`);
   }
@@ -229,6 +251,8 @@ async function main() {
       fixture,
       sessions,
       motion: Boolean(opts.motion),
+      variant: opts.variant,
+      suffix: opts.variant.label ? `-${opts.variant.label}` : "",
       mode: !fixture ? "live API" : fixture.replaying ? "frozen API" : "recording API",
       log: (line) => console.log(`  ${line}`),
     };
