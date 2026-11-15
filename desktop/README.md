@@ -98,11 +98,12 @@ that must be kept in sync — the same convention the extension already follows:
 | Poll cadence, `MAX_NOTIFICATIONS_PER_POLL` | `extension/src/background/index.js` |
 | `STALE_RUN_MS`, `isApplyRunning` in `src/updates/pending.js` | `STALE_RUN_SECONDS`, `is_apply_running` in `backend/app/updater.py` |
 
-The tray menu deliberately omits "Refresh all sources" (there is only
-`POST /api/refresh/{source}`, no bulk route, so it would mean duplicating
-`EXTERNAL_SOURCES` from `useDashboardData.js` here) and the theme/dyslexia
-toggles (they live in `SettingsContext` with no main-process representation).
-All three are one Ctrl+K away in the app.
+The tray menu lists the palette's navigation entries in its order. It
+deliberately omits Server (admin-only; the tray does not know the user's role)
+and the palette's actions: kill switch and paper trade open in-app dialogs,
+"Refresh all sources" has no bulk route (only `POST /api/refresh/{source}`),
+and the theme/dyslexia toggles live in the app's localStorage settings with no
+main-process representation. All of them are one Ctrl+K away in the app.
 
 ### Updates on launch
 

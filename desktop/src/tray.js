@@ -5,24 +5,27 @@ import { Menu, Tray, nativeImage } from "electron";
 import { TRAY_ICON } from "./config.js";
 import { badgeText } from "./alerts/seen.js";
 
-// Mirrors the Ctrl/Cmd+K command palette in frontend/src/App.jsx. Keep in sync.
+// Mirrors the navigation entries of the Ctrl/Cmd+K command palette
+// (`commandItems` in frontend/src/App.jsx), in its order. Keep in sync.
 //
-// Deliberately omitted: "Refresh all sources" (there is only
-// POST /api/refresh/{source} — no bulk route — so it would mean duplicating
-// EXTERNAL_SOURCES from useDashboardData.js here), and the theme/dyslexia
-// toggles (they live in SettingsContext with no main-process representation).
-// All three are one Ctrl+K away in the app itself.
+// Deliberately omitted: Server (admin-only, and the tray does not know the
+// user's role), and the palette's actions: kill switch and paper trade open
+// in-app dialogs, "Refresh all sources" has no bulk route (only
+// POST /api/refresh/{source}), and the theme/dyslexia toggles live in the
+// app's localStorage settings with no main-process representation. All of
+// them are one Ctrl+K away in the app itself.
 const NAV_ITEMS = [
   ["Market Sentiment", "/"],
   ["Suggestions", "/suggestions"],
   ["Portfolio", "/portfolio"],
   ["Trading Bot", "/trading-bot"],
-  ["Watchlist", "/watchlist"],
   ["Trades", "/trades"],
   ["News", "/news"],
-  ["Boom Score", "/boom-score"],
+  ["Watchlist", "/watchlist"],
   ["Economic Calendar", "/econ-calendar"],
   ["X Watch", "/x"],
+  ["Info", "/info"],
+  ["Settings", "/settings"],
 ];
 
 export class AppTray {
