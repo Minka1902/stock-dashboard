@@ -1,8 +1,9 @@
 // Boom Score presentation metadata.
 //
-// COPIED from frontend/src/components/BoomScorePanel.jsx:15-48, where these are
-// module-local and not exported. The extension is a separate app and must not
-// reach across into frontend/src, so this is a deliberate duplicate.
+// COPIED from frontend/src/components/BoomScorePanel.jsx (CHIP_META, HORIZON_TIP,
+// convictionTier), where these are module-local and not exported. The extension
+// is a separate app and must not reach across into frontend/src, so this is a
+// deliberate duplicate.
 //
 // KEEP IN SYNC: if the tier thresholds or the chip labels change there, change
 // them here too. tests/boom.test.js pins the tier boundaries so a silent drift in

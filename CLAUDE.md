@@ -31,7 +31,8 @@ Imports are package-relative (`from app import db`), so **always run from `backe
 temp-file SQLite DB per test.
 
 ### Frontend (`frontend/`) — React 19 + Vite, plain CSS Modules
-Standard npm scripts (`install` / `dev` / `build` / `lint`) — see `package.json`.
+Standard npm scripts (`install` / `dev` / `build` / `lint`) — see `package.json`, plus the phone
+and desktop regression harness (`shots:mobile`, `shots:desktop`; see Frontend architecture).
 
 **Two run modes:**
 - **Single port (prod-like):** `cd frontend && npm run build`, then run uvicorn — the backend
@@ -123,7 +124,7 @@ No root package manager, so the companions copy rather than share:
 | `extension/…` `convictionTier`/`CHIP_META` | `frontend/src/components/BoomScorePanel.jsx` |
 | `desktop/src/alerts/seen.js`, `desktop/tests/seen.test.js` | `extension/src/background/seen.js` (verbatim) |
 | `"app:navigate"` in `desktop/src/preload.cjs` | `NAV_EVENT` in `frontend/src/lib/nav.js` |
-| `desktop/src/tray.js` menu items | `commandItems` in `frontend/src/App.jsx` |
+| `desktop/src/tray.js` menu items | the navigation entries of `commandItems` in `frontend/src/App.jsx` |
 | poll cadence, `MAX_NOTIFICATIONS_PER_POLL` | `extension/src/background/index.js` |
 | `STALE_RUN_MS`, `isApplyRunning` in `desktop/src/…` | `STALE_RUN_SECONDS`, `is_apply_running` in `backend/app/updater.py` |
 
@@ -341,9 +342,16 @@ sitting in context every session.
   a view or closes the tab — and it is why `openTickerTab` must not pass `noopener`, which
   forfeits a tab's right to close itself.
 - Navigation items live in `src/lib/navItems.js`, shared by the desktop rail (`Sidebar`) and the
-  phone tab bar (`MobileNav`, ≤640px: the five core views plus a "More" sheet). On a phone the
-  TopBar is one row, and refresh / theme / dyslexia / tour move into `UserMenu` `phoneItems`.
-  Breakpoints and the `(pointer: coarse)` → `--tap` (40px) rule are documented in DESIGN.md.
+  phone tab bar (`MobileNav`, ≤640px). The tab bar shows the views pinned in the `phoneTabs`
+  setting (`useSettings`; 2–5, default `PRIMARY_KEYS`, resolved by `phoneTabKeys`) plus a "More"
+  sheet grouped by `NAV_GROUPS`, with a pin toggle per view. On a phone the TopBar is one row, and
+  refresh / theme / dyslexia / tour move into `UserMenu` `phoneItems`. The phone design system
+  (type scale, `--type-scale` text size, control sizing, layout contract, touch rules) is in
+  DESIGN.md → Phone; desktop (>640px) must not change when the phone does.
+- **`ErrorBoundary`** keeps a render error inside its pane (caption, message, stack, Try again /
+  Copy details / Reload). It wraps the app (`Root.jsx`), the view switch and the stock page in
+  `App.jsx` (`resetKeys` = view / ticker), and every `CollapsibleSection` and `Dialog` body
+  (`compact`). A new pane-level container should wrap its body the same way.
 - The **Trading Bot page** (`TradingBotPanel`) is a tab host. Every bot/risk/paper/rules/scanner
   /audit UI lives in a `*Tab` there, deep-linked with `?tab=` (`navigateTo({kind: "view", view:
   "trading-bot", tab})`). Other pages only get small entry points that open the same shared
@@ -352,6 +360,33 @@ sitting in context every session.
   `ConfirmDialog`, `Field` (label + hint + field error), `Button`, and `ScrollHint` (edge fade on
   sideways-scrolling tables). `ApiError.fields` carries the backend's field-level errors
   (`detail = {message, errors}`).
+- **`DataTable`** is the only table: columns are described once, and with `layout="auto"` it is a
+  table above 640px and a list of two-line cards (`DataCards`/`DataCard`) at or below, each column
+  placed by its `phone` role (`title` / `subtitle` / `value` / `meta` / `hidden` / `actions`);
+  row actions become a "⋯" menu, sorting a picker. Only `CorrelationHeatmap` uses
+  `layout="scroll"`. A hand-rolled `<table>` is the regression to watch for.
+- **Sheet family**: `Sheet` is the modal layer under `Dialog` and every `Popover`, so on a phone
+  every dialog, menu and picker is a bottom sheet. `Dialog form` is a full-height form sheet with
+  a pinned footer; `FormSheet` sits in its page on a desktop and opens as that sheet on a phone;
+  `SheetActions` puts a form's buttons in the footer. Long phone pages use `PhoneFold` +
+  `SectionIndex`, `ShowAll` + `usePhoneLimit`, `ScrollRow`, and `PanelInfo` (DESIGN.md → Phone).
+- **Phone harness** (`frontend/scripts/mobile-shots.mjs`, Playwright resolved from a local or
+  global install, no dependency). Needs `npm run build` and a backend on `127.0.0.1:8000` on a
+  scratch DB (`STOCKS_SCHEDULER_STARTUP_DELAY_SECONDS=3600`). It registers and seeds a throwaway
+  account and answers every GET from the frozen `.mobile-shots/api-fixture.json` (gitignored,
+  `--record` re-records) with a pinned clock, so runs differ only by code.
+  - `npm run shots:mobile` captures every view, Trading Bot tab, stock page and auth screen at
+    360/390/430 and fails on any gate: `overflow` (sideways scroll), `clip`, `hit` (<40×40),
+    `first` (`FIRST_SCREEN` in `scripts/lib/views.mjs`: what each view must show in its first
+    screen at 390×844), `explain` (explainers open/close by tap, never by scroll), `input`
+    (number fields have `inputmode`, on the page and in the forms `FORMS` opens), `error`.
+    Display variants: `--theme <key>`, `--dyslexia`, `--reduced-motion`, `--text-scale <size>`
+    (seeded into localStorage; output suffixed, e.g. `report-light.json`).
+  - `-- --gestures`: touch swipes on every view, failing on any page error (STC-107).
+  - `npm run shots:desktop -- --check`: text geometry of every view at 1440×900 against
+    `scripts/desktop-baseline.json`, the "desktop unchanged" gate (`--update` rewrites it).
+  - Known violations live in `scripts/mobile-shots.allow.json` (empty today: keep it that way;
+    fix rather than allowlist).
 - Styling is **CSS Modules + design tokens** defined in `src/index.css` (`:root` custom properties
   for spacing/radius/typography; the "Iris Dusk" dark theme). No CSS framework. Accessibility is a
   first-class concern: an always-on ADHD-friendly type scale and an opt-in dyslexia mode

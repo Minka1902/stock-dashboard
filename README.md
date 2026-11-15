@@ -27,10 +27,10 @@ Architecturally it is a **FastAPI + SQLite + APScheduler** backend that ingests 
   - **Audit**: a per-user, hash-chained audit log, plus a global kill switch that needs a fresh TOTP to release.
 - **Alpaca paper broker** — a Broker tab sends orders to your Alpaca paper account through the same guardrails, kill switch and audit log; fills sync back every minute and positions and cash are reconciled. Live trading stays off.
 - **Telegram** — link a private chat in Settings to get high-severity alerts and bot fills, and ask the bot `/status`, `/bots`, `/watchlist` or `/alerts` (read-only).
-- **Works on a phone** — a bottom tab bar, one-row top bar, stacked portfolio cards and 40px touch targets below 640px.
+- **Works on a phone** — full parity below 640px: a bottom tab bar you can pin views to, a one-row top bar, tables as two-line rows, forms and menus as bottom sheets, a phone type scale with a Text size setting, and 40px touch targets. Explainers open by tap; the chart pans and pinch-zooms.
 - **Charts** — candlestick charts with extended hours, drawing tools and saved drafts.
 - **Multi-user with mandatory 2FA** — Argon2id passwords, TOTP (Google/Microsoft Authenticator), recovery codes, optional OAuth sign-in. Market data is shared; watchlists, portfolio and notifications are per user.
-- **Operations built in** — editable per-source schedules, run-now, a queue view, and a one-click in-app updater (admin only) with rollback on failure.
+- **Operations built in** — editable per-source schedules, run-now, a queue view, manual file import for a source whose provider blocks automated fetches (FINRA margin debt), and a one-click in-app updater (admin only) with rollback on failure.
 - **Companions** — a browser extension that adds ticker badges and desktop alerts, an Electron tray app that checks for updates on every launch, and a one-click Windows installer (`SignalSetup.exe`).
 
 ## Architecture
