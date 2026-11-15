@@ -39,7 +39,7 @@ export function dropdownStyle(anchorEl, align, gap) {
   return {
     position: "fixed",
     top,
-    maxHeight: `calc(100vh - ${Math.round(top)}px - 16px)`,
+    maxHeight: `calc(100dvh - ${Math.round(top)}px - 16px)`,
     maxWidth: `calc(100vw - ${Math.round(edge)}px - ${VIEWPORT_MARGIN}px)`,
     zIndex: "var(--z-popover)",
     ...(side === "end" ? { right: edge } : { left: edge }),

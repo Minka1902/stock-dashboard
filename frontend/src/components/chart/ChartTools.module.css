@@ -374,7 +374,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 14vh;
+  padding-top: 14dvh;
 }
 .dialog {
   width: min(460px, 92vw);

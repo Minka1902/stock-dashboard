@@ -6,7 +6,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 14vh;
+  padding-top: 14dvh;
   animation: fade var(--dur-2) var(--ease-out-quart);
 }
 
@@ -57,7 +57,7 @@
   list-style: none;
   margin: 0;
   padding: var(--s-2);
-  max-height: 46vh;
+  max-height: 46dvh;
   overflow-y: auto;
 }
 

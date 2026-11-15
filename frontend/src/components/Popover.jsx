@@ -12,7 +12,7 @@ const SHEET_STYLE = {
   width: "100%",
   minWidth: 0,
   maxWidth: "none",
-  maxHeight: "85svh",
+  maxHeight: "85dvh",
   overflowY: "auto",
   borderRadius: "var(--r-lg) var(--r-lg) 0 0",
   borderBottom: "none",
