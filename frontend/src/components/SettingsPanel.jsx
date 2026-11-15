@@ -514,6 +514,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
                   step="any"
                   inputMode="decimal"
                   placeholder="50000"
+                  enterKeyHint="done"
                   value={profile.account_size ?? ""}
                   onChange={(e) => update({ account_size: e.target.value === "" ? null : Number(e.target.value) })}
                 />
@@ -528,6 +529,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
                   max="10"
                   step="0.1"
                   inputMode="decimal"
+                  enterKeyHint="done"
                   value={profile.risk_pct ?? 1}
                   onChange={(e) => update({ risk_pct: Number(e.target.value) })}
                 />
@@ -581,6 +583,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
                   type="email"
                   placeholder="you@example.com"
                   autoComplete="email"
+                  enterKeyHint="done"
                   value={profile.email}
                   onChange={(e) => update({ email: e.target.value })}
                 />
@@ -604,6 +607,7 @@ export default function SettingsPanel({ settings, setSetting, onNavigate, appSet
                   type="tel"
                   placeholder="+14155551234"
                   autoComplete="tel"
+                  enterKeyHint="done"
                   value={profile.phone}
                   onChange={(e) => update({ phone: e.target.value })}
                 />

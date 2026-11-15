@@ -46,10 +46,11 @@ const COLUMNS = [
     sort: (t) => Date.parse(t.transaction_date) || 0, render: (t) => formatDate(t.transaction_date) },
   { key: "filing", label: "Filing", skeleton: "32px",
     render: (t) => (t.source_url ? (
-      <a className={styles.link} href={t.source_url} target="_blank" rel="noreferrer"
-         title={t.doc_id ? `House Clerk PTR ${t.doc_id}, filed ${t.filed_at}` : "Senate Stock Watcher"}>
-        {t.doc_id ? "PTR ↗" : "source ↗"}
-      </a>
+      <Tooltip content={t.doc_id ? `House Clerk PTR ${t.doc_id}, filed ${t.filed_at}` : "Senate Stock Watcher"}>
+        <a className={styles.link} href={t.source_url} target="_blank" rel="noreferrer">
+          {t.doc_id ? "PTR ↗" : "source ↗"}
+        </a>
+      </Tooltip>
     ) : <span className={styles.muted}>—</span>) },
 ];
 

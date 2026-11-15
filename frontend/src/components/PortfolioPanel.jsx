@@ -295,7 +295,7 @@ export default function PortfolioPanel({
     };
   };
   const sharesInput = (h) => (
-    <input className={styles.editInput} type="number" min="0" step="any"
+    <input className={styles.editInput} type="number" min="0" step="any" inputMode="decimal" enterKeyHint="done"
            aria-label={`Shares of ${h.ticker}`}
            value={editShares} onChange={(e) => setEditShares(e.target.value)} autoFocus />
   );
@@ -341,7 +341,7 @@ export default function PortfolioPanel({
       key: "cost", label: "Avg Cost", caption: "Avg cost", className: styles.numCol,
       render: (h) => (rowEditing(h) ? (
         <span className={styles.editCost}>
-          <input className={styles.editInput} type="number" min="0" step="any"
+          <input className={styles.editInput} type="number" min="0" step="any" inputMode="decimal" enterKeyHint="done"
                  aria-label={`Average cost of ${h.ticker} in ${editCcy}`}
                  value={editCost} onChange={(e) => setEditCost(e.target.value)}
                  onKeyDown={(e) => { if (e.key === "Escape") setEditing(null); if (e.key === "Enter") saveEdit(h); }} />
@@ -521,15 +521,16 @@ export default function PortfolioPanel({
   const addForm = (
     <form className={styles.form} onSubmit={submit} data-tour={phone ? undefined : "add-form"}>
       <input className={styles.ticker} placeholder="Ticker" value={ticker} maxLength={12}
+             autoCapitalize="characters" autoComplete="off" spellCheck={false} enterKeyHint="done"
              aria-label="Ticker (e.g. AAPL or TEVA.TA)"
              onChange={(e) => setTicker(e.target.value.toUpperCase())} />
       <input className={styles.num} placeholder="Shares" value={shares} type="number" min="0" step="any"
-             aria-label="Shares"
+             inputMode="decimal" enterKeyHint="done" aria-label="Shares"
              onChange={(e) => setShares(e.target.value)} />
       <input className={styles.num}
              placeholder={`Cost${(addCcy === "auto" ? detected : addCcy) ? ` ${currencySymbol(addCcy === "auto" ? detected : addCcy).trim()}` : ""}`}
              aria-label="Average cost per share, in the position's currency"
-             value={avgCost} type="number" min="0" step="any"
+             value={avgCost} type="number" min="0" step="any" inputMode="decimal" enterKeyHint="done"
              onChange={(e) => setAvgCost(e.target.value)} />
       <Tooltip content="The position's currency. Auto: .TA tickers are shekels, US symbols dollars, anything else is asked from Yahoo.">
         <span className={styles.ccyPick}>

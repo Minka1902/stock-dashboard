@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import DataTable from "./DataTable";
 import Segmented from "./Segmented";
+import Tooltip from "./Tooltip";
 import { currencyForSymbol, formatPercentSigned, formatPrice, formatRelativeTime } from "../lib/format";
 import { openTickerTab } from "../lib/nav";
 import styles from "./ScannerPanel.module.css";
@@ -62,7 +63,9 @@ export default function ScannerPanel({
       render: (r) => <button type="button" className={styles.ticker} onClick={() => onOpen(r.ticker)}>{r.ticker}</button> },
     { key: "scans", label: "Matched", phone: "subtitle",
       render: (r) => r.hits.map((h) => (
-        <span key={h.scan} className={styles.chip} title={meta[h.scan]?.description}>{meta[h.scan]?.label || h.scan}</span>
+        <Tooltip key={h.scan} content={meta[h.scan]?.description}>
+          <span className={styles.chip}>{meta[h.scan]?.label || h.scan}</span>
+        </Tooltip>
       )) },
     { key: "price", label: "Price", className: styles.num, phone: "value", sort: (r) => r.price,
       render: (r) => formatPrice(r.price, currencyForSymbol(r.ticker)) },

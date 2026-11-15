@@ -2,6 +2,7 @@ import Clamp from "./Clamp";
 import PaperTradeButton from "./PaperTradeButton";
 import ScannerAlertsCard from "./ScannerAlertsCard";
 import ScannerPanel from "./ScannerPanel";
+import Tooltip from "./Tooltip";
 import WatchButton from "./WatchButton";
 import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { useScanner } from "../hooks/useScanner";
@@ -44,10 +45,11 @@ export default function ScannerTab() {
       <section className={styles.head} aria-labelledby="scanner-title">
         <div className={styles.titleRow}>
           <h3 id="scanner-title" className={styles.title}>Market scanner</h3>
-          <span className={styles.live} data-live={live ? "yes" : "no"}
-                title={live ? "Matches arrive as each scan finishes" : "Reconnecting; checking every minute meanwhile"}>
-            {live ? "Live" : "Polling"}
-          </span>
+          <Tooltip content={live ? "Matches arrive as each scan finishes" : "Reconnecting; checking every minute meanwhile"}>
+            <span className={styles.live} data-live={live ? "yes" : "no"}>
+              {live ? "Live" : "Polling"}
+            </span>
+          </Tooltip>
         </div>
         <p className={styles.text}>
           <Clamp active={phone} label="scanner universe">

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { checkExplainers } from "./explainers.mjs";
+import { checkNumberFields } from "./forms.mjs";
 import { runGestures } from "./gestures.mjs";
 import { captureFullHeight, newContext, openPage, visit } from "./page.mjs";
 import { errorViolations } from "./report.mjs";
@@ -31,12 +32,13 @@ function failed(view, width, target, err) {
   };
 }
 
-// The touch gate (explainers) interacts with the page, so it runs after the
-// capture, at the first-screen width only: what it checks does not change
-// with the width.
-async function touchGates(target) {
+// The touch gates (explainers, number keyboards) interact with the page, so
+// they run after the capture, at the first-screen width only: what they
+// check does not change with the width.
+async function touchGates(target, run, view) {
   const explainers = await checkExplainers(target.page);
-  return { violations: explainers.violations, explainers: explainers.tapped };
+  const fields = await checkNumberFields(target, run, view);
+  return { violations: [...explainers.violations, ...fields], explainers: explainers.tapped };
 }
 
 async function shootView(target, run, view, width) {
@@ -46,7 +48,7 @@ async function shootView(target, run, view, width) {
   const audit = await target.page.evaluate((o) => window.__shotsProbe.audit(o), { minHit: MIN_HIT, firstScreen });
   const file = join(run.out, "phone", `${fileStem(view.id)}@${width}.png`);
   const capture = await captureFullHeight(target.page, file);
-  const touch = gated ? await touchGates(target) : { violations: [], explainers: null };
+  const touch = gated ? await touchGates(target, run, view) : { violations: [], explainers: null };
   return {
     view: view.id, width, ...audit, violations: [...audit.violations, ...touch.violations],
     explainers: touch.explainers, errors: [...target.state.errors], capture: { file, ...capture },

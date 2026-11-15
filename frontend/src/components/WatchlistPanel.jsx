@@ -161,6 +161,7 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
             value={renameDraft}
             autoFocus
             maxLength={60}
+            enterKeyHint="done"
             onChange={(e) => setRenameDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setRenamingId(null); }}
             onBlur={commitRename}
@@ -204,6 +205,7 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
           value={newName}
           autoFocus
           maxLength={60}
+          enterKeyHint="done"
           placeholder="List name"
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") commitCreate(); if (e.key === "Escape") setCreating(false); }}
@@ -223,6 +225,10 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
         placeholder="Ticker (e.g. LMT)"
         value={ticker}
         maxLength={12}
+        autoCapitalize="characters"
+        autoComplete="off"
+        spellCheck={false}
+        enterKeyHint="done"
         onChange={(e) => setTicker(e.target.value)}
       />
       <input
@@ -230,6 +236,7 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
         placeholder="Note (optional)"
         value={note}
         maxLength={120}
+        enterKeyHint="done"
         onChange={(e) => setNote(e.target.value)}
       />
       <button className={styles.add} disabled={pending || !ticker.trim()}>
@@ -364,6 +371,7 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
                   value={noteDraft}
                   autoFocus
                   maxLength={120}
+                  enterKeyHint="done"
                   placeholder="Note"
                   aria-label={`Note for ${w.ticker}`}
                   onChange={(e) => setNoteDraft(e.target.value)}

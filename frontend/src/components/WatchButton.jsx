@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Button from "./Button";
+import Tooltip from "./Tooltip";
 import { addWatch } from "../api";
 
 /**
@@ -25,9 +26,11 @@ export default function WatchButton({ ticker, listId = null, label = "+ Watch", 
 
   if (state === "done") return <span role="status" aria-live="polite">Watching</span>;
   return (
-    <Button size={size} variant={variant} onClick={add} disabled={state === "busy"}
-            title={error || `Add ${ticker} to your watchlist`} aria-label={`Add ${ticker} to your watchlist`}>
-      {label}
-    </Button>
+    <Tooltip content={error || `Add ${ticker} to your watchlist`}>
+      <Button size={size} variant={variant} onClick={add} disabled={state === "busy"}
+              aria-label={`Add ${ticker} to your watchlist`}>
+        {label}
+      </Button>
+    </Tooltip>
   );
 }

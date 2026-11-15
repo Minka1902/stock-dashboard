@@ -100,6 +100,31 @@ export const FIRST_SCREEN = {
   ]])),
 };
 
+/**
+ * Forms the number keyboard check opens on each view at 390x844, as the
+ * buttons (or menu items) to press in order. Only buttons that open
+ * something: a form that sits on the page is read with the page. A string
+ * presses the first visible match of that exact name; a pattern keeps
+ * pressing until nothing visible matches (all of a page's folded sections).
+ */
+export const FORMS = {
+  portfolio: [
+    ["Add holding"],
+    ["Manage cash: deposit, withdraw or set a balance"],
+    ["Actions for NVDA", "Sell…"],
+    ["Actions for NVDA", "Exit rule…"],
+    ["Actions for NVDA", "Edit shares, cost or theme"],
+  ],
+  watchlist: [["Add ticker"]],
+  "trading-bot": [["+ New bot"]],
+  "trading-bot?tab=risk": [["Set limit"], ["Edit guardrails"], ["Add rule"]],
+  "trading-bot?tab=rules": [["+ New rule"]],
+  "trading-bot?tab=lots": [["Check a sale"], ["Targets & plan"]],
+  "stock/AAPL": [["Paper trade"]],
+  settings: [[/^Expand /]],
+  server: [[/^Expand /]],
+};
+
 function tradingBotTabs() {
   const block = /const TABS = \{([\s\S]*?)\n\};/.exec(readFileSync(TRADING_BOT_SOURCE, "utf8"));
   const keys = block ? [...block[1].matchAll(/^ {2}([\w-]+): \{/gm)].map((m) => m[1]) : [];

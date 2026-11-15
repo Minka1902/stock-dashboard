@@ -123,7 +123,7 @@ export default function CashBalances({
           <Tooltip content={form.mode === "set"
             ? "The balance becomes exactly this; the difference is recorded as a deposit or withdrawal."
             : "Recorded in the transaction history."}>
-            <input className={styles.input} type="number" min="0" step="any" autoFocus
+            <input className={styles.input} type="number" min="0" step="any" inputMode="decimal" enterKeyHint="done" autoFocus
                    placeholder={`Amount ${currencySymbol(form.currency).trim()}`}
                    aria-label={`Amount in ${form.currency}`} value={form.amount}
                    onChange={(e) => setForm({ ...form, amount: e.target.value })}

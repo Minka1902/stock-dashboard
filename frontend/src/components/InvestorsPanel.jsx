@@ -28,9 +28,14 @@ const COLUMNS = [
     render: (m) => <span className={styles.badge} data-tone={MOVE_TONE[m.status]}>{m.status.toLowerCase()}</span> },
   { key: "ticker", label: "Stock", phone: "title", sort: (m) => m.ticker || m.issuer,
     render: (m) => (m.ticker ? (
-      <button type="button" className={styles.ticker} onClick={() => openTickerTab(m.ticker)}
-              title={`${m.issuer} · ticker matched by ${m.ticker_source}`}>{m.ticker}</button>
-    ) : <span className={styles.muted} title="no ticker matched">{m.issuer}</span>) },
+      <Tooltip content={`${m.issuer} · ticker matched by ${m.ticker_source}`}>
+        <button type="button" className={styles.ticker} onClick={() => openTickerTab(m.ticker)}>{m.ticker}</button>
+      </Tooltip>
+    ) : (
+      <Tooltip content="no ticker matched">
+        <span className={styles.muted}>{m.issuer}</span>
+      </Tooltip>
+    )) },
   { key: "change", label: "Change", cellClassName: styles.muted, sort: (m) => m.change_pct,
     render: changeText },
   { key: "value", label: "Value", className: styles.num, phone: "value", sort: (m) => Math.max(m.value, m.prev_value),

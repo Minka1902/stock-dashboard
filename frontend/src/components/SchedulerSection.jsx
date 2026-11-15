@@ -65,6 +65,8 @@ function IntervalEditor({ seconds, onCommit, source }) {
         type="number"
         min="1"
         step="1"
+        inputMode="numeric"
+        enterKeyHint="done"
         className={styles.num}
         value={value}
         aria-label={`${source} interval`}
@@ -129,6 +131,7 @@ function TimesEditor({ times, onCommit, reduced, source }) {
         className={styles.time}
         value={adding}
         aria-label={`${source}: add a time`}
+        enterKeyHint="done"
         onChange={(e) => setAdding(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") add(); }}
       />
@@ -153,7 +156,9 @@ function TzEditor({ tz, onCommit, listId, source }) {
       list={listId}
       value={value}
       aria-label={`${source} timezone`}
+      autoCapitalize="none"
       spellCheck={false}
+      enterKeyHint="done"
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {

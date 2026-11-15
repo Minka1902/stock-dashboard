@@ -11,7 +11,9 @@
  * - `scroller()`: the element the page scrolls in (the app's inner `.scroll`
  *   pane, or the document on the auth screens);
  * - `explainers()`, `aim(i)`, `tipState(id)`, `neutralPoint(id)`: the touch
- *   explainer gate's half (see explainers.mjs).
+ *   explainer gate's half (see explainers.mjs);
+ * - `numberFields(scope)`: fields that take a number but would not bring up
+ *   a number keyboard.
  *
  * Elements are named by a short selector: tag, id and up to two CSS-module
  * class names with the build hash and line number stripped (`_tab_x1y2z_40`
@@ -36,6 +38,8 @@ export function installProbe() {
   const CONTROL = 'button, a[href], input, select, textarea, label, summary, [role="button"], [role="link"], '
     + '[role="tab"], [role="menuitem"], [role="option"], [role="switch"], [role="checkbox"], [role="radio"]';
   const TAP_REACH = 16;
+  const NUMBER_WORDS = /\b(price|qty|quantity|shares|amount|cost|fees?|percent|pct|stop|target|limit|weight|band|notional|days|hours|minutes|interval|threshold|loss|allocation|deposit|withdraw|per hour|per day|code)\b|%/i;
+  const NOT_NUMBER = /\b(ticker|symbol|name|note|email|phone|reason|title|search)\b/i;
   const SCROLLS = /auto|scroll/;
   const CLIPS = /hidden|clip/;
 
@@ -330,5 +334,22 @@ export function installProbe() {
     return null;
   }
 
-  window.__shotsProbe = { audit, textNodes, scroller, explainers, aim, tipState, neutralPoint };
+  function fieldName(el) {
+    const label = [...(el.labels || [])].map((l) => squash(l.innerText)).join(" ");
+    return squash([el.name, el.id && !GENERATED_ID.test(el.id) ? el.id : "", el.getAttribute("aria-label"),
+      el.placeholder, label].filter(Boolean).join(" "));
+  }
+
+  /** Visible fields under `scope` whose type or name says "number" but that have no inputmode. */
+  function numberFields(scope) {
+    const root = scope ? document.querySelector(scope) : document.body;
+    if (!root) return [];
+    return [...root.querySelectorAll("input:not([type=hidden], [type=checkbox], [type=radio], [type=range])")]
+      .filter((el) => visible(el) && !el.inputMode)
+      .filter((el) => el.type === "number"
+        || (el.type === "text" && NUMBER_WORDS.test(fieldName(el)) && !NOT_NUMBER.test(fieldName(el))))
+      .map((el) => ({ element: selector(el), sample: fieldName(el).slice(0, 40), type: el.type }));
+  }
+
+  window.__shotsProbe = { audit, textNodes, scroller, explainers, aim, tipState, neutralPoint, numberFields };
 }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import Button from "./Button";
 import DataTable from "./DataTable";
 import ExitRuleDialog from "./ExitRuleDialog";
+import Tooltip from "./Tooltip";
 import { useExitRules } from "../hooks/useExitRules";
 import { openTickerTab } from "../lib/nav";
 import { formatMoney } from "../lib/format";
@@ -42,7 +43,9 @@ export default function ExitRulesTable({ account = "manual", title = "Exit rules
     { key: "cost", label: "Avg cost", className: styles.num, render: (i) => money(i)(i.avg_cost) },
     { key: "stop", label: "Stop", className: styles.num,
       render: (i) => (i.levels?.stop != null ? money(i)(i.levels.stop) : i.suggested ? (
-        <span className={styles.suggested} title={i.suggested.reason}>suggested {money(i)(i.suggested.stop_price)}</span>
+        <Tooltip content={i.suggested.reason}>
+          <span className={styles.suggested}>suggested {money(i)(i.suggested.stop_price)}</span>
+        </Tooltip>
       ) : "—") },
     { key: "target", label: "Target", className: styles.num, render: (i) => money(i)(i.levels?.take_profit) },
     { key: "trail", label: "Trail", className: styles.num,

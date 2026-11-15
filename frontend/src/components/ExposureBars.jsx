@@ -1,3 +1,4 @@
+import Tooltip from "./Tooltip";
 import styles from "./ExposureBars.module.css";
 
 /**
@@ -14,7 +15,9 @@ export default function ExposureBars({ rows, title, max = 8, highlightAbove = 0.
       <ul className={styles.list}>
         {shown.map((r) => (
           <li key={r.name} className={styles.row}>
-            <span className={styles.name} title={r.name}>{r.name}</span>
+            <Tooltip truncate>
+              <span className={styles.name}>{r.name}</span>
+            </Tooltip>
             <span className={styles.track}>
               <span className={styles.fill} data-hot={r.weight >= highlightAbove ? "yes" : "no"}
                     style={{ width: `${Math.max(r.weight * 100, 0.5)}%` }} />

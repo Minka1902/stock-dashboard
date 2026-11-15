@@ -1,5 +1,6 @@
 import { useState } from "react";
 import DataTable from "./DataTable";
+import Tooltip from "./Tooltip";
 import { formatDate, formatMoney } from "../lib/format";
 import styles from "./TaxLotsTable.module.css";
 
@@ -8,7 +9,9 @@ const CARD_TONE = { up: "pos", down: "neg" };
 
 function approx(l) {
   return !l.exact && (
-    <span className={styles.approx} title="an edit set this position; when these shares were bought isn't known"> ≈</span>
+    <Tooltip content="an edit set this position; when these shares were bought isn't known">
+      <span className={styles.approx}> ≈</span>
+    </Tooltip>
   );
 }
 

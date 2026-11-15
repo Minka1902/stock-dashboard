@@ -1,7 +1,7 @@
 // Console summary for the phone pass: a count table per gate and width, the
 // worst offenders, and every violation that is not in the allowlist. Repeats
 // (one per watchlist row, one per width) are folded into one line with a count.
-export const GATES = ["overflow", "clip", "hit", "first", "explain", "error"];
+export const GATES = ["overflow", "clip", "hit", "first", "explain", "input", "error"];
 const WORST = 10;
 const MAX_NEW_LINES = 60;
 
@@ -11,6 +11,7 @@ const UNIT = {
   hit: (v) => `${v.size} (${v.px}px short)`,
   first: (v) => (v.px ? `${v.px}px below the first screen` : "not on the page"),
   explain: (v) => v.reason,
+  input: (v) => v.reason,
   error: () => "",
 };
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Tooltip from "./Tooltip";
 import { AUDIT_CSV_URL, getAudit } from "../api";
 import { formatRelativeTime } from "../lib/format";
 import styles from "./AuditTab.module.css";
@@ -53,7 +54,9 @@ export default function AuditTab() {
         <ol className={styles.list}>
           {data.entries.map((e) => (
             <li key={e.id} className={styles.row}>
-              <span className={styles.when} title={e.at}>{formatRelativeTime(e.at)}</span>
+              <Tooltip content={e.at}>
+                <span className={styles.when}>{formatRelativeTime(e.at)}</span>
+              </Tooltip>
               <span className={styles.kind} data-tone={TONE[e.kind] || "flat"}>{KIND_LABEL[e.kind] || e.kind}</span>
               <span className={styles.detail}>{summary(e.detail)}</span>
             </li>

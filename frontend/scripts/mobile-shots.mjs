@@ -13,7 +13,9 @@
  *   npm run shots:mobile                     captures + gates at 360/390/430 (at 390
  *                                            also the touch gates: every kind of
  *                                            explainer opens on a tap and closes on a
- *                                            tap outside, never on a scroll)
+ *                                            tap outside, never on a scroll; every
+ *                                            number field, on the page and in the
+ *                                            forms FORMS opens, has an inputmode)
  *   npm run shots:mobile -- --gestures       touch swipes on every view (STC-107)
  *   npm run shots:mobile -- --baseline-known record today's violations as known
  *   npm run shots:desktop                    record text geometry at 1440x900
