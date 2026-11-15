@@ -5,7 +5,7 @@ import Field from "./Field";
 import Segmented from "./Segmented";
 import TimeMachineOdds from "./TimeMachineOdds";
 import { getTicketDefaults, placeBrokerOrder, placePaperOrder } from "../api";
-import { formatMoney } from "../lib/format";
+import { formatMoney, priceDigits } from "../lib/format";
 import styles from "./OrderTicket.module.css";
 
 const SIDES = [{ value: "BUY", label: "Buy" }, { value: "SELL", label: "Sell" }];
@@ -34,7 +34,7 @@ const ACCOUNTS = {
 };
 
 const num = (v) => (v === "" || v == null ? null : Number(v));
-const str = (v) => (v == null ? "" : String(+Number(v).toFixed(4)));
+const str = (v, digits = 4) => (v == null ? "" : String(+Number(v).toFixed(digits)));
 
 // The review step's numbers: what it costs, what it risks to the stop, and
 // the reward/risk to the target. null where an input is missing — never 0.
@@ -85,8 +85,8 @@ export default function OrderTicket({ ticker: initialTicker = "", side: initialS
         if (!live) return;
         setDefaults(d);
         setQty((q) => q || str(d.qty));
-        setPlanStop((v) => v || str(d.stop));
-        setPlanTarget((v) => v || str(d.target));
+        setPlanStop((v) => v || str(d.stop, priceDigits(ticker)));
+        setPlanTarget((v) => v || str(d.target, priceDigits(ticker)));
       }).catch(() => { if (live) setDefaults(null); });
     }, 250);
     return () => { live = false; clearTimeout(id); };

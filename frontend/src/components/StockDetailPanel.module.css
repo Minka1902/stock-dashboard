@@ -355,12 +355,14 @@
   .phoneHead .ticker { font-size: var(--fs-h3); }
   .phoneHead .price { font-size: var(--fs-15); }
   .phoneActions { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
-  .topbar { padding: var(--s-2) var(--gutter); }
+  .topbar { padding: var(--s-2) var(--gutter); column-gap: var(--s-2); }
+  .directive { padding-inline: 6px; }
   .stats { grid-template-columns: repeat(2, 1fr); gap: var(--s-2); }
   /* R | price | feasibility on one line, the reason underneath. */
   .rung { grid-template-columns: 36px 1fr auto; row-gap: 4px; }
   .rung > :nth-child(4) { grid-column: 1 / -1; }
   .levels { grid-template-columns: 1fr; gap: var(--s-3); }
   .pattern { grid-template-columns: 1fr auto; }
-  .convTrack { width: 64px; }
+  .conviction { gap: 6px; }
+  .convTrack { width: 44px; }
 }

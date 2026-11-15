@@ -275,6 +275,10 @@
 .phoneBar { display: flex; align-items: center; gap: var(--s-2); }
 .tfStrip { flex: 1 1 auto; min-width: 0; }
 .toolsBtn { flex: none; }
+/* Every timeframe shares the row with the icon-only Chart tools button, down
+   to 360px: no sideways scrolling. */
+.tfSeg { flex-wrap: nowrap; gap: 4px; }
+.tfSeg > button { flex: 1 1 0; padding-inline: 0; }
 @media (max-width: 640px) {
   .legend { order: 1; flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; gap: var(--s-2); }
   .legendTicker, .volExact { display: none; }

@@ -195,9 +195,11 @@ export default function StockDetailPanel({ ticker, onBack, watchlist, onAddWatch
       <Icon name="arrowRight" size={14} />{!phone && <> <span>Back</span></>}
     </button>
   );
+  // On a phone the price beside it already carries the currency (₪), so the
+  // chip names the exchange only and the verdict line fits one row.
   const taseChip = isTase && (
     <span className={styles.marketChip}>
-      <Term term="tase">TASE · {ccy}</Term>
+      <Term term="tase">{phone ? "TASE" : <>TASE · {ccy}</>}</Term>
     </span>
   );
   // Ticker and price read as one unit: the name of the thing and what it

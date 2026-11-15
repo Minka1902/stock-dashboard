@@ -1237,11 +1237,12 @@ export default function ChartPro({ ticker, analysis = null, height = 460 }) {
       ) : (
         <div className={styles.phoneBar} role="toolbar" aria-label="Chart controls">
           <div className={styles.tfStrip}>
-            <Segmented ariaLabel="Timeframe" overflow="scroll" value={prefs.tf}
+            <Segmented ariaLabel="Timeframe" className={styles.tfSeg} value={prefs.tf}
                        options={TIMEFRAME_OPTIONS} onChange={(tf) => setPref({ tf })} />
           </div>
-          <Button size="sm" className={styles.toolsBtn} aria-haspopup="dialog" onClick={() => setToolsOpen(true)}>
-            <Icon name="settings" size={14} /> Chart tools
+          <Button size="sm" className={styles.toolsBtn} aria-label="Chart tools" aria-haspopup="dialog"
+                  onClick={() => setToolsOpen(true)}>
+            <Icon name="settings" size={16} />
           </Button>
         </div>
       )}

@@ -280,5 +280,5 @@ Tick an item in the same commit that completes it.
 - [x] Phase 5 — Trading Bot
 - [x] Phase 5 — Reference views
 - [x] Phase 5 — Settings, Info, Server, AuthGate
-- [ ] Phase 6 — STC-104 touch pass
+- [x] Phase 6 — STC-104 touch pass
 - [ ] Phase 7 — STC-105 QA + docs
