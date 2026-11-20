@@ -113,3 +113,55 @@ def test_callback_rejects_state_mismatch(oauth, monkeypatch):
     assert r.status_code == 302
     assert "oauth_error" in r.headers["location"]
     assert c.cookies.get("session") is None
+
+
+# ---- every refusal says why, and for which provider ----
+
+def _reason(location):
+    from urllib.parse import parse_qs, urlparse
+    query = parse_qs(urlparse(location).query)
+    return query["oauth_error"][0], query["provider"][0]
+
+
+def test_a_forged_state_is_reported_as_state(oauth, monkeypatch):
+    c, _, routes_oauth = oauth
+    _fake_provider(routes_oauth, monkeypatch, "gh-x", "x@example.com")
+    c.cookies.set("oauth_state", "real")
+    r = c.get("/api/auth/oauth/github/callback?code=x&state=forged", follow_redirects=False)
+    assert _reason(r.headers["location"]) == ("state", "github")
+
+
+def test_no_verified_email_is_reported_as_identity_not_exchange(oauth, monkeypatch):
+    c, main_module, routes_oauth = oauth
+    _fake_provider(routes_oauth, monkeypatch, "gh-9", "")
+    r = _callback(c)
+    assert _reason(r.headers["location"]) == ("identity", "github")
+    assert c.cookies.get("session") is None
+    assert db.count_users(main_module.conn) == 0
+
+
+def test_a_provider_failure_is_reported_as_exchange(oauth, monkeypatch):
+    c, _, routes_oauth = oauth
+
+    def boom(client, provider, code):
+        raise routes_oauth.httpx.ConnectError("down")
+
+    monkeypatch.setattr(routes_oauth, "_exchange_code", boom)
+    r = _callback(c)
+    assert _reason(r.headers["location"]) == ("exchange", "github")
+
+
+def test_facebook_uses_a_supported_graph_version(monkeypatch):
+    from app import config, routes_oauth
+    monkeypatch.setenv("STOCKS_OAUTH_FACEBOOK_GRAPH_VERSION", "v99.0")
+    importlib.reload(config)
+    importlib.reload(routes_oauth)
+    try:
+        assert "/v99.0/" in routes_oauth.PROVIDERS["facebook"]["authorize"]
+        assert "/v99.0/" in routes_oauth.PROVIDERS["facebook"]["token"]
+    finally:
+        monkeypatch.delenv("STOCKS_OAUTH_FACEBOOK_GRAPH_VERSION")
+        importlib.reload(config)
+        importlib.reload(routes_oauth)
+    # v18.0 (the old pin) was retired by Meta on 2026-01-26.
+    assert config.OAUTH_FACEBOOK_GRAPH_VERSION == "v25.0"

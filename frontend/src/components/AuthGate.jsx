@@ -6,6 +6,22 @@ import PendingApproval from "./PendingApproval";
 import styles from "./AuthGate.module.css";
 
 const PROVIDER_LABEL = { github: "GitHub", google: "Google", facebook: "Facebook" };
+// Why a social sign-in came back to this screen (routes_oauth._fail_redirect).
+const OAUTH_ERRORS = {
+  registration_closed: (p) => `No account here uses this ${p} account's email, and this server doesn't create new accounts through ${p} sign-in. If you have an invite code, create the account with email first; ${p} sign-in then links to it.`,
+  identity: (p) => `${p} didn't share a verified email address, which this server needs to know who you are. Verify the email on your ${p} account, or sign in with email and password.`,
+  state: () => "That sign-in expired or was started in another tab. Try again.",
+  exchange: (p) => `${p} didn't confirm the sign-in. Try again, or sign in with email and password.`,
+};
+
+/** The message for an `?oauth_error=` the server redirected here with, or "". */
+function oauthErrorMessage() {
+  const params = new URLSearchParams(window.location.search);
+  const reason = params.get("oauth_error");
+  if (!reason) return "";
+  const describe = OAUTH_ERRORS[reason] || OAUTH_ERRORS.exchange;
+  return describe(PROVIDER_LABEL[params.get("provider")] || "The provider");
+}
 const SETUP_HINT = "Scan with Google or Microsoft Authenticator, then enter the 6-digit code it shows.";
 // On the phone the authenticator is usually on the same device, so the
 // otpauth link comes first and the QR is for a second screen.
@@ -275,8 +291,17 @@ function TotpSetup({ auth, busy, run }) {
 
 export default function AuthGate({ auth, children }) {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(oauthErrorMessage);
   const errRef = useRef(null);
+
+  // Shown once: a reload or a shared link must not repeat it.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("oauth_error")) return;
+    url.searchParams.delete("oauth_error");
+    url.searchParams.delete("provider");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  }, []);
 
   const run = (fn) => {
     setBusy(true);

@@ -523,6 +523,10 @@ OAUTH_GOOGLE_CLIENT_ID = os.environ.get("STOCKS_OAUTH_GOOGLE_CLIENT_ID", "")
 OAUTH_GOOGLE_CLIENT_SECRET = os.environ.get("STOCKS_OAUTH_GOOGLE_CLIENT_SECRET", "")
 OAUTH_FACEBOOK_CLIENT_ID = os.environ.get("STOCKS_OAUTH_FACEBOOK_CLIENT_ID", "")
 OAUTH_FACEBOOK_CLIENT_SECRET = os.environ.get("STOCKS_OAUTH_FACEBOOK_CLIENT_SECRET", "")
+# Meta retires each Graph API version about two years after its release (v18.0
+# expired 2026-01-26); v25.0 is supported until 2028-07-29. Overridable so a
+# retirement never needs a code change.
+OAUTH_FACEBOOK_GRAPH_VERSION = os.environ.get("STOCKS_OAUTH_FACEBOOK_GRAPH_VERSION", "v25.0")
 OAUTH_TIMEOUT_SECONDS = float(os.environ.get("STOCKS_OAUTH_TIMEOUT_SECONDS", "10"))
 
 

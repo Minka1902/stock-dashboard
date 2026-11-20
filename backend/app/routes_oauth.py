@@ -41,11 +41,16 @@ PROVIDERS = {
         "scope": "openid email profile",
     },
     "facebook": {
-        "authorize": "https://www.facebook.com/v18.0/dialog/oauth",
-        "token": "https://graph.facebook.com/v18.0/oauth/access_token",
+        "authorize": f"https://www.facebook.com/{config.OAUTH_FACEBOOK_GRAPH_VERSION}/dialog/oauth",
+        "token": f"https://graph.facebook.com/{config.OAUTH_FACEBOOK_GRAPH_VERSION}/oauth/access_token",
         "scope": "email public_profile",
     },
 }
+
+
+class NoVerifiedEmail(ValueError):
+    """A new sign-in whose provider shared no verified email: nothing to link
+    it to, and nothing to create an account under."""
 
 
 def _now_iso() -> str:
@@ -119,7 +124,7 @@ def _fetch_identity(client: httpx.Client, provider: str, token: str) -> tuple[st
         return str(data.get("sub") or ""), (data.get("email") or "").lower()
     if provider == "facebook":
         r = client.get(
-            "https://graph.facebook.com/me",
+            f"https://graph.facebook.com/{config.OAUTH_FACEBOOK_GRAPH_VERSION}/me",
             params={"fields": "id,email", "access_token": token},
         )
         r.raise_for_status()
@@ -141,7 +146,7 @@ def _resolve_user(conn, provider: str, provider_user_id: str, email: str):
     user = db.get_user_by_email(conn, email) if email else None
     if user is None:
         if not email:
-            raise ValueError("provider did not return a verified email")
+            raise NoVerifiedEmail("provider did not return a verified email")
         if not registration.may_register():
             # Social login LINKS to an account; it does not create one unless
             # registration is open. Without this a stranger's Google account
@@ -198,23 +203,26 @@ def build_router(conn) -> APIRouter:
             raise HTTPException(status_code=404, detail="provider not configured")
         cookie_state = request.cookies.get(STATE_COOKIE)
         if not code or not state or not cookie_state or not secrets.compare_digest(state, cookie_state):
-            return _fail_redirect("state")
+            return _fail_redirect("state", provider)
 
         try:
             with httpx.Client(timeout=config.OAUTH_TIMEOUT_SECONDS, follow_redirects=True) as client:
                 token = _exchange_code(client, provider, code)
                 provider_user_id, email = _fetch_identity(client, provider, token)
             if not provider_user_id:
-                return _fail_redirect("identity")
+                return _fail_redirect("identity", provider)
             user = _resolve_user(conn, provider, provider_user_id, email)
+        # Both caught before the broad clause below, which would otherwise
+        # report the misleading reason "exchange".
         except registration.RegistrationClosed:
-            # Caught before the broad clause below, which would otherwise
-            # report the misleading reason "exchange".
             logger.info("oauth signup refused for %s: registration closed", provider)
-            return _fail_redirect("registration_closed")
+            return _fail_redirect("registration_closed", provider)
+        except NoVerifiedEmail:
+            logger.info("oauth sign-in refused for %s: no verified email", provider)
+            return _fail_redirect("identity", provider)
         except (httpx.HTTPError, ValueError, KeyError) as exc:
             logger.warning("oauth callback failed for %s: %s", provider, exc)
-            return _fail_redirect("exchange")
+            return _fail_redirect("exchange", provider)
 
         # TOTP preserved: enrolled users get a challenge, new ones enrollment.
         session_state = auth.STATE_PENDING if user.totp_enabled else auth.STATE_SETUP
@@ -227,7 +235,9 @@ def build_router(conn) -> APIRouter:
     return router
 
 
-def _fail_redirect(reason: str) -> RedirectResponse:
-    resp = RedirectResponse(f"{_frontend_origin()}/?oauth_error={reason}", status_code=302)
+def _fail_redirect(reason: str, provider: str) -> RedirectResponse:
+    """Back to the login screen, which explains `reason` (AuthGate.jsx)."""
+    query = urlencode({"oauth_error": reason, "provider": provider})
+    resp = RedirectResponse(f"{_frontend_origin()}/?{query}", status_code=302)
     resp.delete_cookie(STATE_COOKIE, path="/")
     return resp
