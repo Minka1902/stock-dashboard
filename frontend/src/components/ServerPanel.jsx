@@ -4,7 +4,9 @@ import { AnimatePresence, motion } from "motion/react";
 import AuditChainCheck from "./AuditChainCheck";
 import DataTable from "./DataTable";
 import Icon from "./Icon";
+import MachineHealth from "./MachineHealth";
 import { MenuItem } from "./MenuButton";
+import PendingSignups from "./PendingSignups";
 import PhoneFold from "./PhoneFold";
 import SectionIndex from "./SectionIndex";
 import ShowAll from "./ShowAll";
@@ -12,13 +14,14 @@ import Skeleton from "./Skeleton";
 import SchedulerSection from "./SchedulerSection";
 import SourceDrawer from "./SourceDrawer";
 import SourceImport from "./SourceImport";
+import Stat from "./Stat";
 import { runScheduleNow } from "../api";
 import { useCollapsedSections } from "../hooks/useCollapsedSections";
 import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { usePhoneLimit } from "../hooks/usePhoneLimit";
 import { useServerStatus } from "../hooks/useServerStatus";
 import { useSourceImport } from "../hooks/useSourceImport";
-import { formatRelativeTime, formatUntil } from "../lib/format";
+import { formatBytes, formatRelativeTime, formatUntil } from "../lib/format";
 import { prefersReducedMotion } from "../lib/motionConfig";
 import { scrollToSection } from "../lib/sections";
 import { SOURCE_META, STATE_TIP, sourceState } from "../lib/sources";
@@ -31,6 +34,8 @@ const TONE = { ok: "pos", error: "neg", deferred: "caution", never: "faint" };
 // index; the activity log shows its newest rows until asked.
 const SECTIONS = [
   { id: "process", label: "Process" },
+  { id: "machine", label: "Machine" },
+  { id: "signups", label: "Sign-ups" },
   { id: "now", label: "Right now" },
   { id: "sources", label: "Sources" },
   { id: "scheduler", label: "Scheduler" },
@@ -73,13 +78,6 @@ function writeFilter(filter) {
     url.searchParams.delete("id");
   }
   window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
-}
-
-function bytes(n) {
-  if (n == null) return "—";
-  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(2)} GB`;
-  if (n >= 1024 ** 2) return `${(n / 1024 ** 2).toFixed(1)} MB`;
-  return `${Math.round(n / 1024)} KB`;
 }
 
 function duration(seconds) {
@@ -127,15 +125,6 @@ function panelFrame(caption, right, tone) {
       </div>
       {body}
     </section>
-  );
-}
-
-function Stat({ label, value, tone }) {
-  return (
-    <div className={styles.stat}>
-      <span className={styles.statLabel}>{label}</span>
-      <span className={styles.statValue} data-tone={tone}>{value}</span>
-    </div>
   );
 }
 
@@ -323,6 +312,19 @@ export default function ServerPanel() {
     </>
   );
   const nowRight = <>{scheduledCount} scheduled · one refresh thread</>;
+  const network = overview.network;
+  const machineTone = network?.online === false ? "neg" : "pos";
+  const machineRight = (
+    <>
+      {network?.online === false ? "offline" : "online"}
+      {network?.since ? ` since ${formatRelativeTime(network.since)}` : ""}
+    </>
+  );
+  const machineCaption = overview.machine?.label || "Machine";
+  const pending = overview.signups_pending ?? 0;
+  const showSignups = overview.registration === "approval" || pending > 0;
+  const signupsRight = pending ? `${pending} waiting` : "nobody waiting";
+  const shownSections = showSignups ? SECTIONS : SECTIONS.filter((x) => x.id !== "signups");
   const sourcesTone = failing.length ? "neg" : deferred.length ? "caution" : "pos";
   const sourcesRight = (
     <>
@@ -364,7 +366,7 @@ export default function ServerPanel() {
 
   return (
     <div className={styles.wrap}>
-      <SectionIndex sections={SECTIONS} onJump={(id) => sections.setCollapsed([id], false)} />
+      <SectionIndex sections={shownSections} onJump={(id) => sections.setCollapsed([id], false)} />
 
       {/* ---- what the process is right now ---- */}
       <PhoneFold id="process" caption="Process" right={phoneRight(processRight)} sections={sections}
@@ -377,17 +379,17 @@ export default function ServerPanel() {
               value={overview.scheduler?.running ? "running" : "stopped"}
               tone={overview.scheduler?.running ? "pos" : "neg"}
             />
-            <Stat label="Database" value={bytes(overview.db?.size_bytes)} />
+            <Stat label="Database" value={formatBytes(overview.db?.size_bytes)} />
             <Stat
               label="WAL"
-              value={bytes(overview.db?.wal_bytes)}
+              value={formatBytes(overview.db?.wal_bytes)}
               tone={overview.db?.wal_bytes > 50 * 1024 * 1024 ? "neg" : undefined}
             />
           </div>
 
           {proc.available ? (
             <div className={styles.stats}>
-              <Stat label="Memory (RSS)" value={bytes(proc.rss_bytes)} />
+              <Stat label="Memory (RSS)" value={formatBytes(proc.rss_bytes)} />
               <Stat label="Threads" value={proc.num_threads} />
               <Stat label="Open files" value={proc.open_files} />
               <Stat label="System memory" value={sys.mem_percent != null ? `${sys.mem_percent.toFixed(0)}%` : "—"} />
@@ -402,7 +404,7 @@ export default function ServerPanel() {
 
           {proc.available && sys.per_cpu?.length > 0 && (
             <div className={styles.cpus}>
-              <span className={styles.statLabel}>CPU {sys.cpu_percent?.toFixed(0)}%</span>
+              <span className={styles.cpuLabel}>CPU {sys.cpu_percent?.toFixed(0)}%</span>
               <div className={styles.cpuGrid}>
                 {sys.per_cpu.map((v, i) => (
                   <Meter key={i} value={v} label={`core ${i}`} />
@@ -412,6 +414,20 @@ export default function ServerPanel() {
           )}
         </div>
       </PhoneFold>
+
+      {/* ---- the machine underneath: memory, disk, backups, network (and a Pi's power and heat) ---- */}
+      <PhoneFold id="machine" caption={machineCaption} right={phoneRight(machineRight, machineTone)}
+                 sections={sections} frame={panelFrame(machineCaption, machineRight, machineTone)}>
+        <MachineHealth machine={overview.machine} network={network} />
+      </PhoneFold>
+
+      {showSignups && (
+        <PhoneFold id="signups" caption="Sign-ups waiting for approval"
+                   right={phoneRight(signupsRight, pending ? "caution" : undefined)} sections={sections}
+                   frame={panelFrame("Sign-ups waiting for approval", signupsRight, pending ? "caution" : undefined)}>
+          <PendingSignups onChange={refresh} />
+        </PhoneFold>
+      )}
 
       {/* ---- what it's doing this second, and what is waiting its turn ---- */}
       <PhoneFold id="now" caption="Right now" right={phoneRight(nowRight)} sections={sections}

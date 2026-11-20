@@ -9,12 +9,15 @@ const STOCKS = ["AAPL", "TEVA.TA"];
 // The two-factor screens exist only in the SPA's memory after a password
 // sign-in (a reload lands on the login form), so they are reached through the
 // form: `tab` opens an auth-form tab, `signIn` names the account to sign in
-// with (see account.mjs).
+// with (see account.mjs). `pending` keeps the signed-in session and has
+// /api/auth/me report the account as waiting for approval (page.mjs), since
+// the harness backend runs with open registration.
 const AUTH_SCREENS = [
   { id: "auth/login" },
   { id: "auth/register", tab: "Create account" },
   { id: "auth/totp-setup", signIn: "setup" },
   { id: "auth/totp-challenge", signIn: "main" },
+  { id: "auth/pending", pending: true },
 ];
 
 /**
@@ -133,7 +136,7 @@ function tradingBotTabs() {
 }
 
 /**
- * Every place the harness visits: `{ id, path, anon?, tab?, signIn? }`. The
+ * Every place the harness visits: `{ id, path, anon?, tab?, signIn?, pending? }`. The
  * first Trading Bot tab is what /trading-bot itself shows, so it is not
  * visited twice.
  */
@@ -143,7 +146,7 @@ export function allViews() {
     ...Object.keys(TITLES).map((v) => ({ id: v, path: `/${v}` })),
     ...tabs.map((t) => ({ id: `trading-bot?tab=${t}`, path: `/trading-bot?tab=${t}` })),
     ...STOCKS.map((t) => ({ id: `stock/${t}`, path: `/stock/${t}` })),
-    ...AUTH_SCREENS.map((s) => ({ ...s, path: "/", anon: true })),
+    ...AUTH_SCREENS.map((s) => ({ ...s, path: "/", anon: !s.pending })),
   ];
 }
 

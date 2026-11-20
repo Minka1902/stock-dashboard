@@ -1,0 +1,5 @@
+.root { display: flex; flex-direction: column; gap: var(--s-3); }
+.title { margin: 0; font-size: var(--fs-16); font-weight: 700; }
+.text { margin: 0; font-size: var(--fs-13-5); line-height: 1.55; color: var(--text-muted); }
+.error { margin: 0; font-size: var(--fs-12-5); color: var(--negative); }
+.actions { display: flex; gap: var(--s-2); flex-wrap: wrap; }

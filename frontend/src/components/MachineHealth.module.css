@@ -1,0 +1,9 @@
+.body { padding: var(--s-4) var(--gutter, var(--s-4)); display: flex; flex-direction: column; gap: var(--s-3); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--s-4); }
+@media (max-width: 640px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.muted { padding: var(--s-4); font-family: var(--mono); font-size: var(--fs-12); color: var(--text-faint); }
+.offline {
+  font-size: var(--fs-12-5); color: var(--negative);
+  background: var(--negative-weak); border-radius: var(--r-sm);
+  padding: var(--s-2) var(--s-3);
+}
