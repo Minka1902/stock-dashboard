@@ -65,41 +65,71 @@ visited page's origin and be blocked by CORS. See `extension/README.md` for the 
 steps, the `STOCKS_CORS_ORIGINS` note, and the list of constants duplicated from `frontend/`
 that must be kept in sync (notably `convictionTier`/`CHIP_META` from `BoomScorePanel.jsx`).
 
-### Windows service (`windows/`) — NSSM, PowerShell only
-```powershell
-.\windows\install-service.ps1      # elevated; registers + starts SignalDashboard
-.\windows\service-control.ps1 -Status    # -Start -Stop -Restart -Logs
-.\windows\uninstall-service.ps1          # -PurgeData to drop the database too
-.\windows\install-desktop.ps1            # npm install + Desktop and Start Menu shortcuts (no elevation)
+### Installed service (`deploy/`) — Windows, Raspberry Pi, Linux
+```bash
+sudo ./install.sh [--admin-email EMAIL]     # Pi / Linux: git + Python, then deploy/manage.py install
+.\install.ps1 [--public-origin URL]         # Windows, elevated: the same through winget
+signal status | update | backup | restore F | restart | logs | uninstall [--purge-data]
+python3 deploy/manage.py install --dry-run  # every step this host would take, nothing changed
 ```
-The production run mode. Hosts the backend as a boot-start LocalSystem service so the
-scheduler keeps ingesting before anyone logs in. **NSSM is the only supervisor** —
-the service invokes `run_server.py --no-supervise`, which runs uvicorn *in-process* so
-NSSM's Ctrl-C reaches it and the lifespan WAL checkpoint actually runs.
+The production run mode, and one tool for every machine (`deploy/README.md` is the operator
+guide). `app/host.py` says which machine it is (`windows` | `pi` | `linux`; a Pi by its
+device-tree model; `STOCKS_HOST_KIND` overrides) and `deploy/platforms/` holds one driver per
+service manager: `windows.py` (NSSM `SignalDashboard`, LocalSystem, a Scheduled Task health
+check), `systemd.py` (`stocks-dashboard.service` as user `stocks`, `stocks-healthcheck.timer`,
+`stocks-update.service` + a polkit rule, units rendered from `deploy/units/`) and `pi.py` (what
+only a Pi needs: hardware watchdog, zram, journal cap, wait for NTP). **`deploy/` is stdlib only**
+and so are the three app modules it shares — `host.py`, `updatecore.py`, `backup.py` — because it
+runs on the system Python, before the venv exists and when it is broken
+(`test_deploy_platforms.py` imports it all under `python -I -S`). Never import pydantic or
+anything third-party from those.
 
-Data moves machine-wide to `C:\ProgramData\SignalDashboard\` (`db\`, `logs\`); the code
-still runs from this working tree. Secrets come from `windows\service.env` — **nothing
-loads a `.env`**, so that file is the only way they reach a LocalSystem service.
-The service DB is separate from `backend\stocks.db` used by `start.ps1` (separate
-accounts, separate TOTP). See `windows/README.md`, especially the note that
-`STOCKS_CORS_ORIGINS[0]` doubles as the OAuth post-login redirect target
-(`routes_oauth.py::_frontend_origin`) and must stay the app's own origin.
+**NSSM / systemd is the only supervisor** — the service runs `run_server.py --no-supervise`,
+uvicorn *in-process*, so the stop signal reaches it and the lifespan WAL checkpoint runs. The
+NSSM settings live in `windows.nssm_settings` (pinned by a test); its download is checked against
+`NSSM_SHA256` there, and `installer.yml` reads the same pin.
 
-**In-app update** (Info → Updates): `app/updater.py` compares the checkout against
-`origin/main` using git, with a 6-hourly scheduler job and a 1h cache. `app/routes_update.py`
-serves `GET /api/update/status` to any user. `POST /api/update/apply` is admin-only and refuses
+Locations are written down once, in `deploy/lib/paths.py`: Windows keeps data in
+`C:\ProgramData\SignalDashboard\` (`db\`, `backups\`, `logs\`, `settings.env`, `bin\` with
+`signal.cmd` and `nssm.exe`) and runs the code from its checkout; Linux uses `/opt`,
+`/var/lib`, `/var/log` and `/etc/stocks-dashboard`. **Nothing loads a `.env`**: the service
+manager passes `install.env` (written by every install: paths, origins, the port) then the
+user's settings file (template `deploy/env.example`, never overwritten), which wins. Every
+derived origin goes through `install.generated_env`, which keeps the
+`STOCKS_CORS_ORIGINS[0]` rule: it doubles as the OAuth post-login redirect target
+(`routes_oauth.py::_frontend_origin`) and must be the address people actually use. The service
+DB is separate from `backend/stocks.db` used by `start.ps1` (separate accounts, separate TOTP).
+
+**Web app from CI**: `.github/workflows/ci.yml` commits every green build of `main` to the orphan
+`web-dist` branch as `source: <main sha>`; `deploy/lib/webdist.py` downloads the one for the
+commit being installed (keeping `dist.prev`), and builds locally only when none is published and
+Node is installed. A machine never needs Node to install or update.
+
+**In-app update** (Info → Updates): `app/updatecore.py` compares the checkout against
+`origin/main` (git plumbing, preconditions, the status file schema); `app/updater.py` adds the
+6-hourly job, a 1h cache and the hand-off. `POST /api/update/apply` is admin-only and refuses
 with 409 unless the checkout is on `main`, has no tracked changes, and can fast-forward. It
-spawns a detached `windows/update.ps1` (pull → pip → npm build → restart, rolling back on
-failure), which writes progress to `<LOG_DIR>/update-status.json`. `/api/health` carries
-`commit`, which is how the UI knows the restarted server is on the new code.
-`backend/app/version.py` is the version source of truth, and `frontend/package.json` mirrors
-it. See `windows/README.md` → "Updating from the app".
+writes `<LOG_DIR>/update-request.json` and starts `deploy/manage.py update --from-request`
+outside the server: `systemctl start stocks-update.service` under systemd, else a detached
+process that relaunches itself once (NSSM kills a service's process tree by parent pid). That
+pulls → pip → web app → restart, rolling back on failure, and writes
+`<LOG_DIR>/update-status.json`; `signal update` runs the same code. `host.service_mode()` tells
+service from dev structurally (NSSM is an ancestor; or `INVOCATION_ID` + the unit's cgroup); in
+dev it nudges `uvicorn --reload` instead of restarting. `/api/health` carries `commit`, which
+is how the UI knows the restarted server is on the new code. `backend/app/version.py` is the
+version source of truth, and `frontend/package.json` mirrors it.
 
-**Installer** (`windows/setup/`): `SignalSetup.exe` is an Inno Setup *bootstrapper* built by
-`.github/workflows/installer.yml`. It installs git/Node/Python machine-wide, clones `main` into
-Program Files, and runs `install-service.ps1` + `install-desktop.ps1`. It stays a git checkout
-on purpose, so the updater above keeps working. The desktop app runs that updater's check on
-every launch (`desktop/src/updates/`).
+**Backups**: `app/backup.py` writes `stocks-<UTC>.zip` (an integrity-checked online snapshot of
+the DB — which holds every account — the settings file, and `manifest.json` with the
+snapshot's sha256 and account counts), owner-only, keeping `STOCKS_BACKUP_KEEP`. The nightly
+`db_backup` job and `signal backup` both call it; `signal restore` verifies, keeps the replaced
+DB beside it, and puts it back if the service doesn't come up healthy.
+
+**Installer** (`deploy/windows/SignalSetup.iss`): `SignalSetup.exe` is an Inno Setup
+*bootstrapper* built by `.github/workflows/installer.yml` around `install.ps1`, which installs
+git/Python machine-wide, clones `main` into Program Files and runs `signal install`. It stays a
+git checkout on purpose, so the updater above keeps working. The desktop app runs that
+updater's check on every launch (`desktop/src/updates/`).
 
 ### Desktop app (`desktop/`) — Electron shell
 ```bash
@@ -126,7 +156,8 @@ No root package manager, so the companions copy rather than share:
 | `"app:navigate"` in `desktop/src/preload.cjs` | `NAV_EVENT` in `frontend/src/lib/nav.js` |
 | `desktop/src/tray.js` menu items | the navigation entries of `commandItems` in `frontend/src/App.jsx` |
 | poll cadence, `MAX_NOTIFICATIONS_PER_POLL` | `extension/src/background/index.js` |
-| `STALE_RUN_MS`, `isApplyRunning` in `desktop/src/…` | `STALE_RUN_SECONDS`, `is_apply_running` in `backend/app/updater.py` |
+| `STALE_RUN_MS`, `isApplyRunning` in `desktop/src/…` | `STALE_RUN_SECONDS`, `is_apply_running` in `backend/app/updatecore.py` |
+| `SIGNAL_CMD`, `LOG_DIR` in `desktop/src/config.js` | the Windows `Paths` in `deploy/lib/paths.py` |
 
 ## Auth & multi-tenancy
 
@@ -155,11 +186,21 @@ No root package manager, so the companions copy rather than share:
 - Rate limiting (`app/security.py`) is a fixed-window in-memory limiter; ticker inputs are
   whitelisted by `app/validation.py::clean_ticker` before reaching outbound URLs.
 - **`app/registration.py` is the only gate on account creation** (`STOCKS_REGISTRATION` =
-  `open` | `invite` | `closed`, default `open`). There are exactly two account factories —
-  `routes_auth.register` and the auto-create inside `routes_oauth._resolve_user` — and both
-  must call it. A third creation path that forgets to is the regression to watch for.
-  Deliberately no first-user bootstrap exemption: it would be a race between the operator and
-  the first stranger to load the URL, and the winner gets `is_admin` plus `claim_legacy_rows`.
+  `open` | `invite` | `approval` | `closed`, default `open`; a Pi install sets `approval`).
+  There are exactly two sign-up paths — `routes_auth.register` and the auto-create inside
+  `routes_oauth._resolve_user` — and both gate with `may_register` and create with
+  `registration.create_account`, the one account factory. A third creation path that skips
+  either is the regression to watch for. Deliberately no first-user bootstrap exemption: it
+  would be a race between the operator and the first stranger to load the URL, and the winner
+  gets `is_admin` plus `claim_legacy_rows`.
+- **Approval queue** (`approval`): anyone may sign up and enroll TOTP, but only
+  `STOCKS_ADMIN_EMAIL` (required in this mode; boot refuses without it) is created approved, admin
+  and claims legacy rows — whatever the order, which is what closes the first-user race. Everyone
+  else has `users.approved_at` NULL: the middleware answers 403 `account pending approval` outside
+  `/api/auth/*` (so `/api/auth/me` can return `approved: false` and the frontend shows
+  `PendingApproval`), and every admin gets a `signup` alert (pushed to their channels). Admins
+  approve/reject at `/api/server/signups` (audited; reject = `db.delete_user`). Existing accounts
+  were backfilled as approved by `_migrate_users_approved`.
 - `db.delete_user` sweeps every per-user table explicitly (incl. `drawings`, `drawing_drafts`, `fx_watch`, the ledger and the bots). Only `sessions`,
   `recovery_codes` and `oauth_identities` declare `ON DELETE CASCADE`, so deleting the `users`
   row alone strands the rest under an id SQLite may reissue. Keep `_PER_USER_TABLES` in step
@@ -167,12 +208,14 @@ No root package manager, so the companions copy rather than share:
 
 ## Public exposure
 
-The app can be served on the internet through a tunnel (Tailscale Funnel — see
-`windows/README.md`). Three things that are load-bearing:
+The app can be served on the internet or a tailnet through a tunnel (Tailscale serve/Funnel —
+see `deploy/README.md`; a Pi install sets up `tailscale serve` itself). Three things that are
+load-bearing:
 
 - **The bind never changes.** The tunnel dials `127.0.0.1` from this machine; `0.0.0.0` would
-  only add LAN exposure. `install-service.ps1 -PublicOrigin` derives every env var that has to
-  agree with the public URL, including the `CORS_ORIGINS[0]` ordering rule above.
+  only add LAN exposure. `signal install --public-origin` (or the tailnet name on a Pi) derives
+  every env var that has to agree with the public URL into `install.env`, including the
+  `CORS_ORIGINS[0]` ordering rule above.
 - **`security.py::_client_ip` trusts `X-Forwarded-For` only from `config.TRUSTED_PROXY_IPS`.**
   Behind a tunnel every socket peer is loopback, so keying rate limits on the peer alone puts
   the whole internet in one bucket; trusting the header unconditionally lets anyone forge a
@@ -221,7 +264,10 @@ the Server page) is what runs.
 - **`app/models.py`** — Pydantic models that are the common schema between sources, DB, and API.
 - **`app/main.py`** — FastAPI routes (mostly thin `db.get_* -> model_dump()` reads) plus the
   scheduler wiring in `lifespan`: **one APScheduler job per source** (`src:<name>`) plus `src:derived`,
-  `daily_analysis`, `daily_digest` and `prune_history`, all on the single-thread `refresh` executor.
+  `daily_analysis`, `daily_digest`, `prune_history`, `db_backup` and the minute jobs (`bots`,
+  `exits`, `telegram`), all on the single-thread `refresh` executor. `netwatch` and `update_check`
+  run on the default executor: neither writes `refresh_conn` through ingestion, and a fetch hung on
+  a dead network must not delay noticing the outage.
 
 **Scheduling rules (task 9: nothing is silently skipped):**
 - Every job runs on one serial thread (`_refresh_executor`, shared with manual `/api/refresh` and
@@ -241,6 +287,20 @@ the Server page) is what runs.
   "nothing new yet" deferral does not stop them. `margin_debt` is that source: its fetch gets the
   newest stored month and defers `up to date through YYYY-MM` until `margin_debt.next_release`
   (FINRA publishes month M in the third week of M+1, so the 15th of the month after next).
+- **Network outages** (`app/netwatch.py`): a 30 s plain-TCP probe (`STOCKS_NETCHECK_HOSTS`, no
+  DNS). While offline, `_run_source_now` swaps in a fetch that raises
+  `SourceDeferred("network offline")` — one `deferred` run per source per outage, never an error
+  storm and never a silent skip — and `_when_online` makes the minute jobs wait. The derived step
+  and manual imports still run (no network). When the probe succeeds again, `main._netwatch`
+  re-arms every source whose status is `deferred: network offline` to run now (staggered, registry
+  order). Each flip is one `job_runs` row.
+- **Health**: `/api/health` reports `checks.refresh_thread` false once a fetch has run, or work has
+  waited, longer than `STOCKS_HEALTH_STUCK_SECONDS`; the installed health check
+  (`deploy/commands/healthcheck.py`) restarts after 3 non-ok answers, never during an update.
+- **Data safety**: `db.connect` sets `synchronous=NORMAL` (crash-safe in WAL, far fewer fsyncs).
+  `app/hosthealth.py` feeds the Server page's machine card (memory, disk, last backup; on a Pi
+  firmware throttling flags and temperature) and reports `null`, never a guess, for anything it
+  can't read.
 - **Manual import** (`POST /api/server/sources/{name}/import`, admin): for a source with a
   `SourceSpec.importer` (`bytes -> records`, `ValueError` = unusable file; today only
   `margin_debt`, FINRA's workbook, for when Cloudflare blocks every tier). Raw request body, no
@@ -401,12 +461,13 @@ Notification channels safely no-op and log when their env vars are unset, so the
 without any of them.
 
 **Nothing loads a `.env` file.** `config.py` reads `os.environ` once at import; there is no
-`python-dotenv` and no `load_dotenv` anywhere. `backend/.env.example` is documentation — you
-must export the variables in your shell, or (for the Windows service, which inherits nothing
-from the installing user) put them in `windows/service.env`, which the installer bakes into the
-service's environment block.
+`python-dotenv` and no `load_dotenv` anywhere. In development, export the variables in your
+shell; an installed service gets them from its settings file (see "Installed service" above).
+`deploy/env.example` is the one annotated template — add a new user-facing `STOCKS_*` variable
+there too.
 
 Path defaults are `__file__`-relative, not cwd-relative — `DB_PATH` → `backend/stocks.db`,
-`LOG_DIR` → `backend/logs/`, the SPA dist → `frontend/dist/`. That matters because a Windows
-service starts in `C:\Windows\system32`, where a relative DB path would silently create a
-second, empty database and the app would come up looking healthy with no data.
+`LOG_DIR` → `backend/logs/`, the SPA dist → `frontend/dist/`, `BACKUP_DIR` → next to the DB.
+That matters because a Windows service starts in `C:\Windows\system32` and a systemd unit in
+`/`, where a relative DB path would silently create a second, empty database and the app would
+come up looking healthy with no data (`tests/test_service_paths.py`).
