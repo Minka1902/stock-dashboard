@@ -9,6 +9,8 @@ import Dialog from "./Dialog";
 import EditHoldingDialog from "./EditHoldingDialog";
 import ExitRuleDialog from "./ExitRuleDialog";
 import ExtHoursBadge from "./ExtHoursBadge";
+import Heatmap from "./Heatmap";
+import HeatmapToggle from "./HeatmapToggle";
 import InfoTip from "./InfoTip";
 import MenuButton, { MenuDivider, MenuItem, MenuLabel } from "./MenuButton";
 import PanelInfo from "./PanelInfo";
@@ -21,6 +23,7 @@ import Term from "./Term";
 import TickerLabel from "./TickerLabel";
 import Tooltip from "./Tooltip";
 import { useFxRates } from "../hooks/useFxRates";
+import { useHeatmapView } from "../hooks/useHeatmapView";
 import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
 import { useProfile } from "../hooks/useProfile";
 import { useSparklines } from "../hooks/useSparklines";
@@ -56,6 +59,9 @@ const HOLDING_CURRENCIES = ["USD", "ILS", "EUR", "GBP"];
 const CURRENCY_NAMES = { USD: "US dollars", ILS: "Israeli shekels", EUR: "euros", GBP: "British pounds" };
 
 const signedPct = (v, d = 1) => `${v >= 0 ? "+" : ""}${v.toFixed(d)}%`;
+// What the heatmap can colour tiles by, and the move that reads as full colour.
+const HEAT_DOMAIN = { day: 3, range: 10, pl: 25 };
+const HEAT_DECIMALS = { day: 2, range: 1, pl: 1 };
 const compact = (v, ccy) => formatMoney(v, ccy, { compact: true });
 
 function ccyTip(ccy, ticker) {
@@ -98,6 +104,16 @@ export default function PortfolioPanel({
   const [editCcy, setEditCcy] = useState("USD");
   const [range, setRange] = useState("1m");
   const { series: sparks } = useSparklines(portfolio.map((h) => h.ticker), range);
+  const heatMetrics = [
+    { value: "day", label: "Day" },
+    { value: "range", label: range.toUpperCase() },
+    { value: "pl", label: "P/L" },
+  ];
+  const heat = useHeatmapView("portfolio", heatMetrics);
+  const heatToggle = (
+    <HeatmapToggle label="holdings" view={heat.view} onView={heat.setView} row={phone}
+                   metric={heat.metric} onMetric={heat.setMetric} metrics={heatMetrics} />
+  );
 
   const { profile, update: updateProfile, save: saveProfile } = useProfile();
   const base = profile.base_currency || "USD";
@@ -294,6 +310,24 @@ export default function PortfolioPanel({
       dayTone: dayPct == null ? "flat" : dayPct >= 0 ? "pos" : "neg",
     };
   };
+  // Tiles sized by what each position is worth in the base currency (its cost
+  // while it has no price), coloured by the chosen move.
+  const heatItems = orderedRows.map((h) => {
+    const { pos, plPct, dayPct } = rowOf(h);
+    const worth = pos.value ?? pos.cost;
+    const based = convertAmount(worth, pos.currency, base, fx.rates);
+    const spark = sparks[h.ticker];
+    const value = { day: dayPct, range: spark?.change_pct ?? null, pl: plPct }[heat.metric];
+    const missing = pos.price == null ? "no quote" : heat.metric === "range" && !spark ? "loading" : "no data";
+    return {
+      key: h.ticker,
+      label: h.ticker,
+      weight: based ?? 0,
+      value,
+      display: value != null ? signedPct(value, HEAT_DECIMALS[heat.metric]) : missing,
+      detail: based != null ? `${fmtBase(based)}${pos.value == null ? " at cost" : ""}` : undefined,
+    };
+  }).sort((a, b) => b.weight - a.weight);
   const sharesInput = (h) => (
     <input className={styles.editInput} type="number" min="0" step="any" inputMode="decimal" enterKeyHint="done"
            aria-label={`Shares of ${h.ticker}`}
@@ -593,6 +627,7 @@ export default function PortfolioPanel({
             </span>
           )}
           {!showEmpty && <SparkRange value={range} onChange={setRange} />}
+          {!phone && !showEmpty && heatToggle}
           {!phone && !showEmpty && (
             <a className={styles.analyticsLink} href={routeToPath(ANALYTICS_ROUTE)}
                onClick={(e) => { e.preventDefault(); navigateTo(ANALYTICS_ROUTE); }}>
@@ -607,6 +642,7 @@ export default function PortfolioPanel({
           )}
         </div>
       </header>
+      {phone && !showEmpty && heatToggle}
 
       <AnimatePresence initial={false}>
         {note && (
@@ -707,6 +743,10 @@ export default function PortfolioPanel({
         </p>
       )}
 
+      {heat.view === "heatmap" && orderedRows.length > 0 ? (
+        <Heatmap items={heatItems} domain={HEAT_DOMAIN[heat.metric]} onOpen={openTickerTab}
+                 ariaLabel="Holdings heatmap: tile size is the position's value, colour its move" />
+      ) : (
       <DataTable
         columns={columns}
         rows={orderedRows}
@@ -733,6 +773,7 @@ export default function PortfolioPanel({
           </div>
         )}
       />
+      )}
       {phone && <CashBalances {...cashProps} layout="row" onManage={() => setCashOpen(true)} />}
       {phone && (
         <Dialog open={adding} size="sm" caption="Portfolio" title="Add holding" onClose={() => setAdding(false)}>

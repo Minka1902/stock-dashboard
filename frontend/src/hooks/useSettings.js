@@ -41,6 +41,9 @@ const DEFAULTS = {
   // Label tickers by symbol ("NVDA") or company name ("NVIDIA Corporation").
   // Falls back to the symbol wherever no name is stored.
   nameDisplay: "ticker",
+  // Per page ("portfolio", "watchlist"): { view: "table" | "heatmap", metric }
+  // (hooks/useHeatmapView).
+  heatmapViews: {},
   // Which company sections the analysis page shows (Task 11).
   companyInfo: {
     profile: true, valuation: true, officers: true, holders: true, insiders: true,

@@ -420,6 +420,14 @@ sitting in context every session.
   `ConfirmDialog`, `Field` (label + hint + field error), `Button`, and `ScrollHint` (edge fade on
   sideways-scrolling tables). `ApiError.fields` carries the backend's field-level errors
   (`detail = {message, errors}`).
+- **`Heatmap`** is the one treemap (tiles sized by `weight`, coloured by `value` up to `domain`,
+  each printing its signed number, `value: null` a neutral "no quote" tile, a 72px floor so every
+  tile is tappable); layout is the pure `lib/treemap.js` (`npm test` runs its tests). A list that
+  offers it pairs `HeatmapToggle` with `useHeatmapView(page, metrics)`, which remembers the view
+  and colour in settings; Portfolio and Watchlist do.
+- **`Logo`** is the mark (`currentColor`); `public/icons/logo.svg` is its app-icon source, and
+  `npm run icons` renders every PNG/ICO the web app, desktop app and extension ship. Installed as
+  an app (`manifest.webmanifest`), `openTickerTab` navigates in place with `?from=`.
 - **`DataTable`** is the only table: columns are described once, and with `layout="auto"` it is a
   table above 640px and a list of two-line cards (`DataCards`/`DataCard`) at or below, each column
   placed by its `phone` role (`title` / `subtitle` / `value` / `meta` / `hidden` / `actions`);

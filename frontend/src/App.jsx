@@ -114,7 +114,7 @@ const VIEWS = {
   info: (p) => <InfoPanel onNavigate={p.navigate} sources={p.sources} />,
   x: (p) => <XPostsPanel data={p.xPosts} sources={p.sources} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   contracts: (p) => <ContractsPanel contracts={p.contracts} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
-  watchlist: (p) => <WatchlistPanel quotes={p.quotesByTicker} marketStatus={p.marketStatus} />,
+  watchlist: (p) => <WatchlistPanel quotes={p.quotesByTicker} marketStatus={p.marketStatus} boomScores={p.boomScores} />,
   "yield-curve": (p) => <YieldCurvePanel data={p.yieldCurve} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
   "econ-calendar": (p) => <EconCalendarPanel data={p.econCalendar} loading={p.loading} busy={p.busy} onRefresh={p.refresh} onNavigate={p.navigate} />,
   signals: (p) => <TechnicalPanel data={p.signals} loading={p.loading} busy={p.busy} onRefresh={p.refresh} />,
