@@ -40,6 +40,7 @@ from app import alerts as alerts_source
 from app.logging_config import setup_logging
 from app.version import __version__
 from app import automute, model_version, routes_broker, regime, routes_analytics, routes_chart, routes_investors, routes_lots, routes_paper, routes_risk, routes_rules, routes_scanner, routes_telegram, routes_timemachine, routes_update, rule_source, scanner, telegram, updater
+from app import backup, hosthealth, netwatch
 
 # Optional: the Server page degrades to "unavailable" rather than reporting
 # zeros, which would look identical to a genuinely idle machine.
@@ -503,16 +504,27 @@ def _run_derived() -> None:
         ingest.run_source(refresh_conn, name, spec.fetch, spec.store)
 
 
+def _offline_fetch():
+    raise ingest.SourceDeferred(netwatch.OFFLINE_REASON, config.NETCHECK_OFFLINE_RETRY_SECONDS)
+
+
 def _run_source_now(name: str, force: bool = False, fetch=None) -> "ingest.RunResult | None":
     """Run one source (or the derived step) and let its outcome set its clock.
-    `fetch` stands in for the source's own (a manual import's parsed file)."""
+    `fetch` stands in for the source's own (a manual import's parsed file).
+
+    While netwatch says the network is down, a source's own fetch records one
+    deferral instead of an error per run, forced or not; _netwatch re-arms it
+    when the network is back. An import and the derived step need no network,
+    so they always run.
+    """
     if name == schedules.DERIVED:
         _run_derived()
         return None
     spec = SOURCES[name]
+    fetch = fetch or (spec.fetch if netwatch.is_online() else _offline_fetch)
     token = _FORCED.set(force)
     try:
-        result = ingest.run_source(refresh_conn, name, fetch or spec.fetch, spec.store)
+        result = ingest.run_source(refresh_conn, name, fetch, spec.store)
     finally:
         _FORCED.reset(token)
     try:
@@ -744,7 +756,7 @@ def _run_daily_analysis():
 
 # Minute-cadence jobs: a row per run would be ~1,400 a day of noise, so only
 # their errors (and late starts) are recorded.
-_QUIET_JOBS = {"bots", "exits", "telegram"}
+_QUIET_JOBS = {"bots", "exits", "telegram", "netwatch"}
 
 _JOB_EVENT_NAMES = {
     EVENT_JOB_EXECUTED: "executed",
@@ -819,6 +831,35 @@ def _prune_history():
         logger.exception("history prune failed")
 
 
+def _netwatch() -> None:
+    """Probe the network; on a flip, record it, and when it is back re-arm
+    every source deferred for the outage (staggered, in registry order)."""
+    back = netwatch.check()
+    if back is None:
+        return
+    if not back:
+        detail = (f"network offline (no TCP connect to {', '.join(config.NETCHECK_HOSTS)}); "
+                  "network sources defer and the minute jobs wait until it is back")
+    else:
+        offline_status = f"deferred: {netwatch.OFFLINE_REASON}"
+        names = [s.source for s in db.get_source_statuses(refresh_conn)
+                 if s.status == offline_status]
+        now = datetime.now(timezone.utc)
+        order = [n for n in _schedule_names() if n in names]
+        for i, name in enumerate(order):
+            _set_next_run(_job_id(name), now + timedelta(seconds=i + 1))
+        detail = f"network back online; re-armed {len(order)} deferred source(s)" + (
+            f": {', '.join(order)}" if order else "")
+    logger.warning(detail)
+    db.record_job_run(refresh_conn, "netwatch", "executed", _now_iso(), detail=detail)
+
+
+def _when_online(fn):
+    """Minute jobs that need live quotes or Telegram wait out an outage; the
+    netwatch job_runs rows record when and why."""
+    return lambda: netwatch.is_online() and fn()
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -851,10 +892,16 @@ async def lifespan(app: FastAPI):
     )
     _add_timed_job(
         _run_daily_analysis, analysis_trigger(db.get_app_settings(conn)), "daily_analysis")
+    # Verified archive of the DB and the settings file, kept BACKUP_KEEP deep (app/backup.py).
+    _add_timed_job(
+        lambda: backup.create(refresh_conn, config.BACKUP_DIR, config.BACKUP_KEEP,
+                              config.SETTINGS_FILE, updater.STARTUP_COMMIT),
+        CronTrigger(hour=config.BACKUP_HOUR, minute=config.BACKUP_MINUTE),
+        "db_backup")
     # Demo trading bots: every minute, held back like the source jobs so a
     # restart (or a test lifespan) never trades before the app has settled.
     _add_timed_job(
-        lambda: bots.run(refresh_conn),
+        _when_online(lambda: bots.run(refresh_conn)),
         IntervalTrigger(
             seconds=config.BOT_INTERVAL_SECONDS,
             start_date=datetime.now(timezone.utc)
@@ -863,7 +910,8 @@ async def lifespan(app: FastAPI):
     # Exit rules on holdings and resting paper orders: same minute cadence and
     # the same hold-back.
     _add_timed_job(
-        lambda: (execution.poll(refresh_conn), exits.run(refresh_conn), execution.sync_broker(refresh_conn)),
+        _when_online(lambda: (execution.poll(refresh_conn), exits.run(refresh_conn),
+                              execution.sync_broker(refresh_conn))),
         IntervalTrigger(
             seconds=config.EXITS_INTERVAL_SECONDS,
             start_date=datetime.now(timezone.utc)
@@ -872,12 +920,21 @@ async def lifespan(app: FastAPI):
     # Telegram: answer commands and send queued bot fills (only with a token).
     if telegram.configured():
         _add_timed_job(
-            lambda: telegram.poll(refresh_conn),
+            _when_online(lambda: telegram.poll(refresh_conn)),
             IntervalTrigger(
                 seconds=config.TELEGRAM_POLL_SECONDS,
                 start_date=datetime.now(timezone.utc)
                 + timedelta(seconds=config.SCHEDULER_STARTUP_DELAY_SECONDS)),
             "telegram")
+    # Connectivity probe. Default executor, not the serial "refresh" one, so a
+    # fetch hanging on a dead network can't delay noticing the outage.
+    scheduler.add_job(
+        _netwatch,
+        IntervalTrigger(
+            seconds=config.NETCHECK_INTERVAL_SECONDS,
+            start_date=datetime.now(timezone.utc)
+            + timedelta(seconds=config.SCHEDULER_STARTUP_DELAY_SECONDS)),
+        id="netwatch", name="netwatch", replace_existing=True)
     # 6-hourly GitHub update check. Runs on the default executor, not the
     # serial "refresh" one: it only shells out to git and never touches SQLite.
     updater.schedule(scheduler)
@@ -928,6 +985,10 @@ async def _authenticate(request, call_next):
     )
     if protected and request.state.user is None:
         return JSONResponse(status_code=401, content={"detail": "not authenticated"})
+    # An account in the approval queue keeps /api/auth/* (so /api/auth/me can
+    # say "pending" and logout works) and nothing else.
+    if protected and request.state.user.approved_at is None:
+        return JSONResponse(status_code=403, content={"detail": "account pending approval"})
     return await call_next(request)
 
 
@@ -984,11 +1045,19 @@ async def _unhandled_exception(request: Request, exc: Exception):
 def health():
     """Cheap liveness probe. Public, and always HTTP 200 by design.
 
-    start.ps1 polls this to decide the app came up, so a degraded subsystem must
-    not read as "failed to start" — the status field carries that instead.
+    The installer and the updater poll this to decide the app came up, so a
+    degraded subsystem must not read as "failed to start" — the status field
+    carries that instead; the installed health check (deploy/commands/
+    healthcheck.py) restarts the service after repeated non-ok answers.
     Detailed diagnostics live behind the admin-only /api/server/* routes.
+
+    `refresh_thread`: everything runs on one serial thread, so a fetch running,
+    or work waiting, longer than HEALTH_STUCK_SECONDS means something hung.
     """
-    checks = {"db": False, "scheduler": scheduler.running}
+    busiest = max([*ingest.running_sources().values(),
+                   *(e["waiting_seconds"] for e in _queued_snapshot())], default=0)
+    checks = {"db": False, "scheduler": scheduler.running,
+              "refresh_thread": busiest < config.HEALTH_STUCK_SECONDS}
     try:
         conn.execute("SELECT 1").fetchone()
         checks["db"] = True
@@ -2224,6 +2293,37 @@ def _job_next_run(job_id: str) -> str | None:
     return _iso(getattr(job, "next_run_time", None)) if job else None
 
 
+def _signup_row(u) -> dict:
+    return {"id": u.id, "email": u.email, "created_at": u.created_at,
+            "totp_enabled": u.totp_enabled}
+
+
+@app.get("/api/server/signups")
+def server_signups(user=Depends(_require_admin)):
+    """Accounts waiting in the approval queue, oldest first."""
+    return [_signup_row(u) for u in db.get_pending_users(conn)]
+
+
+@app.post("/api/server/signups/{user_id}/approve")
+def approve_signup(user_id: int, user=Depends(_require_admin)):
+    pending = db.get_user(conn, user_id)
+    if pending is None or not db.approve_user(conn, user_id, _now_iso()):
+        raise HTTPException(status_code=404, detail="no pending sign-up with that id")
+    audit.record(conn, user.id, "signup_approved", account_id=user_id, email=pending.email)
+    return _signup_row(pending)
+
+
+@app.post("/api/server/signups/{user_id}/reject")
+def reject_signup(user_id: int, user=Depends(_require_admin)):
+    """Delete a pending account and everything it owns (it owns nothing yet)."""
+    pending = db.get_user(conn, user_id)
+    if pending is None or pending.approved_at is not None:
+        raise HTTPException(status_code=404, detail="no pending sign-up with that id")
+    db.delete_user(conn, user_id)
+    audit.record(conn, user.id, "signup_rejected", account_id=user_id, email=pending.email)
+    return {"deleted": user_id}
+
+
 @app.get("/api/server/overview")
 def server_overview(user=Depends(_require_admin)):
     jobs = []
@@ -2248,6 +2348,12 @@ def server_overview(user=Depends(_require_admin)):
         "running_sources": ingest.running_sources(),
         # ...and what is waiting its turn on the single refresh thread.
         "queued": _queued_snapshot(),
+        "network": netwatch.state(),
+        "machine": hosthealth.snapshot(),
+        # The Sign-ups card shows in approval mode, or while anyone still waits
+        # after the mode was changed away from it.
+        "registration": config.REGISTRATION_MODE,
+        "signups_pending": db.count_pending_users(conn),
     }
 
 

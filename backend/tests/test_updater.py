@@ -1,6 +1,6 @@
-"""In-app updater: git parsing, the check state machine, and the routes.
+"""In-app updater: the check state machine, the hand-off, and the routes.
 
-Git is never actually run here: `updater._git` is replaced by a fake that
+Git is never actually run here: `updatecore.git` is replaced by a fake that
 answers from a table, so every scenario (behind, dirty, diverged, offline,
 no git at all) is deterministic.
 """
@@ -11,44 +11,10 @@ import subprocess
 import pytest
 from fastapi.testclient import TestClient
 
-from app import updater
+from app import host, updatecore, updater
 from tests.conftest import authenticate
 
 SEP = "\x1f"
-
-
-# ---------- pure helpers ----------
-
-def test_parse_log_splits_fields_and_skips_malformed():
-    text = (f"abc1234{SEP}feat: add thing{SEP}Minka{SEP}2026-09-25T10:00:00+03:00\n"
-            "\n"
-            "garbage line without separators\n"
-            f"def5678{SEP}fix: a | pipe in the subject{SEP}Bot{SEP}2026-09-24T09:00:00Z\n")
-    commits = updater.parse_log(text)
-    assert [c.sha for c in commits] == ["abc1234", "def5678"]
-    assert commits[1].subject == "fix: a | pipe in the subject"
-    assert commits[0].author == "Minka"
-    assert commits[0].date == "2026-09-25T10:00:00+03:00"
-
-
-def test_parse_porcelain_ignores_untracked():
-    text = " M backend/app/main.py\nM  frontend/src/api.js\n?? scratch.log\n!! ignored\nR  a -> b\n"
-    assert updater.parse_porcelain(text) == [
-        "backend/app/main.py", "frontend/src/api.js", "a -> b"]
-
-
-def test_parse_version_and_branch():
-    assert updater.parse_version('"""doc"""\n\n__version__ = "0.2.0"\n') == "0.2.0"
-    assert updater.parse_version("nothing here") is None
-    assert updater.parse_branch("main\n") == "main"
-    assert updater.parse_branch("HEAD\n") is None
-
-
-def test_friendly_fetch_error_uses_last_line():
-    msg = updater.friendly_fetch_error(
-        "fatal: unable to access 'https://github.com/x.git/':\n"
-        "Could not resolve host: github.com\n")
-    assert msg == "could not reach GitHub: Could not resolve host: github.com"
 
 
 # ---------- check() against a fake git ----------
@@ -61,10 +27,10 @@ class FakeGit:
         self.fetch_error, self.missing = fetch_error, missing
         self.calls = []
 
-    def __call__(self, *args, timeout=updater.GIT_TIMEOUT_SECONDS):
+    def __call__(self, *args, timeout=updatecore.GIT_TIMEOUT_SECONDS):
         self.calls.append(args)
         if self.missing:
-            raise updater.GitError("git is not installed or not on the server's PATH")
+            raise updatecore.GitError("git is not installed or not on the server's PATH")
         cmd = args[0]
         if args[:2] == ("rev-parse", "--short"):
             return "aaaaaaa\n" if args[2] == "HEAD" else "bbbbbbb\n"
@@ -74,7 +40,7 @@ class FakeGit:
             return self.dirty
         if cmd == "fetch":
             if self.fetch_error:
-                err = updater.GitError(self.fetch_error)
+                err = updatecore.GitError(self.fetch_error)
                 err.stderr = self.fetch_error
                 raise err
             return ""
@@ -91,7 +57,7 @@ class FakeGit:
 def fake_git(monkeypatch):
     def install(**kw):
         fake = FakeGit(**kw)
-        monkeypatch.setattr(updater, "_git", fake)
+        monkeypatch.setattr(updatecore, "git", fake)
         updater.clear_cache()
         return fake
     yield install
@@ -122,9 +88,9 @@ def test_behind_parses_commits_and_version(fake_git):
 
 
 def test_behind_more_than_cap_is_marked_truncated(fake_git):
-    fake_git(behind=80, log=_log(updater.MAX_COMMITS))
+    fake_git(behind=80, log=_log(updatecore.MAX_COMMITS))
     c = updater.check(force=True)
-    assert len(c.commits) == updater.MAX_COMMITS and c.commits_truncated
+    assert len(c.commits) == updatecore.MAX_COMMITS and c.commits_truncated
 
 
 def test_dirty_tree_blocks(fake_git):
@@ -182,43 +148,72 @@ def test_check_is_cached_until_forced(fake_git):
     assert len(fake.calls) > n
 
 
-def test_real_git_missing_binary(monkeypatch):
-    def boom(*a, **k):
-        raise FileNotFoundError("git")
-    monkeypatch.setattr(subprocess, "run", boom)
-    with pytest.raises(updater.GitError, match="not installed"):
-        updater._git("status")
-
-
 # ---------- apply status file ----------
 
 def test_is_apply_running_ignores_stale(tmp_path, monkeypatch):
     monkeypatch.setattr(updater.config, "LOG_DIR", tmp_path)
     assert updater.is_apply_running() is False
-    status = updater.initial_status("aaaaaaa", "bbbbbbb", "dev")
+    status = updatecore.initial_status("aaaaaaa", "bbbbbbb", "dev")
     updater.write_status(status)
     assert updater.is_apply_running() is True
     status["updated_at"] = "2020-01-01T00:00:00Z"
     updater.write_status(status)
     assert updater.is_apply_running() is False
-    (tmp_path / updater.STATUS_FILE_NAME).write_text("{not json", encoding="utf-8")
+    (tmp_path / updatecore.STATUS_FILE_NAME).write_text("{not json", encoding="utf-8")
     assert updater.read_apply_status()["state"] == "unknown"
 
 
-def test_build_command_passes_mode_and_status_dir(tmp_path, monkeypatch):
+# ---------- hand-off ----------
+
+@pytest.fixture
+def handoff(tmp_path, monkeypatch):
+    """Record what spawn_update would start, without starting it."""
     monkeypatch.setattr(updater.config, "LOG_DIR", tmp_path)
-    cmd = updater.build_command("aaaaaaa", "service", 8000)
-    assert cmd[0] == "powershell.exe"
-    assert cmd[cmd.index("-Mode") + 1] == "service"
-    assert cmd[cmd.index("-StatusDir") + 1] == str(tmp_path)
-    assert cmd[cmd.index("-PreviousCommit") + 1] == "aaaaaaa"
+    started = {"run": [], "popen": []}
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **k: started["run"].append(cmd) or
+                        subprocess.CompletedProcess(cmd, 0, "", ""))
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **k: started["popen"].append((cmd, k)))
+    return started
 
 
-def test_detect_mode_override(monkeypatch):
-    monkeypatch.setenv("STOCKS_UPDATE_MODE", "service")
-    assert updater.detect_mode() == "service"
-    monkeypatch.setenv("STOCKS_UPDATE_MODE", "dev")
-    assert updater.detect_mode() == "dev"
+def _request():
+    return json.loads(updater.request_path().read_text(encoding="utf-8"))
+
+
+def test_systemd_service_starts_the_update_unit(handoff, monkeypatch):
+    monkeypatch.setattr(host, "KIND", host.PI)
+    updater.spawn_update("aaaaaaa", "service", 8000)
+    assert handoff["run"] == [["systemctl", "start", "--no-block", "stocks-update.service"]]
+    assert handoff["popen"] == []
+    assert _request() == {"previous_commit": "aaaaaaa", "port": 8000, "mode": "service"}
+
+
+def test_systemd_refusal_is_reported(handoff, monkeypatch):
+    monkeypatch.setattr(host, "KIND", host.LINUX)
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **k: subprocess.CompletedProcess(
+        cmd, 4, "", "Failed to start stocks-update.service: Access denied"))
+    with pytest.raises(RuntimeError, match="Access denied"):
+        updater.spawn_update("aaaaaaa", "service", 8000)
+
+
+@pytest.mark.parametrize("kind,mode", [
+    (host.WINDOWS, "service"), (host.WINDOWS, "dev"), (host.PI, "dev"), (host.LINUX, "dev")])
+def test_everything_else_spawns_the_deploy_tool_detached(handoff, monkeypatch, tmp_path, kind, mode):
+    monkeypatch.setattr(host, "KIND", kind)
+    updater.spawn_update("aaaaaaa", mode, 8123)
+    assert handoff["run"] == []
+    (cmd, kwargs), = handoff["popen"]
+    assert cmd[1:] == [str(updater.MANAGE_SCRIPT), "update", "--from-request",
+                       "--log-dir", str(tmp_path)]
+    assert kwargs["start_new_session"] is True and kwargs["stdin"] == subprocess.DEVNULL
+    assert _request() == {"previous_commit": "aaaaaaa", "port": 8123, "mode": mode}
+
+
+def test_a_missing_deploy_tool_changes_nothing(handoff, monkeypatch, tmp_path):
+    monkeypatch.setattr(updater, "MANAGE_SCRIPT", tmp_path / "nope.py")
+    with pytest.raises(RuntimeError, match="is missing"):
+        updater.spawn_update("aaaaaaa", "service", 8000)
+    assert not updater.request_path().exists() and handoff["popen"] == []
 
 
 # ---------- routes ----------
@@ -293,7 +288,7 @@ def test_apply_spawns_and_returns_202(client, fake_git, monkeypatch):
     fake_git(behind=2, log=_log(2))
     spawned = []
     monkeypatch.setattr(updater, "spawn_update", lambda *a: spawned.append(a))
-    monkeypatch.setattr(updater, "detect_mode", lambda: "service")
+    monkeypatch.setattr(host, "service_mode", lambda: "service")
     authenticate(client)
     r = client.post("/api/update/apply")
     assert r.status_code == 202, r.text
