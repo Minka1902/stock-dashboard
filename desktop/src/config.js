@@ -13,8 +13,8 @@
 // 127.0.0.1 rather than "localhost" on purpose: uvicorn binds IPv4 only and
 // Windows resolves localhost to ::1 first, so a localhost origin can fail to
 // connect outright. They are also separate cookie jars — mixing the two
-// loses the session mid-OAuth. windows/install-service.ps1 sets the service's
-// STOCKS_CORS_ORIGINS and STOCKS_OAUTH_REDIRECT_BASE to match this exactly.
+// loses the session mid-OAuth. `signal install` (deploy/commands/install.py)
+// keeps this origin in the service's STOCKS_CORS_ORIGINS to match exactly.
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,7 +40,7 @@ export const HEALTH_INTERVAL_MS = 1_000;
 /** How often the launch update check re-reads /api/health while an update runs. */
 export const UPDATE_POLL_MS = 2_000;
 
-/** Mirrors backend/app/updater.py STALE_RUN_SECONDS: a "running" update older
+/** Mirrors backend/app/updatecore.py STALE_RUN_SECONDS: a "running" update older
  *  than this is a dead updater, and the launch check stops waiting on it. */
 export const STALE_RUN_MS = 30 * 60_000;
 
@@ -53,6 +53,7 @@ export const WAITING_PAGE = path.join(ROOT, "renderer", "waiting.html");
 export const ICON = path.join(ROOT, "assets", "icon-128.png");
 export const TRAY_ICON = path.join(ROOT, "assets", "icon-32.png");
 
-export const SERVICE_PS1 = path.join(REPO_ROOT, "windows", "service-control.ps1");
-export const LOG_DIR = path.join(
-  process.env.ProgramData || "C:\\ProgramData", "SignalDashboard", "logs");
+const DATA_DIR = path.join(process.env.ProgramData || "C:\\ProgramData", "SignalDashboard");
+/** The `signal` command `signal install` puts on the machine PATH. */
+export const SIGNAL_CMD = path.join(DATA_DIR, "bin", "signal.cmd");
+export const LOG_DIR = path.join(DATA_DIR, "logs");

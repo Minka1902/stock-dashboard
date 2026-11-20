@@ -1,8 +1,8 @@
-; SignalSetup.exe -- a bootstrapper, not a bundle. It ships only bootstrap.ps1
+; SignalSetup.exe -- a bootstrapper, not a bundle. It ships only install.ps1
 ; and a checksum-verified nssm.exe; the app itself is cloned from GitHub so the
-; in-app updater (app/updater.py, which needs a git checkout on main) keeps
-; working. Built by .github/workflows/installer.yml:
-;   iscc /DAppVersion=0.1.0 /DNssmExe=nssm.exe SignalSetup.iss
+; in-app updater (which needs a git checkout on main) keeps working. Built by
+; .github/workflows/installer.yml:
+;   iscc /DAppVersion=0.2.0 /DNssmExe=nssm.exe deploy\windows\SignalSetup.iss
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -38,12 +38,11 @@ SolidCompression=yes
 WizardStyle=modern
 SetupLogging=yes
 UninstallDisplayName={#AppName}
-; install-desktop.ps1 puts the shortcuts in the installing user's Start Menu
-; and on their Desktop.
+; The desktop app's shortcuts go in the installing user's Start Menu and Desktop.
 UsedUserAreasWarning=no
 
 [Files]
-Source: "bootstrap.ps1"; DestDir: "{tmp}"
+Source: "..\..\install.ps1"; DestDir: "{tmp}"
 Source: "{#NssmExe}"; DestDir: "{tmp}"; DestName: "nssm.exe"
 
 [Run]
@@ -59,15 +58,13 @@ Filename: "{app}\repo\desktop\node_modules\electron\dist\electron.exe"; \
 Filename: "{#PowerShell}"; \
   Parameters: "-NoProfile -Command ""Get-Process electron -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -like '{app}\repo\*' } | Stop-Process -Force"""; \
   Flags: runhidden waituntilterminated; RunOnceId: "StopDesktop"
-; Removes the service only: the database and logs in ProgramData are kept.
-Filename: "{#PowerShell}"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\repo\windows\uninstall-service.ps1"""; \
+; Removes the service only: the database, backups and logs in ProgramData are kept.
+Filename: "{app}\repo\backend\.venv\Scripts\python.exe"; \
+  Parameters: """{app}\repo\deploy\manage.py"" uninstall --yes"; \
   Flags: runhidden waituntilterminated; RunOnceId: "RemoveService"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\repo"
-Type: files; Name: "{userprograms}\Signal.lnk"
-Type: files; Name: "{userdesktop}\Signal.lnk"
 
 [Code]
 var
@@ -88,7 +85,7 @@ begin
 
   WizardForm.StatusLabel.Caption :=
     'Setting up Signal (prerequisites, dependencies, service). Progress is in the console window...';
-  Params := '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\bootstrap.ps1') + '"' +
+  Params := '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\install.ps1') + '"' +
             ' -InstallDir "' + ExpandConstant('{app}') + '"' +
             ' -NssmExe "' + ExpandConstant('{tmp}\nssm.exe') + '"' +
             ' -PauseOnError';

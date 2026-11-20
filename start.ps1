@@ -289,7 +289,7 @@ function Assert-PortFree {
         Fail "$Label port $Port is held by the SignalDashboard Windows service." (@(
             'The service restarts on kill, so -Kill will not free it. Either:',
             "  .\start.ps1 $Mode -ApiPort 8001        # run dev alongside the service",
-            '  .\windows\service-control.ps1 -Stop    # stop the service first (admin)',
+            '  signal stop                            # stop the service first (admin)',
             '',
             'Note the dev instance uses backend\stocks.db, a different database',
             'from the service -- separate accounts, separate TOTP enrolment.',

@@ -1,0 +1,36 @@
+[Unit]
+Description=Stock Signal Dashboard (API, scheduler and web app)
+Documentation=file://@APP@/deploy/README.md
+# A Pi 3 has no real-time clock: until NTP has synced, the clock can be days
+# off, which breaks TOTP sign-in and every schedule. On a Pi the installer
+# enables systemd-time-wait-sync, which holds time-sync.target until it is right.
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+# Never give up restarting.
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=@USER@
+Group=@USER@
+WorkingDirectory=@APP@/backend
+# install.env is written by the installer; stocks.env is yours and wins.
+EnvironmentFile=@GENERATED@
+EnvironmentFile=@SETTINGS@
+# In-process uvicorn: systemd is the only supervisor, and its stop signal
+# reaches the app, so the lifespan's WAL checkpoint runs on every stop.
+ExecStart=@APP@/backend/.venv/bin/python run_server.py --no-supervise --host 127.0.0.1 --port @PORT@
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+# The DB, logs and update status, .git for the update check, and the backup
+# directory ("-": a missing one, an unplugged disk, must not stop the service).
+ReadWritePaths=@DATA@ @LOGS@ @APP@/.git -@BACKUPS@
+
+[Install]
+WantedBy=multi-user.target

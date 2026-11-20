@@ -1,5 +1,10 @@
 import os
+import sys
 import tempfile
+from pathlib import Path
+
+# deploy/ (the install tool) lives at the repo root, next to backend/.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 # Point file logging at a scratch dir before anything imports app.config, so a
 # test run never writes into the real backend/logs/backend.log that we ask

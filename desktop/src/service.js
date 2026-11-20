@@ -10,7 +10,7 @@
 
 import { spawn, execFile } from "node:child_process";
 
-import { SERVICE_NAME, SERVICE_PS1 } from "./config.js";
+import { SERVICE_NAME, SIGNAL_CMD } from "./config.js";
 
 /** @returns {Promise<"running"|"stopped"|"pending"|"absent"|"unknown">} */
 export function queryService() {
@@ -37,12 +37,9 @@ export function queryService() {
  */
 export function restartServiceElevated() {
   if (process.platform !== "win32") return;
-  const inner = [
-    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", SERVICE_PS1, "-Restart",
-  ].map((a) => `'${a.replace(/'/g, "''")}'`).join(",");
-
+  const cmd = `'${SIGNAL_CMD.replace(/'/g, "''")}'`;
   spawn("powershell.exe", [
     "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-    `Start-Process powershell.exe -Verb RunAs -ArgumentList ${inner}`,
+    `Start-Process ${cmd} -Verb RunAs -ArgumentList 'restart'`,
   ], { windowsHide: true, detached: true, stdio: "ignore" }).unref();
 }

@@ -1,0 +1,14 @@
+[Unit]
+Description=Stock Signal Dashboard update (started from Info -> Updates, or `signal update`)
+Documentation=file://@APP@/deploy/README.md
+
+[Service]
+# Its own unit, so the restart it performs doesn't kill it. Started by the
+# dashboard (as the service user) through the installer's polkit rule.
+Type=oneshot
+User=@USER@
+Group=@USER@
+EnvironmentFile=@GENERATED@
+EnvironmentFile=@SETTINGS@
+ExecStart=@PYTHON@ @APP@/deploy/manage.py update --from-request
+TimeoutStartSec=30min
