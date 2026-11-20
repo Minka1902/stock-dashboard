@@ -62,12 +62,13 @@ def run(*cmd, user: str | None = None, cwd=None, env: dict | None = None,
     return proc
 
 
-def query(*cmd, user: str | None = None, cwd=None) -> subprocess.CompletedProcess:
+def query(*cmd, user: str | None = None, cwd=None, env: dict | None = None) -> subprocess.CompletedProcess:
     """Run a read-only command (also in a dry run). Never raises: a missing
     tool reads as exit 127 with empty output."""
     argv = _as_user(cmd, user)
     try:
-        return subprocess.run(argv, cwd=cwd, text=True, capture_output=True, timeout=120)
+        return subprocess.run(argv, cwd=cwd, env={**os.environ, **env} if env else None,
+                              text=True, capture_output=True, timeout=120)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return subprocess.CompletedProcess(argv, 127, "", str(exc))
 

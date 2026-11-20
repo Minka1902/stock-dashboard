@@ -45,6 +45,7 @@ ENV_KEY = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
 NODE_WINGET_ID = "OpenJS.NodeJS.LTS"
 STOP_WAIT_SECONDS = 60
 DELETE_WAIT_SECONDS = 30
+DOWNLOAD_ATTEMPTS = 4
 SHORTCUT_SCRIPT = paths_lib.REPO / "deploy" / "windows" / "shortcut.ps1"
 
 
@@ -152,12 +153,16 @@ def nssm_path(paths) -> Path:
 def _download_nssm(target: Path) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         archive = Path(tmp) / "nssm.zip"
-        try:
-            urllib.request.urlretrieve(NSSM_URL, archive)
-        except OSError as exc:
-            raise proc.Failed(
-                f"could not download NSSM from {NSSM_URL} ({exc}). Fetch it yourself, check it, "
-                "and pass --nssm C:\\path\\to\\nssm.exe") from exc
+        for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+            try:
+                urllib.request.urlretrieve(NSSM_URL, archive)
+                break
+            except OSError as exc:
+                if attempt == DOWNLOAD_ATTEMPTS:
+                    raise proc.Failed(
+                        f"could not download NSSM from {NSSM_URL} ({exc}). Fetch it yourself, "
+                        "check it, and pass --nssm C:\\path\\to\\nssm.exe") from exc
+                time.sleep(2 ** attempt)
         actual = hashlib.sha256(archive.read_bytes()).hexdigest().upper()
         if actual != NSSM_SHA256:
             raise proc.Failed(

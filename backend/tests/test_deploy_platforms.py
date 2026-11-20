@@ -129,6 +129,7 @@ def test_the_tool_and_the_shared_modules_need_only_the_standard_library():
     assert done.returncode == 0, done.stderr
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="prints POSIX paths; Windows is covered by the deploy smoke")
 @pytest.mark.parametrize("kind", [host.PI, host.LINUX])
 def test_a_dry_run_install_lists_the_steps_and_changes_nothing(kind, tmp_path):
     env = {"STOCKS_HOST_KIND": kind, "PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}

@@ -89,25 +89,29 @@ def checkout(paths, opts, backup_first) -> None:
     the new branch, never a pull, and only with no local edits to lose."""
     app = paths.app
     git = ("git", "-C", app)
+    as_service = {"user": USER, "env": user_env(paths)}
     if not (app / ".git").exists():
-        proc.run("git", "clone", "--quiet", "--branch", opts.branch, opts.repo, app, user=USER)
+        proc.run("git", "clone", "--quiet", "--branch", opts.branch, opts.repo, app, **as_service)
         return
-    origin = proc.query(*git, "remote", "get-url", "origin", user=USER).stdout
+    origin = proc.query(*git, "remote", "get-url", "origin", **as_service).stdout
     if _same_repo(origin, opts.repo):
-        if proc.run(*git, "fetch", "--quiet", "origin", user=USER, check=False).returncode != 0:
+        if proc.run(*git, "fetch", "--quiet", "origin", check=False, **as_service).returncode != 0:
             proc.warn("could not fetch; keeping the current checkout")
         return
     proc.say(f"moving this install from {origin.strip()} to {opts.repo}")
-    dirty = proc.query(*git, "status", "--porcelain", "--untracked-files=no", user=USER).stdout.strip()
+    dirty = proc.query(*git, "status", "--porcelain", "--untracked-files=no", **as_service).stdout.strip()
     if dirty:
         raise proc.Failed(f"{app} has local edits; commit or discard them first:\n{dirty}")
     backup_first()
-    proc.run(*git, "remote", "set-url", "origin", opts.repo, user=USER)
-    proc.run(*git, "fetch", "--quiet", "origin", opts.branch, user=USER)
-    proc.run(*git, "checkout", "--quiet", "-B", opts.branch, f"origin/{opts.branch}", user=USER)
+    proc.run(*git, "remote", "set-url", "origin", opts.repo, **as_service)
+    proc.run(*git, "fetch", "--quiet", "origin", opts.branch, **as_service)
+    proc.run(*git, "checkout", "--quiet", "-B", opts.branch, f"origin/{opts.branch}", **as_service)
 
 
 def _uses_tailscale(opts) -> bool:
+    """Only `install` has these options; every other command never sets up Tailscale."""
+    if not hasattr(opts, "tailscale"):
+        return False
     return opts.tailscale or (host.KIND == host.PI and not opts.public_origin)
 
 
