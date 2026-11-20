@@ -4,15 +4,17 @@ An Electron shell around the dashboard: a real window, a tray icon with the
 unread-alert count, and native Windows toasts for high-severity alerts.
 
 It is a **companion to the Windows service, not a replacement** — it never
-starts the backend itself. Install the service first (`windows/README.md`);
+starts the backend itself. Install the service first (`deploy/README.md`);
 data collection, digests and alert generation all happen there whether this app
 is running or not. What the app adds is the window and the notifications.
 
 ## Run
 
+`signal install` on Windows sets it up (npm ci + Desktop and Start Menu shortcuts)
+unless you pass `--without desktop`. By hand:
+
 ```powershell
-.\windows\install-desktop.ps1     # npm install + Desktop and Start Menu shortcuts
-cd desktop; npm start
+cd desktop; npm ci; npm start
 ```
 
 ```bash
@@ -96,7 +98,7 @@ that must be kept in sync — the same convention the extension already follows:
 | `"app:navigate"` in `src/preload.cjs` | `NAV_EVENT` in `frontend/src/lib/nav.js` |
 | Tray menu items | `commandItems` in `frontend/src/App.jsx` |
 | Poll cadence, `MAX_NOTIFICATIONS_PER_POLL` | `extension/src/background/index.js` |
-| `STALE_RUN_MS`, `isApplyRunning` in `src/updates/pending.js` | `STALE_RUN_SECONDS`, `is_apply_running` in `backend/app/updater.py` |
+| `STALE_RUN_MS`, `isApplyRunning` in `src/updates/pending.js` | `STALE_RUN_SECONDS`, `is_apply_running` in `backend/app/updatecore.py` |
 
 The tray menu lists the palette's navigation entries in its order. It
 deliberately omits Server (admin-only; the tray does not know the user's role)
@@ -128,8 +130,8 @@ no URL) or the next alert poll.
 
 The tray can *read* service state unelevated (`sc query` is permitted for
 Authenticated Users) but cannot start or stop it — that needs admin rights.
-"Restart backend service…" spawns an elevated PowerShell with a visible UAC
-prompt. The outcome isn't observable from here and the user may cancel, so the
+"Restart backend service…" runs `signal restart` elevated, with a visible UAC
+prompt (which also re-reads the settings file). The outcome isn't observable from here and the user may cancel, so the
 app re-enters the health loop rather than assuming success.
 
 Loosening the service's security descriptor so an unelevated app could control
@@ -139,9 +141,9 @@ it would be a privilege-escalation hole in a LocalSystem service. It isn't done.
 
 - **Toasts need the Start Menu shortcut.** Windows resolves toast identity
   through the AppUserModelID, which normally comes from a shortcut created by an
-  installer. `install-desktop.ps1` creates one and stamps the AUMID via the
-  shell property store. If notifications never appear, this is the first thing
-  to suspect — the script warns when the stamp fails.
+  installer. `signal install` creates one (`deploy/windows/shortcut.ps1`) and
+  stamps the AUMID via the shell property store. If notifications never appear,
+  this is the first thing to suspect — the install warns when the stamp fails.
 - **Google OAuth in an embedded browser.** Google returns
   `disallowed_useragent` for some embedded browsers; the popup overrides its
   user agent to a plain Chrome string, which is the standard mitigation but is a
@@ -149,7 +151,7 @@ it would be a privilege-escalation hole in a LocalSystem service. It isn't done.
 - **Double notifications.** If you also run the browser extension against the
   same backend, high-severity alerts toast twice — the two keep independent seen
   stores by design. Turn off `notifyHighSeverity` in whichever you use less.
-- **Desktop npm deps are not updated in place.** `update.ps1` cannot reinstall
+- **Desktop npm deps are not updated in place.** An update cannot reinstall
   `desktop\node_modules` while `electron.exe` is running (Windows locks it), so an
-  Electron bump arrives on the next `SignalSetup.exe` run (repair), not
-  through "Update now".
+  Electron bump arrives on the next `signal install` (repair), not through
+  "Update now".

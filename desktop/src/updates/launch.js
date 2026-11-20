@@ -1,6 +1,6 @@
 // The update check that runs once per launch.
 //
-// It drives the backend's existing updater (app/updater.py + windows/update.ps1)
+// It drives the backend's existing updater (app/updater.py + deploy/commands/update.py)
 // rather than pulling anything itself: the service runs the update as
 // LocalSystem, so there is no UAC prompt, and pip / the frontend build / the
 // restart / the rollback all come for free.

@@ -86,6 +86,10 @@ export const runScheduleNow = (source) =>
 // ApiError.fields.file.
 export const importSourceFile = (source, file) =>
   request(`/api/server/sources/${encodeURIComponent(source)}/import`, { method: "POST", body: file });
+// The approval queue (STOCKS_REGISTRATION=approval), admin only.
+export const getSignups = () => getJSON("/api/server/signups");
+export const approveSignup = (id) => request(`/api/server/signups/${id}/approve`, { method: "POST" });
+export const rejectSignup = (id) => request(`/api/server/signups/${id}/reject`, { method: "POST" });
 export const getNews = () => getJSON("/api/news");
 export const getTrades = () => getJSON("/api/trades");
 export const getWatchlist = (listId) =>

@@ -5,12 +5,15 @@ import Dialog from "./Dialog";
 import DragHandle from "./DragHandle";
 import Icon from "./Icon";
 import ExtHoursBadge from "./ExtHoursBadge";
+import Heatmap from "./Heatmap";
+import HeatmapToggle from "./HeatmapToggle";
 import PanelInfo from "./PanelInfo";
 import MenuButton, { MenuDivider, MenuItem, MenuLabel } from "./MenuButton";
 import ScrollHint from "./ScrollHint";
 import Sparkline from "./Sparkline";
 import SparkRange from "./SparkRange";
 import TickerLabel from "./TickerLabel";
+import { useHeatmapView } from "../hooks/useHeatmapView";
 import { useWatchlists } from "../hooks/useWatchlists";
 import { useLocalOrder } from "../hooks/useLocalOrder";
 import { useSparklines } from "../hooks/useSparklines";
@@ -71,7 +74,12 @@ function WatchRow({ item, position, total, onMove, children }) {
   );
 }
 
-export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
+// The move (or score) that reads as full colour on a heatmap tile.
+const HEAT_DOMAIN = { day: 3, range: 10, boom: 50 };
+
+const signed = (v, digits) => `${v >= 0 ? "+" : ""}${v.toFixed(digits)}`;
+
+export default function WatchlistPanel({ quotes = {}, marketStatus = null, boomScores = [] }) {
   const {
     lists, activeId, items, selectList,
     addTicker, removeTicker, moveTicker, editNote, createList, renameList, deleteList,
@@ -91,6 +99,28 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
   const { ordered, isCustom, setOrderedItems, moveBy, reset: resetOrder } = useLocalOrder(
     activeId == null ? null : `watchlistOrder:v1:${activeId}`, items, itemId);
   const { series: sparks } = useSparklines(ordered.map((w) => w.ticker), range);
+  const heatMetrics = [
+    { value: "day", label: "Day" },
+    { value: "range", label: range.toUpperCase() },
+    { value: "boom", label: "Boom Score" },
+  ];
+  const heat = useHeatmapView("watchlist", heatMetrics);
+  const heatToggle = (
+    <HeatmapToggle label="the watchlist" view={heat.view} onView={heat.setView} row={phone}
+                   metric={heat.metric} onMetric={heat.setMetric} metrics={heatMetrics} />
+  );
+  const boomBy = Object.fromEntries(boomScores.map((b) => [b.ticker, b.score]));
+  // A watchlist has no position size, so every tile weighs the same.
+  const heatItems = ordered.map((w) => {
+    const day = quotes[w.ticker]?.change_pct ?? null;
+    const spark = sparks[w.ticker];
+    const boom = boomBy[w.ticker] ?? null;
+    const value = { day, range: spark?.change_pct ?? null, boom }[heat.metric];
+    let display;
+    if (value == null) display = heat.metric === "boom" ? "no score" : heat.metric === "range" && !spark ? "loading" : "no quote";
+    else display = heat.metric === "boom" ? signed(value, 0) : `${signed(value, heat.metric === "day" ? 2 : 1)}%`;
+    return { key: w.ticker, label: w.ticker, weight: 1, value, display, detail: w.note || undefined };
+  });
 
   // Announce keyboard moves — a visual reshuffle tells a screen reader nothing.
   const [liveMessage, setLiveMessage] = useState("");
@@ -268,11 +298,13 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
             </Tooltip>
           )}
           {items.length > 0 && <SparkRange value={range} onChange={setRange} />}
+          {!phone && items.length > 0 && heatToggle}
           {phone && (
             <Button size="sm" data-tour="add-form" aria-label="Add ticker" onClick={() => setAdding(true)}>+ Add</Button>
           )}
         </span>
       </header>
+      {phone && items.length > 0 && heatToggle}
 
       {phone ? <ScrollHint className={styles.tabScroller}>{tabs}</ScrollHint> : tabs}
 
@@ -312,6 +344,9 @@ export default function WatchlistPanel({ quotes = {}, marketStatus = null }) {
           <p className={styles.emptyTitle}>This watchlist is empty</p>
           <p className={styles.emptyText}>Add a ticker above to start tracking it.</p>
         </div>
+      ) : heat.view === "heatmap" ? (
+        <Heatmap items={heatItems} domain={HEAT_DOMAIN[heat.metric]} onOpen={openTickerTab}
+                 ariaLabel={heat.metric === "boom" ? "Watchlist heatmap coloured by Boom Score" : "Watchlist heatmap coloured by price move"} />
       ) : (
         <Reorder.Group
           as="ul"

@@ -1,6 +1,6 @@
 // Signal desktop shell — main process.
 //
-// The backend is a Windows service (see windows/README.md); this app is a
+// The backend is a Windows service (see deploy/README.md); this app is a
 // window plus a tray icon over it. It never starts the backend itself, and it
 // survives the backend going away and coming back.
 

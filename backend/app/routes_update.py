@@ -1,7 +1,8 @@
 """In-app update routes: /api/update/status (any user) and /api/update/apply (admin).
 
 Kept out of main.py so the update feature is one self-contained unit: the git
-logic is in app/updater.py, the work itself in windows/update.ps1.
+logic is in app/updatecore.py and app/updater.py, the work itself in
+deploy/commands/update.py.
 """
 import logging
 import threading
@@ -9,7 +10,7 @@ import threading
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from app import auth, updater
+from app import auth, host, updatecore, updater
 from app.security import rate_limit
 from app.version import __version__
 
@@ -76,10 +77,10 @@ def build_router() -> APIRouter:
             if not check.can_apply:
                 raise HTTPException(status_code=409,
                                     detail=check.blocked_reason or "update not possible")
-            mode = updater.detect_mode()
+            mode = host.service_mode()
             server = request.scope.get("server") or ("127.0.0.1", 8000)
             port = int(server[1] or 8000)
-            status = updater.initial_status(check.current_commit, check.remote_commit, mode)
+            status = updatecore.initial_status(check.current_commit, check.remote_commit, mode)
             updater.write_status(status)
             try:
                 updater.spawn_update(check.current_commit, mode, port)

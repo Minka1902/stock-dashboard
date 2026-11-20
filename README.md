@@ -31,7 +31,7 @@ Architecturally it is a **FastAPI + SQLite + APScheduler** backend that ingests 
 - **Charts** — candlestick charts with extended hours, drawing tools and saved drafts.
 - **Multi-user with mandatory 2FA** — Argon2id passwords, TOTP (Google/Microsoft Authenticator), recovery codes, optional OAuth sign-in. Market data is shared; watchlists, portfolio and notifications are per user.
 - **Operations built in** — editable per-source schedules, run-now, a queue view, manual file import for a source whose provider blocks automated fetches (FINRA margin debt), and a one-click in-app updater (admin only) with rollback on failure.
-- **Companions** — a browser extension that adds ticker badges and desktop alerts, an Electron tray app that checks for updates on every launch, and a one-click Windows installer (`SignalSetup.exe`).
+- **Companions** — a browser extension that adds ticker badges and desktop alerts, an Electron tray app that checks for updates on every launch, and one installer for Windows, Raspberry Pi and Linux (`signal install`, or `SignalSetup.exe` on Windows) with nightly verified backups.
 
 ## Architecture
 
@@ -75,18 +75,18 @@ Architecturally it is a **FastAPI + SQLite + APScheduler** backend that ingests 
 | Frontend | React 19, Vite 8, CSS Modules with design tokens, lightweight-charts, Recharts, Motion, anime.js |
 | Extension | Manifest V3, Vite build for Chrome and Firefox |
 | Desktop | Electron 34 |
-| Service | Windows service via NSSM, PowerShell scripts |
-| Installer | Inno Setup bootstrapper, built by GitHub Actions |
+| Service | Windows service via NSSM, or systemd on Raspberry Pi / Linux; one stdlib-Python tool (`deploy/`) installs, updates, backs up and restores |
+| Installer | `install.sh` / `install.ps1`, and an Inno Setup bootstrapper for Windows, built by GitHub Actions |
 | Testing / lint | pytest, ESLint, `node --test` |
 
 ## Prerequisites
 
-- **OS** — Windows 10/11 is the primary target: the launcher, service and updater are PowerShell. The backend and frontend also run on Linux or macOS using the manual commands below.
+- **OS** — Windows 10/11, Raspberry Pi OS (64-bit) or any systemd Linux for an installed service. The dev launcher (`start.ps1`) is Windows-only; the manual commands below work anywhere, macOS included.
 - **Python 3.11+** on `PATH`.
 - **Node.js 20.19+ or 22.12+** (required by Vite 8) with npm.
 - **git** — needed for the in-app updater, which compares your checkout with `origin/main`.
 - **Network** — outbound HTTPS to the public data sources (sec.gov, usaspending.gov, GDELT, Yahoo Finance, FINRA and others). No inbound access is needed unless you deliberately expose the app (see [Security considerations](#security-considerations)).
-- **Permissions** — a normal user is enough for development. Installing the Windows service needs an **elevated** PowerShell.
+- **Permissions** — a normal user is enough for development. Installing the service needs an **elevated** PowerShell on Windows, `sudo` on Linux.
 - **No database server and no Docker** — SQLite is embedded.
 - **Optional: `pdftotext`** (poppler) for reading House congress trade filings. On a Raspberry Pi or
   Debian it's `sudo apt install poppler-utils`; on Windows, install poppler and point
@@ -95,13 +95,35 @@ Architecturally it is a **FastAPI + SQLite + APScheduler** backend that ingests 
 
 ## Installation
 
-**Windows installer.** Download
+One tool installs the dashboard as an always-on service, picks the right service manager for the
+machine (NSSM on Windows, systemd on a Raspberry Pi or Linux) and gives every machine the same
+commands: `signal status`, `signal update`, `signal backup`, `signal restore`, `signal uninstall`.
+The full guide, including moving an existing install over, is [`deploy/README.md`](deploy/README.md).
+
+**Raspberry Pi** (Raspberry Pi OS Lite 64-bit, Tailscale logged in):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Minka1902/stock-dashboard/main/install.sh | sudo bash -s -- --admin-email you@example.com
+```
+
+**Linux:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Minka1902/stock-dashboard/main/install.sh | sudo bash
+```
+
+**Windows** — download
 [`SignalSetup.exe`](https://github.com/Minka1902/stock-dashboard/releases/latest/download/SignalSetup.exe)
-and run it (one UAC prompt). It installs git, Node.js and Python machine-wide through winget if they are
-missing, clones `main` into `C:\Program Files\SignalDashboard\repo`, installs the dependencies, registers the
-Windows service and adds a **Signal** shortcut to the Desktop and the Start Menu. Every launch of the app then checks GitHub for
-updates and offers to apply them. The exe is unsigned, so SmartScreen asks first: *More info → Run anyway*.
-Details in [`windows/README.md`](windows/README.md#one-click-installer).
+and run it (one UAC prompt), or from an elevated PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/Minka1902/stock-dashboard/main/install.ps1 | iex
+```
+
+It installs git and Python machine-wide through winget if they are missing, clones `main` into
+`C:\Program Files\SignalDashboard\repo`, registers the Windows service and adds a **Signal** shortcut
+for the desktop app. Every launch of the app then checks GitHub for updates and offers to apply them.
+The exe is unsigned, so SmartScreen asks first: *More info → Run anyway*.
 
 **From source.**
 
@@ -141,7 +163,7 @@ Before the first run, set `STOCKS_SEC_USER_AGENT` to your own name and email. SE
 |---|---|---|
 | Dev (hot reload) | `.\start.bat` (or `start.ps1 dev`) | http://localhost:5173 |
 | Single port (prod-like) | `.\start.bat prod` | http://localhost:8000 |
-| Windows service | `.\windows\install-service.ps1` (elevated) | http://127.0.0.1:8000 |
+| Installed service | `signal install` (see [Installation](#installation)) | http://127.0.0.1:8000 |
 
 The launcher also supports `-Stop`, `-Status`, `-Logs`, `-Kill`, `-NoBrowser` and `-NoSupervise`. See the header of `start.ps1`.
 
@@ -165,15 +187,15 @@ Always run uvicorn from `backend/` with the `app.main:app` module path, because 
 
 **Companions:**
 - Browser extension — `cd extension && npm install && npm run build`, then load `dist-chrome/` or `dist-firefox/`. See [`extension/README.md`](extension/README.md).
-- Desktop app — `.\windows\install-desktop.ps1`, then `cd desktop && npm start`. It needs the service running. See [`desktop/README.md`](desktop/README.md).
-- Windows service — see [`windows/README.md`](windows/README.md) for NSSM verification, logs, updates and public exposure.
+- Desktop app — installed by `signal install` on Windows, or `cd desktop && npm ci && npm start`. It needs the service running. See [`desktop/README.md`](desktop/README.md).
+- Installed service — see [`deploy/README.md`](deploy/README.md) for logs, updates, backups, NSSM verification and public exposure.
 
 ## Configuration
 
 All backend configuration comes from `STOCKS_*` environment variables with defaults in [`backend/app/config.py`](backend/app/config.py), which is the full list.
 
-- **Nothing loads a `.env` file.** There is no `python-dotenv`. [`backend/.env.example`](backend/.env.example) is documentation only, so export the variables in your shell.
-- **Windows service:** put variables in `windows/service.env` (copy from `service.env.example`; the file is gitignored). The installer bakes it into the service's environment, and this is the only way a LocalSystem service receives them.
+- **Nothing loads a `.env` file.** There is no `python-dotenv`. In development, export the variables in your shell.
+- **Installed service:** put variables in the settings file (`/etc/stocks-dashboard/stocks.env`, or `C:\ProgramData\SignalDashboard\settings.env` on Windows), then `signal restart`. [`deploy/env.example`](deploy/env.example) is its annotated template; the service manager hands it to the service.
 - **Secrets stay in the environment**, never in code or the database. Notification channels and optional sources quietly no-op (and log it) when their variables are unset.
 
 | Variable | Default | Purpose |
@@ -196,7 +218,7 @@ All backend configuration comes from `STOCKS_*` environment variables with defau
 | `STOCKS_DIGEST_HOUR` / `_MINUTE` / `_TZ` | `7` / `30` / `America/New_York` | Pre-market digest time |
 | `STOCKS_OAUTH_{GOOGLE,GITHUB,FACEBOOK}_CLIENT_ID` / `_SECRET` | — | Optional social login |
 | `STOCKS_OAUTH_REDIRECT_BASE` | `http://localhost:8000` | Base of the OAuth callback URL registered with each provider |
-| `STOCKS_UPDATE_MODE` | *(auto-detected)* | `service` \| `dev` — overrides the updater's detection of whether it runs under the NSSM service |
+| `STOCKS_UPDATE_MODE` | *(auto-detected)* | `service` \| `dev` — overrides the updater's detection of whether it runs as the installed service (NSSM or systemd) |
 | `STOCKS_ALPHA_VANTAGE_KEY`, `STOCKS_FMP_KEY`, `STOCKS_X_BEARER` | — | Optional API keys |
 | `STOCKS_BENCHMARKS` | `SPY,^TA125.TA` | Benchmark series the `ohlc` source always fetches |
 | `STOCKS_COST_BPS_PER_SIDE` | `10` | The one cost model (basis points each side) for net returns, paper and bot fills, and the backtester |
@@ -212,11 +234,11 @@ All backend configuration comes from `STOCKS_*` environment variables with defau
 | `STOCKS_ALPACA_KEY_ID` / `_SECRET_KEY` | — | Alpaca paper keys (secret); the Broker tab is off while unset |
 | `STOCKS_ALPACA_OWNER` | *(first admin)* | Email of the one user the Alpaca account belongs to |
 
-The regime thresholds (`STOCKS_REGIME_*`), auto-mute (`STOCKS_SIGNAL_*`), backtest history (`STOCKS_DAILY_MAX_*`) and the scanner's finer settings are listed with their defaults in [`backend/.env.example`](backend/.env.example).
+The regime thresholds (`STOCKS_REGIME_*`), auto-mute (`STOCKS_SIGNAL_*`), backtest history (`STOCKS_DAILY_MAX_*`) and the scanner's finer settings are listed with their defaults in [`backend/app/config.py`](backend/app/config.py).
 
 **Ports:** the backend uses `8000` and the Vite dev server uses `5173`. Both can be changed with `start.ps1 -ApiPort` / `-WebPort`. In dev, `VITE_API_BASE` stays empty (same-origin through the proxy); set it only if you run a cross-origin backend.
 
-**Paths** default relative to the source file, not the working directory. A Windows service starts in `C:\Windows\system32`, and a relative path there would silently create a second, empty database. The service stores its data in `C:\ProgramData\SignalDashboard\` (`db\`, `logs\`), separate from `backend\stocks.db`.
+**Paths** default relative to the source file, not the working directory. A Windows service starts in `C:\Windows\system32` and a systemd unit in `/`, and a relative path there would silently create a second, empty database. An installed service keeps its data in `C:\ProgramData\SignalDashboard\` or `/var/lib/stocks-dashboard/`, separate from `backend/stocks.db`.
 
 Per-source schedules are **not** environment variables. They are seeded from the registry and then edited on the Server page (the `source_schedules` table).
 
@@ -236,6 +258,8 @@ stock-dashboard/
 │   │   ├── search.py, quotes.py, chart_data.py, currency.py, market_calendar.py, report.py, themes.py
 │   │   ├── auth.py, routes_auth.py, routes_oauth.py, registration.py, security.py, validation.py
 │   │   ├── routes_chart.py, routes_update.py, updater.py, notify.py, config.py, version.py
+│   │   ├── host.py, updatecore.py, backup.py   # stdlib only: shared with deploy/
+│   │   ├── netwatch.py, hosthealth.py         # outage handling, the Server page's machine card
 │   │   └── data/              # static reference data (contractor/major lists)
 │   ├── tests/                 # pytest suite (conftest: conn fixture, authenticate helper)
 │   ├── requirements.txt
@@ -250,10 +274,11 @@ stock-dashboard/
 │       └── index.css          # design tokens and themes
 ├── extension/                 # MV3 browser companion (Chrome + Firefox)
 ├── desktop/                   # Electron window + tray over the running service (src/updates/: launch-time update check)
-├── windows/                   # NSSM service install/control/update scripts, Common.ps1 (NSSM pin), service.env.example
-│   └── setup/                 # SignalSetup.iss + bootstrap.ps1 (the one-click installer)
+├── deploy/                    # `signal`: install, update, backup, restore (manage.py, platforms/, units/, env.example)
+│   └── windows/               # SignalSetup.iss, desktop shortcut helper
+├── install.sh / install.ps1   # starters: git + Python, then deploy/manage.py install
 ├── reports/                   # QA logs and release reports
-├── .github/workflows/         # installer.yml: builds SignalSetup.exe
+├── .github/workflows/         # ci.yml: tests, web-dist, deploy smoke; installer.yml: SignalSetup.exe
 ├── .claude/skills/            # repo checklists (e.g. adding-a-data-source)
 ├── start.ps1 / start.bat / stop.bat   # dev/prod launcher
 ├── CLAUDE.md                  # in-depth architecture notes
@@ -358,8 +383,8 @@ npm run lint
 - **Branches** — work on `feat/<topic>` or `fix/<topic>` branches and merge to `main` through a pull request. Commit messages follow Conventional Commits with a scope, e.g. `feat(chart): …`, `fix(ui): …`, `docs(reports): …`.
 - **Builds** — `npm run build` in `frontend/` produces `frontend/dist/`, which the backend serves automatically. The extension builds to `dist-chrome/` and `dist-firefox/`.
 - **Versioning** — `backend/app/version.py` is the source of truth, and `frontend/package.json` mirrors it.
-- **Installer** — `.github/workflows/installer.yml` builds `SignalSetup.exe` on `v*` tags (attached to the release), on PRs touching `windows/setup/` or `windows/Common.ps1`, and on manual dispatch. It bundles `nssm.exe` only when the download matches the pin in `windows/Common.ps1`.
-- **Debugging** — check the logs in `backend/logs/` (the service uses `C:\ProgramData\SignalDashboard\logs\`), `start.ps1 -Status` / `-Logs`, `/api/health`, and the **Server page**, which shows per-source status, run history with tracebacks, the queue, and system metrics.
+- **Installer** — `.github/workflows/installer.yml` builds `SignalSetup.exe` on `v*` tags (attached to the release), on PRs touching `deploy/windows/`, `deploy/platforms/windows.py` or `install.ps1`, and on manual dispatch. It bundles `nssm.exe` only when the download matches the pin in `deploy/platforms/windows.py`.
+- **Debugging** — check the logs in `backend/logs/` (an installed service: `signal status` / `signal logs`), `start.ps1 -Status` / `-Logs`, `/api/health`, and the **Server page**, which shows per-source status, run history with tracebacks, the queue, and system metrics.
 
 ## Troubleshooting
 
@@ -371,23 +396,23 @@ npm run lint
 | A source shows `error` | This is intentional: the source failed and the app shows that rather than invent data. Open the source on the Server page for the full traceback. |
 | EDGAR returns 403 | Set `STOCKS_SEC_USER_AGENT` to a real name and email. |
 | GDELT shows `deferred` | It was rate-limited (429). The source retries on its own after the cooldown. |
-| `margin_debt` fails with an install hint | Playwright or its Chromium is missing. Run `python -m playwright install chromium` in the venv. |
-| Environment variables seem ignored | Nothing reads `.env`. Export them in the shell, or use `windows/service.env` for the service and reinstall it. |
-| The service comes up with no data | It uses `C:\ProgramData\SignalDashboard\db\`, a separate database with separate accounts from `backend\stocks.db`. |
+| `margin_debt` fails with an install hint | Playwright or its Chromium is missing. The hint names the command; on an installed service, run `signal install` again. |
+| Environment variables seem ignored | Nothing reads `.env`. Export them in the shell, or put them in the service's settings file and `signal restart`. |
+| The service comes up with no data | It uses its own database (`signal status` shows where), separate from `backend/stocks.db`, with separate accounts. |
 | `database is locked` or duplicated jobs | More than one uvicorn worker or process is running. Run exactly one (`start.ps1 -Status`, `-Kill`). |
 | Registration is refused | `STOCKS_REGISTRATION` is `invite` (enter the code) or `closed`. |
 | The in-app update returns 409 | The checkout isn't on `main`, has tracked changes, or can't fast-forward. |
 | The desktop app offers an update but can't apply it | Only an admin can apply updates (Info → Updates). For admins, the reason is the same as the 409 above. |
 | SmartScreen blocks `SignalSetup.exe` | The exe is unsigned. Choose *More info → Run anyway*. |
-| NSSM checksum mismatch | The download doesn't match the pin in `windows/Common.ps1`, so the install stops. Verify the zip against nssm.cc before changing the pin (see `windows/README.md`). |
+| NSSM checksum mismatch | The download doesn't match the pin in `deploy/platforms/windows.py`, so the install stops. Verify the zip against nssm.cc before changing the pin (see `deploy/README.md`). |
 | Port already in use | Run `start.ps1 -Kill`, or change `-ApiPort` / `-WebPort`. |
 
 ## Security considerations
 
 - **Data** — the app only ingests *public* data and makes no trades. Treat upstream responses as untrusted input: ticker inputs are whitelisted (`validation.clean_ticker`) before they reach outbound URLs.
 - **Credentials** — passwords are hashed with Argon2id, TOTP 2FA is mandatory, and recovery codes are single-use and stored hashed. Session tokens are opaque, stored as SHA-256 hashes, delivered as httpOnly SameSite=Lax cookies, and rotated on every auth-state upgrade.
-- **Secrets** — keep them in environment variables only, never in code or the database. `windows/service.env` is gitignored, so never commit it.
-- **Privileged execution** — the Windows service runs as **LocalSystem** under NSSM. The NSSM 2.24 download is checked against the SHA-256 pinned in `windows/Common.ps1`, and a mismatch is fatal (see `windows/README.md`). `SignalSetup.exe` is unsigned, so verify you downloaded it from this repository's releases. The in-app updater is admin-only and spawns `windows/update.ps1`, which pulls from `origin/main`, so protect that branch.
+- **Secrets** — keep them in environment variables only, never in code or the database. The settings file lives outside the checkout, readable by the service only; backups contain it and are written owner-only.
+- **Privileged execution** — the Windows service runs as **LocalSystem** under NSSM; on Linux it runs as the unprivileged `stocks` user in a hardened unit. The NSSM 2.24 download is checked against the SHA-256 pinned in `deploy/platforms/windows.py`, and a mismatch is fatal (see `deploy/README.md`). `SignalSetup.exe` is unsigned, so verify you downloaded it from this repository's releases. The in-app updater is admin-only and pulls from `origin/main`, so protect that branch.
 - **Account creation** — `app/registration.py` is the single gate for both password and OAuth sign-up. On a reachable deployment, use `invite` or `closed`. The first account becomes admin, so register it before exposing the app.
 - **Public exposure** — the app is designed to sit behind a tunnel (Tailscale Funnel). The bind stays on `127.0.0.1`. `X-Forwarded-For` is trusted only from `STOCKS_TRUSTED_PROXY_IPS`, and HSTS is sent only on requests that really arrived over HTTPS. Set `STOCKS_COOKIE_SECURE=1` there.
 - **Abuse** — an in-memory, per-client rate limiter protects sensitive routes, and CORS uses an explicit allowlist only.

@@ -60,3 +60,20 @@ def test_no_dist_is_a_noop(tmp_path):
     assert _mount_spa(app, tmp_path / "nope") is False
     # no catch-all registered → an unknown path is a plain 404
     assert TestClient(app).get("/").status_code == 404
+
+
+def test_the_app_manifest_and_icons_are_served_with_their_types(tmp_path):
+    """A browser ignores an install manifest served as octet-stream."""
+    import mimetypes
+    dist = _dist(tmp_path)
+    (dist / "manifest.webmanifest").write_text('{"name": "Signal"}')
+    (dist / "icons").mkdir()
+    (dist / "icons" / "logo.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'/>")
+    mimetypes.types_map.pop(".webmanifest", None)  # as on Python < 3.13
+    app = FastAPI()
+    assert _mount_spa(app, dist) is True
+    c = TestClient(app)
+    manifest = c.get("/manifest.webmanifest")
+    assert manifest.status_code == 200
+    assert manifest.headers["content-type"].startswith("application/manifest+json")
+    assert c.get("/icons/logo.svg").headers["content-type"].startswith("image/svg+xml")

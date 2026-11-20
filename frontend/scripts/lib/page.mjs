@@ -70,9 +70,19 @@ export async function settle(target) {
   await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
 }
 
+const ME = "**/api/auth/me";
+
 export async function visit(target, base, view, accounts) {
   const { page, state } = target;
+  await page.unroute(ME);
   if (view.anon) await page.context().clearCookies();
+  if (view.pending) {
+    // The signed-in account, as /api/auth/me reports one still in the queue.
+    const { email } = accounts.main;
+    await page.route(ME, (route) => route.fulfill({
+      json: { id: 0, email, is_admin: false, created_at: "", onboarded: true, approved: false },
+    }));
+  }
   state.errors.length = 0;
   await page.goto(new URL(view.path, base).href, { waitUntil: "domcontentloaded" });
   await settle(target);

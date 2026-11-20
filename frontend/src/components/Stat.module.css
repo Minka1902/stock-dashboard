@@ -1,0 +1,13 @@
+.stat { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.label {
+  font-family: var(--mono); font-size: var(--fs-9-5); text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-faint);
+}
+.value {
+  font-family: var(--mono); font-size: var(--fs-15); font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.value[data-tone="pos"] { color: var(--positive); }
+.value[data-tone="neg"] { color: var(--negative); }
+.value[data-tone="caution"] { color: var(--caution); }

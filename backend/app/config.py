@@ -5,20 +5,24 @@ from pathlib import Path
 
 # SQLite file location (one file, no server). Defaults to backend/stocks.db,
 # resolved from this file rather than the cwd — the same way LOG_DIR below is.
-# A bare relative default only worked because every launcher happened to chdir
-# to backend/ first; a Windows service starts in C:\Windows\system32, where the
-# relative path would silently create a second, empty database.
+# A cwd-relative default would silently create a second, empty database
+# whenever the process starts somewhere else (a Windows service starts in
+# C:\Windows\system32, a systemd unit in /). An installed service is pointed at
+# its data directory by the installer (deploy/lib/paths.py).
 DB_PATH = os.environ.get("STOCKS_DB_PATH") or str(
     Path(__file__).resolve().parents[1] / "stocks.db")
+
+# The instance's settings file (deploy/env.example is its template), set by the
+# installer so a backup can include it. Unset in development.
+SETTINGS_FILE = os.environ.get("STOCKS_SETTINGS_FILE") or None
 
 # Log level for the app-wide logging config (see app/logging_config.py).
 LOG_LEVEL = os.environ.get("STOCKS_LOG_LEVEL", "INFO")
 
 # Where the rotating log file lives. Defaults to backend/logs/ (this file is
-# backend/app/config.py, so parents[1] is backend/). Logging to a file at all is
-# the point: uvicorn is launched detached and minimized, so a stderr-only setup
-# loses every traceback the moment the console window goes away — which is
-# exactly what made the last unexplained shutdown impossible to diagnose.
+# backend/app/config.py, so parents[1] is backend/). Logging to a file at all
+# is the point: a detached or service process has no console anyone keeps. The
+# updater's status and request files live here too.
 LOG_DIR = Path(os.environ.get("STOCKS_LOG_DIR") or (Path(__file__).resolve().parents[1] / "logs"))
 LOG_MAX_BYTES = int(os.environ.get("STOCKS_LOG_MAX_BYTES", str(5 * 1024 * 1024)))
 LOG_BACKUP_COUNT = int(os.environ.get("STOCKS_LOG_BACKUP_COUNT", "5"))
@@ -46,6 +50,32 @@ SCHEDULE_DEFAULT_TZ = os.environ.get("STOCKS_SCHEDULE_TZ", "Asia/Jerusalem")
 SOURCE_RUN_RETENTION_DAYS = int(os.environ.get("STOCKS_SOURCE_RUN_RETENTION_DAYS", "30"))
 JOB_RUN_RETENTION_DAYS = int(os.environ.get("STOCKS_JOB_RUN_RETENTION_DAYS", "90"))
 BOOM_HISTORY_RETENTION_DAYS = int(os.environ.get("STOCKS_BOOM_HISTORY_RETENTION_DAYS", "400"))
+
+# --- Running unattended ---
+# /api/health reports "degraded" once work has waited this long for the single
+# refresh thread (the job in front of it hung); the installed health check
+# (deploy/commands/healthcheck.py) then restarts the service.
+HEALTH_STUCK_SECONDS = int(os.environ.get("STOCKS_HEALTH_STUCK_SECONDS", "1800"))
+# Nightly verified backup (db_backup job, app/backup.py). Point the directory
+# at another disk so a dead one doesn't take the backups with it.
+BACKUP_DIR = Path(os.environ.get("STOCKS_BACKUP_DIR") or (Path(DB_PATH).parent / "backups"))
+BACKUP_KEEP = int(os.environ.get("STOCKS_BACKUP_KEEP", "7"))
+BACKUP_HOUR = int(os.environ.get("STOCKS_BACKUP_HOUR", "3"))
+BACKUP_MINUTE = int(os.environ.get("STOCKS_BACKUP_MINUTE", "47"))
+# Connectivity probe (app/netwatch.py): plain TCP connects, no DNS, so a DNS
+# outage still reads as online and surfaces as honest source errors instead.
+NETCHECK_HOSTS = [
+    h.strip() for h in os.environ.get("STOCKS_NETCHECK_HOSTS", "1.1.1.1:443,8.8.8.8:53").split(",")
+    if h.strip()
+]
+NETCHECK_INTERVAL_SECONDS = int(os.environ.get("STOCKS_NETCHECK_INTERVAL_SECONDS", "30"))
+NETCHECK_TIMEOUT_SECONDS = float(os.environ.get("STOCKS_NETCHECK_TIMEOUT_SECONDS", "3"))
+# How long an offline deferral waits if netwatch itself never sees the network
+# come back (it normally re-arms the deferred sources the moment it does).
+NETCHECK_OFFLINE_RETRY_SECONDS = int(os.environ.get("STOCKS_NETCHECK_OFFLINE_RETRY_SECONDS", "3600"))
+# Raspberry Pi firmware flags (under-voltage, throttling); absent off a Pi.
+PI_THROTTLED_PATH = os.environ.get(
+    "STOCKS_PI_THROTTLED_PATH", "/sys/devices/platform/soc/soc:firmware/get_throttled")
 
 # --- Web security ---
 # Comma-separated list of allowed browser origins. Because the session cookie
@@ -83,12 +113,13 @@ TRUSTED_PROXY_IPS = frozenset(
 HSTS_SECONDS = int(os.environ.get("STOCKS_HSTS_SECONDS", "0"))
 
 # Who may create an account: "open" (anyone), "invite" (must present
-# STOCKS_INVITE_CODE), "closed" (nobody). Being reachable and being open for
-# signup are separate decisions — see app/registration.py.
+# STOCKS_INVITE_CODE), "approval" (anyone may sign up, but the account sees
+# nothing until the admin approves it), "closed" (nobody). Being reachable and
+# being open for signup are separate decisions — see app/registration.py.
 REGISTRATION_MODE = os.environ.get("STOCKS_REGISTRATION", "open").strip().lower()
-if REGISTRATION_MODE not in ("open", "invite", "closed"):
+if REGISTRATION_MODE not in ("open", "invite", "approval", "closed"):
     raise ValueError(
-        "STOCKS_REGISTRATION must be one of: open, invite, closed "
+        "STOCKS_REGISTRATION must be one of: open, invite, approval, closed "
         f"(got {REGISTRATION_MODE!r})"
     )
 INVITE_CODE = os.environ.get("STOCKS_INVITE_CODE", "")
@@ -97,6 +128,15 @@ if REGISTRATION_MODE == "invite" and not INVITE_CODE:
         "STOCKS_REGISTRATION=invite requires STOCKS_INVITE_CODE. An empty code "
         "would compare equal to an empty submission and open registration to "
         "anyone with the URL."
+    )
+# The one account that is created approved and admin in "approval" mode. Naming
+# it up front is what closes the first-user race: whoever registers first is
+# just another pending account unless they are this email.
+ADMIN_EMAIL = os.environ.get("STOCKS_ADMIN_EMAIL", "").strip().lower()
+if REGISTRATION_MODE == "approval" and not ADMIN_EMAIL:
+    raise ValueError(
+        "STOCKS_REGISTRATION=approval requires STOCKS_ADMIN_EMAIL: without it "
+        "no account could ever be approved."
     )
 
 # Lifetime of a fully-authenticated session. Default 14 days.
@@ -262,10 +302,16 @@ MARGIN_DEBT_MIN_INTERVAL_SECONDS = int(
     os.environ.get("STOCKS_MARGIN_DEBT_MIN_INTERVAL_SECONDS", str(7 * 86400))
 )
 # Total budget for the headless-browser tier (launch + page + Cloudflare
-# clearance + workbook download), in seconds.
+# clearance + workbook download), in seconds. A ceiling, not a wait: sized for
+# a Raspberry Pi 3, whose Cortex-A53 needs most of a minute just to start
+# Chromium and run the challenge.
 MARGIN_DEBT_BROWSER_TIMEOUT_SECONDS = float(
-    os.environ.get("STOCKS_MARGIN_DEBT_BROWSER_TIMEOUT_SECONDS", "60")
+    os.environ.get("STOCKS_MARGIN_DEBT_BROWSER_TIMEOUT_SECONDS", "180")
 )
+# Chromium binary for that tier. Empty = the system `chromium` on PATH (what
+# the Linux installer puts there), else the browser Playwright downloaded
+# itself (`playwright install chromium`, what the Windows installer does).
+CHROMIUM_PATH = os.environ.get("STOCKS_CHROMIUM_PATH", "")
 # Retry cadence after a *failed* fetch, which is a different question from how
 # often fresh data appears: a week-long success interval must not become a
 # week-long outage when FINRA returns a 401/403.
@@ -477,6 +523,10 @@ OAUTH_GOOGLE_CLIENT_ID = os.environ.get("STOCKS_OAUTH_GOOGLE_CLIENT_ID", "")
 OAUTH_GOOGLE_CLIENT_SECRET = os.environ.get("STOCKS_OAUTH_GOOGLE_CLIENT_SECRET", "")
 OAUTH_FACEBOOK_CLIENT_ID = os.environ.get("STOCKS_OAUTH_FACEBOOK_CLIENT_ID", "")
 OAUTH_FACEBOOK_CLIENT_SECRET = os.environ.get("STOCKS_OAUTH_FACEBOOK_CLIENT_SECRET", "")
+# Meta retires each Graph API version about two years after its release (v18.0
+# expired 2026-01-26); v25.0 is supported until 2028-07-29. Overridable so a
+# retirement never needs a code change.
+OAUTH_FACEBOOK_GRAPH_VERSION = os.environ.get("STOCKS_OAUTH_FACEBOOK_GRAPH_VERSION", "v25.0")
 OAUTH_TIMEOUT_SECONDS = float(os.environ.get("STOCKS_OAUTH_TIMEOUT_SECONDS", "10"))
 
 

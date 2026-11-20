@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Full bleed, the mark inside the central 80% safe zone: the launcher
+       crops it to its own shape (circle, squircle). -->
+  <rect width="64" height="64" fill="#1c1915"/>
+  <g transform="translate(32 32) scale(.72) translate(-32 -32)">
+    <path d="M32 9 55 32 32 55 9 32Z" fill="none" stroke="#f3b24c" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M6 33h15l5-11 7 21 6-14 3 4h16" fill="none" stroke="#f3b24c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

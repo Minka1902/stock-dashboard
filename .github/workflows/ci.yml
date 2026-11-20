@@ -1,0 +1,202 @@
+name: ci
+
+# Tests, the web app every install downloads, and a real install on each kind
+# of machine.
+#
+# Every push to main publishes the built web app to the web-dist branch as one
+# commit "source: <main sha>", which `signal install` and `signal update`
+# download (deploy/lib/webdist.py), so no machine needs Node. Publishing waits
+# for the backend tests on the Pi's architecture and the web build, so a
+# commit that fails them never gets a web app and can't be installed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: backend (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # aarch64 + Python 3.13: what Raspberry Pi OS Trixie runs.
+        os: [ubuntu-24.04-arm, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install (every pin must have a wheel or build here)
+        working-directory: backend
+        run: pip install -r requirements.txt
+      - name: Test
+        working-directory: backend
+        env:
+          GIT_AUTHOR_NAME: ci
+          GIT_AUTHOR_EMAIL: ci@example.invalid
+          GIT_COMMITTER_NAME: ci
+          GIT_COMMITTER_EMAIL: ci@example.invalid
+        run: python -m pytest -q
+
+  web:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: frontend/dist
+          retention-days: 7
+
+  shellcheck:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck install.sh
+
+  # A real install, backup, restore, health check and uninstall, with this
+  # commit's code and web app, on each kind of machine a runner can be.
+  deploy-linux:
+    name: deploy smoke (${{ matrix.os }})
+    needs: web
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: ${{ runner.temp }}/dist
+      - name: A clone the service account can read
+        # The installer clones as the `stocks` user, which can't read the
+        # runner's home, and git refuses a repository another user owns.
+        run: |
+          sudo useradd --system --user-group --home-dir /var/lib/stocks-dashboard \
+            --shell /usr/sbin/nologin stocks
+          git checkout -q -B smoke
+          sudo cp -a "$GITHUB_WORKSPACE" /srv/smoke-repo
+          sudo chown -R stocks:stocks /srv/smoke-repo
+      - name: Install
+        run: |
+          sudo ./install.sh --repo /srv/smoke-repo --branch smoke \
+            --without browser --web-dist "${{ runner.temp }}/dist"
+      - name: Status
+        run: sudo signal status
+      - name: Backup and restore
+        run: |
+          sudo signal backup
+          archive=$(sudo sh -c 'ls -1 /var/lib/stocks-dashboard/backups/stocks-*.zip | tail -n1')
+          sudo signal restore "$archive" --yes
+          sudo signal status
+      - name: Health check
+        run: sudo signal healthcheck
+      - name: Logs on failure
+        if: failure()
+        run: |
+          sudo journalctl -u stocks-dashboard -n 200 --no-pager || true
+          sudo cat /var/log/stocks-dashboard/backend.log || true
+      - name: Uninstall
+        run: |
+          sudo signal uninstall --purge-data --yes
+          test ! -e /etc/systemd/system/stocks-dashboard.service
+          test ! -e /var/lib/stocks-dashboard
+
+  deploy-windows:
+    name: deploy smoke (windows-latest)
+    needs: web
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: ${{ runner.temp }}\dist
+      # install.ps1 only finds or installs a machine-wide git and Python and
+      # then runs exactly this.
+      - name: Install
+        shell: pwsh
+        run: python deploy/manage.py install --without desktop,browser --web-dist "${{ runner.temp }}\dist"
+      - name: Status
+        shell: pwsh
+        run: python deploy/manage.py status
+      - name: Backup and restore
+        shell: pwsh
+        run: |
+          python deploy/manage.py backup
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $archive = Get-ChildItem C:\ProgramData\SignalDashboard\backups\stocks-*.zip | Sort-Object Name | Select-Object -Last 1
+          python deploy/manage.py restore $archive.FullName --yes
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python deploy/manage.py status
+      - name: Health check
+        shell: pwsh
+        run: python deploy/manage.py healthcheck
+      - name: Logs on failure
+        if: failure()
+        shell: pwsh
+        run: Get-Content C:\ProgramData\SignalDashboard\logs\*.log -Tail 100 -ErrorAction SilentlyContinue
+      - name: Uninstall
+        shell: pwsh
+        run: |
+          python deploy/manage.py uninstall --purge-data --yes
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if (Get-Service SignalDashboard -ErrorAction SilentlyContinue) { throw "the service is still registered" }
+
+  web-dist:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [backend, web]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: web-dist
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: ${{ runner.temp }}/dist
+      - name: Commit the build to web-dist
+        env:
+          DIST: ${{ runner.temp }}/dist
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch --depth=1 origin web-dist; then
+            git checkout -q -B web-dist FETCH_HEAD
+          else
+            git checkout -q --orphan web-dist
+          fi
+          git rm -rqf --ignore-unmatch .
+          git clean -fdxq
+          cp -r "$DIST"/. .
+          git add -A
+          git commit -q -m "source: $GITHUB_SHA"
+          git push -q origin web-dist
