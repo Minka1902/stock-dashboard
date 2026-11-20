@@ -1,4 +1,5 @@
 import Icon from "./Icon";
+import Logo from "./Logo";
 import Tooltip from "./Tooltip";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { NAV_ITEMS } from "../lib/navItems";
@@ -17,7 +18,7 @@ export default function Sidebar({ view, onNavigate }) {
   return (
     <aside className={styles.rail}>
       <div className={styles.brand}>
-        <span className={styles.mark}>◆</span>
+        <Logo className={styles.mark} size="1.4em" />
         <span className={styles.brandName}>SIGNAL</span>
         <span className={styles.brandTag}>terminal</span>
       </div>

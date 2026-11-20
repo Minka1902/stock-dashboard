@@ -5,6 +5,7 @@ import itertools
 import json
 import logging
 import math
+import mimetypes
 import platform
 import re
 import threading
@@ -2618,6 +2619,9 @@ def _mount_spa(app: FastAPI, dist: Path) -> bool:
     index = dist / "index.html"
     if not index.is_file():
         return False
+    # The install-as-app manifest. Python before 3.13 doesn't know the type, and
+    # a browser ignores a manifest served as application/octet-stream.
+    mimetypes.add_type("application/manifest+json", ".webmanifest")
     assets = dist / "assets"
     if assets.is_dir():
         app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")

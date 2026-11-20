@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import CopyButton from "./CopyButton";
 import { totpSetup, getOAuthProviders, getRegistrationMode, oauthStartUrl } from "../api";
 import { PHONE, useMediaQuery } from "../hooks/useMediaQuery";
+import Logo from "./Logo";
 import PendingApproval from "./PendingApproval";
 import styles from "./AuthGate.module.css";
 
@@ -320,7 +321,7 @@ export default function AuthGate({ auth, children }) {
     <div className={styles.wrap}>
       <div className={styles.card}>
         <div className={styles.brand}>
-          <span className={styles.brandMark}>◆</span>
+          <Logo className={styles.brandMark} size="1.4em" />
           <span className={styles.brandName}>SIGNAL</span>
           <span className={styles.brandSub}>terminal</span>
         </div>

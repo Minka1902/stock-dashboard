@@ -16,6 +16,8 @@ export const STOCK_HASH_RE = /^#\/stock\/([A-Za-z0-9.-]{1,10})$/;
 
 /** Fired after a programmatic navigation; pushState/replaceState emit no event. */
 const NAV_EVENT = "app:navigate";
+/** Installed as an app (manifest.webmanifest): there are no tabs to open or close. */
+const STANDALONE = "(display-mode: standalone)";
 
 /**
  * Parse a location into a route.
@@ -88,8 +90,17 @@ export function navigateTo(route, { replace = false } = {}) {
  * nothing. The target is same-origin and built here, so there is no
  * reverse-tabnabbing exposure to trade away. No `from` param is set; its
  * absence is what marks this page as owning its tab (see `leaveStock`).
+ * Installed as an app, it navigates in place instead (with `from`).
  */
 export function openTickerTab(ticker) {
+  if (window.matchMedia?.(STANDALONE).matches || window.navigator.standalone === true) {
+    // An installed app would open the browser instead. Stay in the app and
+    // carry `from`, so Back on the stock page returns here.
+    const here = parseRoute();
+    const from = here.kind === "view" ? here.view : here.from || DEFAULT_VIEW;
+    navigateTo({ kind: "stock", ticker, from });
+    return;
+  }
   window.open(routeToPath({ kind: "stock", ticker }), "_blank");
 }
 
